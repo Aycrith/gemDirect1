@@ -78,7 +78,7 @@ const withRetry = async <T>(
 const getPrunedContext = async (prompt: string, context: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const apiCall = async () => {
         const response = await ai.models.generateContent({
-            model: model, // Use the faster model for summarization
+            model: proModel, // Use the more powerful model for summarization
             contents: prompt,
             config: {
                 temperature: 0.2, // Low temperature for factual, consistent summarization
@@ -92,7 +92,7 @@ const getPrunedContext = async (prompt: string, context: string, logApiCall: Api
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
-    return withRetry(apiCall, context, model, logApiCall, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 export const getPrunedContextForShotGeneration = async (
@@ -172,7 +172,7 @@ export const generateStoryBible = async (idea: string, logApiCall: ApiLogCallbac
     
     const apiCall = async () => {
         const response = await ai.models.generateContent({
-            model: model,
+            model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
@@ -185,7 +185,7 @@ export const generateStoryBible = async (idea: string, logApiCall: ApiLogCallbac
         return { result, tokens };
     };
 
-    return withRetry(apiCall, context, model, logApiCall, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 export const generateSceneList = async (plotOutline: string, directorsVision: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<Array<{ title: string; summary: string }>> => {
@@ -216,7 +216,7 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
 
     const apiCall = async () => {
         const response = await ai.models.generateContent({
-            model: model,
+            model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
@@ -229,7 +229,7 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
         return { result, tokens };
     };
 
-    return withRetry(apiCall, context, model, logApiCall, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 export const generateInitialShotsForScene = async (
@@ -278,7 +278,7 @@ export const suggestStoryIdeas = async (logApiCall: ApiLogCallback, onStateChang
     
     const apiCall = async () => {
         const response = await ai.models.generateContent({
-            model: model,
+            model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
@@ -291,7 +291,7 @@ export const suggestStoryIdeas = async (logApiCall: ApiLogCallback, onStateChang
         return { result, tokens };
     };
     
-    return withRetry(apiCall, context, model, logApiCall, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 export const suggestDirectorsVisions = async (storyBible: StoryBible, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
@@ -311,7 +311,7 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible, logApiCall
 
     const apiCall = async () => {
         const response = await ai.models.generateContent({
-            model: model,
+            model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
@@ -324,7 +324,7 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible, logApiCall
         return { result, tokens };
     };
 
-    return withRetry(apiCall, context, model, logApiCall, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 export const suggestCoDirectorObjectives = async (logline: string, sceneSummary: string, directorsVision: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
@@ -354,7 +354,7 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
     
     const apiCall = async () => {
         const response = await ai.models.generateContent({
-            model: model,
+            model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
@@ -367,7 +367,7 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
         return { result, tokens };
     };
 
-    return withRetry(apiCall, context, model, logApiCall, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 export const refineEntireStoryBible = async (storyBible: StoryBible, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
