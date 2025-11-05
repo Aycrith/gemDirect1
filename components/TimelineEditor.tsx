@@ -9,10 +9,11 @@ import TrashIcon from './icons/TrashIcon';
 import PlusIcon from './icons/PlusIcon';
 import FilmIcon from './icons/FilmIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { batchProcessShotEnhancements } from '../services/geminiService';
+import { batchProcessShotEnhancements, ApiStateChangeCallback } from '../services/geminiService';
 import Tooltip from './Tooltip';
 import CameraIcon from './icons/CameraIcon';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
+import { useApiStatus } from '../contexts/ApiStatusContext';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -32,6 +33,7 @@ interface TimelineEditorProps {
     isGeneratingPrompt: boolean;
     generatedPrompt?: string;
     onProceedToReview?: () => void;
+    onApiStateChange: ApiStateChangeCallback;
 }
 
 const SuggestionButton: React.FC<{
@@ -152,8 +154,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     isGeneratingPrompt,
     generatedPrompt,
     onProceedToReview,
+    onApiStateChange
 }) => {
     const { shots, shotEnhancers, transitions, negativePrompt } = scene.timeline;
+    const { updateApiStatus } = useApiStatus();
 
     const [mitigateViolence, setMitigateViolence] = useState(false);
     const [enhanceRealism, setEnhanceRealism] = useState(true);
@@ -170,7 +174,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setQueuedTasks(new Map()); // Clear queue immediately
 
         try {
-            const results = await batchProcessShotEnhancements(tasksToProcess, narrativeContext, directorsVision);
+            const results = await batchProcessShotEnhancements(tasksToProcess, narrativeContext, directorsVision, onApiStateChange);
 
             let shotsUpdater = (prev: Shot[]) => prev;
             let enhancersUpdater = (prev: ShotEnhancers) => prev;
@@ -202,7 +206,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 return { processingIds: newProcessingIds };
             });
         }
-    }, [queuedTasks, narrativeContext, directorsVision, setShots, setShotEnhancers]);
+    }, [queuedTasks, narrativeContext, directorsVision, setShots, setShotEnhancers, onApiStateChange]);
 
     const queueTask = useCallback((shot: Shot, action: 'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS') => {
         setSuggestionState(prev => ({ processingIds: new Set(prev.processingIds).add(shot.id) }));
@@ -216,6 +220,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             }
             existingTask.description = shot.description;
             newQueue.set(shot.id, existingTask);
+            updateApiStatus('bundling', `Bundling ${newQueue.size} task(s)...`);
             return newQueue;
         });
 
@@ -223,7 +228,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             clearTimeout(batchTimeoutRef.current);
         }
         batchTimeoutRef.current = window.setTimeout(processTaskQueue, 750);
-    }, [processTaskQueue]);
+    }, [processTaskQueue, updateApiStatus]);
 
 
     const handleRefineDescription = useCallback((shot: Shot) => {

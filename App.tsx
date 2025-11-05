@@ -6,12 +6,14 @@ import TimelineEditor from './components/TimelineEditor';
 import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import ContinuityDirector from './components/ContinuityDirector';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateSceneImage, suggestCoDirectorObjectives, generateVideoPrompt, getPrunedContextForShotGeneration, getPrunedContextForCoDirector } from './services/geminiService';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateSceneImage, suggestCoDirectorObjectives, generateVideoPrompt, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback } from './services/geminiService';
 import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
 import SaveIcon from './components/icons/SaveIcon';
 import * as db from './utils/database';
+import { ApiStatusProvider, useApiStatus } from './contexts/ApiStatusContext';
+import ApiStatusIndicator from './components/ApiStatusIndicator';
 
 const emptyTimeline: TimelineData = {
     shots: [],
@@ -20,7 +22,12 @@ const emptyTimeline: TimelineData = {
     negativePrompt: '',
 };
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
+    const { updateApiStatus } = useApiStatus();
+    const handleApiStateChange: ApiStateChangeCallback = useCallback((status, message) => {
+        updateApiStatus(status, message);
+    }, [updateApiStatus]);
+
     // App Flow & State
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('idea');
     const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
@@ -156,7 +163,7 @@ CONTEXT FROM ADJACENT SCENES:
         setIsLoading(true);
         setLoadingMessage('Generating your story bible...');
         try {
-            const bible = await generateStoryBible(idea);
+            const bible = await generateStoryBible(idea, handleApiStateChange);
             setStoryBible(bible);
             setWorkflowStage('bible');
             addToast('Story bible generated!', 'success');
@@ -176,7 +183,7 @@ CONTEXT FROM ADJACENT SCENES:
         setDirectorsVision(vision);
         try {
             if (!storyBible) throw new Error("Story bible not available.");
-            const sceneList = await generateSceneList(storyBible.plotOutline, vision);
+            const sceneList = await generateSceneList(storyBible.plotOutline, vision, handleApiStateChange);
             const newScenes: Scene[] = sceneList.map((s, i) => ({
                 id: `scene_${Date.now()}_${i}`,
                 title: s.title,
@@ -206,8 +213,8 @@ CONTEXT FROM ADJACENT SCENES:
             try {
                 if (!storyBible || !directorsVision) throw new Error("Missing context for shot generation.");
                 
-                const prunedContext = await getPrunedContextForShotGeneration(storyBible, getNarrativeContext(sceneId), selectedScene.summary, directorsVision);
-                const shotDescriptions = await generateInitialShotsForScene(prunedContext);
+                const prunedContext = await getPrunedContextForShotGeneration(storyBible, getNarrativeContext(sceneId), selectedScene.summary, directorsVision, handleApiStateChange);
+                const shotDescriptions = await generateInitialShotsForScene(prunedContext, handleApiStateChange);
 
                 const newShots: Shot[] = shotDescriptions.map(desc => ({
                     id: `shot_${Date.now()}_${Math.random()}`,
@@ -249,7 +256,7 @@ CONTEXT FROM ADJACENT SCENES:
         setGenerationStatus({ sceneId: activeSceneId, type: 'image', status: 'generating', error: null });
         try {
             if (!directorsVision) throw new Error("Director's vision is required.");
-            const base64Image = await generateSceneImage(timelineData, directorsVision);
+            const base64Image = await generateSceneImage(timelineData, directorsVision, handleApiStateChange);
             setGeneratedImages(prev => ({ ...prev, [activeSceneId]: base64Image }));
             setGenerationStatus({ sceneId: activeSceneId, type: 'image', status: 'success', error: null });
             addToast('Scene keyframe rendered!', 'success');
@@ -266,7 +273,7 @@ CONTEXT FROM ADJACENT SCENES:
         setGenerationStatus({ sceneId: activeSceneId, type: 'prompt', status: 'generating', error: null });
         try {
             if (!directorsVision) throw new Error("Director's vision is required.");
-            const prompt = await generateVideoPrompt(timelineData, directorsVision);
+            const prompt = await generateVideoPrompt(timelineData, directorsVision, handleApiStateChange);
             setGeneratedPrompts(prev => ({ ...prev, [activeSceneId]: prompt }));
             setGenerationStatus({ sceneId: activeSceneId, type: 'prompt', status: 'success', error: null });
             addToast('Final prompt generated!', 'success');
@@ -289,8 +296,8 @@ CONTEXT FROM ADJACENT SCENES:
         setIsCoDirectorLoading(true);
         setCoDirectorResult(null);
         try {
-            const prunedContext = await getPrunedContextForCoDirector(storyBible, getNarrativeContext(activeSceneId), activeScene, directorsVision);
-            const result = await getCoDirectorSuggestions(prunedContext, activeScene, objective);
+            const prunedContext = await getPrunedContextForCoDirector(storyBible, getNarrativeContext(activeSceneId), activeScene, directorsVision, handleApiStateChange);
+            const result = await getCoDirectorSuggestions(prunedContext, activeScene, objective, handleApiStateChange);
             setCoDirectorResult(result);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -387,12 +394,12 @@ CONTEXT FROM ADJACENT SCENES:
         
         switch (workflowStage) {
             case 'idea':
-                return <StoryIdeaForm onSubmit={handleStoryBibleSubmit} isLoading={isLoading} />;
+                return <StoryIdeaForm onSubmit={handleStoryBibleSubmit} isLoading={isLoading} onApiStateChange={handleApiStateChange} />;
             case 'bible':
-                if (storyBible) return <StoryBibleEditor storyBible={storyBible} setStoryBible={setStoryBible} onContinue={() => setWorkflowStage('vision')} isLoading={isLoading} />;
+                if (storyBible) return <StoryBibleEditor storyBible={storyBible} setStoryBible={setStoryBible} onContinue={() => setWorkflowStage('vision')} isLoading={isLoading} onApiStateChange={handleApiStateChange} />;
                 return null;
             case 'vision':
-                if (storyBible) return <DirectorsVisionForm storyBible={storyBible} onSubmit={handleDirectorsVisionSubmit} isLoading={isLoading} />;
+                if (storyBible) return <DirectorsVisionForm storyBible={storyBible} onSubmit={handleDirectorsVisionSubmit} isLoading={isLoading} onApiStateChange={handleApiStateChange} />;
                 return null;
             case 'director':
                  if (activeScene) {
@@ -408,7 +415,7 @@ CONTEXT FROM ADJACENT SCENES:
                                     onGetSuggestions={handleGetCoDirectorSuggestions}
                                     onApplySuggestion={handleApplySuggestion}
                                     onClose={() => setCoDirectorResult(null)}
-                                    onGetInspiration={() => suggestCoDirectorObjectives(storyBible!.logline, activeScene.summary, directorsVision)}
+                                    onGetInspiration={() => suggestCoDirectorObjectives(storyBible!.logline, activeScene.summary, directorsVision, handleApiStateChange)}
                                 />
                                 <TimelineEditor
                                     key={activeScene.id}
@@ -429,6 +436,7 @@ CONTEXT FROM ADJACENT SCENES:
                                     isGeneratingPrompt={generationStatus.type === 'prompt' && generationStatus.status === 'generating'}
                                     generatedPrompt={generatedPrompts[activeScene.id]}
                                     onProceedToReview={handleProceedToReview}
+                                    onApiStateChange={handleApiStateChange}
                                 />
                             </div>
                         </div>
@@ -447,6 +455,7 @@ CONTEXT FROM ADJACENT SCENES:
                             continuityData={continuityData}
                             setContinuityData={setContinuityData}
                             addToast={addToast}
+                            onApiStateChange={handleApiStateChange}
                         />
                     );
                 }
@@ -479,9 +488,16 @@ CONTEXT FROM ADJACENT SCENES:
                         </button>
                     </div>
                 )}
+                 <ApiStatusIndicator />
             </main>
         </div>
     );
 };
+
+const App: React.FC = () => (
+    <ApiStatusProvider>
+        <AppContent />
+    </ApiStatusProvider>
+)
 
 export default App;

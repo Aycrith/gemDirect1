@@ -1,12 +1,17 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 // FIX: Import ContinuityResult type to support new functions.
 import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult } from "../types";
+import { ApiStatus } from "../contexts/ApiStatusContext";
 
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 const model = 'gemini-2.5-flash';
 const proModel = 'gemini-2.5-pro';
 
 const commonError = "An error occurred. Please check the console for details. If the error persists, the model may be overloaded.";
+
+// Define a callback type for state changes
+export type ApiStateChangeCallback = (status: ApiStatus, message: string) => void;
+
 
 // Centralized API error handler
 const handleApiError = (error: unknown, context: string): Error => {
@@ -26,11 +31,14 @@ const handleApiError = (error: unknown, context: string): Error => {
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
 
-const withRetry = async <T>(apiCall: () => Promise<T>, context: string): Promise<T> => {
+const withRetry = async <T>(apiCall: () => Promise<T>, context: string, onStateChange?: ApiStateChangeCallback): Promise<T> => {
     let lastError: unknown = new Error(`API call failed for ${context}`);
+    onStateChange?.('loading', `Requesting: ${context}...`);
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
-            return await apiCall();
+            const result = await apiCall();
+            onStateChange?.('success', `${context} successful!`);
+            return result;
         } catch (error) {
             lastError = error;
             const errorMessage = error instanceof Error ? error.message.toLowerCase() : '';
@@ -38,7 +46,10 @@ const withRetry = async <T>(apiCall: () => Promise<T>, context: string): Promise
             
             if (isRateLimitError && attempt < MAX_RETRIES - 1) {
                 const delay = INITIAL_BACKOFF_MS * Math.pow(2, attempt) + Math.random() * 1000; // add jitter
-                console.warn(`Rate limit hit on "${context}". Retrying in ${Math.round(delay/1000)}s... (Attempt ${attempt + 1})`);
+                const delayInSeconds = Math.round(delay/1000);
+                const retryMessage = `Rate limit hit on "${context}". Retrying in ${delayInSeconds}s... (Attempt ${attempt + 1}/${MAX_RETRIES})`;
+                console.warn(retryMessage);
+                onStateChange?.('retrying', retryMessage);
                 await new Promise(res => setTimeout(res, delay));
             } else {
                 // Not a rate-limit error, or this was the final attempt. Break and throw.
@@ -46,12 +57,14 @@ const withRetry = async <T>(apiCall: () => Promise<T>, context: string): Promise
             }
         }
     }
-    throw handleApiError(lastError, context);
+    const finalError = handleApiError(lastError, context);
+    onStateChange?.('error', finalError.message);
+    throw finalError;
 };
 
 // --- Context Pruning & Summarization ---
 
-const getPrunedContext = async (prompt: string, context: string): Promise<string> => {
+const getPrunedContext = async (prompt: string, context: string, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model, // Use the faster model for summarization
@@ -66,14 +79,15 @@ const getPrunedContext = async (prompt: string, context: string): Promise<string
         }
         return text.trim();
     };
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
 export const getPrunedContextForShotGeneration = async (
     storyBible: StoryBible,
     narrativeContext: string,
     sceneSummary: string,
-    directorsVision: string
+    directorsVision: string,
+    onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
     const prompt = `You are a script supervisor. Your job is to create a concise "Creative Brief" for an AI Cinematographer. Distill the following information into a single, focused paragraph (under 150 words).
 
@@ -89,14 +103,15 @@ export const getPrunedContextForShotGeneration = async (
     - Director's Vision: ${directorsVision}
 
     **Your Output:** A single paragraph creative brief.`;
-    return getPrunedContext(prompt, 'prune context for shot generation');
+    return getPrunedContext(prompt, 'prune context for shot generation', onStateChange);
 };
 
 export const getPrunedContextForCoDirector = async (
     storyBible: StoryBible,
     narrativeContext: string,
     scene: Scene,
-    directorsVision: string
+    directorsVision: string,
+    onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
     const prompt = `You are an expert script analyst. Your job is to create a concise "Co-Director's Brief" (under 200 words) that summarizes the creative sandbox for the current scene. The brief should focus on the *goals and constraints* for making creative suggestions.
 
@@ -112,12 +127,12 @@ export const getPrunedContextForCoDirector = async (
     - Director's Vision: ${directorsVision}
 
     **Your Output:** A single paragraph co-director's brief.`;
-    return getPrunedContext(prompt, 'prune context for co-director');
+    return getPrunedContext(prompt, 'prune context for co-director', onStateChange);
 };
 
 // --- Core Story Generation ---
 
-export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
+export const generateStoryBible = async (idea: string, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
     const context = 'generate Story Bible';
     const prompt = `You are a master storyteller and screenwriter, deeply familiar with literary principles. Based on the following user idea, generate a compelling "Story Bible" that establishes a strong, plot-driven narrative foundation.
 
@@ -153,10 +168,10 @@ export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
         return JSON.parse(text.trim()) as StoryBible;
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
-export const generateSceneList = async (plotOutline: string, directorsVision: string): Promise<Array<{ title: string; summary: string }>> => {
+export const generateSceneList = async (plotOutline: string, directorsVision: string, onStateChange?: ApiStateChangeCallback): Promise<Array<{ title: string; summary: string }>> => {
     const context = 'generate scene list';
     const prompt = `You are an expert film director with a strong understanding of narrative pacing. Your task is to break down the following plot outline into a series of distinct, actionable scenes, keeping the overall cinematic vision in mind.
 
@@ -195,11 +210,12 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
         return JSON.parse(text.trim());
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
 export const generateInitialShotsForScene = async (
-    prunedContext: string
+    prunedContext: string,
+    onStateChange?: ApiStateChangeCallback
 ): Promise<string[]> => {
     const context = 'generate shots for scene';
     const prompt = `You are a visionary cinematographer who understands that every shot must serve the story. Based on the following focused Creative Brief, create an initial shot list for the scene.
@@ -228,12 +244,12 @@ export const generateInitialShotsForScene = async (
         return JSON.parse(text.trim());
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
 // --- AI-Assisted Guidance & Suggestions ---
 
-export const suggestStoryIdeas = async (): Promise<string[]> => {
+export const suggestStoryIdeas = async (onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
     const context = 'suggest ideas';
     const prompt = "You are a creative muse. Generate 3 diverse and compelling one-sentence story ideas for a cinematic experience. Return a JSON array of strings.";
     const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
@@ -251,10 +267,10 @@ export const suggestStoryIdeas = async (): Promise<string[]> => {
         return JSON.parse(text.trim());
     };
     
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
-export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<string[]> => {
+export const suggestDirectorsVisions = async (storyBible: StoryBible, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
     const context = 'suggest visions';
     const prompt = `You are a film theorist and animation historian. Based on this story bible, suggest 3 distinct and evocative "Director's Visions". These can be live-action cinematic styles or animation art styles. Each should be a short paragraph that describes the visual language.
 
@@ -282,10 +298,10 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<s
         return JSON.parse(text.trim());
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
-export const suggestCoDirectorObjectives = async (logline: string, sceneSummary: string, directorsVision: string): Promise<string[]> => {
+export const suggestCoDirectorObjectives = async (logline: string, sceneSummary: string, directorsVision: string, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
     const context = 'suggest objectives';
     const prompt = `You are a creative film director's assistant. Based on the provided story logline, scene summary, and director's vision, suggest 3 diverse and actionable creative objectives for the AI Co-Director. The objectives should be concise, starting with a verb, and guide the AI towards a specific creative direction for the scene.
 
@@ -323,10 +339,10 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
         return JSON.parse(text.trim());
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
-export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleContext: StoryBible): Promise<string> => {
+export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleContext: StoryBible, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const context = `refine ${field}`;
     const currentValue = fullBibleContext[field];
     const prompt = `You are an expert editor. A user is working on a story bible and wants to refine one section. Based on the full story context, revise the following **${field}** to be more compelling, concise, and cinematic.
@@ -365,13 +381,14 @@ export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleCo
         return parsed.refined_text;
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
 export const batchProcessShotEnhancements = async (
     tasks: BatchShotTask[],
     narrativeContext: string,
-    directorsVision: string
+    directorsVision: string,
+    onStateChange?: ApiStateChangeCallback
 ): Promise<BatchShotResult[]> => {
     const context = 'batch process shot enhancements';
 
@@ -442,11 +459,11 @@ export const batchProcessShotEnhancements = async (
         return JSON.parse(text.trim()) as BatchShotResult[];
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
 // FIX: Add missing functions for video analysis and continuity scoring.
-export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
+export const analyzeVideoFrames = async (frames: string[], onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const context = 'analyze video frames';
     const prompt = `You are a film critic and shot analyst. Based on the following sequence of frames from a video, provide a detailed analysis. Describe the cinematic techniques used, the narrative action, and the overall mood. Structure your analysis in markdown.
     
@@ -477,14 +494,15 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
         return text.trim();
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
 export const getPrunedContextForContinuity = async (
     storyBible: StoryBible,
     narrativeContext: string,
     scene: Scene,
-    directorsVision: string
+    directorsVision: string,
+    onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
     const prompt = `You are a script supervisor. Your job is to create a concise "Continuity Brief" (under 200 words) for an AI continuity checker. This brief will be used to judge if a generated video matches the original creative intent.
 
@@ -500,13 +518,14 @@ export const getPrunedContextForContinuity = async (
     - Director's Vision: ${directorsVision}
 
     **Your Output:** A single paragraph continuity brief.`;
-    return getPrunedContext(prompt, 'prune context for continuity check');
+    return getPrunedContext(prompt, 'prune context for continuity check', onStateChange);
 };
 
 export const scoreContinuity = async (
     prunedContext: string,
     scene: Scene,
     videoAnalysis: string,
+    onStateChange?: ApiStateChangeCallback
 ): Promise<ContinuityResult> => {
     const context = 'score cinematic continuity';
     const shotListString = scene.timeline.shots.map((shot, i) => `Shot ${i + 1}: ${shot.description}`).join('\n');
@@ -576,11 +595,11 @@ Your ENTIRE output must be a single, valid JSON object that perfectly adheres to
         return JSON.parse(text.trim()) as ContinuityResult;
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
 // --- Co-Director & Generation ---
-export const generateSceneImage = async (timelineData: TimelineData, directorsVision: string, previousImageBase64?: string): Promise<string> => {
+export const generateSceneImage = async (timelineData: TimelineData, directorsVision: string, onStateChange?: ApiStateChangeCallback, previousImageBase64?: string): Promise<string> => {
     const context = 'generate image';
     const { shots, shotEnhancers, negativePrompt } = timelineData;
 
@@ -640,13 +659,14 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
         throw new Error("Image generation failed: No image data in response.");
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
 export const getCoDirectorSuggestions = async (
     prunedContext: string,
     activeScene: Scene, 
-    objective: string
+    objective: string,
+    onStateChange?: ApiStateChangeCallback
 ): Promise<CoDirectorResult> => {
     const context = 'get co-director suggestions';
     const timelineString = activeScene.timeline.shots.map((shot, index) => {
@@ -751,10 +771,10 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
         return JSON.parse(text.trim()) as CoDirectorResult;
     };
     
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };
 
-export const generateVideoPrompt = async (timelineData: TimelineData, directorsVision: string): Promise<string> => {
+export const generateVideoPrompt = async (timelineData: TimelineData, directorsVision: string, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const context = 'generate video prompt';
     const { shots, shotEnhancers, negativePrompt } = timelineData;
 
@@ -805,5 +825,5 @@ export const generateVideoPrompt = async (timelineData: TimelineData, directorsV
         return text.trim();
     };
 
-    return withRetry(apiCall, context);
+    return withRetry(apiCall, context, onStateChange);
 };

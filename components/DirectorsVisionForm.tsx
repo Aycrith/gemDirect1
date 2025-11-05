@@ -1,16 +1,17 @@
 import React, { useState, useCallback } from 'react';
 import PaintBrushIcon from './icons/PaintBrushIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { suggestDirectorsVisions } from '../services/geminiService';
+import { suggestDirectorsVisions, ApiStateChangeCallback } from '../services/geminiService';
 import { StoryBible } from '../types';
 
 interface DirectorsVisionFormProps {
     onSubmit: (vision: string) => void;
     isLoading: boolean;
     storyBible: StoryBible;
+    onApiStateChange: ApiStateChangeCallback;
 }
 
-const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isLoading, storyBible }) => {
+const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isLoading, storyBible, onApiStateChange }) => {
     const [vision, setVision] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
@@ -26,14 +27,14 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
         setIsSuggesting(true);
         setSuggestions([]);
         try {
-            const result = await suggestDirectorsVisions(storyBible);
+            const result = await suggestDirectorsVisions(storyBible, onApiStateChange);
             setSuggestions(result);
         } catch (e) {
             console.error(e);
         } finally {
             setIsSuggesting(false);
         }
-    }, [storyBible]);
+    }, [storyBible, onApiStateChange]);
 
     return (
         <div className="max-w-3xl mx-auto text-center">

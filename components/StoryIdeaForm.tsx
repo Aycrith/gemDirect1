@@ -1,13 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import SparklesIcon from './icons/SparklesIcon';
-import { suggestStoryIdeas } from '../services/geminiService';
+import { suggestStoryIdeas, ApiStateChangeCallback } from '../services/geminiService';
 
 interface StoryIdeaFormProps {
     onSubmit: (idea: string) => void;
     isLoading: boolean;
+    onApiStateChange: ApiStateChangeCallback;
 }
 
-const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading }) => {
+const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onApiStateChange }) => {
     const [idea, setIdea] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
@@ -23,15 +24,15 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading }) =>
         setIsSuggesting(true);
         setSuggestions([]);
         try {
-            const result = await suggestStoryIdeas();
+            const result = await suggestStoryIdeas(onApiStateChange);
             setSuggestions(result);
         } catch (e) {
             console.error(e);
-            // Optionally show a toast message here
+            // The global handler in withRetry will set the error state
         } finally {
             setIsSuggesting(false);
         }
-    }, []);
+    }, [onApiStateChange]);
 
     return (
         <div className="max-w-3xl mx-auto text-center">

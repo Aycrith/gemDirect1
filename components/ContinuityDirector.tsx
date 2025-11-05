@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage } from '../types';
 import ContinuityCard from './ContinuityCard';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
+import { ApiStateChangeCallback } from '../services/geminiService';
 
 interface ContinuityDirectorProps {
   scenes: Scene[];
@@ -12,6 +13,7 @@ interface ContinuityDirectorProps {
   continuityData: Record<string, SceneContinuityData>;
   setContinuityData: React.Dispatch<React.SetStateAction<Record<string, SceneContinuityData>>>;
   addToast: (message: string, type: ToastMessage['type']) => void;
+  onApiStateChange: ApiStateChangeCallback;
 }
 
 const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
@@ -23,6 +25,7 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
   continuityData,
   setContinuityData,
   addToast,
+  onApiStateChange,
 }) => {
   const getNarrativeContext = useCallback((sceneId: string): string => {
       if (!storyBible || !scenes.length) return '';
@@ -101,6 +104,7 @@ CONTEXT FROM ADJACENT SCENES:
               }));
             }}
             addToast={addToast}
+            onApiStateChange={onApiStateChange}
           />
         ))}
       </div>

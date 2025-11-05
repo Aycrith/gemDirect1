@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, ContinuityResult } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
-import { analyzeVideoFrames, scoreContinuity, getPrunedContextForContinuity } from '../services/geminiService';
+import { analyzeVideoFrames, scoreContinuity, getPrunedContextForContinuity, ApiStateChangeCallback } from '../services/geminiService';
 import FileUpload from './FileUpload';
 import VideoPlayer from './VideoPlayer';
 import { marked } from 'marked';
@@ -17,6 +17,7 @@ interface ContinuityCardProps {
   data: SceneContinuityData;
   setContinuityData: (updater: React.SetStateAction<SceneContinuityData>) => void;
   addToast: (message: string, type: ToastMessage['type']) => void;
+  onApiStateChange: ApiStateChangeCallback;
 }
 
 const ScoreCircle: React.FC<{ label: string; score: number }> = ({ label, score }) => {
@@ -101,6 +102,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   data,
   setContinuityData,
   addToast,
+  onApiStateChange,
 }) => {
 
   const handleFileSelect = useCallback(async (file: File) => {
@@ -110,11 +112,11 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
         const frames = await extractFramesFromVideo(file);
         if (frames.length === 0) throw new Error("Could not extract frames from video.");
         
-        const analysis = await analyzeVideoFrames(frames);
+        const analysis = await analyzeVideoFrames(frames, onApiStateChange);
         setContinuityData(prev => ({ ...prev!, videoAnalysis: analysis, status: 'scoring' }));
 
-        const prunedContext = await getPrunedContextForContinuity(storyBible, narrativeContext, scene, directorsVision);
-        const result = await scoreContinuity(prunedContext, scene, analysis);
+        const prunedContext = await getPrunedContextForContinuity(storyBible, narrativeContext, scene, directorsVision, onApiStateChange);
+        const result = await scoreContinuity(prunedContext, scene, analysis, onApiStateChange);
         setContinuityData(prev => ({ ...prev!, continuityResult: result, status: 'complete' }));
 
         addToast(`Analysis complete for Scene ${sceneNumber}`, 'success');
@@ -124,7 +126,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
         setContinuityData(prev => ({ ...prev!, status: 'error', error }));
         addToast(`Analysis failed for Scene ${sceneNumber}: ${error}`, 'error');
     }
-  }, [scene, sceneNumber, storyBible, narrativeContext, directorsVision, setContinuityData, addToast]);
+  }, [scene, sceneNumber, storyBible, narrativeContext, directorsVision, setContinuityData, addToast, onApiStateChange]);
 
   const renderStatus = () => {
       if (data.status === 'idle') {
