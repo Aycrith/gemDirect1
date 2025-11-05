@@ -91,9 +91,19 @@ const ShotCard: React.FC<{
                     )}
                     <button
                         onClick={() => setIsExpanded(!isExpanded)}
-                        className="text-indigo-400 font-medium text-sm"
+                        className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-medium text-sm transition-colors"
                     >
-                        {isExpanded ? 'Collapse' : 'Expand'}
+                        {isExpanded ? (
+                            <>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" /></svg>
+                                Hide Controls
+                            </>
+                        ) : (
+                            <>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                                Show Controls
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
@@ -114,9 +124,10 @@ const ShotCard: React.FC<{
                 </div>
             </div>
             {isExpanded && (
-                <div className="p-4 border-t border-gray-700">
-                    <div className="flex justify-end -mb-2">
-                         <SuggestionButton 
+                <div className="p-4 border-t border-gray-700 fade-in">
+                    <div className="flex justify-between items-center mb-2">
+                        <p className="text-sm font-semibold text-gray-300">Creative Enhancers</p>
+                        <SuggestionButton 
                             onClick={() => onSuggestEnhancers(shot)}
                             isLoading={isProcessing}
                             tooltip="Suggest Enhancers with AI"
@@ -162,6 +173,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const processTaskQueue = useCallback(async () => {
         if (queuedTasks.size === 0) return;
 
+        // FIX: Use .values() to get an iterable of the map's values, not [key, value] pairs.
         const tasksToProcess = Array.from(queuedTasks.values());
         setQueuedTasks(new Map());
 
@@ -172,7 +184,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     setShots(prev => prev.map(s => s.id === result.shot_id ? { ...s, description: result.refined_description! } : s));
                 }
                 if (result.suggested_enhancers) {
-                    setShotEnhancers(prev => ({ ...prev, [result.shot_id]: { ...prev[result.shot_id], ...result.suggested_enhancers } }));
+                    setShotEnhancers(prev => ({ ...prev, [result.shot_id]: { ...(prev[result.shot_id] || {}), ...result.suggested_enhancers } }));
                 }
             });
         } catch (e) {
@@ -188,8 +200,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const queueTask = useCallback((shot: Shot, action: 'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS') => {
         setSuggestionState(prev => ({ processingIds: new Set(prev.processingIds).add(shot.id) }));
-        // FIX: Explicitly type prevQueue to fix downstream type inference issues.
-        setQueuedTasks((prevQueue: Map<string, BatchShotTask>) => {
+        setQueuedTasks((prevQueue) => {
             const newQueue = new Map(prevQueue);
             const existingTask = newQueue.get(shot.id);
             if (existingTask) {
