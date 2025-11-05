@@ -1,11 +1,14 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData } from "../types";
+import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers } from "../types";
 import { FRAMING_OPTIONS, MOVEMENT_OPTIONS, LENS_OPTIONS, PACING_OPTIONS, LIGHTING_OPTIONS, MOOD_OPTIONS, VFX_OPTIONS, PLOT_ENHANCEMENTS_OPTIONS } from "../utils/cinematicTerms";
 
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 const model = 'gemini-2.5-flash';
+const proModel = 'gemini-2.5-pro';
 
 const commonError = "An error occurred. Please check the console for details. If the error persists, the model may be overloaded.";
+
+// --- Core Story Generation ---
 
 export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
     const prompt = `You are a master storyteller and screenwriter. Based on the following user idea, generate a compelling "Story Bible" that establishes a strong narrative foundation. The tone should be cinematic and evocative.
@@ -109,7 +112,7 @@ export const generateInitialShotsForScene = async (storyBible: StoryBible, scene
     
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro', // Use a more powerful model for creative shot generation
+            model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
@@ -119,6 +122,176 @@ export const generateInitialShotsForScene = async (storyBible: StoryBible, scene
         throw new Error(`Failed to generate shots for scene. ${commonError}`);
     }
 };
+
+// --- AI-Assisted Guidance & Suggestions ---
+
+export const suggestStoryIdeas = async (): Promise<string[]> => {
+    const prompt = "You are a creative muse. Generate 3 diverse and compelling one-sentence story ideas for a cinematic experience. Return a JSON array of strings.";
+    const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        return JSON.parse(response.text.trim());
+    } catch (error) {
+        console.error("Error suggesting story ideas:", error);
+        throw new Error(`Failed to suggest ideas. ${commonError}`);
+    }
+};
+
+export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<string[]> => {
+    const prompt = `You are a film theorist. Based on this story bible, suggest 3 distinct and evocative "Director's Visions" or cinematic styles. Each should be a short paragraph. Return a JSON array of strings.
+
+    Story Bible:
+    - Logline: ${storyBible.logline}
+    - Plot Outline: ${storyBible.plotOutline}`;
+    const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        return JSON.parse(response.text.trim());
+    } catch (error) {
+        console.error("Error suggesting visions:", error);
+        throw new Error(`Failed to suggest visions. ${commonError}`);
+    }
+};
+
+
+export const refineStoryBibleField = async (field: keyof StoryBible, storyBible: StoryBible): Promise<string> => {
+    const currentValue = storyBible[field];
+    const prompt = `You are an expert editor. A user is working on a story bible and wants to refine one section. Based on the full story context, revise the following **${field}** to be more compelling, concise, and cinematic.
+
+    **Full Story Bible Context:**
+    - Logline: ${storyBible.logline}
+    - Characters: ${storyBible.characters}
+    - Setting: ${storyBible.setting}
+    - Plot Outline: ${storyBible.plotOutline}
+
+    **Current ${field.toUpperCase()} to Refine:**
+    "${currentValue}"
+
+    Return a JSON object with a single key "refined_text" containing only the new, improved text.`;
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: { refined_text: { type: Type.STRING } },
+        required: ['refined_text'],
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        const parsed = JSON.parse(response.text.trim());
+        return parsed.refined_text;
+    } catch (error) {
+        console.error(`Error refining ${field}:`, error);
+        throw new Error(`Failed to refine ${field}. ${commonError}`);
+    }
+};
+
+export const refineShotDescription = async (shot: Shot, scene: Scene, storyBible: StoryBible, directorsVision: string): Promise<string> => {
+    const prompt = `You are a screenwriter and cinematographer. Refine the following shot description to be more vivid, detailed, and cinematic. Ensure it aligns with the scene's context and the director's overall vision.
+
+    **Director's Vision / Cinematic Style:**
+    "${directorsVision}"
+
+    **Scene Context:**
+    - Title: ${scene.title}
+    - Summary: ${scene.summary}
+    
+    **Story Logline:**
+    - ${storyBible.logline}
+
+    **Current Shot Description to Refine:**
+    "${shot.description}"
+
+    Return a JSON object with a single key "refined_description" containing the improved text.`;
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: { refined_description: { type: Type.STRING } },
+        required: ['refined_description'],
+    };
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        const parsed = JSON.parse(response.text.trim());
+        return parsed.refined_description;
+    } catch (error) {
+        console.error("Error refining shot description:", error);
+        throw new Error(`Failed to refine description. ${commonError}`);
+    }
+};
+
+export const suggestShotEnhancers = async (shot: Shot, scene: Scene, storyBible: StoryBible, directorsVision: string): Promise<Partial<Omit<CreativeEnhancers, 'transitions'>>> => {
+    const prompt = `You are an expert AI Cinematographer. For the given shot, suggest a cohesive set of creative enhancers that align with the scene's context and the overall Director's Vision.
+
+    **Director's Vision / Cinematic Style:**
+    "${directorsVision}"
+    
+    **Story Logline:**
+    - ${storyBible.logline}
+
+    **Scene Summary:**
+    "${scene.summary}"
+
+    **Shot Description:**
+    "${shot.description}"
+
+    **Your Task & CRITICAL JSON FORMATTING:**
+    Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Select 1-2 options for each category that best fit the shot. Only include categories that are highly relevant; do not suggest for every category.
+
+    **Vocabulary (use exact string values from these lists):**
+    *   framing: [${FRAMING_OPTIONS.join(', ')}]
+    *   movement: [${MOVEMENT_OPTIONS.join(', ')}]
+    *   lens: [${LENS_OPTIONS.join(', ')}]
+    *   pacing: [${PACING_OPTIONS.join(', ')}]
+    *   lighting: [${LIGHTING_OPTIONS.join(', ')}]
+    *   mood: [${MOOD_OPTIONS.join(', ')}]
+    *   vfx: [${VFX_OPTIONS.join(', ')}]
+    *   plotEnhancements: [${PLOT_ENHANCEMENTS_OPTIONS.join(', ')}]
+    `;
+    
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            framing: { type: Type.ARRAY, items: { type: Type.STRING } },
+            movement: { type: Type.ARRAY, items: { type: Type.STRING } },
+            lens: { type: Type.ARRAY, items: { type: Type.STRING } },
+            pacing: { type: Type.ARRAY, items: { type: Type.STRING } },
+            lighting: { type: Type.ARRAY, items: { type: Type.STRING } },
+            mood: { type: Type.ARRAY, items: { type: Type.STRING } },
+            vfx: { type: Type.ARRAY, items: { type: Type.STRING } },
+            plotEnhancements: { type: Type.ARRAY, items: { type: Type.STRING } },
+        }
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        return JSON.parse(response.text.trim());
+    } catch (error) {
+        console.error("Error suggesting shot enhancers:", error);
+        throw new Error(`Failed to suggest enhancers. ${commonError}`);
+    }
+};
+
+
+// --- Co-Director & Image Generation ---
 
 export const getCoDirectorSuggestions = async (storyBible: StoryBible, activeScene: Scene, objective: string, directorsVision: string): Promise<CoDirectorResult> => {
     const timelineString = activeScene.timeline.shots.map((shot, index) => {
@@ -209,7 +382,7 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });

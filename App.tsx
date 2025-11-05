@@ -301,7 +301,7 @@ const App: React.FC = () => {
             case 'bible':
                 return storyBible && <StoryBibleEditor storyBible={storyBible} setStoryBible={setStoryBible} onContinue={handleProceedToVision} isLoading={isLoading} />;
             case 'vision':
-                return <DirectorsVisionForm onSubmit={handleGenerateScenes} isLoading={isLoading} />;
+                return storyBible && <DirectorsVisionForm onSubmit={handleGenerateScenes} isLoading={isLoading} storyBible={storyBible} />;
             case 'scenes':
             case 'director':
                  const currentSceneIndex = scenes.findIndex(s => s.id === activeSceneId);
@@ -322,12 +322,14 @@ const App: React.FC = () => {
                                     <p className="text-indigo-300">{loadingMessage}</p>
                                 </div>
                             )}
-                            {activeScene && (
+                            {activeScene && storyBible && (
                                 <div className="space-y-8">
                                      <CoDirector onGetSuggestions={handleGetCoDirectorSuggestions} isLoading={isCoDirectorLoading} result={coDirectorResult} onApplySuggestion={handleApplySuggestion} onClose={() => setCoDirectorResult(null)} />
                                      <TimelineEditor
                                         key={activeScene.id}
                                         scene={activeScene}
+                                        storyBible={storyBible}
+                                        directorsVision={directorsVision}
                                         imageUrl={generatedImages[activeScene.id]}
                                         setShots={setShotsForActiveScene}
                                         setShotEnhancers={setShotEnhancersForActiveScene}

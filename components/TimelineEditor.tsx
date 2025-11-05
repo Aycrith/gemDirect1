@@ -1,5 +1,5 @@
 import React, { useState, useCallback, memo } from 'react';
-import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData } from '../types';
+import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 import NegativePromptSuggestions from './NegativePromptSuggestions';
@@ -8,9 +8,14 @@ import TimelineIcon from './icons/TimelineIcon';
 import TrashIcon from './icons/TrashIcon';
 import PlusIcon from './icons/PlusIcon';
 import FilmIcon from './icons/FilmIcon';
+import SparklesIcon from './icons/SparklesIcon';
+import { refineShotDescription, suggestShotEnhancers } from '../services/geminiService';
+import Tooltip from './Tooltip';
 
 interface TimelineEditorProps {
     scene: Scene;
+    storyBible: StoryBible;
+    directorsVision: string;
     imageUrl?: string;
     setShots: React.Dispatch<React.SetStateAction<Shot[]>>;
     setShotEnhancers: React.Dispatch<React.SetStateAction<ShotEnhancers>>;
@@ -22,6 +27,30 @@ interface TimelineEditorProps {
     nextScene: Scene | null;
 }
 
+const SuggestionButton: React.FC<{
+    onClick: () => void;
+    isLoading: boolean;
+    tooltip: string;
+}> = memo(({ onClick, isLoading, tooltip }) => (
+    <Tooltip text={tooltip}>
+        <button
+            onClick={onClick}
+            disabled={isLoading}
+            className="p-1.5 text-yellow-400 hover:text-yellow-300 disabled:text-gray-500 disabled:cursor-wait transition-colors"
+        >
+            {isLoading ? (
+                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            ) : (
+                <SparklesIcon className="w-4 h-4" />
+            )}
+        </button>
+    </Tooltip>
+));
+
+
 const ShotCard: React.FC<{
     shot: Shot;
     index: number;
@@ -31,8 +60,17 @@ const ShotCard: React.FC<{
     onEnhancersChange: (id: string, newEnhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>) => void;
     onDeleteShot: (id: string) => void;
     onAddShotAfter: (id: string) => void;
-}> = memo(({ shot, index, totalShots, enhancers, onDescriptionChange, onEnhancersChange, onDeleteShot, onAddShotAfter }) => {
+    onRefineDescription: (shot: Shot) => void;
+    onSuggestEnhancers: (shot: Shot) => void;
+    suggestionState: { shotId: string | null; type: 'description' | 'enhancers' | null };
+}> = memo(({ 
+    shot, index, totalShots, enhancers, onDescriptionChange, onEnhancersChange, 
+    onDeleteShot, onAddShotAfter, onRefineDescription, onSuggestEnhancers, suggestionState 
+}) => {
     const [isExpanded, setIsExpanded] = useState(index < 2);
+    
+    const isSuggestingDesc = suggestionState.shotId === shot.id && suggestionState.type === 'description';
+    const isSuggestingEnhancers = suggestionState.shotId === shot.id && suggestionState.type === 'enhancers';
 
     return (
         <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg">
@@ -56,16 +94,30 @@ const ShotCard: React.FC<{
                 </div>
             </div>
             <div className="p-4">
-                 <textarea
-                    value={shot.description}
-                    onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
-                    rows={3}
-                    className="w-full bg-gray-900/50 p-2 border border-gray-600 rounded-md focus:ring-1 focus:ring-indigo-500 text-sm text-gray-300"
-                    placeholder="Describe the action in this shot..."
-                />
+                <div className="flex items-start gap-2">
+                    <textarea
+                        value={shot.description}
+                        onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
+                        rows={3}
+                        className="flex-grow w-full bg-gray-900/50 p-2 border border-gray-600 rounded-md focus:ring-1 focus:ring-indigo-500 text-sm text-gray-300"
+                        placeholder="Describe the action in this shot..."
+                    />
+                     <SuggestionButton 
+                        onClick={() => onRefineDescription(shot)}
+                        isLoading={isSuggestingDesc}
+                        tooltip="Refine Description with AI"
+                    />
+                </div>
             </div>
             {isExpanded && (
                 <div className="p-4 border-t border-gray-700">
+                    <div className="flex justify-end -mb-2">
+                         <SuggestionButton 
+                            onClick={() => onSuggestEnhancers(shot)}
+                            isLoading={isSuggestingEnhancers}
+                            tooltip="Suggest Enhancers with AI"
+                        />
+                    </div>
                     <CreativeControls
                         value={enhancers}
                         onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)}
@@ -79,6 +131,8 @@ const ShotCard: React.FC<{
 
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
     scene,
+    storyBible,
+    directorsVision,
     imageUrl,
     setShots,
     setShotEnhancers,
@@ -93,6 +147,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const [mitigateViolence, setMitigateViolence] = useState(true);
     const [enhanceRealism, setEnhanceRealism] = useState(true);
+    const [suggestionState, setSuggestionState] = useState<{ shotId: string | null; type: 'description' | 'enhancers' | null }>({ shotId: null, type: null });
     
     const handleDescriptionChange = useCallback((id: string, newDescription: string) => {
         setShots(prevShots => prevShots.map(s => s.id === id ? { ...s, description: newDescription } : s));
@@ -146,6 +201,31 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         }
     }, [shots, setShots, setTransitions]);
 
+    const handleRefineDescription = useCallback(async (shot: Shot) => {
+        setSuggestionState({ shotId: shot.id, type: 'description' });
+        try {
+            const refinedDesc = await refineShotDescription(shot, scene, storyBible, directorsVision);
+            setShots(prev => prev.map(s => s.id === shot.id ? { ...s, description: refinedDesc } : s));
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setSuggestionState({ shotId: null, type: null });
+        }
+    }, [scene, storyBible, directorsVision, setShots]);
+
+    const handleSuggestEnhancers = useCallback(async (shot: Shot) => {
+        setSuggestionState({ shotId: shot.id, type: 'enhancers' });
+        try {
+            const suggested = await suggestShotEnhancers(shot, scene, storyBible, directorsVision);
+            setShotEnhancers(prev => ({ ...prev, [shot.id]: suggested }));
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setSuggestionState({ shotId: null, type: null });
+        }
+    }, [scene, storyBible, directorsVision, setShotEnhancers]);
+
+
     const handleGenerateClick = useCallback(() => {
         let finalNegativePrompt = negativePrompt;
         const violenceNegativePrompt = "graphic violence, blood, gore, combat, weapons, injury, death";
@@ -189,6 +269,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             onEnhancersChange={handleEnhancersChange}
                             onDeleteShot={handleDeleteShot}
                             onAddShotAfter={handleAddShotAfter}
+                            onRefineDescription={handleRefineDescription}
+                            onSuggestEnhancers={handleSuggestEnhancers}
+                            suggestionState={suggestionState}
                         />
                         {index < shots.length - 1 && (
                             <TransitionSelector
