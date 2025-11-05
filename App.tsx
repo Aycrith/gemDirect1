@@ -57,7 +57,7 @@ const App: React.FC = () => {
     const [shotEnhancers, setShotEnhancers] = useState<ShotEnhancers>({});
     const [transitions, setTransitions] = useState<string[]>([]);
     const [negativePrompt, setNegativePrompt] = useState('');
-    const [suggestedNegativePrompts, setSuggestedNegativePrompts] = useState<string[]>(['shaky camera', 'blurry', 'low quality', 'watermark']);
+    const [suggestedNegativePrompts, setSuggestedNegativePrompts] = useState<string[]>(['shaky camera', 'blurry', 'low quality', 'watermark', 'text', 'signature', 'ugly', 'deformed', 'disfigured', 'jpeg artifacts', 'lowres', 'painting', 'cartoon', '3d render']);
     const [mitigateViolence, setMitigateViolence] = useState(true);
     const [enhanceRealism, setEnhanceRealism] = useState(false);
 

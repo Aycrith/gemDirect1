@@ -51,7 +51,13 @@ const ShotCard: React.FC<{
     const handleOnEnhancersChange = useCallback((newEnhancers: ShotEnhancers[string]) => onEnhancersChange(shot.id, newEnhancers), [shot.id, onEnhancersChange]);
 
     return (
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 relative group">
+        <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 pl-12 relative group">
+             <div className="absolute top-0 left-0 h-full flex items-center p-3 cursor-move text-gray-600 hover:text-white transition-colors" aria-label="Drag to reorder shot">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                    <circle cx="9" cy="6" r="1.5"></circle><circle cx="9" cy="12" r="1.5"></circle><circle cx="9" cy="18" r="1.5"></circle>
+                    <circle cx="15" cy="6" r="1.5"></circle><circle cx="15" cy="12" r="1.5"></circle><circle cx="15" cy="18" r="1.5"></circle>
+                </svg>
+            </div>
             <input
                 type="text"
                 className="block w-full bg-transparent font-bold text-indigo-400 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-lg mb-2 p-1 -ml-1"
@@ -125,6 +131,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     mitigateViolence, setMitigateViolence, enhanceRealism, setEnhanceRealism
 }) => {
     
+    // State for drag-and-drop functionality
+    const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+    const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+
     const handleDescriptionChange = useCallback((id: string, newDescription: string) => {
         setShots(currentShots => currentShots.map(shot => shot.id === id ? { ...shot, description: newDescription } : shot));
     }, [setShots]);
@@ -179,6 +189,40 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         }
     }, [shots, setShots, setShotEnhancers, setTransitions]);
 
+    // Drag and Drop Handlers
+    const handleDragStart = (index: number) => {
+        setDraggedIndex(index);
+    };
+
+    const handleDragEnd = () => {
+        setDraggedIndex(null);
+        setDropTargetIndex(null);
+    };
+
+    const handleDragOver = (e: React.DragEvent, index: number) => {
+        e.preventDefault();
+        if (index !== dropTargetIndex) {
+            setDropTargetIndex(index);
+        }
+    };
+
+    const handleDrop = (dropIndex: number) => {
+        if (draggedIndex === null || draggedIndex === dropIndex) {
+            handleDragEnd();
+            return;
+        }
+
+        const reorderedShots = [...shots];
+        const [movedShot] = reorderedShots.splice(draggedIndex, 1);
+
+        // Adjust drop index if moving an item downwards
+        const effectiveDropIndex = dropIndex > draggedIndex ? dropIndex - 1 : dropIndex;
+        
+        reorderedShots.splice(effectiveDropIndex, 0, movedShot);
+        setShots(reorderedShots);
+        handleDragEnd();
+    };
+
 
     return (
         <div className="my-6">
@@ -198,7 +242,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     </button>
                 </div>
             </div>
-            <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6 space-y-6">
+            <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
                 {isProcessing ? (
                      <div className="flex flex-col items-center justify-center text-center text-gray-400 h-48">
                         <ProgressBar stage={processingStage} />
@@ -210,25 +254,51 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                              <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Creative Timeline
                             </label>
-                            <div className="space-y-4">
-                                {shots.length > 0 ? shots.map((shot, index) => (
-                                <React.Fragment key={shot.id}>
-                                        <ShotCard 
-                                            shot={shot}
-                                            onDescriptionChange={handleDescriptionChange}
-                                            onTitleChange={handleTitleChange}
-                                            onDelete={handleDeleteShot}
-                                            enhancers={shotEnhancers[shot.id] || {}}
-                                            onEnhancersChange={handleEnhancersChange}
-                                        />
-                                        {index < shots.length - 1 && (
-                                            <TransitionSelector
-                                                value={transitions[index] || ''}
-                                                onChange={(newTransition) => handleTransitionChange(index, newTransition)}
-                                            />
-                                        )}
-                                </React.Fragment>
-                                )) : (
+                            <div>
+                                {shots.length > 0 ? (
+                                    <div onDragEnd={handleDragEnd}>
+                                        {shots.map((shot, index) => (
+                                            <div key={shot.id}>
+                                                <div 
+                                                    onDragOver={(e) => handleDragOver(e, index)}
+                                                    onDrop={() => handleDrop(index)}
+                                                    className="h-2"
+                                                >
+                                                    {(dropTargetIndex === index && draggedIndex !== null && dropTargetIndex !== draggedIndex) && <div className="h-1 bg-indigo-500 rounded-full animate-pulse my-1" />}
+                                                </div>
+
+                                                <div
+                                                    draggable
+                                                    onDragStart={() => handleDragStart(index)}
+                                                    className={`transition-opacity ${draggedIndex === index ? 'opacity-30' : ''}`}
+                                                >
+                                                    <ShotCard 
+                                                        shot={shot}
+                                                        onDescriptionChange={handleDescriptionChange}
+                                                        onTitleChange={handleTitleChange}
+                                                        onDelete={handleDeleteShot}
+                                                        enhancers={shotEnhancers[shot.id] || {}}
+                                                        onEnhancersChange={handleEnhancersChange}
+                                                    />
+                                                </div>
+                                                
+                                                {index < shots.length - 1 && (
+                                                    <TransitionSelector
+                                                        value={transitions[index] || ''}
+                                                        onChange={(newTransition) => handleTransitionChange(index, newTransition)}
+                                                    />
+                                                )}
+                                            </div>
+                                        ))}
+                                         <div 
+                                            onDragOver={(e) => handleDragOver(e, shots.length)}
+                                            onDrop={() => handleDrop(shots.length)}
+                                            className="h-2"
+                                        >
+                                            {(dropTargetIndex === shots.length && draggedIndex !== null) && <div className="h-1 bg-indigo-500 rounded-full animate-pulse my-1" />}
+                                        </div>
+                                    </div>
+                                ) : (
                                     <div className="text-center text-gray-500 py-8 border-2 border-dashed border-gray-700 rounded-lg">
                                         <TimelineIcon className="w-10 h-10 mx-auto mb-3 text-gray-600" />
                                         <p className="font-semibold">Your timeline is empty.</p>
@@ -247,18 +317,20 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             </div>
                         </div>
 
-                        <GenerationControls
-                            mitigateViolence={mitigateViolence}
-                            setMitigateViolence={setMitigateViolence}
-                            enhanceRealism={enhanceRealism}
-                            setEnhanceRealism={setEnhanceRealism}
-                        />
+                        <div className="mt-6 pt-6 border-t border-gray-700 space-y-6">
+                            <GenerationControls
+                                mitigateViolence={mitigateViolence}
+                                setMitigateViolence={setMitigateViolence}
+                                enhanceRealism={enhanceRealism}
+                                setEnhanceRealism={setEnhanceRealism}
+                            />
 
-                        <NegativePromptSuggestions
-                            suggestions={suggestedNegativePrompts}
-                            negativePrompt={negativePrompt}
-                            setNegativePrompt={setNegativePrompt}
-                        />
+                            <NegativePromptSuggestions
+                                suggestions={suggestedNegativePrompts}
+                                negativePrompt={negativePrompt}
+                                setNegativePrompt={setNegativePrompt}
+                            />
+                        </div>
 
                         <div className="mt-8 pt-6 border-t border-gray-700 text-center">
                             <button

@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, CoDirectorResult, Shot, TimelineData } from "../types";
+import { FRAMING_OPTIONS, MOVEMENT_OPTIONS, LENS_OPTIONS, PACING_OPTIONS, LIGHTING_OPTIONS, MOOD_OPTIONS, VFX_OPTIONS, PLOT_ENHANCEMENTS_OPTIONS } from "../utils/cinematicTerms";
 
 // Note: API key is automatically sourced from process.env.API_KEY
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
@@ -88,31 +89,48 @@ export const getCoDirectorSuggestions = async (shots: Shot[], transitions: strin
     }).join('');
 
     const prompt = `
-        You are an expert AI Film Co-Director. Your task is to analyze a cinematic timeline and a creative objective, then provide actionable suggestions to enhance the final video.
+You are an expert AI Film Co-Director, a master of cinematic language and storytelling. Your task is to critically analyze a cinematic timeline and a creative objective, then provide highly creative and actionable suggestions to elevate the final video into a masterpiece.
 
-        **Current Timeline:**
-        ${timelineString}
+**Current Timeline:**
+${timelineString}
 
-        **Creative Objective:**
-        "${objective}"
+**Creative Objective:**
+"${objective}"
 
-        **Your Task:**
-        1.  **Thematic Concept**: Come up with a short, catchy thematic concept (2-5 words) that encapsulates the creative objective for this timeline.
-        2.  **Reasoning**: Briefly explain your overall strategy for achieving the objective, based on the provided timeline.
-        3.  **Suggested Changes**: Provide a list of 5-8 specific, actionable changes. Your suggestions should work together as a cohesive whole to transform the scene according to the objective. Propose creative changes across different cinematic categories (e.g., add a new shot, change camera movement, adjust lighting, add VFX) to create a unified and impactful result. For each change, specify the type of action ('UPDATE_SHOT', 'ADD_SHOT_AFTER', 'UPDATE_TRANSITION'), the target shot ID or transition index, a payload with the new data, and a human-readable description.
+**Your Task:**
+1.  **Thematic Concept**: Come up with a short, evocative thematic concept (2-5 words) that encapsulates your new vision for this scene based on the objective.
+2.  **Reasoning**: Briefly explain your overall creative strategy. Why are you making these changes? How do they serve the objective and improve the story?
+3.  **Suggested Changes**: Provide a list of 5-8 specific, actionable changes. Your suggestions must be a cohesive set of edits that work together. Critically analyze the existing shots and propose improvements across various cinematic domains. Your suggestions should be bold and transformative.
+    - **Critically rewrite shot descriptions:** Don't just tweak them. Rewrite them with more evocative, cinematic language that paints a vivid picture.
+    - **Propose specific camera work:** Use the provided cinematic vocabulary. Suggest new framing, movement, or lens choices to enhance the visual storytelling.
+    - **Enhance the plot:** Add small character actions, reveal details, or introduce moments of conflict to deepen the narrative.
+    - **Refine transitions:** Choose transitions that serve the pacing and mood, not just default cuts.
+    - **Inject mood and style:** Use lighting, pacing, and VFX to create a powerful and consistent atmosphere.
+
+**Available Cinematic Vocabulary (for 'enhancers' payload):**
+*   **framing:** [${FRAMING_OPTIONS.join(', ')}]
+*   **movement:** [${MOVEMENT_OPTIONS.join(', ')}]
+*   **lens:** [${LENS_OPTIONS.join(', ')}]
+*   **pacing:** [${PACING_OPTIONS.join(', ')}]
+*   **lighting:** [${LIGHTING_OPTIONS.join(', ')}]
+*   **mood:** [${MOOD_OPTIONS.join(', ')}]
+*   **vfx:** [${VFX_OPTIONS.join(', ')}]
+*   **plotEnhancements:** [${PLOT_ENHANCEMENTS_OPTIONS.join(', ')}]
         
-        **CRITICAL JSON FORMATTING INSTRUCTIONS - READ CAREFULLY, FAILURE HERE IS COMMON:**
-        - Your ENTIRE output MUST be a single, valid JSON object. Do not include any text, explanations, or markdown formatting (like \`\`\`json) outside of this JSON object.
-        - **THE MOST COMMON ERROR is improper quote handling inside strings.** This will break the entire system.
-            - **BAD (will fail):** \`{"description": "A character says, "Let's go!"."}\`
-            - **GOOD (escaped):** \`{"description": "A character says, \\"Let's go!\\""}\`
-            - **BETTER (use single quotes):** \`{"description": "A character says, 'Let's go!'."}\`
-        - **YOUR PRIMARY GOAL is to produce VALID JSON.** The creative text is secondary to the structural integrity of the JSON.
+**CRITICAL JSON FORMATTING INSTRUCTIONS - READ CAREFULLY, FAILURE HERE IS COMMON:**
+- Your ENTIRE output MUST be a single, valid JSON object. Do not include any text, explanations, or markdown formatting (like \`\`\`json) outside of this JSON object.
+- **THE MOST COMMON ERROR is improper quote handling inside strings.** This will break the entire system.
+    - **BAD (will fail):** \`{"description": "A character says, "Let's go!"."}\`
+    - **GOOD (escaped):** \`{"description": "A character says, \\"Let's go!\\""}\`
+    - **BETTER (use single quotes):** \`{"description": "A character says, 'Let's go!'."}\`
+- **YOUR PRIMARY GOAL is to produce VALID JSON.** The creative text is secondary to the structural integrity of the JSON.
+- When suggesting 'enhancers', you MUST use the exact string values provided in the "Available Cinematic Vocabulary" lists.
 
-        **FINAL CHECKLIST BEFORE RESPONDING:**
-        1.  Is the entire output a single JSON object and nothing else?
-        2.  Have I checked EVERY string value for unescaped double quotes?
-        3.  Have I used single quotes inside strings wherever possible to avoid this common error?
+**FINAL CHECKLIST BEFORE RESPONDING:**
+1.  Is the entire output a single JSON object and nothing else?
+2.  Have I checked EVERY string value for unescaped double quotes?
+3.  Have I used single quotes inside strings wherever possible to avoid this common error?
+4.  Are all values in the 'enhancers' payload taken directly from the provided vocabulary lists?
     `;
     
     // This defines the structure of the JSON we expect back from the model.
