@@ -1,0 +1,5 @@
+{
+  "name": "Cinematic Video Analyzer",
+  "description": "An application that uses AI to provide feedback on cinematic action in a video and suggests improvement prompts for remixing.",
+  "requestFramePermissions": []
+}
