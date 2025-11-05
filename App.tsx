@@ -8,8 +8,12 @@ import { generateStoryBible, generateSceneList, generateInitialShotsForScene, ge
 import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
+import VideoAnalyzer from './components/VideoAnalyzer';
+import FilmIcon from './components/icons/FilmIcon';
+import PencilRulerIcon from './components/icons/PencilRulerIcon';
 
 type AppStage = 'idea' | 'bible' | 'scenes' | 'director';
+type AppMode = 'generator' | 'analyzer';
 
 const emptyTimeline: TimelineData = {
     shots: [],
@@ -20,6 +24,7 @@ const emptyTimeline: TimelineData = {
 
 const App: React.FC = () => {
     // App Flow & State
+    const [appMode, setAppMode] = useState<AppMode>('generator');
     const [appStage, setAppStage] = useState<AppStage>('idea');
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('idea');
     const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
@@ -119,7 +124,7 @@ const App: React.FC = () => {
                     ...emptyTimeline,
                     shots: newShots,
                     transitions: new Array(Math.max(0, newShots.length - 1)).fill('Cut'),
-                    negativePrompt: 'shaky camera, blurry, low quality, watermark, text, signature, ugly, deformed, disfigured, jpeg artifacts, lowres, painting, cartoon, 3d render',
+                    negativePrompt: 'floating characters, illogical perspective, weird angles, distorted anatomy, person standing on the camera/viewer, shaky camera, blurry, low quality, watermark, text, signature, ugly, deformed, disfigured, jpeg artifacts, lowres, painting, cartoon, 3d render',
                 };
 
                 setScenes(prevScenes => prevScenes.map(s => s.id === sceneId ? { ...s, timeline: newTimeline } : s));
@@ -276,6 +281,10 @@ const App: React.FC = () => {
 
 
     const renderContent = () => {
+        if (appMode === 'analyzer') {
+            return <VideoAnalyzer />;
+        }
+
         switch (appStage) {
             case 'idea':
                 return <StoryIdeaForm onSubmit={handleGenerateStoryBible} isLoading={isLoading} />;
@@ -345,8 +354,29 @@ const App: React.FC = () => {
                     </p>
                 </header>
                 
-                <WorkflowTracker currentStage={workflowStage} />
-                
+                <div className="flex justify-center mb-8">
+                    <div className="inline-flex rounded-md shadow-sm bg-gray-800 p-1" role="group">
+                        <button
+                            type="button"
+                            onClick={() => setAppMode('generator')}
+                            className={`flex items-center gap-2 px-6 py-2 text-sm font-medium transition-colors rounded-md ${appMode === 'generator' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
+                        >
+                            <PencilRulerIcon className="w-5 h-5" />
+                            Story Generator
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setAppMode('analyzer')}
+                            className={`flex items-center gap-2 px-6 py-2 text-sm font-medium transition-colors rounded-md ${appMode === 'analyzer' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
+                        >
+                            <FilmIcon className="w-5 h-5" />
+                            Video Analyzer
+                        </button>
+                    </div>
+                </div>
+
+                {appMode === 'generator' && <WorkflowTracker currentStage={workflowStage} />}
+
                 <div className="mt-12 fade-in">
                     {renderContent()}
                 </div>

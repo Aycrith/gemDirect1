@@ -225,12 +225,18 @@ export const generateImagePrompt = async (timelineData: TimelineData): Promise<s
     }).join('');
 
     const prompt = `
-        You are an expert prompt engineer for a generative image AI. Synthesize the provided cinematic timeline into a single, cohesive, and powerful generative prompt for a cinematic still image that captures the key moment of the scene.
+        You are an expert prompt engineer for a state-of-the-art generative image AI. Your task is to synthesize the provided cinematic timeline into a single, cohesive, and powerful generative prompt. The goal is to create a photorealistic, cinematic still image that captures the key moment of the scene with impeccable quality.
+
+        **CRITICAL INSTRUCTIONS FOR PROMPT CREATION:**
+        - **Synthesize, Don't List:** Do not just list the shots. Weave the descriptions and styles into a fluid, descriptive narrative for a single, powerful image.
+        - **Ground the Scene:** Ensure all characters and objects are physically grounded. Explicitly describe their interaction with the environment (e.g., "feet firmly on the muddy ground," "hand resting on the stone wall"). Avoid any sense of floating or illogical placement.
+        - **Perspective and Composition:** Create a clear and believable camera perspective. Use compositional rules (like the rule of thirds) to create a visually appealing and dramatic image. Avoid bizarre or physically impossible camera angles.
+        - **Realism is Key:** Emphasize photorealism, detailed textures, and realistic lighting.
 
         **Provided Cinematic Timeline:**
         ${detailedTimeline}
 
-        **Global Style Notes / Negative Prompt:**
+        **Global Style Notes / Negative Prompt (AVOID THESE):**
         "${negativePrompt || 'None'}"
 
         **Your Task:**
@@ -289,5 +295,37 @@ export const generateSceneImage = async (
     } catch (error) {
         console.error("Error generating scene image:", error);
         throw new Error(`Failed to generate scene image. ${commonError}`);
+    }
+};
+
+export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
+    const prompt = `You are a professional film analyst and editor. Your task is to analyze the following sequence of video frames and provide a detailed, scene-by-scene breakdown.
+
+    For each distinct scene you identify, describe:
+    - **Setting:** Where and when is the scene taking place?
+    - **Characters:** Who is in the scene and what are they doing?
+    - **Key Events:** What are the crucial actions or plot points that occur?
+    - **Cinematic Feel:** What is the mood or tone (e.g., tense, fast-paced, dramatic)?
+
+    Provide a cohesive summary of the entire video clip at the end. Format your entire output as well-structured markdown.`;
+
+    const imageParts = frames.map(frame => ({
+        inlineData: {
+            mimeType: 'image/jpeg',
+            data: frame,
+        },
+    }));
+
+    const contents = { parts: [{ text: prompt }, ...imageParts] };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro', // Using a powerful model for better analysis
+            contents: contents,
+        });
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error analyzing video frames:", error);
+        throw new Error(`Failed to analyze video. ${commonError}`);
     }
 };
