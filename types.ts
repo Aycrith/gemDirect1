@@ -1,10 +1,5 @@
 import { ReactNode } from "react";
 
-export interface AnalysisResult {
-  feedback: string;
-  improvement_prompt: string;
-}
-
 export interface Shot {
   id: string;
   title?: string;
@@ -20,7 +15,7 @@ export interface CreativeEnhancers {
   mood: string[];
   vfx: string[];
   plotEnhancements: string[];
-  transitions: string[]; // This will now represent the transitions between shots
+  transitions: string[];
 }
 
 export type ShotEnhancers = Record<string, Partial<Omit<CreativeEnhancers, 'transitions'>>>;
@@ -31,6 +26,20 @@ export interface TimelineData {
     transitions: string[];
     negativePrompt: string;
     positiveEnhancers?: string;
+}
+
+export interface Scene {
+    id: string;
+    title: string;
+    summary: string;
+    timeline: TimelineData;
+}
+
+export interface StoryBible {
+    logline: string;
+    characters: string;
+    setting: string;
+    plotOutline: string;
 }
 
 export type ToastType = 'success' | 'error' | 'info';
@@ -48,7 +57,6 @@ export interface ControlSectionConfig {
     options: string[];
 }
 
-// Types for AI Co-Director Suggestions
 export type SuggestionPayload = Partial<Shot> & { enhancers?: ShotEnhancers[string] } & { type?: string };
 
 export interface Suggestion {
@@ -57,7 +65,7 @@ export interface Suggestion {
   after_shot_id?: string;
   transition_index?: number;
   payload: SuggestionPayload;
-  description: string; // Human-readable description of the change
+  description: string;
 }
 
 export interface CoDirectorResult {

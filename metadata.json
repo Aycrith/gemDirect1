@@ -1,5 +1,5 @@
 {
-  "name": "Cinematic Video Analyzer",
-  "description": "An application that uses AI to provide feedback on cinematic action in a video and suggests improvement prompts for remixing.",
+  "name": "Cinematic Story Generator",
+  "description": "An application that uses AI to build a complete cinematic story, from high-level plot to shot-by-shot details, and generates production-ready prompts.",
   "requestFramePermissions": []
 }

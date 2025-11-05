@@ -1,181 +1,174 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, CoDirectorResult, Shot, TimelineData } from "../types";
+import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData } from "../types";
 import { FRAMING_OPTIONS, MOVEMENT_OPTIONS, LENS_OPTIONS, PACING_OPTIONS, LIGHTING_OPTIONS, MOOD_OPTIONS, VFX_OPTIONS, PLOT_ENHANCEMENTS_OPTIONS } from "../utils/cinematicTerms";
 
-// Note: API key is automatically sourced from process.env.API_KEY
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+const model = 'gemini-2.5-flash';
 
-/**
- * Analyzes video frames to identify shots and suggest improvements.
- */
-export const analyzeVideoFrames = async (frames: string[]): Promise<AnalysisResult> => {
-    const model = 'gemini-2.5-pro'; 
+const commonError = "An error occurred. Please check the console for details. If the error persists, the model may be overloaded.";
 
-    const prompt = `
-        You are an expert film editor. Your task is to analyze a sequence of video frames and break it down into distinct cinematic shots.
+export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
+    const prompt = `You are a master storyteller and screenwriter. Based on the following user idea, generate a compelling "Story Bible" that establishes a strong narrative foundation. The tone should be cinematic and evocative.
 
-        1.  **Identify Every Distinct Shot**: Meticulously analyze the frames to identify every single shot change. A new shot is defined by a clear cut, a significant change in camera angle, or a major shift in subject or location.
-        2.  **Format the Output Strictly**: For the 'feedback' field, you MUST list each shot on a new line. Each line must start with the prefix "Shot <number>: " followed by a concise description of the action in that shot.
-            Example format:
-            "Shot 1: A wide establishing shot of a futuristic city skyline at dusk.
-            Shot 2: Close-up on a character's face looking out a window.
-            Shot 3: A fast-paced tracking shot following a flying vehicle through canyons of buildings."
-        3.  **Create a Generative Prompt**: For the 'improvement_prompt' field, synthesize all the identified shots into a single, cohesive prompt for a generative video AI. This prompt should aim to recreate the sequence with enhanced cinematic quality, incorporating dynamic camera work, lighting, and pacing.
+    User Idea: "${idea}"
 
-        Interpret the cinematic intent, do not just describe the frames literally.
-    `;
-
-    const imageParts = frames.map((frame) => ({
-        inlineData: {
-            mimeType: 'image/jpeg',
-            data: frame,
-        },
-    }));
-
-    const contents = {
-        parts: [
-            { text: prompt },
-            ...imageParts,
-        ],
-    };
+    Your task is to create a JSON object containing:
+    1.  **logline**: A single, concise sentence that captures the essence of the story (protagonist, goal, conflict).
+    2.  **characters**: A markdown-formatted list of 2-3 key characters with a brief, compelling description for each.
+    3.  **setting**: A paragraph describing the world, time, and atmosphere of the story.
+    4.  **plotOutline**: A markdown-formatted, 3-act structure (Act I, Act II, Act III) outlining the main plot points.`;
 
     const responseSchema = {
         type: Type.OBJECT,
         properties: {
-            feedback: {
-                type: Type.STRING,
-                description: "A description of all distinct cinematic shots. CRITICAL: Each shot MUST be on a new line and MUST start with 'Shot <number>: ' (e.g., 'Shot 1: ...')."
-            },
-            improvement_prompt: {
-                type: Type.STRING,
-                description: "A generative AI prompt to recreate the scene with cinematic enhancements. Use markdown for techniques and '--[Transition]-->' for shot changes."
-            }
+            logline: { type: Type.STRING },
+            characters: { type: Type.STRING },
+            setting: { type: Type.STRING },
+            plotOutline: { type: Type.STRING },
         },
-        required: ['feedback', 'improvement_prompt'],
+        required: ['logline', 'characters', 'setting', 'plotOutline'],
     };
 
     try {
         const response = await ai.models.generateContent({
             model: model,
-            contents: contents,
-            config: {
-                responseMimeType: 'application/json',
-                responseSchema: responseSchema,
-            },
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        
-        const jsonText = response.text.trim();
-        const result = JSON.parse(jsonText);
-
-        return result as AnalysisResult;
-
+        return JSON.parse(response.text.trim()) as StoryBible;
     } catch (error) {
-        console.error("Error analyzing video frames with Gemini:", error);
-        throw new Error("Failed to analyze video. Please check the console for details.");
+        console.error("Error generating Story Bible:", error);
+        throw new Error(`Failed to generate Story Bible. ${commonError}`);
     }
 };
 
+export const generateSceneList = async (plotOutline: string): Promise<Array<{ title: string; summary: string }>> => {
+    const prompt = `You are an expert film director. Your task is to break down the following plot outline into a series of distinct, actionable scenes. Each scene should represent a specific event or moment in the story.
 
-/**
- * Generates co-director suggestions based on a timeline and a creative objective.
- */
-export const getCoDirectorSuggestions = async (shots: Shot[], transitions: string[], objective: string): Promise<CoDirectorResult> => {
+    Plot Outline:
+    ${plotOutline}
+
+    Generate a JSON array where each object has:
+    1.  **title**: A short, evocative title for the scene (e.g., "The Rooftop Chase," "A Desperate Bargain").
+    2.  **summary**: A one-sentence description of what happens in this scene.`;
+
+    const responseSchema = {
+        type: Type.ARRAY,
+        items: {
+            type: Type.OBJECT,
+            properties: {
+                title: { type: Type.STRING },
+                summary: { type: Type.STRING },
+            },
+            required: ['title', 'summary'],
+        },
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        return JSON.parse(response.text.trim());
+    } catch (error) {
+        console.error("Error generating scene list:", error);
+        throw new Error(`Failed to generate scene list. ${commonError}`);
+    }
+};
+
+export const generateInitialShotsForScene = async (storyBible: StoryBible, scene: { title: string; summary: string }): Promise<string[]> => {
+    const prompt = `You are a visionary cinematographer. Your task is to create an initial shot list for a scene. The shot descriptions should be concise and focused on the visual action.
+
+    **Overall Story Context:**
+    - Logline: ${storyBible.logline}
+    - Setting: ${storyBible.setting}
+
+    **Current Scene:**
+    - Title: ${scene.title}
+    - Summary: ${scene.summary}
+
+    Based on the context, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene.`;
     
-    const model = 'gemini-2.5-flash';
+    const responseSchema = {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+    };
+    
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro', // Use a more powerful model for creative shot generation
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        return JSON.parse(response.text.trim());
+    } catch (error) {
+        console.error("Error generating initial shots:", error);
+        throw new Error(`Failed to generate shots for scene. ${commonError}`);
+    }
+};
 
-    const timelineString = shots.map((shot, index) => {
-        const transition = transitions[index] ? `\n--[${transitions[index]}]-->\n` : '';
+export const getCoDirectorSuggestions = async (storyBible: StoryBible, activeScene: Scene, objective: string): Promise<CoDirectorResult> => {
+    const timelineString = activeScene.timeline.shots.map((shot, index) => {
+        const transition = activeScene.timeline.transitions[index] ? `\n--[${activeScene.timeline.transitions[index]}]-->\n` : '';
         return `Shot ${index + 1} (${shot.id}): ${shot.description}${transition}`;
     }).join('');
 
     const prompt = `
-You are an expert AI Film Co-Director, a master of cinematic language and storytelling. Your task is to critically analyze a cinematic timeline and a creative objective, then provide highly creative and actionable suggestions to elevate the final video into a masterpiece.
+You are an expert AI Film Co-Director. Your task is to analyze a cinematic timeline within the context of the larger story and a creative objective, then provide creative and actionable suggestions.
 
-**Current Timeline:**
+**Overall Story Bible:**
+- Logline: ${storyBible.logline}
+- Key Plot Points: ${storyBible.plotOutline}
+
+**Current Scene Context:**
+- Scene: ${activeScene.title} - ${activeScene.summary}
+- This scene is a crucial part of the story. Your suggestions must align with the overall narrative arc.
+
+**Current Shot-List for this Scene:**
 ${timelineString}
 
 **Creative Objective:**
 "${objective}"
 
-**Your Task:**
-1.  **Thematic Concept**: Come up with a short, evocative thematic concept (2-5 words) that encapsulates your new vision for this scene based on the objective.
-2.  **Reasoning**: Briefly explain your overall creative strategy. Why are you making these changes? How do they serve the objective and improve the story?
-3.  **Suggested Changes**: Provide a list of 5-8 specific, actionable changes. Your suggestions must be a cohesive set of edits that work together. Critically analyze the existing shots and propose improvements across various cinematic domains. Your suggestions should be bold and transformative.
-    - **Critically rewrite shot descriptions:** Don't just tweak them. Rewrite them with more evocative, cinematic language that paints a vivid picture.
-    - **Propose specific camera work:** Use the provided cinematic vocabulary. Suggest new framing, movement, or lens choices to enhance the visual storytelling.
-    - **Enhance the plot:** Add small character actions, reveal details, or introduce moments of conflict to deepen the narrative.
-    - **Refine transitions:** Choose transitions that serve the pacing and mood, not just default cuts.
-    - **Inject mood and style:** Use lighting, pacing, and VFX to create a powerful and consistent atmosphere.
-
-**Available Cinematic Vocabulary (for 'enhancers' payload):**
-*   **framing:** [${FRAMING_OPTIONS.join(', ')}]
-*   **movement:** [${MOVEMENT_OPTIONS.join(', ')}]
-*   **lens:** [${LENS_OPTIONS.join(', ')}]
-*   **pacing:** [${PACING_OPTIONS.join(', ')}]
-*   **lighting:** [${LIGHTING_OPTIONS.join(', ')}]
-*   **mood:** [${MOOD_OPTIONS.join(', ')}]
-*   **vfx:** [${VFX_OPTIONS.join(', ')}]
-*   **plotEnhancements:** [${PLOT_ENHANCEMENTS_OPTIONS.join(', ')}]
-        
-**CRITICAL JSON FORMATTING INSTRUCTIONS - READ CAREFULLY, FAILURE HERE IS COMMON:**
-- Your ENTIRE output MUST be a single, valid JSON object. Do not include any text, explanations, or markdown formatting (like \`\`\`json) outside of this JSON object.
-- **THE MOST COMMON ERROR is improper quote handling inside strings.** This will break the entire system.
-    - **BAD (will fail):** \`{"description": "A character says, "Let's go!"."}\`
-    - **GOOD (escaped):** \`{"description": "A character says, \\"Let's go!\\""}\`
-    - **BETTER (use single quotes):** \`{"description": "A character says, 'Let's go!'."}\`
-- **YOUR PRIMARY GOAL is to produce VALID JSON.** The creative text is secondary to the structural integrity of the JSON.
-- When suggesting 'enhancers', you MUST use the exact string values provided in the "Available Cinematic Vocabulary" lists.
-
-**FINAL CHECKLIST BEFORE RESPONDING:**
-1.  Is the entire output a single JSON object and nothing else?
-2.  Have I checked EVERY string value for unescaped double quotes?
-3.  Have I used single quotes inside strings wherever possible to avoid this common error?
-4.  Are all values in the 'enhancers' payload taken directly from the provided vocabulary lists?
+**Your Task & CRITICAL JSON FORMATTING INSTRUCTIONS:**
+Your ENTIRE output MUST be a single, valid JSON object.
+- **AVOID UNESCAPED QUOTES inside strings.** Use single quotes or escape them (e.g., \\"quote\\"). This is the most common failure point.
+- **Thematic Concept (thematic_concept)**: A short, evocative theme (2-5 words).
+- **Reasoning (reasoning)**: Explain your strategy. How do the changes serve the objective and the overall story?
+- **Suggested Changes (suggested_changes)**: Provide a list of 5-8 specific, cohesive changes. Use the provided cinematic vocabulary. Be bold and transformative.
+- **Vocabulary (for 'enhancers' payload)**: Use exact string values from these lists:
+    *   framing: [${FRAMING_OPTIONS.join(', ')}]
+    *   movement: [${MOVEMENT_OPTIONS.join(', ')}]
+    *   lens: [${LENS_OPTIONS.join(', ')}]
+    *   pacing: [${PACING_OPTIONS.join(', ')}]
+    *   lighting: [${LIGHTING_OPTIONS.join(', ')}]
+    *   mood: [${MOOD_OPTIONS.join(', ')}]
+    *   vfx: [${VFX_OPTIONS.join(', ')}]
+    *   plotEnhancements: [${PLOT_ENHANCEMENTS_OPTIONS.join(', ')}]
     `;
     
-    // This defines the structure of the JSON we expect back from the model.
     const responseSchema = {
         type: Type.OBJECT,
         properties: {
-            thematic_concept: {
-                type: Type.STRING,
-                description: "A short, catchy thematic concept (2-5 words) that encapsulates the creative objective."
-            },
-            reasoning: {
-                type: Type.STRING,
-                description: "A brief explanation of the overall strategy for achieving the objective."
-            },
+            thematic_concept: { type: Type.STRING },
+            reasoning: { type: Type.STRING },
             suggested_changes: {
                 type: Type.ARRAY,
-                description: "A list of specific, actionable changes to the timeline.",
                 items: {
                     type: Type.OBJECT,
                     properties: {
-                        type: { 
-                            type: Type.STRING,
-                            description: "The type of change: 'UPDATE_SHOT', 'ADD_SHOT_AFTER', or 'UPDATE_TRANSITION'."
-                        },
-                        shot_id: { 
-                            type: Type.STRING,
-                            description: "The ID of the shot to update. Required for 'UPDATE_SHOT'."
-                        },
-                        after_shot_id: { 
-                            type: Type.STRING,
-                            description: "The ID of the shot after which to add a new shot. Required for 'ADD_SHOT_AFTER'."
-                        },
-                        transition_index: {
-                            type: Type.INTEGER,
-                            description: "The zero-based index of the transition to update. Required for 'UPDATE_TRANSITION'."
-                        },
+                        type: { type: Type.STRING, description: "'UPDATE_SHOT', 'ADD_SHOT_AFTER', 'UPDATE_TRANSITION'." },
+                        shot_id: { type: Type.STRING },
+                        after_shot_id: { type: Type.STRING },
+                        transition_index: { type: Type.INTEGER },
                         payload: {
                             type: Type.OBJECT,
-                            description: "An object containing the new data for the shot or transition.",
                             properties: {
                                 description: { type: Type.STRING },
                                 title: { type: Type.STRING },
                                 enhancers: { 
                                     type: Type.OBJECT,
-                                    description: "Cinematic style enhancers for the shot. All properties are optional.",
                                     properties: {
                                         framing: { type: Type.ARRAY, items: { type: Type.STRING } },
                                         movement: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -187,13 +180,10 @@ ${timelineString}
                                         plotEnhancements: { type: Type.ARRAY, items: { type: Type.STRING } },
                                     }
                                 },
-                                type: { type: Type.STRING } // For transitions
+                                type: { type: Type.STRING }
                             }
                         },
-                        description: {
-                            type: Type.STRING,
-                            description: "A human-readable description of the suggested change. IMPORTANT: Any double quotes within this string must be escaped, e.g., \\\"a quote\\\"."
-                        }
+                        description: { type: Type.STRING }
                     },
                     required: ['type', 'payload', 'description']
                 }
@@ -204,59 +194,35 @@ ${timelineString}
 
     try {
         const response = await ai.models.generateContent({
-            model: model,
+            model: 'gemini-2.5-pro',
             contents: prompt,
-            config: {
-                responseMimeType: 'application/json',
-                responseSchema: responseSchema,
-            },
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        
-        const jsonText = response.text.trim();
-        const result = JSON.parse(jsonText);
-
-        return result as CoDirectorResult;
-
+        return JSON.parse(response.text.trim()) as CoDirectorResult;
     } catch (error) {
-        console.error("Error getting co-director suggestions from Gemini:", error);
-        throw new Error("Failed to get suggestions. Please check the console for details.");
+        console.error("Error getting co-director suggestions:", error);
+        throw new Error(`Failed to get suggestions. ${commonError}`);
     }
 };
 
-
-/**
- * Generates a final, cohesive remix prompt from the timeline data.
- */
-export const generateRemixPrompt = async (timelineData: TimelineData): Promise<string> => {
+export const generateVideoPrompt = async (timelineData: TimelineData): Promise<string> => {
     const { shots, shotEnhancers, transitions, negativePrompt, positiveEnhancers } = timelineData;
-    const model = 'gemini-2.5-flash';
 
-    let detailedTimeline = '';
-    shots.forEach((shot, index) => {
-        detailedTimeline += `Shot ${index + 1}: ${shot.description}\n`;
+    let detailedTimeline = shots.map((shot, index) => {
+        let shotString = `Shot ${index + 1}: ${shot.description}\n`;
         const enhancers = shotEnhancers[shot.id];
         if (enhancers && Object.keys(enhancers).length > 0) {
-            detailedTimeline += '  Style: ';
             const styleElements = Object.entries(enhancers)
-                .map(([key, value]) => {
-                    if (Array.isArray(value) && value.length > 0) {
-                        // A simple way to make the key more readable
-                        const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                        return `${formattedKey}: ${value.join(', ')}`;
-                    }
-                    return null;
-                })
+                .map(([key, value]) => Array.isArray(value) && value.length > 0 ? `${key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}: ${value.join(', ')}` : null)
                 .filter(Boolean);
-            detailedTimeline += styleElements.join('; ') + '\n';
+            if(styleElements.length > 0) shotString += '  Style: ' + styleElements.join('; ') + '\n';
         }
-
-        if (index < transitions.length && transitions[index]) {
-            detailedTimeline += `\n--[${transitions[index]}]-->\n\n`;
-        }
-    });
+        const transition = (index < transitions.length && transitions[index]) ? `\n--[${transitions[index]}]-->\n\n` : '';
+        return shotString + transition;
+    }).join('');
 
     const prompt = `
-        You are an expert prompt engineer for a generative video AI. Your task is to synthesize a detailed cinematic timeline into a single, cohesive, and powerful generative prompt.
+        You are an expert prompt engineer for a generative video AI. Synthesize the provided cinematic timeline into a single, cohesive, and powerful generative prompt.
 
         **Provided Cinematic Timeline:**
         ${detailedTimeline}
@@ -267,12 +233,11 @@ export const generateRemixPrompt = async (timelineData: TimelineData): Promise<s
         ${positiveEnhancers ? `**Mandatory Realism Enhancers:**\n"${positiveEnhancers}"\n` : ''}
 
         **Your Task:**
-        Combine all the shot descriptions, cinematic styles, transitions, and global notes into one single paragraph. This prompt should be a fluid, descriptive narrative that an AI video generator can use to create the entire sequence.
-        ${positiveEnhancers ? '- You MUST integrate the concepts from the "Mandatory Realism Enhancers" throughout your description to ensure a photorealistic result.\n' : ''}
-        - Start with the global style notes if any are provided.
-        - Describe each shot and its specific style enhancers naturally within the narrative.
-        - Use the format "--[Transition Name]-->" to clearly indicate the transition between shots.
-        - The final output MUST be a single block of text. Do not use markdown formatting like backticks or lists. Just return the raw prompt text.
+        Combine all shot descriptions, styles, transitions, and global notes into one single paragraph. This prompt should be a fluid, descriptive narrative.
+        - Integrate concepts from "Mandatory Realism Enhancers" if provided.
+        - Naturally describe each shot and its style enhancers.
+        - Use the format "--[Transition Name]-->" to indicate transitions.
+        - The final output MUST be a single block of raw prompt text.
     `;
 
     try {
@@ -282,7 +247,7 @@ export const generateRemixPrompt = async (timelineData: TimelineData): Promise<s
         });
         return response.text.trim();
     } catch (error) {
-        console.error("Error generating remix prompt:", error);
-        throw new Error("Failed to generate the final remix prompt.");
+        console.error("Error generating video prompt:", error);
+        throw new Error("Failed to generate the final video prompt.");
     }
 };

@@ -1,17 +1,17 @@
 import React from 'react';
-import UploadCloudIcon from './icons/UploadCloudIcon';
-import SparklesIcon from './icons/SparklesIcon';
 import LightbulbIcon from './icons/LightbulbIcon';
+import BookOpenIcon from './icons/BookOpenIcon';
+import ClapperboardIcon from './icons/ClapperboardIcon';
 import TimelineIcon from './icons/TimelineIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 
-export type WorkflowStage = 'upload' | 'analyze' | 'direct' | 'refine';
+export type WorkflowStage = 'idea' | 'bible' | 'scenes' | 'director';
 
 const STAGES = [
-    { id: 'upload', name: 'Upload Video', icon: <UploadCloudIcon className="w-6 h-6 text-gray-300" /> },
-    { id: 'analyze', name: 'Analyze Action', icon: <SparklesIcon className="w-6 h-6 text-gray-300" /> },
-    { id: 'direct', name: 'Co-Direct Remix', icon: <LightbulbIcon className="w-6 h-6 text-gray-300" /> },
-    { id: 'refine', name: 'Fine-Tune Shots', icon: <TimelineIcon className="w-6 h-6 text-gray-300" /> },
+    { id: 'idea', name: 'Story Idea', icon: <LightbulbIcon className="w-6 h-6 text-gray-300" /> },
+    { id: 'bible', name: 'Story Bible', icon: <BookOpenIcon className="w-6 h-6 text-gray-300" /> },
+    { id: 'scenes', name: 'Scene List', icon: <ClapperboardIcon className="w-6 h-6 text-gray-300" /> },
+    { id: 'director', name: 'Direct Scene', icon: <TimelineIcon className="w-6 h-6 text-gray-300" /> },
 ];
 
 const WorkflowTracker: React.FC<{ currentStage: WorkflowStage }> = ({ currentStage }) => {
