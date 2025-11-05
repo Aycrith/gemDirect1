@@ -95,25 +95,35 @@ const SuggestionModal: React.FC<{
 const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, result, onApplySuggestion, onClose, onGetInspiration }) => {
     const [objective, setObjective] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
-    const [isInspiring, setIsInspiring] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
 
-    const handleSubmit = useCallback((e: React.FormEvent) => {
+    const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
         if (objective.trim()) {
-            onGetSuggestions(objective);
+            setIsProcessing(true);
             setSuggestions([]);
+            try {
+                await onGetSuggestions(objective);
+            } finally {
+                setIsProcessing(false);
+            }
         }
     }, [objective, onGetSuggestions]);
 
     const handleInspire = useCallback(async () => {
-        setIsInspiring(true);
+        setIsProcessing(true);
         setSuggestions([]);
-        const result = await onGetInspiration();
-        if (result) {
-            setSuggestions(result);
+        try {
+            const result = await onGetInspiration();
+            if (result) {
+                setSuggestions(result);
+            }
+        } finally {
+            setIsProcessing(false);
         }
-        setIsInspiring(false);
     }, [onGetInspiration]);
+
+    const isAnyActionLoading = isLoading || isProcessing;
 
     return (
         <div className="my-6">
@@ -138,7 +148,7 @@ const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, re
                      />
                      <button
                         type="submit"
-                        disabled={isLoading || !objective.trim()}
+                        disabled={isAnyActionLoading || !objective.trim()}
                         className="inline-flex items-center justify-center px-6 py-3 bg-yellow-600 text-white font-semibold rounded-md shadow-sm transition-colors hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:bg-gray-500 disabled:cursor-not-allowed"
                      >
                         {isLoading ? (
@@ -156,10 +166,10 @@ const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, re
                  <div className="mt-4 text-left">
                     <button 
                         onClick={handleInspire}
-                        disabled={isInspiring}
+                        disabled={isAnyActionLoading}
                         className="text-sm font-semibold text-yellow-400 hover:text-yellow-300 disabled:text-gray-500 flex items-center gap-2"
                     >
-                        {isInspiring ? (
+                        {isProcessing && !isLoading ? (
                              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>

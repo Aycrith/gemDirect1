@@ -89,7 +89,6 @@ const getPrunedContext = async (prompt: string, context: string, logApiCall: Api
             throw new Error(`The model returned an empty response for ${context}.`);
         }
         const result = text.trim();
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -182,7 +181,6 @@ export const generateStoryBible = async (idea: string, logApiCall: ApiLogCallbac
             throw new Error("The model returned an empty response for Story Bible.");
         }
         const result = JSON.parse(text.trim()) as StoryBible;
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -227,7 +225,6 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
             throw new Error("The model returned an empty response for scene list.");
         }
         const result = JSON.parse(text.trim());
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -265,7 +262,6 @@ export const generateInitialShotsForScene = async (
             throw new Error("The model returned an empty response for initial shots.");
         }
         const result = JSON.parse(text.trim());
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -291,7 +287,6 @@ export const suggestStoryIdeas = async (logApiCall: ApiLogCallback, onStateChang
             throw new Error("The model returned an empty response for story ideas.");
         }
         const result = JSON.parse(text.trim());
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -325,7 +320,6 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible, logApiCall
             throw new Error("The model returned an empty response for director's visions.");
         }
         const result = JSON.parse(text.trim());
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -369,7 +363,6 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
             throw new Error("The model returned an empty response for co-director objectives.");
         }
         const result = JSON.parse(text.trim());
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -377,49 +370,45 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
     return withRetry(apiCall, context, model, logApiCall, onStateChange);
 };
 
-export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleContext: StoryBible, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
-    const context = `refine ${field}`;
-    const currentValue = fullBibleContext[field];
-    const prompt = `You are an expert editor. A user is working on a story bible and wants to refine one section. Based on the full story context, revise the following **${field}** to be more compelling, concise, and cinematic.
+export const refineEntireStoryBible = async (storyBible: StoryBible, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
+    const context = 'refine entire Story Bible';
+    const prompt = `You are an expert editor and screenwriter. A user is working on a story bible and wants to holistically refine the entire document. Based on the full story context provided, revise **every field** (logline, characters, setting, plotOutline) to be more compelling, concise, and cinematic. Ensure the parts all work together harmoniously.
 
-    **Full Story Bible Context:**
-    - Logline: ${fullBibleContext.logline}
-    - Characters: ${fullBibleContext.characters}
-    - Setting: ${fullBibleContext.setting}
-    - Plot Outline: ${fullBibleContext.plotOutline}
-
-    **Current ${field.toUpperCase()} to Refine:**
-    "${currentValue}"
+    **Current Story Bible to Refine:**
+    ${JSON.stringify(storyBible, null, 2)}
 
     **Your Task & CRITICAL JSON FORMATTING:**
-    Your ENTIRE output must be a single, valid JSON object with a single key "refined_text".
-    - **CRITICAL:** If you use any double quotes (") inside the "refined_text" string, you MUST escape them with a backslash (\\").
-    - Do not add any text or markdown formatting before or after the JSON object.`;
+    Your ENTIRE output must be a single, valid JSON object with the exact same structure as the input ('logline', 'characters', 'setting', 'plotOutline').
+    - **CRITICAL:** All double quotes (") inside any string value must be properly escaped with a backslash (\\").
+    - Ensure the 'plotOutline' and 'characters' fields remain valid markdown.`;
 
     const responseSchema = {
         type: Type.OBJECT,
-        properties: { refined_text: { type: Type.STRING } },
-        required: ['refined_text'],
+        properties: {
+            logline: { type: Type.STRING },
+            characters: { type: Type.STRING },
+            setting: { type: Type.STRING },
+            plotOutline: { type: Type.STRING },
+        },
+        required: ['logline', 'characters', 'setting', 'plotOutline'],
     };
 
     const apiCall = async () => {
         const response = await ai.models.generateContent({
-            model: model,
+            model: proModel, // Use the more powerful model for this holistic task
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
         const text = response.text;
         if (!text) {
-            throw new Error(`The model returned an empty response when refining ${field}.`);
+            throw new Error(`The model returned an empty response when refining the story bible.`);
         }
-        const parsed = JSON.parse(text.trim());
-        const result = parsed.refined_text;
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const result = JSON.parse(text.trim());
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
 
-    return withRetry(apiCall, context, model, logApiCall, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 export const batchProcessShotEnhancements = async (
@@ -496,7 +485,6 @@ export const batchProcessShotEnhancements = async (
             throw new Error("The model returned an empty response for batch processing.");
         }
         const result = JSON.parse(text.trim()) as BatchShotResult[];
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -534,7 +522,6 @@ export const analyzeVideoFrames = async (frames: string[], logApiCall: ApiLogCal
             throw new Error("The model returned an empty response for video frame analysis.");
         }
         const result = text.trim();
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -640,7 +627,6 @@ Your ENTIRE output must be a single, valid JSON object that perfectly adheres to
             throw new Error("The model returned an empty response for continuity scoring.");
         }
         const result = JSON.parse(text.trim()) as ContinuityResult;
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -706,7 +692,6 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
         if (part?.inlineData) {
             const result = part.inlineData.data;
             // Image models don't return token usage, so we log 0 tokens but the call is still tracked.
-            // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
             const tokens = response.usageMetadata?.totalTokenCount || 0;
             return { result, tokens };
         }
@@ -824,7 +809,6 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
             throw new Error("The model returned an empty response for co-director suggestions. This could be due to a content safety block.");
         }
         const result = JSON.parse(text.trim()) as CoDirectorResult;
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
@@ -881,7 +865,6 @@ export const generateVideoPrompt = async (timelineData: TimelineData, directorsV
             throw new Error("The model returned an empty response for the video prompt.");
         }
         const result = text.trim();
-        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };

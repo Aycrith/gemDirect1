@@ -240,6 +240,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const handleSuggestEnhancers = useCallback((shot: Shot) => {
         queueTask(shot, 'SUGGEST_ENHANCERS');
     }, [queueTask]);
+
+    const handleRefineAllDescriptions = useCallback(() => {
+        shots.forEach(shot => queueTask(shot, 'REFINE_DESCRIPTION'));
+    }, [shots, queueTask]);
+
+    const handleSuggestEnhancersForAll = useCallback(() => {
+        shots.forEach(shot => queueTask(shot, 'SUGGEST_ENHANCERS'));
+    }, [shots, queueTask]);
     // --- End of Batching Logic ---
 
 
@@ -318,6 +326,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         onGeneratePrompt(timelineData);
     }, [buildTimelineData, onGeneratePrompt]);
     
+    const isProcessingSuggestions = suggestionState.processingIds.size > 0;
+
     return (
         <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-lg p-6">
             {imageUrl && (
@@ -332,6 +342,18 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 Director's Console
             </h2>
              <p className="text-sm text-gray-400 mb-6">Now directing: <span className="font-bold text-gray-200">{scene.title}</span></p>
+
+             <div className="bg-gray-900/30 p-3 rounded-md border border-gray-700 mb-6">
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                    <p className="text-sm font-semibold text-gray-300">AI Bulk Actions:</p>
+                    <button onClick={handleRefineAllDescriptions} disabled={isProcessingSuggestions} className="text-xs font-semibold px-3 py-1.5 rounded-full bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors flex items-center gap-2">
+                        <SparklesIcon className="w-4 h-4" /> Refine All Descriptions
+                    </button>
+                    <button onClick={handleSuggestEnhancersForAll} disabled={isProcessingSuggestions} className="text-xs font-semibold px-3 py-1.5 rounded-full bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors flex items-center gap-2">
+                       <SparklesIcon className="w-4 h-4" /> Suggest Enhancers for All
+                    </button>
+                </div>
+             </div>
 
             <div className="space-y-4">
                 {shots.map((shot, index) => (
