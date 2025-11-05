@@ -73,7 +73,6 @@ export interface CoDirectorResult {
   suggested_changes: Suggestion[];
 }
 
-// FIX: Add missing type definitions for video continuity analysis features.
 export interface ContinuityResult {
   scores: {
     narrative_coherence: number;

@@ -13,7 +13,6 @@ interface ContinuityCardProps {
   narrativeContext: string;
   directorsVision: string;
   generatedImage: string;
-  videoPrompt: string;
   data: SceneContinuityData;
   setContinuityData: (updater: React.SetStateAction<SceneContinuityData>) => void;
   addToast: (message: string, type: ToastMessage['type']) => void;
@@ -99,7 +98,6 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   narrativeContext,
   directorsVision,
   generatedImage,
-  videoPrompt,
   data,
   setContinuityData,
   addToast,
@@ -163,12 +161,14 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
             <div className="bg-gray-800 p-4 space-y-4">
                 <h4 className="font-semibold text-gray-300">Creative Intent</h4>
                 <div>
-                    <p className="text-xs text-gray-500 mb-2">Generated Keyframe</p>
-                    <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover" />
-                </div>
-                <div>
-                    <p className="text-xs text-gray-500 mb-2">Generated Video Prompt</p>
-                    <p className="text-sm text-gray-400 font-mono bg-gray-900/50 p-3 rounded-md">{videoPrompt}</p>
+                    <p className="text-xs text-gray-500 mb-2">Last known keyframe for this scene</p>
+                    {generatedImage ? (
+                        <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover" />
+                    ) : (
+                        <div className="aspect-video bg-gray-900/50 flex items-center justify-center rounded-lg">
+                            <p className="text-xs text-gray-500">No keyframe generated</p>
+                        </div>
+                    )}
                 </div>
             </div>
 

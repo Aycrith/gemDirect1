@@ -9,7 +9,6 @@ interface ContinuityDirectorProps {
   storyBible: StoryBible;
   directorsVision: string;
   generatedImages: Record<string, string>;
-  videoPrompts: Record<string, string>;
   continuityData: Record<string, SceneContinuityData>;
   setContinuityData: React.Dispatch<React.SetStateAction<Record<string, SceneContinuityData>>>;
   addToast: (message: string, type: ToastMessage['type']) => void;
@@ -22,7 +21,6 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
   storyBible,
   directorsVision,
   generatedImages,
-  videoPrompts,
   continuityData,
   setContinuityData,
   addToast,
@@ -97,7 +95,6 @@ CONTEXT FROM ADJACENT SCENES:
             narrativeContext={getNarrativeContext(scene.id)}
             directorsVision={directorsVision}
             generatedImage={generatedImages[scene.id]}
-            videoPrompt={videoPrompts[scene.id]}
             data={continuityData[scene.id] || { status: 'idle' }}
             setContinuityData={(updater) => {
               setContinuityData(prev => ({

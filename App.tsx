@@ -6,7 +6,8 @@ import TimelineEditor from './components/TimelineEditor';
 import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import ContinuityDirector from './components/ContinuityDirector';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateSceneImage, suggestCoDirectorObjectives, generateVideoPrompt, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback } from './services/geminiService';
+import FinalPromptModal from './components/FinalPromptModal';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateVideoPrompt } from './services/geminiService';
 import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
@@ -23,6 +24,12 @@ const emptyTimeline: TimelineData = {
     shotEnhancers: {},
     transitions: [],
     negativePrompt: '',
+};
+
+type GenerationModalState = {
+    isOpen: boolean;
+    sceneId: string | null;
+    jsonPayload: string | null;
 };
 
 const AppContent: React.FC = () => {
@@ -47,34 +54,29 @@ const AppContent: React.FC = () => {
     const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
     
     // Generation State
-    const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({});
-    const [generatedPrompts, setGeneratedPrompts] = useState<Record<string, string>>({});
+    const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({}); // Keyframes
     const [continuityData, setContinuityData] = useState<Record<string, SceneContinuityData>>({});
-
-    const [generationStatus, setGenerationStatus] = useState<{
-        sceneId: string | null;
-        type: 'image' | 'prompt' | null;
-        status: 'idle' | 'generating' | 'success' | 'error';
-        error: string | null;
-    }>({ sceneId: null, type: null, status: 'idle', error: null });
+    
+    const [generationModalState, setGenerationModalState] = useState<GenerationModalState>({
+        isOpen: false, sceneId: null, jsonPayload: null
+    });
 
     // UI and Loading State
-    const [isLoading, setIsLoading] = useState(true); // Start true for DB load
+    const [isLoading, setIsLoading] = useState(true);
     const [loadingMessage, setLoadingMessage] = useState('Loading project...');
     const [coDirectorResult, setCoDirectorResult] = useState<CoDirectorResult | null>(null);
     const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-    // --- Load project from DB on initial render ---
+
     useEffect(() => {
         const loadProject = async () => {
             try {
-                const [bible, savedScenes, vision, images, prompts, savedContinuityData, savedStage] = await Promise.all([
+                const [bible, savedScenes, vision, images, savedContinuityData, savedStage] = await Promise.all([
                     db.getStoryBible(),
                     db.getAllScenes(),
                     db.getData('directorsVision'),
                     db.getData('generatedImages'),
-                    db.getData('generatedPrompts'),
                     db.getData('continuityData'),
                     db.getData('workflowStage'),
                 ]);
@@ -84,7 +86,6 @@ const AppContent: React.FC = () => {
                     setScenes(savedScenes || []);
                     setDirectorsVision(vision || '');
                     setGeneratedImages(images || {});
-                    setGeneratedPrompts(prompts || {});
                     setContinuityData(savedContinuityData || {});
                     
                     let loadedStage: WorkflowStage = savedStage || 'bible';
@@ -111,7 +112,6 @@ const AppContent: React.FC = () => {
         loadProject();
     }, []);
     
-    // --- Toast Notifications ---
     const removeToast = useCallback((id: number) => {
         setToasts(prev => prev.filter(toast => toast.id !== id));
     }, []);
@@ -122,31 +122,22 @@ const AppContent: React.FC = () => {
         setTimeout(() => removeToast(id), 5000);
     }, [removeToast]);
     
-    // --- Context Optimization ---
     const getNarrativeContext = useCallback((sceneId: string): string => {
         if (!storyBible || !scenes.length) return '';
-        
         const sceneIndex = scenes.findIndex(s => s.id === sceneId);
-        const scene = scenes[sceneIndex];
         if (sceneIndex === -1) return '';
-
         const plotLines = storyBible.plotOutline.split('\n');
-        const actStarts: Record<string, number> = {
+        const actStarts = {
             'act i': plotLines.findIndex(l => l.toLowerCase().includes('act i')),
             'act ii': plotLines.findIndex(l => l.toLowerCase().includes('act ii')),
             'act iii': plotLines.findIndex(l => l.toLowerCase().includes('act iii')),
         };
-
         const sceneFraction = scenes.length > 1 ? sceneIndex / (scenes.length - 1) : 0;
         let currentActKey: 'act i' | 'act ii' | 'act iii' = 'act i';
-        if (actStarts['act iii'] !== -1 && sceneFraction >= 0.7) {
-            currentActKey = 'act iii';
-        } else if (actStarts['act ii'] !== -1 && sceneFraction >= 0.3) {
-            currentActKey = 'act ii';
-        }
-
-        let actText = '';
+        if (actStarts['act iii'] !== -1 && sceneFraction >= 0.7) currentActKey = 'act iii';
+        else if (actStarts['act ii'] !== -1 && sceneFraction >= 0.3) currentActKey = 'act ii';
         const start = actStarts[currentActKey];
+        let actText = '';
         if (start !== -1) {
             let end: number | undefined;
             if (currentActKey === 'act i') end = actStarts['act ii'] !== -1 ? actStarts['act ii'] : actStarts['act iii'];
@@ -155,21 +146,11 @@ const AppContent: React.FC = () => {
         } else {
             actText = storyBible.plotOutline;
         }
-
         const prevSceneSummary = sceneIndex > 0 ? `PREVIOUS SCENE: ${scenes[sceneIndex - 1].summary}` : 'This is the opening scene.';
         const nextSceneSummary = sceneIndex < scenes.length - 1 ? `NEXT SCENE: ${scenes[sceneIndex + 1].summary}` : 'This is the final scene.';
-
-        return `
-This scene, "${scene.title}", occurs within the following narrative act:
-${actText}
-
-CONTEXT FROM ADJACENT SCENES:
-- ${prevSceneSummary}
-- ${nextSceneSummary}
-      `.trim();
+        return `This scene occurs within:\n${actText}\nContext:\n- ${prevSceneSummary}\n- ${nextSceneSummary}`.trim();
     }, [storyBible, scenes]);
 
-    // --- Core Workflow Handlers ---
     const handleStoryBibleSubmit = async (idea: string) => {
         setIsLoading(true);
         setLoadingMessage('Generating your story bible...');
@@ -179,12 +160,10 @@ CONTEXT FROM ADJACENT SCENES:
             setWorkflowStage('bible');
             addToast('Story bible generated!', 'success');
         } catch (error) {
-            console.error(error);
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             addToast(`Failed to generate story bible: ${errorMessage}`, 'error');
         } finally {
             setIsLoading(false);
-            setLoadingMessage('');
         }
     };
     
@@ -196,22 +175,17 @@ CONTEXT FROM ADJACENT SCENES:
             if (!storyBible) throw new Error("Story bible not available.");
             const sceneList = await generateSceneList(storyBible.plotOutline, vision, handleApiLog, handleApiStateChange);
             const newScenes: Scene[] = sceneList.map((s, i) => ({
-                id: `scene_${Date.now()}_${i}`,
-                title: s.title,
-                summary: s.summary,
-                timeline: emptyTimeline
+                id: `scene_${Date.now()}_${i}`, title: s.title, summary: s.summary, timeline: emptyTimeline
             }));
             setScenes(newScenes);
             setActiveSceneId(newScenes[0].id);
             setWorkflowStage('director');
             addToast('Scene list generated!', 'success');
         } catch (error) {
-            console.error(error);
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             addToast(`Failed to generate scenes: ${errorMessage}`, 'error');
         } finally {
             setIsLoading(false);
-            setLoadingMessage('');
         }
     };
 
@@ -223,86 +197,55 @@ CONTEXT FROM ADJACENT SCENES:
             setLoadingMessage(`Generating initial shots for "${selectedScene.title}"...`);
             try {
                 if (!storyBible || !directorsVision) throw new Error("Missing context for shot generation.");
-                
                 const prunedContext = await getPrunedContextForShotGeneration(storyBible, getNarrativeContext(sceneId), selectedScene.summary, directorsVision, handleApiLog, handleApiStateChange);
                 const shotDescriptions = await generateInitialShotsForScene(prunedContext, handleApiLog, handleApiStateChange);
-
-                const newShots: Shot[] = shotDescriptions.map(desc => ({
-                    id: `shot_${Date.now()}_${Math.random()}`,
-                    description: desc
-                }));
+                const newShots: Shot[] = shotDescriptions.map(desc => ({ id: `shot_${Date.now()}_${Math.random()}`, description: desc }));
                 const newTransitions = new Array(newShots.length - 1).fill('Cut');
-                
                 setScenes(prevScenes => prevScenes.map(s =>
                     s.id === sceneId ? { ...s, timeline: { ...s.timeline, shots: newShots, transitions: newTransitions } } : s
                 ));
                 addToast(`Initial shots generated for ${selectedScene.title}`, 'success');
             } catch (error) {
-                console.error(error);
                 const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
                 addToast(`Failed to generate initial shots: ${errorMessage}`, 'error');
             } finally {
                 setIsLoading(false);
-                setLoadingMessage('');
             }
         }
     };
     
     const handleProceedToReview = () => setWorkflowStage('continuity');
 
-    // --- Timeline & Generation Handlers ---
     const updateActiveSceneTimeline = useCallback((updater: (prevTimeline: TimelineData) => TimelineData) => {
         if (!activeSceneId) return;
         setScenes(prevScenes =>
-            prevScenes.map(scene =>
-                scene.id === activeSceneId
-                    ? { ...scene, timeline: updater(scene.timeline) }
-                    : scene
-            )
+            prevScenes.map(scene => scene.id === activeSceneId ? { ...scene, timeline: updater(scene.timeline) } : scene)
         );
     }, [activeSceneId]);
 
-    const handleGenerateImage = async (timelineData: TimelineData) => {
-        if (!activeSceneId) return;
-        setGenerationStatus({ sceneId: activeSceneId, type: 'image', status: 'generating', error: null });
-        try {
-            if (!directorsVision) throw new Error("Director's vision is required.");
-            const base64Image = await generateSceneImage(timelineData, directorsVision, handleApiLog, handleApiStateChange);
-            setGeneratedImages(prev => ({ ...prev, [activeSceneId]: base64Image }));
-            setGenerationStatus({ sceneId: activeSceneId, type: 'image', status: 'success', error: null });
-            addToast('Scene keyframe rendered!', 'success');
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.error(error);
-            setGenerationStatus({ sceneId: activeSceneId, type: 'image', status: 'error', error: errorMessage });
-            addToast(`Image generation failed: ${errorMessage}`, 'error');
-        }
-    };
+    const handleGenerateVideo = async (sceneId: string, timelineData: TimelineData) => {
+        const activeScene = scenes.find(s => s.id === sceneId);
+        if (!directorsVision || !activeScene) return;
 
-    const handleGeneratePrompt = async (timelineData: TimelineData) => {
-        if (!activeSceneId) return;
-        setGenerationStatus({ sceneId: activeSceneId, type: 'prompt', status: 'generating', error: null });
         try {
-            if (!directorsVision) throw new Error("Director's vision is required.");
-            const prompt = await generateVideoPrompt(timelineData, directorsVision, handleApiLog, handleApiStateChange);
-            setGeneratedPrompts(prev => ({ ...prev, [activeSceneId]: prompt }));
-            setGenerationStatus({ sceneId: activeSceneId, type: 'prompt', status: 'success', error: null });
-            addToast('Final prompt generated!', 'success');
+            const payloadObject = generateVideoPrompt(
+                timelineData, 
+                directorsVision,
+                { title: activeScene.title, summary: activeScene.summary }
+            );
+            const jsonPayload = JSON.stringify(payloadObject, null, 2);
+            setGenerationModalState({ isOpen: true, sceneId, jsonPayload });
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error creating payload';
             console.error(error);
-            setGenerationStatus({ sceneId: activeSceneId, type: 'prompt', status: 'error', error: errorMessage });
-            addToast(`Prompt generation failed: ${errorMessage}`, 'error');
+            addToast(`Failed to generate request: ${errorMessage}`, 'error');
         }
     };
 
     const handleGetCoDirectorSuggestions = async (objective: string) => {
         if (!activeSceneId) return;
         const activeScene = scenes.find(s => s.id === activeSceneId);
-        if (!activeScene || !storyBible || !directorsVision) {
-            addToast('Cannot get suggestions without full context.', 'error');
-            return;
-        }
+        if (!activeScene || !storyBible || !directorsVision) return;
 
         setIsCoDirectorLoading(true);
         setCoDirectorResult(null);
@@ -312,7 +255,6 @@ CONTEXT FROM ADJACENT SCENES:
             setCoDirectorResult(result);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.error(error);
             addToast(`Co-Director failed: ${errorMessage}`, 'error');
         } finally {
             setIsCoDirectorLoading(false);
@@ -320,31 +262,24 @@ CONTEXT FROM ADJACENT SCENES:
     };
     
     const handleApplySuggestion = (suggestion: Suggestion) => {
-        const { type, payload } = suggestion;
         updateActiveSceneTimeline(prev => {
             let newShots = [...prev.shots];
             let newEnhancers = { ...prev.shotEnhancers };
             let newTransitions = [...prev.transitions];
-
-            if (type === 'UPDATE_SHOT' && suggestion.shot_id) {
-                newShots = newShots.map(s => s.id === suggestion.shot_id ? { ...s, description: payload.description || s.description } : s);
-                if (payload.enhancers) {
-                    newEnhancers[suggestion.shot_id] = { ...newEnhancers[suggestion.shot_id], ...payload.enhancers };
-                }
-            } else if (type === 'ADD_SHOT_AFTER' && suggestion.after_shot_id) {
-                const newShot: Shot = { id: `shot_${Date.now()}`, description: payload.description || '', title: payload.title };
+            if (suggestion.type === 'UPDATE_SHOT' && suggestion.shot_id) {
+                newShots = newShots.map(s => s.id === suggestion.shot_id ? { ...s, description: suggestion.payload.description || s.description } : s);
+                if (suggestion.payload.enhancers) newEnhancers[suggestion.shot_id] = { ...newEnhancers[suggestion.shot_id], ...suggestion.payload.enhancers };
+            } else if (suggestion.type === 'ADD_SHOT_AFTER' && suggestion.after_shot_id) {
+                const newShot: Shot = { id: `shot_${Date.now()}`, description: suggestion.payload.description || '', title: suggestion.payload.title };
                 const index = newShots.findIndex(s => s.id === suggestion.after_shot_id);
                 if (index > -1) {
                     newShots.splice(index + 1, 0, newShot);
                     newTransitions.splice(index + 1, 0, 'Cut');
-                    if (payload.enhancers) newEnhancers[newShot.id] = payload.enhancers;
+                    if (suggestion.payload.enhancers) newEnhancers[newShot.id] = suggestion.payload.enhancers;
                 }
-            } else if (type === 'UPDATE_TRANSITION' && suggestion.transition_index !== undefined) {
-                if (suggestion.transition_index < newTransitions.length) {
-                    newTransitions[suggestion.transition_index] = payload.type || newTransitions[suggestion.transition_index];
-                }
+            } else if (suggestion.type === 'UPDATE_TRANSITION' && suggestion.transition_index !== undefined) {
+                if (suggestion.transition_index < newTransitions.length) newTransitions[suggestion.transition_index] = suggestion.payload.type || newTransitions[suggestion.transition_index];
             }
-
             return { ...prev, shots: newShots, shotEnhancers: newEnhancers, transitions: newTransitions };
         });
         addToast("Co-Director's suggestion applied!", "success");
@@ -358,37 +293,30 @@ CONTEXT FROM ADJACENT SCENES:
             if (scenes.length > 0) await db.saveScenes(scenes);
             if (directorsVision) await db.saveData('directorsVision', directorsVision);
             if (Object.keys(generatedImages).length > 0) await db.saveData('generatedImages', generatedImages);
-            if (Object.keys(generatedPrompts).length > 0) await db.saveData('generatedPrompts', generatedPrompts);
             if (Object.keys(continuityData).length > 0) await db.saveData('continuityData', continuityData);
             await db.saveData('workflowStage', workflowStage);
             addToast("Project Saved Successfully!", "success");
         } catch (error) {
-            console.error("Failed to save project", error);
             addToast("Error saving project.", "error");
         } finally {
             setIsLoading(false);
-            setLoadingMessage("");
         }
-    }, [storyBible, scenes, directorsVision, generatedImages, generatedPrompts, continuityData, workflowStage, addToast]);
+    }, [storyBible, scenes, directorsVision, generatedImages, continuityData, workflowStage, addToast]);
     
     const handleClearProject = async () => {
-        if (window.confirm("Are you sure you want to delete all data and start a new project? This cannot be undone.")) {
+        if (window.confirm("Are you sure you want to delete all data?")) {
             await db.clearProjectData();
             window.location.reload();
         }
     };
     
-    // --- Memoized Values for Performance ---
     const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
     const activeSceneIndex = useMemo(() => scenes.findIndex(s => s.id === activeSceneId), [scenes, activeSceneId]);
     const nextScene = useMemo(() => (activeSceneIndex > -1 && activeSceneIndex < scenes.length - 1) ? scenes[activeSceneIndex + 1] : null, [scenes, activeSceneIndex]);
     
     const handleGoToNextScene = useCallback(() => {
-        if (nextScene) {
-            handleSceneSelect(nextScene.id);
-        }
+        if (nextScene) handleSceneSelect(nextScene.id);
     }, [nextScene]);
-
 
     const renderContent = () => {
         if (isLoading) {
@@ -435,21 +363,17 @@ CONTEXT FROM ADJACENT SCENES:
                                     storyBible={storyBible!}
                                     directorsVision={directorsVision}
                                     narrativeContext={getNarrativeContext(activeScene.id)}
-                                    imageUrl={generatedImages[activeScene.id]}
                                     setShots={updater => updateActiveSceneTimeline(t => ({ ...t, shots: typeof updater === 'function' ? updater(t.shots) : updater }))}
                                     setShotEnhancers={updater => updateActiveSceneTimeline(t => ({ ...t, shotEnhancers: typeof updater === 'function' ? updater(t.shotEnhancers) : updater }))}
                                     setTransitions={updater => updateActiveSceneTimeline(t => ({ ...t, transitions: typeof updater === 'function' ? updater(t.transitions) : updater }))}
                                     setNegativePrompt={updater => updateActiveSceneTimeline(t => ({ ...t, negativePrompt: typeof updater === 'function' ? updater(t.negativePrompt) : updater }))}
-                                    onGenerateImage={handleGenerateImage}
-                                    isGeneratingImage={generationStatus.type === 'image' && generationStatus.status === 'generating'}
                                     onGoToNextScene={handleGoToNextScene}
                                     nextScene={nextScene}
-                                    onGeneratePrompt={handleGeneratePrompt}
-                                    isGeneratingPrompt={generationStatus.type === 'prompt' && generationStatus.status === 'generating'}
-                                    generatedPrompt={generatedPrompts[activeScene.id]}
                                     onProceedToReview={handleProceedToReview}
                                     onApiStateChange={handleApiStateChange}
                                     onApiLog={handleApiLog}
+                                    onGenerateVideo={handleGenerateVideo}
+                                    sceneContinuity={continuityData[activeScene.id]}
                                 />
                             </div>
                         </div>
@@ -464,7 +388,6 @@ CONTEXT FROM ADJACENT SCENES:
                             storyBible={storyBible}
                             directorsVision={directorsVision}
                             generatedImages={generatedImages}
-                            videoPrompts={generatedPrompts}
                             continuityData={continuityData}
                             setContinuityData={setContinuityData}
                             addToast={addToast}
@@ -482,6 +405,11 @@ CONTEXT FROM ADJACENT SCENES:
     return (
         <div className="min-h-screen bg-gray-900 text-gray-100">
             <Toast toasts={toasts} removeToast={removeToast} />
+            <FinalPromptModal
+                isOpen={generationModalState.isOpen}
+                onClose={() => setGenerationModalState({ isOpen: false, sceneId: null, jsonPayload: null })}
+                jsonPayload={generationModalState.jsonPayload}
+            />
             <main className="container mx-auto px-4 py-8">
                 <header className="text-center mb-12">
                     <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-500 to-pink-500">Cinematic Story Generator</h1>
