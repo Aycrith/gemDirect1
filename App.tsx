@@ -200,7 +200,7 @@ const AppContent: React.FC = () => {
                 const prunedContext = await getPrunedContextForShotGeneration(storyBible, getNarrativeContext(sceneId), selectedScene.summary, directorsVision, handleApiLog, handleApiStateChange);
                 const shotDescriptions = await generateInitialShotsForScene(prunedContext, handleApiLog, handleApiStateChange);
                 const newShots: Shot[] = shotDescriptions.map(desc => ({ id: `shot_${Date.now()}_${Math.random()}`, description: desc }));
-                const newTransitions = new Array(newShots.length - 1).fill('Cut');
+                const newTransitions = newShots.length > 1 ? new Array(newShots.length - 1).fill('Cut') : [];
                 setScenes(prevScenes => prevScenes.map(s =>
                     s.id === sceneId ? { ...s, timeline: { ...s.timeline, shots: newShots, transitions: newTransitions } } : s
                 ));

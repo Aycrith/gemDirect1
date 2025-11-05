@@ -173,7 +173,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const processTaskQueue = useCallback(async () => {
         if (queuedTasks.size === 0) return;
 
-        // FIX: Use .values() to get an iterable of the map's values, not [key, value] pairs.
         const tasksToProcess = Array.from(queuedTasks.values());
         setQueuedTasks(new Map());
 
@@ -200,7 +199,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const queueTask = useCallback((shot: Shot, action: 'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS') => {
         setSuggestionState(prev => ({ processingIds: new Set(prev.processingIds).add(shot.id) }));
-        setQueuedTasks((prevQueue) => {
+        // FIX: Explicitly type `prevQueue` to prevent TypeScript from inferring it as `Map<unknown, unknown>`,
+        // which was causing a cascade of type errors downstream.
+        setQueuedTasks((prevQueue: Map<string, BatchShotTask>) => {
             const newQueue = new Map(prevQueue);
             const existingTask = newQueue.get(shot.id);
             if (existingTask) {
@@ -290,10 +291,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             <div className="bg-gray-900/30 p-3 rounded-md border border-gray-700 mb-6">
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                     <p className="text-sm font-semibold text-gray-300">AI Bulk Actions:</p>
-                    <button onClick={handleRefineAllDescriptions} disabled={isProcessingSuggestions} className="text-xs font-semibold px-3 py-1.5 rounded-full bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors flex items-center gap-2">
+                    <button onClick={handleRefineAllDescriptions} disabled={isProcessingSuggestions || shots.length === 0} className="text-xs font-semibold px-3 py-1.5 rounded-full bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors flex items-center gap-2">
                         <SparklesIcon className="w-4 h-4" /> Refine All Descriptions
                     </button>
-                    <button onClick={handleSuggestEnhancersForAll} disabled={isProcessingSuggestions} className="text-xs font-semibold px-3 py-1.5 rounded-full bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors flex items-center gap-2">
+                    <button onClick={handleSuggestEnhancersForAll} disabled={isProcessingSuggestions || shots.length === 0} className="text-xs font-semibold px-3 py-1.5 rounded-full bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors flex items-center gap-2">
                        <SparklesIcon className="w-4 h-4" /> Suggest Enhancers for All
                     </button>
                 </div>
