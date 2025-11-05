@@ -5,7 +5,7 @@ import SceneNavigator from './components/SceneNavigator';
 import TimelineEditor from './components/TimelineEditor';
 import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateSceneImage } from './services/geminiService';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateSceneImage, suggestCoDirectorObjectives, generateVideoPrompt } from './services/geminiService';
 import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
@@ -33,7 +33,7 @@ const App: React.FC = () => {
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
     
-    // Image Generation State
+    // Generation State
     const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({});
     const [imageGenerationState, setImageGenerationState] = useState<{
         sceneId: string | null;
@@ -41,6 +41,9 @@ const App: React.FC = () => {
         error: string | null;
     }>({ sceneId: null, status: 'idle', error: null });
     const isGeneratingImage = imageGenerationState.status === 'generating';
+    
+    const [videoPrompts, setVideoPrompts] = useState<Record<string, string>>({});
+    const [isVideoPromptGenerating, setIsVideoPromptGenerating] = useState(false);
 
     // UI and Loading State
     const [isLoading, setIsLoading] = useState(false);
@@ -203,6 +206,19 @@ const App: React.FC = () => {
         }
     }, [storyBible, activeScene, directorsVision, addToast]);
 
+    const handleGetCoDirectorInspiration = useCallback(async () => {
+        if (!storyBible || !activeScene) {
+            addToast('Please select a scene first to get inspiration.', 'error');
+            return;
+        };
+        try {
+            const objectives = await suggestCoDirectorObjectives(storyBible, activeScene, directorsVision);
+            return objectives;
+        } catch (error) {
+            addToast(error instanceof Error ? error.message : 'Failed to get inspiration', 'error');
+        }
+    }, [storyBible, activeScene, directorsVision, addToast]);
+
     const handleApplySuggestion = useCallback((suggestion: Suggestion) => {
         if (!activeSceneId) return;
 
@@ -248,7 +264,7 @@ const App: React.FC = () => {
         addToast('Suggestion applied!', 'success');
     }, [activeSceneId, addToast]);
     
-    // --- Scene Image Generation ---
+    // --- Scene Generation ---
     const handleGenerateImageForScene = useCallback(async (timelineData: TimelineData, sceneId: string) => {
         if (timelineData.shots.length === 0) {
             addToast('Cannot generate an image from an empty timeline.', 'error');
@@ -280,6 +296,19 @@ const App: React.FC = () => {
             setImageGenerationState({ sceneId, status: 'error', error: errorMessage });
         }
     }, [addToast, scenes, generatedImages, directorsVision]);
+
+    const handleGenerateVideoPrompt = useCallback(async (timelineData: TimelineData, sceneId: string) => {
+        setIsVideoPromptGenerating(true);
+        try {
+            const prompt = await generateVideoPrompt(timelineData, directorsVision);
+            setVideoPrompts(prev => ({ ...prev, [sceneId]: prompt }));
+            addToast('Video prompt generated!', 'success');
+        } catch (error) {
+            addToast(error instanceof Error ? error.message : 'Failed to generate video prompt.', 'error');
+        } finally {
+            setIsVideoPromptGenerating(false);
+        }
+    }, [directorsVision, addToast]);
 
      const handleGoToNextScene = useCallback(() => {
         const currentSceneIndex = scenes.findIndex(s => s.id === activeSceneId);
@@ -324,7 +353,14 @@ const App: React.FC = () => {
                             )}
                             {activeScene && storyBible && (
                                 <div className="space-y-8">
-                                     <CoDirector onGetSuggestions={handleGetCoDirectorSuggestions} isLoading={isCoDirectorLoading} result={coDirectorResult} onApplySuggestion={handleApplySuggestion} onClose={() => setCoDirectorResult(null)} />
+                                     <CoDirector 
+                                        onGetSuggestions={handleGetCoDirectorSuggestions} 
+                                        isLoading={isCoDirectorLoading} 
+                                        result={coDirectorResult} 
+                                        onApplySuggestion={handleApplySuggestion} 
+                                        onClose={() => setCoDirectorResult(null)} 
+                                        onGetInspiration={handleGetCoDirectorInspiration}
+                                    />
                                      <TimelineEditor
                                         key={activeScene.id}
                                         scene={activeScene}
@@ -339,6 +375,9 @@ const App: React.FC = () => {
                                         isGeneratingImage={isGeneratingImage && imageGenerationState.sceneId === activeScene.id}
                                         onGoToNextScene={handleGoToNextScene}
                                         nextScene={nextScene}
+                                        onGenerateVideoPrompt={(timelineData) => handleGenerateVideoPrompt(timelineData, activeScene.id)}
+                                        isGeneratingVideoPrompt={isVideoPromptGenerating}
+                                        generatedVideoPrompt={videoPrompts[activeScene.id] || null}
                                     />
                                 </div>
                             )}

@@ -161,6 +161,44 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<s
     }
 };
 
+export const suggestCoDirectorObjectives = async (storyBible: StoryBible, scene: Scene, directorsVision: string): Promise<string[]> => {
+    const prompt = `You are a creative film director's assistant. Based on the provided story context, scene summary, and director's vision, suggest 3 diverse and actionable creative objectives for the AI Co-Director. The objectives should be concise, starting with a verb, and guide the AI towards a specific creative direction for the scene.
+
+    **Director's Vision / Cinematic Style:**
+    "${directorsVision}"
+
+    **Story Logline:**
+    - ${storyBible.logline}
+
+    **Current Scene:**
+    - Title: ${scene.title}
+    - Summary: ${scene.summary}
+
+    Return a JSON array of 3 strings.
+
+    Example objectives:
+    - "Inject a sense of paranoia and claustrophobia."
+    - "Emphasize the romantic tension between the characters."
+    - "Create a fast-paced, high-energy action sequence."`;
+    
+    const responseSchema = {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+    };
+    
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        return JSON.parse(response.text.trim());
+    } catch (error) {
+        console.error("Error suggesting co-director objectives:", error);
+        throw new Error(`Failed to suggest objectives. ${commonError}`);
+    }
+};
+
 
 export const refineStoryBibleField = async (field: keyof StoryBible, storyBible: StoryBible): Promise<string> => {
     const currentValue = storyBible[field];
@@ -291,7 +329,69 @@ export const suggestShotEnhancers = async (shot: Shot, scene: Scene, storyBible:
 };
 
 
-// --- Co-Director & Image Generation ---
+// --- Co-Director & Generation ---
+export const generateSceneImage = async (timelineData: TimelineData, directorsVision: string, previousImageBase64?: string): Promise<string> => {
+    const { shots, shotEnhancers, negativePrompt } = timelineData;
+
+    const detailedTimeline = shots.map((shot) => {
+        let shotString = `- ${shot.description}`;
+        const enhancers = shotEnhancers[shot.id];
+        if (enhancers && Object.keys(enhancers).length > 0) {
+            const styleElements = Object.entries(enhancers)
+                .flatMap(([key, value]) => Array.isArray(value) ? value.map(v => `${key}: ${v}`) : [])
+                .filter(Boolean);
+            if (styleElements.length > 0) shotString += ` (${styleElements.join(', ')})`;
+        }
+        return shotString;
+    }).join('\n');
+
+    const prompt = `
+        **Objective:** Generate a single, photorealistic, cinematic keyframe image representing a scene.
+
+        **Director's Vision / Style:** ${directorsVision}
+
+        **Scene Timeline (key moments):**
+        ${detailedTimeline}
+
+        **Negative Prompt (AVOID):** ${negativePrompt || 'None'}
+
+        **Task:** Synthesize the vision and timeline into a concise, descriptive prompt for an image generator. The prompt should describe the single most impactful, representative moment of the scene as a static image. Focus on composition, lighting, character expression, and mood to create a visually stunning keyframe. This is a prompt for a single image, not a video.
+    `;
+
+    const imageParts = [];
+    if (previousImageBase64) {
+        imageParts.push({
+            inlineData: {
+                data: previousImageBase64.split(',')[1] || previousImageBase64, // handle data URI prefix
+                mimeType: 'image/jpeg'
+            }
+        });
+    }
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: {
+                parts: [
+                    ...imageParts,
+                    { text: prompt },
+                ]
+            },
+            config: {
+                responseModalities: [Modality.IMAGE],
+            },
+        });
+
+        const part = response.candidates?.[0]?.content?.parts?.[0];
+        if (part?.inlineData) {
+            return part.inlineData.data;
+        }
+        throw new Error("Image generation failed: No image data in response.");
+    } catch (error) {
+        console.error("Error generating scene image:", error);
+        throw new Error(`Failed to generate image. ${commonError}`);
+    }
+};
 
 export const getCoDirectorSuggestions = async (storyBible: StoryBible, activeScene: Scene, objective: string, directorsVision: string): Promise<CoDirectorResult> => {
     const timelineString = activeScene.timeline.shots.map((shot, index) => {
@@ -393,7 +493,7 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
     }
 };
 
-export const generateImagePrompt = async (timelineData: TimelineData, directorsVision: string): Promise<string> => {
+export const generateVideoPrompt = async (timelineData: TimelineData, directorsVision: string): Promise<string> => {
     const { shots, shotEnhancers, negativePrompt } = timelineData;
 
     let detailedTimeline = shots.map((shot) => {
@@ -409,7 +509,7 @@ export const generateImagePrompt = async (timelineData: TimelineData, directorsV
     }).join('');
 
     const prompt = `
-        You are an expert prompt engineer for a state-of-the-art generative image AI. Your task is to synthesize the provided cinematic timeline and Director's Vision into a single, cohesive, and powerful generative prompt. The goal is to create a photorealistic, cinematic still image that captures the key moment of the scene with impeccable quality.
+        You are an expert prompt engineer for a state-of-the-art generative video AI. Your task is to synthesize the provided cinematic timeline and Director's Vision into a single, cohesive, and powerful generative prompt. The goal is to create a short, photorealistic, cinematic video clip that captures the key moment of the scene with impeccable quality.
 
         **Director's Vision / Desired Cinematic Style:**
         "${directorsVision}"
@@ -420,82 +520,34 @@ export const generateImagePrompt = async (timelineData: TimelineData, directorsV
         **Global Style Notes / Negative Prompt (AVOID THESE):**
         "${negativePrompt || 'None'}"
 
-        **CRITICAL INSTRUCTIONS FOR PROMPT CREATION:**
-        - **Synthesize, Don't List:** Do not just list the shots. Weave the Director's Vision, descriptions, and styles into a fluid, descriptive narrative for a single, powerful image.
-        - **Ground the Scene:** Ensure all characters and objects are physically grounded. Explicitly describe their interaction with the environment (e.g., "feet firmly on the muddy ground," "hand resting on the stone wall"). Avoid any sense of floating or illogical placement.
-        - **Perspective and Composition:** Create a clear and believable camera perspective based on the Director's Vision. Use compositional rules (like the rule of thirds) to create a visually appealing and dramatic image. Avoid bizarre or physically impossible camera angles.
-        - **Realism is Key:** Emphasize photorealism, detailed textures, and realistic lighting that matches the specified style.
-
-        **Your Task:**
-        Combine the Director's Vision, all shot descriptions, styles, and global notes into one single paragraph. This prompt should be a fluid, descriptive narrative for a single, powerful image representing the scene.
-        - Focus on the most visually striking moment or the emotional core of the scene.
-        - The final output MUST be a single block of raw prompt text. Do not include transitions.
+        **Your Task & Prompt Format:**
+        Based on ALL the information, create a single, comprehensive paragraph. This paragraph is the final prompt. It should describe the continuous action of a short video clip (3-5 seconds). Start with the most important shot and seamlessly blend details from other shots and enhancers. Describe camera movement, character actions, lighting changes, and the overall mood. Be vivid and concise. This is the only text that will be fed to the video model.
     `;
-
+    
     try {
         const response = await ai.models.generateContent({
-            model: model,
-            contents: prompt,
+            model: proModel,
+            contents: prompt
         });
         return response.text.trim();
     } catch (error) {
-        console.error("Error generating image prompt:", error);
-        throw new Error("Failed to generate the final image prompt.");
+        console.error("Error generating video prompt:", error);
+        throw new Error(`Failed to generate video prompt. ${commonError}`);
     }
 };
 
-export const generateSceneImage = async (
-    timelineData: TimelineData,
-    directorsVision: string,
-    previousImageBase64?: string
-): Promise<string> => {
-    const prompt = await generateImagePrompt(timelineData, directorsVision);
-    
-    const imagePart = previousImageBase64 ? {
-        inlineData: {
-            mimeType: 'image/jpeg',
-            data: previousImageBase64,
-        },
-    } : null;
-
-    const textPart = {
-        text: `Based on the previous image (if provided) for visual continuity, and the following prompt, generate a new cinematic image that continues the story. Prompt: "${prompt}"`
-    };
-
-    const parts = imagePart ? [imagePart, textPart] : [textPart];
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: { parts: parts },
-            config: {
-                responseModalities: [Modality.IMAGE],
-            },
-        });
-
-        for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData) {
-                return part.inlineData.data;
-            }
-        }
-        throw new Error("No image was generated in the response.");
-
-    } catch (error) {
-        console.error("Error generating scene image:", error);
-        throw new Error(`Failed to generate scene image. ${commonError}`);
-    }
-};
-
+// --- Video Analysis ---
 export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
-    const prompt = `You are a professional film analyst and editor. Your task is to analyze the following sequence of video frames and provide a detailed, scene-by-scene breakdown.
+    const prompt = `You are an expert film analyst. Analyze the following sequence of video frames and provide a detailed breakdown of the cinematic techniques used.
 
-    For each distinct scene you identify, describe:
-    - **Setting:** Where and when is the scene taking place?
-    - **Characters:** Who is in the scene and what are they doing?
-    - **Key Events:** What are the crucial actions or plot points that occur?
-    - **Cinematic Feel:** What is the mood or tone (e.g., tense, fast-paced, dramatic)?
+    **Your analysis should cover:**
+    1.  **Cinematography:** Describe camera angles (low, high, eye-level), framing (close-up, wide shot), and any camera movement (pan, tilt, tracking).
+    2.  **Editing:** Identify the pacing of the cuts. Are they fast and energetic, or slow and deliberate? Mention any specific transitions if they can be inferred.
+    3.  **Lighting & Color:** Describe the lighting style (high-key, low-key, natural) and the overall color palette. What mood does it create?
+    4.  **Narrative/Action:** Briefly summarize the action or story being told across the frames. What is the subject, and what are they doing?
+    5.  **Overall Impression:** Give your overall assessment of the clip's style and potential genre.
 
-    Provide a cohesive summary of the entire video clip at the end. Format your entire output as well-structured markdown.`;
+    Present your analysis in well-structured markdown.`;
 
     const imageParts = frames.map(frame => ({
         inlineData: {
@@ -504,14 +556,13 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
         },
     }));
 
-    const contents = { parts: [{ text: prompt }, ...imageParts] };
-
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro', // Using a powerful model for better analysis
-            contents: contents,
+            model: proModel,
+            contents: { parts: [...imageParts, { text: prompt }] },
         });
-        return response.text.trim();
+
+        return response.text;
     } catch (error) {
         console.error("Error analyzing video frames:", error);
         throw new Error(`Failed to analyze video. ${commonError}`);
