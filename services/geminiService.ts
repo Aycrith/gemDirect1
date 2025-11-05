@@ -5,6 +5,7 @@ import { ApiStatus } from "../contexts/ApiStatusContext";
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 const model = 'gemini-2.5-flash';
 const proModel = 'gemini-2.5-pro';
+const imageModel = 'gemini-2.5-flash-image';
 
 const commonError = "An error occurred. Please check the console for details. If the error persists, the model may be overloaded.";
 
@@ -549,7 +550,31 @@ export const batchProcessShotEnhancements = async (
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
-// --- Continuity and Analysis ---
+// --- Image and Video Analysis ---
+
+export const generateKeyframeForScene = async (prompt: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
+    const context = 'generate scene keyframe';
+    const apiCall = async () => {
+        const response = await ai.models.generateContent({
+            model: imageModel,
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                responseModalities: [Modality.IMAGE],
+            },
+        });
+        
+        for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData) {
+                const base64ImageBytes: string = part.inlineData.data;
+                const tokens = response.usageMetadata?.totalTokenCount || 0;
+                return { result: base64ImageBytes, tokens };
+            }
+        }
+        throw new Error("The model did not return an image for the scene keyframe.");
+    };
+
+    return withRetry(apiCall, context, imageModel, logApiCall, onStateChange);
+};
 
 export const analyzeVideoFrames = async (frames: string[], logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const context = 'analyze video frames';

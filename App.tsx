@@ -7,8 +7,8 @@ import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import ContinuityDirector from './components/ContinuityDirector';
 import FinalPromptModal from './components/FinalPromptModal';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions } from './services/geminiService';
-import { generateVideoPromptFromTimeline } from './services/videoGenerationService';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateKeyframeForScene } from './services/geminiService';
+import { generateVideoRequestPayloads } from './services/videoGenerationService';
 import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
@@ -58,7 +58,7 @@ const AppContent: React.FC = () => {
     const [coDirectorResult, setCoDirectorResult] = useState<CoDirectorResult | null>(null);
     const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
-    const [finalPrompt, setFinalPrompt] = useState<string | null>(null);
+    const [finalPrompt, setFinalPrompt] = useState<{ json: string; text: string; } | null>(null);
 
 
     useEffect(() => {
@@ -332,15 +332,25 @@ const AppContent: React.FC = () => {
         }
     };
     
-    const handleGenerateVideo = (sceneId: string, timeline: TimelineData) => {
+    const handleGenerateVideo = async (sceneId: string, timeline: TimelineData) => {
         const activeScene = scenes.find(s => s.id === sceneId);
         if (!activeScene || !directorsVision) {
             addToast('Could not generate video request: missing scene data or director\'s vision.', 'error');
             return;
         }
         
-        const jsonPayload = generateVideoPromptFromTimeline(timeline, directorsVision, activeScene.summary);
-        setFinalPrompt(jsonPayload);
+        const payloads = generateVideoRequestPayloads(timeline, directorsVision, activeScene.summary);
+        setFinalPrompt(payloads);
+
+        try {
+            addToast('Generating scene keyframe...', 'info');
+            const base64Image = await generateKeyframeForScene(payloads.text, handleApiLog, handleApiStateChange);
+            setGeneratedImages(prev => ({ ...prev, [sceneId]: base64Image }));
+            addToast('Scene keyframe generated!', 'success');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(`Failed to generate keyframe: ${errorMessage}`, 'error');
+        }
     };
 
     const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
@@ -453,7 +463,7 @@ const AppContent: React.FC = () => {
             
             <ApiStatusIndicator />
             <UsageDashboard isOpen={isUsageDashboardOpen} onClose={() => setIsUsageDashboardOpen(false)} />
-            <FinalPromptModal isOpen={!!finalPrompt} onClose={() => setFinalPrompt(null)} jsonPayload={finalPrompt} />
+            <FinalPromptModal isOpen={!!finalPrompt} onClose={() => setFinalPrompt(null)} payloads={finalPrompt} />
         </div>
     );
 };

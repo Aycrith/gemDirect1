@@ -1,18 +1,18 @@
-import { TimelineData } from '../types';
+import { TimelineData, Shot, CreativeEnhancers } from '../types';
 
 /**
- * Generates a structured JSON string from the timeline data, suitable for use with an external video generation tool.
- * @param timeline The scene's timeline data (shots, enhancers, transitions).
+ * Generates a structured JSON payload and a human-readable text prompt from timeline data.
+ * @param timeline The scene's timeline data.
  * @param directorsVision The overall visual style guide.
  * @param sceneSummary A brief summary of the scene's purpose.
- * @returns A formatted JSON string representing the video generation request.
+ * @returns An object containing both the JSON payload and a human-readable text prompt.
  */
-export const generateVideoPromptFromTimeline = (
-    timeline: TimelineData, 
+export const generateVideoRequestPayloads = (
+    timeline: TimelineData,
     directorsVision: string,
     sceneSummary: string
-): string => {
-    
+): { json: string; text: string } => {
+
     const interleavedTimeline = timeline.shots.reduce((acc: any[], shot, index) => {
         const shotData = {
             type: 'shot',
@@ -47,5 +47,53 @@ export const generateVideoPromptFromTimeline = (
         timeline: interleavedTimeline
     };
 
-    return JSON.stringify(payload, null, 2);
+    const json = JSON.stringify(payload, null, 2);
+    const text = generateHumanReadablePrompt(timeline, directorsVision, sceneSummary);
+
+    return { json, text };
+};
+
+/**
+ * Creates a human-readable, narrative prompt from the timeline data.
+ * @param timeline The scene's timeline data.
+ * @param directorsVision The overall visual style guide.
+ * @param sceneSummary A brief summary of the scene's purpose.
+ * @returns A formatted string suitable for use as a descriptive prompt.
+ */
+const generateHumanReadablePrompt = (
+    timeline: TimelineData,
+    directorsVision: string,
+    sceneSummary: string
+): string => {
+    let prompt = `Create a cinematic sequence. The scene is about: "${sceneSummary}". The overall visual style should be "${directorsVision}".\n\n`;
+
+    timeline.shots.forEach((shot, index) => {
+        prompt += `Shot ${index + 1}: ${shot.description}`;
+        const enhancers = timeline.shotEnhancers[shot.id];
+        if (enhancers && Object.keys(enhancers).length > 0) {
+            const enhancerText = Object.entries(enhancers)
+                .map(([key, value]) => {
+                    if (Array.isArray(value) && value.length > 0) {
+                        return `${key}: ${value.join(', ')}`;
+                    }
+                    return null;
+                })
+                .filter(Boolean)
+                .join('; ');
+            if (enhancerText) {
+                prompt += ` (Style: ${enhancerText})`;
+            }
+        }
+        prompt += '.\n';
+
+        if (index < timeline.transitions.length) {
+            prompt += `\n--[${timeline.transitions[index]}]-->\n\n`;
+        }
+    });
+
+    if (timeline.negativePrompt) {
+        prompt += `\nGlobal Style & Negative Prompt: ${timeline.negativePrompt}`;
+    }
+
+    return prompt.trim();
 };

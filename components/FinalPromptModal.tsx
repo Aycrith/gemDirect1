@@ -5,19 +5,21 @@ import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 interface FinalPromptModalProps {
     isOpen: boolean;
     onClose: () => void;
-    jsonPayload: string | null;
+    payloads: { json: string; text: string } | null;
 }
 
-const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, jsonPayload }) => {
+const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, payloads }) => {
     const [copied, setCopied] = useState(false);
+    const [view, setView] = useState<'json' | 'text'>('json');
 
     const handleCopy = useCallback(() => {
-        if (jsonPayload) {
-            navigator.clipboard.writeText(jsonPayload);
+        if (payloads) {
+            const contentToCopy = view === 'json' ? payloads.json : payloads.text;
+            navigator.clipboard.writeText(contentToCopy);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         }
-    }, [jsonPayload]);
+    }, [payloads, view]);
 
     if (!isOpen) return null;
 
@@ -33,19 +35,60 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, js
                 className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" 
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="p-6 overflow-y-auto">
+                <div className="p-6 flex-grow overflow-y-auto">
                     <h3 id="prompt-dialog-title" className="flex items-center text-lg font-bold text-indigo-400 mb-4">
                         <SparklesIcon className="w-5 h-5 mr-2" />
-                        Video Generation Request Payload
+                        Video Generation Request
                     </h3>
-                    <p className="text-sm text-gray-400 mb-4">
-                        Use this JSON payload with a local model runner like LM Studio or a custom workflow in ComfyUI to generate your video.
-                    </p>
-                    <div className="bg-gray-900/70 rounded-md border border-gray-600 max-h-96 overflow-y-auto">
-                       <pre className="text-xs text-gray-300 p-4 whitespace-pre-wrap break-all">
-                           <code>{jsonPayload}</code>
-                       </pre>
+                    
+                    <div className="border-b border-gray-600 mb-4">
+                        <nav className="-mb-px flex space-x-4" aria-label="Tabs">
+                            <button
+                                onClick={() => setView('json')}
+                                className={`${
+                                view === 'json'
+                                    ? 'border-indigo-400 text-indigo-300'
+                                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors`}
+                            >
+                                JSON Payload
+                            </button>
+                            <button
+                                onClick={() => setView('text')}
+                                className={`${
+                                view === 'text'
+                                    ? 'border-indigo-400 text-indigo-300'
+                                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
+                                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors`}
+                            >
+                                Human-Readable Prompt
+                            </button>
+                        </nav>
                     </div>
+
+                    {view === 'json' ? (
+                        <>
+                            <p className="text-sm text-gray-400 mb-4">
+                                Use this JSON payload with a local model runner like LM Studio or a custom workflow in ComfyUI.
+                            </p>
+                            <div className="bg-gray-900/70 rounded-md border border-gray-600 max-h-96 overflow-y-auto">
+                               <pre className="text-xs text-gray-300 p-4 whitespace-pre-wrap break-all">
+                                   <code>{payloads?.json}</code>
+                               </pre>
+                            </div>
+                        </>
+                    ) : (
+                         <>
+                            <p className="text-sm text-gray-400 mb-4">
+                                Use this human-readable prompt for direct input into generative models or for your own reference.
+                            </p>
+                            <div className="bg-gray-900/70 rounded-md border border-gray-600 max-h-96 overflow-y-auto">
+                               <div className="text-sm text-gray-300 p-4 whitespace-pre-wrap break-words leading-relaxed">
+                                   {payloads?.text}
+                               </div>
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 <div className="flex flex-col sm:flex-row justify-end items-center gap-4 p-4 bg-gray-800/50 border-t border-gray-700 rounded-b-lg mt-auto">
@@ -53,7 +96,7 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, js
                         type="button" 
                         onClick={handleCopy}
                         className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-2 bg-green-600 text-white font-semibold rounded-md shadow-sm transition-colors hover:bg-green-700 disabled:bg-gray-500"
-                        disabled={!jsonPayload || copied}
+                        disabled={!payloads || copied}
                     >
                         {copied ? (
                             <>
