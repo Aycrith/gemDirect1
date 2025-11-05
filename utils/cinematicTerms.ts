@@ -1,11 +1,11 @@
-export const FRAMING_OPTIONS = ["Bird's-Eye View", "Close-Up", "Cowboy Shot", "Establishing Shot", "Extreme Close-Up", "Full Shot", "High Angle", "Low Angle", "Medium Shot", "Over-the-Shoulder", "Point of View", "Two Shot", "Wide Shot", "Worm's-Eye View"];
-export const MOVEMENT_OPTIONS = ["Arc Shot", "Crane/Jib Shot", "Dolly Zoom", "Dutch Tilt", "Follow Shot", "Handheld", "Pan", "Pull Out", "Push In", "Static Shot", "Steadicam", "Tilt", "Tracking Shot", "Whip Pan", "Zoom In/Out"];
-export const LENS_OPTIONS = ["Anamorphic", "Bokeh", "Deep Focus", "Fisheye Lens", "Lens Flare", "Rack Focus", "Shallow Depth of Field", "Soft Focus", "Split Diopter", "Telephoto", "Tilt-Shift", "Wide-Angle"];
-export const PACING_OPTIONS = ["Bullet Time", "Chaotic", "Cross-Cutting", "Fast-Paced", "Freeze Frame", "Graceful", "Jump Cut", "Long Take", "Montage", "Slow Motion", "Smash Cut", "Speed Ramp"];
+export const FRAMING_OPTIONS = ["Bird's-Eye View", "Close-Up", "Cowboy Shot", "Establishing Shot", "Extreme Close-Up", "Full Shot", "High Angle", "Low Angle", "Insert Shot", "Medium Shot", "Over-the-Shoulder", "Point of View", "Two Shot", "Wide Shot", "Worm's-Eye View"];
+export const MOVEMENT_OPTIONS = ["Arc Shot", "Crane/Jib Shot", "Dolly Zoom", "Dutch Tilt", "Follow Shot", "Handheld", "Majestic Sweep", "Pan", "Pull Out", "Push In", "Static Shot", "Steadicam", "Tilt", "Tracking Shot", "Whip Pan", "Zoom In/Out"];
+export const LENS_OPTIONS = ["Anamorphic", "Bokeh", "Deep Focus", "Fisheye Lens", "Lens Flare", "Probe Lens", "Rack Focus", "Shallow Depth of Field", "Soft Focus", "Split Diopter", "Telephoto", "Tilt-Shift", "Wide-Angle"];
+export const PACING_OPTIONS = ["Bullet Time", "Chaotic", "Cross-Cutting", "Fast-Paced", "Freeze Frame", "Graceful", "Jump Cut", "Long Take", "Montage", "Rhythmic Cutting", "Slow Motion", "Smash Cut", "Speed Ramp"];
 export const LIGHTING_OPTIONS = ["Low-Key (Chiaroscuro)", "High-Key", "Backlight / Rim Light", "Golden Hour", "Neon Glow", "Hard Lighting"];
 export const MOOD_OPTIONS = ["Suspenseful", "Epic", "Gritty", "Dreamlike", "Tense", "Energetic", "Nostalgic"];
 export const VFX_OPTIONS = ["Bleach Bypass", "Chromatic Aberration", "Color Grading (Teal & Orange)", "Day-for-Night", "Desaturated", "Film Grain", "Glitch Effect", "Glow/Bloom", "High Contrast", "Lens Dirt/Smudges", "Light Leaks", "Motion Blur", "Particle Effects", "Scanlines", "VHS Look", "Vignette"];
-export const PLOT_ENHANCEMENTS_OPTIONS = ["Add Character Action", "Introduce Conflict", "Foreshadowing Moment", "Heighten Emotion", "Add Dialogue Snippet", "Reveal a Detail"];
+export const PLOT_ENHANCEMENTS_OPTIONS = ["Add Character Action", "Introduce Conflict", "Foreshadowing Moment", "Heighten Emotion", "Add Dialogue Snippet", "Reveal a Detail", "Introduce Sci-Fi Element"];
 
 export const CINEMATIC_TERMS: Record<string, Record<string, string>> = {
   framing: {
@@ -17,6 +17,7 @@ export const CINEMATIC_TERMS: Record<string, Record<string, string>> = {
     "Full Shot": "Shows the entire subject from head to toe, with some of the surrounding environment visible.",
     "High Angle": "The camera is placed above the subject, looking down, which can make the subject seem small or vulnerable.",
     "Low Angle": "The camera is placed below the subject, looking up, which can make the subject seem powerful or imposing.",
+    "Insert Shot": "A close-up of a significant object or detail that the character is looking at or interacting with.",
     "Medium Shot": "Shows the subject from the waist up, balancing detail with some of the surrounding context.",
     "Over-the-Shoulder": "A shot from behind one person's shoulder, looking at another person. Common in conversations.",
     "Point of View": "Shows what a character is looking at, as if from their own eyes.",
@@ -31,6 +32,7 @@ export const CINEMATIC_TERMS: Record<string, Record<string, string>> = {
     "Dutch Tilt": "The camera is tilted on its side, creating a skewed, unsettling image.",
     "Follow Shot": "The camera follows a moving subject, keeping them in the frame.",
     "Handheld": "The camera is held by the operator, resulting in a shaky, realistic, and often urgent feel.",
+    "Majestic Sweep": "A slow, grand, sweeping camera movement, often using a crane or drone, to reveal the scale of a location.",
     "Pan": "The camera swivels horizontally from a fixed position.",
     "Pull Out": "The camera moves backward, revealing more of the scene (similar to Dolly Out).",
     "Push In": "The camera moves forward, getting closer to the subject (similar to Dolly In).",
@@ -47,6 +49,7 @@ export const CINEMATIC_TERMS: Record<string, Record<string, string>> = {
     "Deep Focus": "Everything in the frame, from the foreground to the background, is in sharp focus.",
     "Fisheye Lens": "An ultra-wide-angle lens that produces strong visual distortion, creating a wide panoramic or hemispherical image.",
     "Lens Flare": "Streaks of light that appear when a bright light source is aimed at the lens.",
+    "Probe Lens": "A long, thin lens used for getting extreme close-ups in tight spaces or creating unique, floating perspectives.",
     "Rack Focus": "Changing the focus of the lens from one subject to another within a single shot.",
     "Shallow Depth of Field": "Only a small part of the image is in focus, while the background and foreground are blurred.",
     "Soft Focus": "A slightly blurred effect, often used for dreamlike or romantic scenes.",
@@ -65,6 +68,7 @@ export const CINEMATIC_TERMS: Record<string, Record<string, string>> = {
     "Jump Cut": "An abrupt cut between two shots of the same subject from slightly different angles, creating a jarring effect.",
     "Long Take": "A single, uninterrupted shot that lasts for an extended period of time.",
     "Montage": "A sequence of short shots edited together to condense space, time, and information.",
+    "Rhythmic Cutting": "Editing shots to a specific beat or rhythm, often in sync with music or a recurring sound.",
     "Slow Motion": "Slowing down the speed of the action to emphasize movement or create a dramatic effect.",
     "Smash Cut": "An abrupt and often jarring transition from one scene to another, usually from quiet to loud or vice-versa.",
     "Speed Ramp": "Changing the speed of a clip from slow to fast, or vice versa, within a single shot.",
@@ -111,5 +115,6 @@ export const CINEMATIC_TERMS: Record<string, Record<string, string>> = {
     "Heighten Emotion": "Amplify the emotional state of a character through their expression, action, or environment.",
     "Add Dialogue Snippet": "Insert a brief line of dialogue that reveals crucial information or character.",
     "Reveal a Detail": "Show the audience an important object or detail that was previously unseen or unnoticed.",
+    "Introduce Sci-Fi Element": "Add a piece of futuristic technology, an alien object, or a sci-fi concept to the scene.",
   }
 };
