@@ -80,7 +80,7 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<AnalysisResu
  */
 export const getCoDirectorSuggestions = async (shots: Shot[], transitions: string[], objective: string): Promise<CoDirectorResult> => {
     
-    const model = 'gemini-2.5-pro';
+    const model = 'gemini-2.5-flash';
 
     const timelineString = shots.map((shot, index) => {
         const transition = transitions[index] ? `\n--[${transitions[index]}]-->\n` : '';
@@ -101,12 +101,18 @@ export const getCoDirectorSuggestions = async (shots: Shot[], transitions: strin
         2.  **Reasoning**: Briefly explain your overall strategy for achieving the objective, based on the provided timeline.
         3.  **Suggested Changes**: Provide a list of 5-8 specific, actionable changes. Your suggestions should work together as a cohesive whole to transform the scene according to the objective. Propose creative changes across different cinematic categories (e.g., add a new shot, change camera movement, adjust lighting, add VFX) to create a unified and impactful result. For each change, specify the type of action ('UPDATE_SHOT', 'ADD_SHOT_AFTER', 'UPDATE_TRANSITION'), the target shot ID or transition index, a payload with the new data, and a human-readable description.
         
-        **CRITICAL JSON FORMATTING RULES**:
-        - Your entire output MUST be a single, valid JSON object that strictly adheres to the provided schema. Do not include any text, explanations, or markdown formatting (like \`\`\`json) outside of this JSON object.
-        - **ESCAPE DOUBLE QUOTES**: This is the most important rule. Any double quote character (") that appears inside a JSON string value MUST be escaped with a backslash (\\). An unescaped quote will break the entire response.
-        - **CORRECT EXAMPLE**: If a description is 'Add a "Dutch Tilt" camera angle', the JSON string value must be "Add a \\"Dutch Tilt\\" camera angle".
-        - **STRONGLY PREFERRED ALTERNATIVE**: To avoid errors, please try to rephrase sentences to use single quotes (' ') instead of double quotes (" ") whenever possible. Single quotes do not need to be escaped and are much safer. For example, write "Add a 'Dutch Tilt' camera angle" instead of the above.
-        - This rule is mandatory for all string fields, especially the 'description' field.
+        **CRITICAL JSON FORMATTING INSTRUCTIONS - READ CAREFULLY, FAILURE HERE IS COMMON:**
+        - Your ENTIRE output MUST be a single, valid JSON object. Do not include any text, explanations, or markdown formatting (like \`\`\`json) outside of this JSON object.
+        - **THE MOST COMMON ERROR is improper quote handling inside strings.** This will break the entire system.
+            - **BAD (will fail):** \`{"description": "A character says, "Let's go!"."}\`
+            - **GOOD (escaped):** \`{"description": "A character says, \\"Let's go!\\""}\`
+            - **BETTER (use single quotes):** \`{"description": "A character says, 'Let's go!'."}\`
+        - **YOUR PRIMARY GOAL is to produce VALID JSON.** The creative text is secondary to the structural integrity of the JSON.
+
+        **FINAL CHECKLIST BEFORE RESPONDING:**
+        1.  Is the entire output a single JSON object and nothing else?
+        2.  Have I checked EVERY string value for unescaped double quotes?
+        3.  Have I used single quotes inside strings wherever possible to avoid this common error?
     `;
     
     // This defines the structure of the JSON we expect back from the model.
@@ -204,8 +210,8 @@ export const getCoDirectorSuggestions = async (shots: Shot[], transitions: strin
  * Generates a final, cohesive remix prompt from the timeline data.
  */
 export const generateRemixPrompt = async (timelineData: TimelineData): Promise<string> => {
-    const { shots, shotEnhancers, transitions, negativePrompt } = timelineData;
-    const model = 'gemini-2.5-pro';
+    const { shots, shotEnhancers, transitions, negativePrompt, positiveEnhancers } = timelineData;
+    const model = 'gemini-2.5-flash';
 
     let detailedTimeline = '';
     shots.forEach((shot, index) => {
@@ -240,8 +246,11 @@ export const generateRemixPrompt = async (timelineData: TimelineData): Promise<s
         **Global Style Notes / Negative Prompt:**
         "${negativePrompt || 'None'}"
 
+        ${positiveEnhancers ? `**Mandatory Realism Enhancers:**\n"${positiveEnhancers}"\n` : ''}
+
         **Your Task:**
         Combine all the shot descriptions, cinematic styles, transitions, and global notes into one single paragraph. This prompt should be a fluid, descriptive narrative that an AI video generator can use to create the entire sequence.
+        ${positiveEnhancers ? '- You MUST integrate the concepts from the "Mandatory Realism Enhancers" throughout your description to ensure a photorealistic result.\n' : ''}
         - Start with the global style notes if any are provided.
         - Describe each shot and its specific style enhancers naturally within the narrative.
         - Use the format "--[Transition Name]-->" to clearly indicate the transition between shots.

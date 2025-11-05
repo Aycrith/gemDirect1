@@ -10,6 +10,7 @@ import PlusIcon from './icons/PlusIcon';
 import TrashIcon from './icons/TrashIcon';
 import NegativePromptSuggestions from './NegativePromptSuggestions';
 import SparklesIcon from './icons/SparklesIcon';
+import GenerationControls from './GenerationControls';
 
 interface TimelineEditorProps {
     shots: Shot[];
@@ -28,6 +29,10 @@ interface TimelineEditorProps {
     suggestedNegativePrompts: string[];
     onGenerateRemix: () => void;
     isRemixing: boolean;
+    mitigateViolence: boolean;
+    setMitigateViolence: (value: boolean) => void;
+    enhanceRealism: boolean;
+    setEnhanceRealism: (value: boolean) => void;
 }
 
 const ShotCard: React.FC<{
@@ -116,7 +121,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     shots, setShots, shotEnhancers, setShotEnhancers, transitions, setTransitions, 
     isProcessing, processingStatus, processingStage, 
     onSaveTimeline, onLoadTimeline, onGenerateRemix, isRemixing,
-    negativePrompt, setNegativePrompt, suggestedNegativePrompts
+    negativePrompt, setNegativePrompt, suggestedNegativePrompts,
+    mitigateViolence, setMitigateViolence, enhanceRealism, setEnhanceRealism
 }) => {
     
     const handleDescriptionChange = useCallback((id: string, newDescription: string) => {
@@ -240,6 +246,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 </div>
                             </div>
                         </div>
+
+                        <GenerationControls
+                            mitigateViolence={mitigateViolence}
+                            setMitigateViolence={setMitigateViolence}
+                            enhanceRealism={enhanceRealism}
+                            setEnhanceRealism={setEnhanceRealism}
+                        />
 
                         <NegativePromptSuggestions
                             suggestions={suggestedNegativePrompts}

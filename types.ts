@@ -30,6 +30,7 @@ export interface TimelineData {
     shotEnhancers: ShotEnhancers;
     transitions: string[];
     negativePrompt: string;
+    positiveEnhancers?: string;
 }
 
 export type ToastType = 'success' | 'error' | 'info';

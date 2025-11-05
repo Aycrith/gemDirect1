@@ -58,6 +58,8 @@ const App: React.FC = () => {
     const [transitions, setTransitions] = useState<string[]>([]);
     const [negativePrompt, setNegativePrompt] = useState('');
     const [suggestedNegativePrompts, setSuggestedNegativePrompts] = useState<string[]>(['shaky camera', 'blurry', 'low quality', 'watermark']);
+    const [mitigateViolence, setMitigateViolence] = useState(true);
+    const [enhanceRealism, setEnhanceRealism] = useState(false);
 
     // Final Remix State
     const [finalRemixPrompt, setFinalRemixPrompt] = useState<string | null>(null);
@@ -278,7 +280,22 @@ const App: React.FC = () => {
         setIsRemixing(true);
         setFinalRemixPrompt(null);
         try {
-            const timelineData: TimelineData = { shots, shotEnhancers, transitions, negativePrompt };
+            let finalNegativePrompt = negativePrompt;
+            let finalPositiveEnhancers = '';
+
+            const violenceNegativePrompt = "graphic violence, blood, gore, combat, weapons, injury, death";
+            const realismNegativePrompt = "painting, painted, oil paint texture, digital art, concept art, illustration, AI art style, stylized brushstrokes, matte painting, low detail, oversaturated colors, smudged textures, plastic-looking skin, blurry faces, distorted anatomy, low-resolution, waxy lighting, dreamlike haze, fantasy aesthetic, glowing outlines, soft diffusion blur, cartoon edges, artificial contrast, AI-generated look, fuzzy armor, melted metal, watercolor effects, posterized shadows, unreal surfaces";
+            const realismPositiveEnhancer = "photorealistic cinematic film, realistic lighting, crisp focus, high-fidelity detail, real camera physics, accurate lens bokeh, true-to-life materials, physically-based rendering, authentic human motion, cinematic realism, high sharpness, 4K depth clarity";
+
+            if (mitigateViolence) {
+                finalNegativePrompt = finalNegativePrompt ? `${finalNegativePrompt}, ${violenceNegativePrompt}` : violenceNegativePrompt;
+            }
+            if (enhanceRealism) {
+                finalNegativePrompt = finalNegativePrompt ? `${finalNegativePrompt}, ${realismNegativePrompt}` : realismNegativePrompt;
+                finalPositiveEnhancers = realismPositiveEnhancer;
+            }
+
+            const timelineData: TimelineData = { shots, shotEnhancers, transitions, negativePrompt: finalNegativePrompt.trim(), positiveEnhancers: finalPositiveEnhancers };
             const prompt = await generateRemixPrompt(timelineData);
             setFinalRemixPrompt(prompt);
             addToast('Remix prompt generated!', 'success');
@@ -289,7 +306,7 @@ const App: React.FC = () => {
         } finally {
             setIsRemixing(false);
         }
-    }, [shots, shotEnhancers, transitions, negativePrompt, addToast]);
+    }, [shots, shotEnhancers, transitions, negativePrompt, addToast, mitigateViolence, enhanceRealism]);
 
     const handleCloseCoDirector = useCallback(() => setCoDirectorResult(null), []);
     const handleCloseRemixModal = useCallback(() => setFinalRemixPrompt(null), []);
@@ -364,6 +381,10 @@ const App: React.FC = () => {
                                         suggestedNegativePrompts={suggestedNegativePrompts}
                                         onGenerateRemix={handleGenerateRemix}
                                         isRemixing={isRemixing}
+                                        mitigateViolence={mitigateViolence}
+                                        setMitigateViolence={setMitigateViolence}
+                                        enhanceRealism={enhanceRealism}
+                                        setEnhanceRealism={setEnhanceRealism}
                                     />
                                 </section>
 
