@@ -132,8 +132,9 @@ ${timelineString}
 "${objective}"
 
 **Your Task & CRITICAL JSON FORMATTING INSTRUCTIONS:**
-Your ENTIRE output MUST be a single, valid JSON object.
-- **AVOID UNESCAPED QUOTES inside strings.** Use single quotes or escape them (e.g., \\"quote\\"). This is the most common failure point.
+Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema.
+- **The most critical rule is handling quotation marks inside JSON strings.** If you need to include a double quote character (") inside any string value (like in the 'reasoning' or 'description' fields), you MUST escape it with a backslash (e.g., "The character yelled, \\"Stop!\\""). Failure to do this will result in an invalid JSON.
+- Do not add any text or markdown formatting before or after the JSON object.
 - **Thematic Concept (thematic_concept)**: A short, evocative theme (2-5 words).
 - **Reasoning (reasoning)**: Explain your strategy. How do the changes serve the objective and the overall story?
 - **Suggested Changes (suggested_changes)**: Provide a list of 5-8 specific, cohesive changes. Use the provided cinematic vocabulary. Be bold and transformative.
