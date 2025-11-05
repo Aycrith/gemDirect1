@@ -4,12 +4,14 @@ import BookOpenIcon from './icons/BookOpenIcon';
 import ClapperboardIcon from './icons/ClapperboardIcon';
 import TimelineIcon from './icons/TimelineIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
+import PaintBrushIcon from './icons/PaintBrushIcon';
 
-export type WorkflowStage = 'idea' | 'bible' | 'scenes' | 'director';
+export type WorkflowStage = 'idea' | 'bible' | 'vision' | 'scenes' | 'director';
 
 const STAGES = [
     { id: 'idea', name: 'Story Idea', icon: <LightbulbIcon className="w-6 h-6 text-gray-300" /> },
     { id: 'bible', name: 'Story Bible', icon: <BookOpenIcon className="w-6 h-6 text-gray-300" /> },
+    { id: 'vision', name: 'Set Vision', icon: <PaintBrushIcon className="w-6 h-6 text-gray-300" /> },
     { id: 'scenes', name: 'Scene List', icon: <ClapperboardIcon className="w-6 h-6 text-gray-300" /> },
     { id: 'director', name: 'Direct Scene', icon: <TimelineIcon className="w-6 h-6 text-gray-300" /> },
 ];
@@ -18,7 +20,7 @@ const WorkflowTracker: React.FC<{ currentStage: WorkflowStage }> = ({ currentSta
     const currentStageIndex = STAGES.findIndex(s => s.id === currentStage);
 
     return (
-        <div className="w-full max-w-2xl mx-auto mb-12">
+        <div className="w-full max-w-3xl mx-auto mb-12">
             <div className="flex items-center">
                 {STAGES.map((stage, index) => {
                     const isCompleted = currentStageIndex > index;

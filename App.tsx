@@ -4,6 +4,7 @@ import StoryBibleEditor from './components/StoryBibleEditor';
 import SceneNavigator from './components/SceneNavigator';
 import TimelineEditor from './components/TimelineEditor';
 import CoDirector from './components/CoDirector';
+import DirectorsVisionForm from './components/DirectorsVisionForm';
 import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateSceneImage } from './services/geminiService';
 import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage } from './types';
 import Toast from './components/Toast';
@@ -12,7 +13,7 @@ import VideoAnalyzer from './components/VideoAnalyzer';
 import FilmIcon from './components/icons/FilmIcon';
 import PencilRulerIcon from './components/icons/PencilRulerIcon';
 
-type AppStage = 'idea' | 'bible' | 'scenes' | 'director';
+type AppStage = 'idea' | 'bible' | 'vision' | 'scenes' | 'director';
 type AppMode = 'generator' | 'analyzer';
 
 const emptyTimeline: TimelineData = {
@@ -28,6 +29,7 @@ const App: React.FC = () => {
     const [appStage, setAppStage] = useState<AppStage>('idea');
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('idea');
     const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
+    const [directorsVision, setDirectorsVision] = useState<string>('');
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
     
@@ -75,12 +77,20 @@ const App: React.FC = () => {
         }
     }, [addToast]);
 
-    const handleGenerateScenes = useCallback(async () => {
+    const handleProceedToVision = useCallback(() => {
         if (!storyBible) return;
+        setAppStage('vision');
+        setWorkflowStage('vision');
+        addToast("Story Bible confirmed. Now, let's set the vision.", 'info');
+    }, [storyBible, addToast]);
+
+    const handleGenerateScenes = useCallback(async (vision: string) => {
+        if (!storyBible) return;
+        setDirectorsVision(vision);
         setIsLoading(true);
         setLoadingMessage('Breaking down the plot into scenes...');
         try {
-            const sceneList = await generateSceneList(storyBible.plotOutline);
+            const sceneList = await generateSceneList(storyBible, vision);
             const newScenes: Scene[] = sceneList.map((s, i) => ({
                 id: `scene_${Date.now()}_${i}`,
                 title: s.title,
@@ -114,7 +124,7 @@ const App: React.FC = () => {
                     previousSceneSummary = scenes[sceneIndex - 1].summary;
                 }
 
-                const shotDescriptions = await generateInitialShotsForScene(storyBible, targetScene, previousSceneSummary);
+                const shotDescriptions = await generateInitialShotsForScene(storyBible, targetScene, directorsVision, previousSceneSummary);
                 const newShots: Shot[] = shotDescriptions.map((desc, index) => ({
                     id: `shot_${Date.now()}_${index}`,
                     description: desc,
@@ -145,7 +155,7 @@ const App: React.FC = () => {
             setAppStage('director');
             setWorkflowStage('director');
         }
-    }, [scenes, storyBible, addToast, appStage]);
+    }, [scenes, storyBible, directorsVision, addToast, appStage]);
 
     // --- Timeline and Scene State Management ---
     const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
@@ -184,14 +194,14 @@ const App: React.FC = () => {
         setIsCoDirectorLoading(true);
         setCoDirectorResult(null);
         try {
-            const result = await getCoDirectorSuggestions(storyBible, activeScene, objective);
+            const result = await getCoDirectorSuggestions(storyBible, activeScene, objective, directorsVision);
             setCoDirectorResult(result);
         } catch (error) {
             addToast(error instanceof Error ? error.message : "An unknown error occurred.", 'error');
         } finally {
             setIsCoDirectorLoading(false);
         }
-    }, [storyBible, activeScene, addToast]);
+    }, [storyBible, activeScene, directorsVision, addToast]);
 
     const handleApplySuggestion = useCallback((suggestion: Suggestion) => {
         if (!activeSceneId) return;
@@ -258,7 +268,7 @@ const App: React.FC = () => {
                 }
             }
             
-            const imageBase64 = await generateSceneImage(timelineData, previousImageBase64);
+            const imageBase64 = await generateSceneImage(timelineData, directorsVision, previousImageBase64);
             
             setGeneratedImages(prev => ({ ...prev, [sceneId]: imageBase64 }));
             setImageGenerationState({ sceneId, status: 'success', error: null });
@@ -269,7 +279,7 @@ const App: React.FC = () => {
             addToast(errorMessage, 'error');
             setImageGenerationState({ sceneId, status: 'error', error: errorMessage });
         }
-    }, [addToast, scenes, generatedImages]);
+    }, [addToast, scenes, generatedImages, directorsVision]);
 
      const handleGoToNextScene = useCallback(() => {
         const currentSceneIndex = scenes.findIndex(s => s.id === activeSceneId);
@@ -289,7 +299,9 @@ const App: React.FC = () => {
             case 'idea':
                 return <StoryIdeaForm onSubmit={handleGenerateStoryBible} isLoading={isLoading} />;
             case 'bible':
-                return storyBible && <StoryBibleEditor storyBible={storyBible} setStoryBible={setStoryBible} onContinue={handleGenerateScenes} isLoading={isLoading} />;
+                return storyBible && <StoryBibleEditor storyBible={storyBible} setStoryBible={setStoryBible} onContinue={handleProceedToVision} isLoading={isLoading} />;
+            case 'vision':
+                return <DirectorsVisionForm onSubmit={handleGenerateScenes} isLoading={isLoading} />;
             case 'scenes':
             case 'director':
                  const currentSceneIndex = scenes.findIndex(s => s.id === activeSceneId);

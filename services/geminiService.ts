@@ -42,14 +42,20 @@ export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
     }
 };
 
-export const generateSceneList = async (plotOutline: string): Promise<Array<{ title: string; summary: string }>> => {
-    const prompt = `You are an expert film director. Your task is to break down the following plot outline into a series of distinct, actionable scenes. Each scene should represent a specific event or moment in the story.
+export const generateSceneList = async (storyBible: StoryBible, directorsVision: string): Promise<Array<{ title: string; summary: string }>> => {
+    const prompt = `You are an expert film director. Your task is to break down the following plot outline into a series of distinct, actionable scenes, keeping the overall story and cinematic vision in mind.
 
-    Plot Outline:
-    ${plotOutline}
+    **Story Bible:**
+    - Logline: ${storyBible.logline}
+    - Characters: ${storyBible.characters}
+    - Setting: ${storyBible.setting}
+    - Plot Outline: ${storyBible.plotOutline}
 
-    Generate a JSON array where each object has:
-    1.  **title**: A short, evocative title for the scene (e.g., "The Rooftop Chase," "A Desperate Bargain").
+    **Director's Vision / Cinematic Style:**
+    "${directorsVision}"
+
+    Based on ALL of the above context, generate a JSON array of scenes. Each scene object should have:
+    1.  **title**: A short, evocative title for the scene that aligns with the Director's Vision.
     2.  **summary**: A one-sentence description of what happens in this scene.`;
 
     const responseSchema = {
@@ -77,8 +83,11 @@ export const generateSceneList = async (plotOutline: string): Promise<Array<{ ti
     }
 };
 
-export const generateInitialShotsForScene = async (storyBible: StoryBible, scene: { title: string; summary: string }, previousSceneSummary?: string): Promise<string[]> => {
-    const prompt = `You are a visionary cinematographer. Your task is to create an initial shot list for a scene. The shot descriptions should be concise and focused on the visual action.
+export const generateInitialShotsForScene = async (storyBible: StoryBible, scene: { title: string; summary: string }, directorsVision: string, previousSceneSummary?: string): Promise<string[]> => {
+    const prompt = `You are a visionary cinematographer. Your task is to create an initial shot list for a scene. The shot descriptions should be concise and focused on the visual action, aligning with the established Director's Vision.
+
+    **Director's Vision / Cinematic Style:**
+    "${directorsVision}"
 
     **Overall Story Context:**
     - Logline: ${storyBible.logline}
@@ -91,7 +100,7 @@ export const generateInitialShotsForScene = async (storyBible: StoryBible, scene
     - Title: ${scene.title}
     - Summary: ${scene.summary}
 
-    Based on the context, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene. Make sure the shots logically follow from the previous scene if provided.`;
+    Based on the story, the director's vision, and the scene's summary, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene. Make sure the shots logically follow from the previous scene if provided.`;
     
     const responseSchema = {
         type: Type.ARRAY,
@@ -111,14 +120,17 @@ export const generateInitialShotsForScene = async (storyBible: StoryBible, scene
     }
 };
 
-export const getCoDirectorSuggestions = async (storyBible: StoryBible, activeScene: Scene, objective: string): Promise<CoDirectorResult> => {
+export const getCoDirectorSuggestions = async (storyBible: StoryBible, activeScene: Scene, objective: string, directorsVision: string): Promise<CoDirectorResult> => {
     const timelineString = activeScene.timeline.shots.map((shot, index) => {
         const transition = activeScene.timeline.transitions[index] ? `\n--[${activeScene.timeline.transitions[index]}]-->\n` : '';
         return `Shot ${index + 1} (${shot.id}): ${shot.description}${transition}`;
     }).join('');
 
     const prompt = `
-You are an expert AI Film Co-Director. Your task is to analyze a cinematic timeline within the context of the larger story and a creative objective, then provide creative and actionable suggestions.
+You are an expert AI Film Co-Director. Your task is to analyze a cinematic timeline and provide creative, actionable suggestions that align with a high-level artistic vision and a specific creative objective.
+
+**Director's Vision / Cinematic Style:**
+"${directorsVision}"
 
 **Overall Story Bible:**
 - Logline: ${storyBible.logline}
@@ -126,20 +138,19 @@ You are an expert AI Film Co-Director. Your task is to analyze a cinematic timel
 
 **Current Scene Context:**
 - Scene: ${activeScene.title} - ${activeScene.summary}
-- This scene is a crucial part of the story. Your suggestions must align with the overall narrative arc.
 
 **Current Shot-List for this Scene:**
 ${timelineString}
 
-**Creative Objective:**
+**User's Creative Objective for this Scene:**
 "${objective}"
 
 **Your Task & CRITICAL JSON FORMATTING INSTRUCTIONS:**
-Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema.
+Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Your suggestions must align with BOTH the Director's Vision and the user's immediate creative objective.
 - **The most critical rule is handling quotation marks inside JSON strings.** If you need to include a double quote character (") inside any string value (like in the 'reasoning' or 'description' fields), you MUST escape it with a backslash (e.g., "The character yelled, \\"Stop!\\""). Failure to do this will result in an invalid JSON.
 - Do not add any text or markdown formatting before or after the JSON object.
-- **Thematic Concept (thematic_concept)**: A short, evocative theme (2-5 words).
-- **Reasoning (reasoning)**: Explain your strategy. How do the changes serve the objective and the overall story?
+- **Thematic Concept (thematic_concept)**: A short, evocative theme (2-5 words) that synthesizes the vision and objective.
+- **Reasoning (reasoning)**: Explain your strategy. How do the changes serve the objective, the Director's Vision, and the overall story?
 - **Suggested Changes (suggested_changes)**: Provide a list of 5-8 specific, cohesive changes. Use the provided cinematic vocabulary. Be bold and transformative.
 - **Vocabulary (for 'enhancers' payload)**: Use exact string values from these lists:
     *   framing: [${FRAMING_OPTIONS.join(', ')}]
@@ -209,7 +220,7 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
     }
 };
 
-export const generateImagePrompt = async (timelineData: TimelineData): Promise<string> => {
+export const generateImagePrompt = async (timelineData: TimelineData, directorsVision: string): Promise<string> => {
     const { shots, shotEnhancers, negativePrompt } = timelineData;
 
     let detailedTimeline = shots.map((shot) => {
@@ -225,22 +236,25 @@ export const generateImagePrompt = async (timelineData: TimelineData): Promise<s
     }).join('');
 
     const prompt = `
-        You are an expert prompt engineer for a state-of-the-art generative image AI. Your task is to synthesize the provided cinematic timeline into a single, cohesive, and powerful generative prompt. The goal is to create a photorealistic, cinematic still image that captures the key moment of the scene with impeccable quality.
+        You are an expert prompt engineer for a state-of-the-art generative image AI. Your task is to synthesize the provided cinematic timeline and Director's Vision into a single, cohesive, and powerful generative prompt. The goal is to create a photorealistic, cinematic still image that captures the key moment of the scene with impeccable quality.
 
-        **CRITICAL INSTRUCTIONS FOR PROMPT CREATION:**
-        - **Synthesize, Don't List:** Do not just list the shots. Weave the descriptions and styles into a fluid, descriptive narrative for a single, powerful image.
-        - **Ground the Scene:** Ensure all characters and objects are physically grounded. Explicitly describe their interaction with the environment (e.g., "feet firmly on the muddy ground," "hand resting on the stone wall"). Avoid any sense of floating or illogical placement.
-        - **Perspective and Composition:** Create a clear and believable camera perspective. Use compositional rules (like the rule of thirds) to create a visually appealing and dramatic image. Avoid bizarre or physically impossible camera angles.
-        - **Realism is Key:** Emphasize photorealism, detailed textures, and realistic lighting.
+        **Director's Vision / Desired Cinematic Style:**
+        "${directorsVision}"
 
-        **Provided Cinematic Timeline:**
+        **Provided Cinematic Timeline for the Scene:**
         ${detailedTimeline}
 
         **Global Style Notes / Negative Prompt (AVOID THESE):**
         "${negativePrompt || 'None'}"
 
+        **CRITICAL INSTRUCTIONS FOR PROMPT CREATION:**
+        - **Synthesize, Don't List:** Do not just list the shots. Weave the Director's Vision, descriptions, and styles into a fluid, descriptive narrative for a single, powerful image.
+        - **Ground the Scene:** Ensure all characters and objects are physically grounded. Explicitly describe their interaction with the environment (e.g., "feet firmly on the muddy ground," "hand resting on the stone wall"). Avoid any sense of floating or illogical placement.
+        - **Perspective and Composition:** Create a clear and believable camera perspective based on the Director's Vision. Use compositional rules (like the rule of thirds) to create a visually appealing and dramatic image. Avoid bizarre or physically impossible camera angles.
+        - **Realism is Key:** Emphasize photorealism, detailed textures, and realistic lighting that matches the specified style.
+
         **Your Task:**
-        Combine all shot descriptions, styles, and global notes into one single paragraph. This prompt should be a fluid, descriptive narrative for a single, powerful image representing the scene.
+        Combine the Director's Vision, all shot descriptions, styles, and global notes into one single paragraph. This prompt should be a fluid, descriptive narrative for a single, powerful image representing the scene.
         - Focus on the most visually striking moment or the emotional core of the scene.
         - The final output MUST be a single block of raw prompt text. Do not include transitions.
     `;
@@ -259,9 +273,10 @@ export const generateImagePrompt = async (timelineData: TimelineData): Promise<s
 
 export const generateSceneImage = async (
     timelineData: TimelineData,
+    directorsVision: string,
     previousImageBase64?: string
 ): Promise<string> => {
-    const prompt = await generateImagePrompt(timelineData);
+    const prompt = await generateImagePrompt(timelineData, directorsVision);
     
     const imagePart = previousImageBase64 ? {
         inlineData: {
