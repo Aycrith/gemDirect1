@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult } from "../types";
 
@@ -49,19 +50,16 @@ export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
     }
 };
 
-export const generateSceneList = async (storyBible: StoryBible, directorsVision: string): Promise<Array<{ title: string; summary: string }>> => {
-    const prompt = `You are an expert film director. Your task is to break down the following plot outline into a series of distinct, actionable scenes, keeping the overall story and cinematic vision in mind.
+export const generateSceneList = async (plotOutline: string, directorsVision: string): Promise<Array<{ title: string; summary: string }>> => {
+    const prompt = `You are an expert film director. Your task is to break down the following plot outline into a series of distinct, actionable scenes, keeping the overall cinematic vision in mind.
 
-    **Story Bible:**
-    - Logline: ${storyBible.logline}
-    - Characters: ${storyBible.characters}
-    - Setting: ${storyBible.setting}
-    - Plot Outline: ${storyBible.plotOutline}
+    **Plot Outline:**
+    ${plotOutline}
 
     **Director's Vision / Cinematic Style:**
     "${directorsVision}"
 
-    Based on ALL of the above context, generate a JSON array of scenes. Each scene object should have:
+    Based on the above context, generate a JSON array of scenes. Each scene object should have:
     1.  **title**: A short, evocative title for the scene that aligns with the Director's Vision.
     2.  **summary**: A one-sentence description of what happens in this scene.`;
 
@@ -94,24 +92,27 @@ export const generateSceneList = async (storyBible: StoryBible, directorsVision:
     }
 };
 
-export const generateInitialShotsForScene = async (storyBible: StoryBible, scene: { title: string; summary: string }, directorsVision: string, previousSceneSummary?: string): Promise<string[]> => {
-    const prompt = `You are a visionary cinematographer. Your task is to create an initial shot list for a scene. The shot descriptions should be concise and focused on the visual action, aligning with the established Director's Vision.
+export const generateInitialShotsForScene = async (
+    logline: string, 
+    sceneSummary: string, 
+    directorsVision: string, 
+    previousSceneSummary?: string
+): Promise<string[]> => {
+    const prompt = `You are a visionary cinematographer. Create an initial shot list for a scene. The shot descriptions should be concise and focused on the visual action, aligning with the established Director's Vision.
 
     **Director's Vision / Cinematic Style:**
     "${directorsVision}"
 
-    **Overall Story Context:**
-    - Logline: ${storyBible.logline}
-    - Setting: ${storyBible.setting}
+    **Overall Story Logline (for context):**
+    ${logline}
     ${previousSceneSummary ? `
     **Previous Scene Summary (for context):**
-    - ${previousSceneSummary}` : ''}
+    ${previousSceneSummary}` : ''}
 
-    **Current Scene:**
-    - Title: ${scene.title}
-    - Summary: ${scene.summary}
+    **Current Scene Summary:**
+    ${sceneSummary}
 
-    Based on the story, the director's vision, and the scene's summary, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene. Make sure the shots logically follow from the previous scene if provided.`;
+    Based on the context, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene. Make sure the shots logically follow from the previous scene if provided.`;
     
     const responseSchema = {
         type: Type.ARRAY,
@@ -157,12 +158,10 @@ export const suggestStoryIdeas = async (): Promise<string[]> => {
     }
 };
 
-export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<string[]> => {
-    const prompt = `You are a film theorist. Based on this story bible, suggest 3 distinct and evocative "Director's Visions" or cinematic styles. Each should be a short paragraph. Return a JSON array of strings.
+export const suggestDirectorsVisions = async (logline: string): Promise<string[]> => {
+    const prompt = `You are a film theorist. Based on this story logline, suggest 3 distinct and evocative "Director's Visions" or cinematic styles. Each should be a short paragraph. Return a JSON array of strings.
 
-    Story Bible:
-    - Logline: ${storyBible.logline}
-    - Plot Outline: ${storyBible.plotOutline}`;
+    Story Logline: ${logline}`;
     const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
     try {
         const response = await ai.models.generateContent({
@@ -181,18 +180,17 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<s
     }
 };
 
-export const suggestCoDirectorObjectives = async (storyBible: StoryBible, scene: Scene, directorsVision: string): Promise<string[]> => {
-    const prompt = `You are a creative film director's assistant. Based on the provided story context, scene summary, and director's vision, suggest 3 diverse and actionable creative objectives for the AI Co-Director. The objectives should be concise, starting with a verb, and guide the AI towards a specific creative direction for the scene.
+export const suggestCoDirectorObjectives = async (logline: string, sceneSummary: string, directorsVision: string): Promise<string[]> => {
+    const prompt = `You are a creative film director's assistant. Based on the provided story logline, scene summary, and director's vision, suggest 3 diverse and actionable creative objectives for the AI Co-Director. The objectives should be concise, starting with a verb, and guide the AI towards a specific creative direction for the scene.
 
     **Director's Vision / Cinematic Style:**
     "${directorsVision}"
 
     **Story Logline:**
-    - ${storyBible.logline}
+    - ${logline}
 
-    **Current Scene:**
-    - Title: ${scene.title}
-    - Summary: ${scene.summary}
+    **Current Scene Summary:**
+    - ${sceneSummary}
 
     Return a JSON array of 3 strings.
 
@@ -224,15 +222,17 @@ export const suggestCoDirectorObjectives = async (storyBible: StoryBible, scene:
 };
 
 
-export const refineStoryBibleField = async (field: keyof StoryBible, storyBible: StoryBible): Promise<string> => {
-    const currentValue = storyBible[field];
+// FIX: Changed function signature to accept the full story bible and the field key.
+// This simplifies the call site and ensures the function has all the context it needs.
+export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleContext: StoryBible): Promise<string> => {
+    const currentValue = fullBibleContext[field];
     const prompt = `You are an expert editor. A user is working on a story bible and wants to refine one section. Based on the full story context, revise the following **${field}** to be more compelling, concise, and cinematic.
 
     **Full Story Bible Context:**
-    - Logline: ${storyBible.logline}
-    - Characters: ${storyBible.characters}
-    - Setting: ${storyBible.setting}
-    - Plot Outline: ${storyBible.plotOutline}
+    - Logline: ${fullBibleContext.logline}
+    - Characters: ${fullBibleContext.characters}
+    - Setting: ${fullBibleContext.setting}
+    - Plot Outline: ${fullBibleContext.plotOutline}
 
     **Current ${field.toUpperCase()} to Refine:**
     "${currentValue}"
@@ -263,21 +263,25 @@ export const refineStoryBibleField = async (field: keyof StoryBible, storyBible:
     }
 };
 
-export const refineShotDescription = async (shot: Shot, scene: Scene, storyBible: StoryBible, directorsVision: string): Promise<string> => {
+export const refineShotDescription = async (
+    shotDescription: string, 
+    sceneSummary: string,
+    logline: string, 
+    directorsVision: string
+): Promise<string> => {
     const prompt = `You are a screenwriter and cinematographer. Refine the following shot description to be more vivid, detailed, and cinematic. Ensure it aligns with the scene's context and the director's overall vision.
 
     **Director's Vision / Cinematic Style:**
     "${directorsVision}"
 
-    **Scene Context:**
-    - Title: ${scene.title}
-    - Summary: ${scene.summary}
+    **Scene Summary:**
+    ${sceneSummary}
     
     **Story Logline:**
-    - ${storyBible.logline}
+    ${logline}
 
     **Current Shot Description to Refine:**
-    "${shot.description}"
+    "${shotDescription}"
 
     Return a JSON object with a single key "refined_description" containing the improved text.`;
 
@@ -304,20 +308,25 @@ export const refineShotDescription = async (shot: Shot, scene: Scene, storyBible
     }
 };
 
-export const suggestShotEnhancers = async (shot: Shot, scene: Scene, storyBible: StoryBible, directorsVision: string): Promise<Partial<Omit<CreativeEnhancers, 'transitions'>>> => {
+export const suggestShotEnhancers = async (
+    shotDescription: string, 
+    sceneSummary: string, 
+    logline: string, 
+    directorsVision: string
+): Promise<Partial<Omit<CreativeEnhancers, 'transitions'>>> => {
     const prompt = `You are an expert AI Cinematographer. For the given shot, suggest a cohesive set of creative enhancers that align with the scene's context and the overall Director's Vision.
 
     **Director's Vision / Cinematic Style:**
     "${directorsVision}"
     
     **Story Logline:**
-    - ${storyBible.logline}
+    ${logline}
 
     **Scene Summary:**
-    "${scene.summary}"
+    "${sceneSummary}"
 
     **Shot Description:**
-    "${shot.description}"
+    "${shotDescription}"
 
     **Your Task & CRITICAL JSON FORMATTING:**
     Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Select 1-2 appropriate cinematic terms for each relevant category. Only include categories that are highly relevant; do not suggest for every category.
@@ -422,7 +431,13 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
     }
 };
 
-export const getCoDirectorSuggestions = async (storyBible: StoryBible, activeScene: Scene, objective: string, directorsVision: string): Promise<CoDirectorResult> => {
+export const getCoDirectorSuggestions = async (
+    logline: string, 
+    plotOutline: string, 
+    activeScene: Scene, 
+    objective: string, 
+    directorsVision: string
+): Promise<CoDirectorResult> => {
     const timelineString = activeScene.timeline.shots.map((shot, index) => {
         let shotSummary = `Shot ${index + 1}: "${shot.description}"`;
         const enhancers = activeScene.timeline.shotEnhancers[shot.id];
@@ -454,9 +469,9 @@ You are an expert AI Film Co-Director. Your task is to analyze a cinematic timel
 **Director's Vision / Cinematic Style:**
 "${directorsVision}"
 
-**Overall Story Bible:**
-- Logline: ${storyBible.logline}
-- Key Plot Points: ${storyBible.plotOutline}
+**Overall Story Context:**
+- Logline: ${logline}
+- Key Plot Points: ${plotOutline}
 
 **Current Scene Context:**
 - Scene: ${activeScene.title} - ${activeScene.summary}
@@ -636,6 +651,7 @@ export const scoreContinuity = async (
     scene: Scene,
     videoAnalysis: string
 ): Promise<ContinuityResult> => {
+    const { logline, plotOutline } = storyBible;
     const timelineString = scene.timeline.shots.map((shot, index) => {
         let shotSummary = `${index + 1}. ${shot.description}`;
         const enhancers = scene.timeline.shotEnhancers[shot.id];
@@ -656,8 +672,8 @@ You are an expert film critic and continuity supervisor. Your task is to analyze
 **PART 1: THE CREATIVE INTENT**
 
 **1.1. Overall Story Bible (Thematic Foundation):**
-- Logline: ${storyBible.logline}
-- Plot Outline: ${storyBible.plotOutline}
+- Logline: ${logline}
+- Plot Outline: ${plotOutline}
 
 **1.2. Director's Vision (Aesthetic Guardrail):**
 - "${directorsVision}"

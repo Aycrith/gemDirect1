@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import StoryIdeaForm from './components/StoryIdeaForm';
 import StoryBibleEditor from './components/StoryBibleEditor';
 import SceneNavigator from './components/SceneNavigator';
@@ -14,8 +14,8 @@ import FilmIcon from './components/icons/FilmIcon';
 import PencilRulerIcon from './components/icons/PencilRulerIcon';
 import ContinuityDirector from './components/ContinuityDirector';
 import ClipboardCheckIcon from './components/icons/ClipboardCheckIcon';
+import * as db from './utils/database';
 
-type AppStage = 'idea' | 'bible' | 'vision' | 'scenes' | 'director';
 type AppMode = 'generator' | 'analyzer' | 'continuity';
 
 const emptyTimeline: TimelineData = {
@@ -28,7 +28,6 @@ const emptyTimeline: TimelineData = {
 const App: React.FC = () => {
     // App Flow & State
     const [appMode, setAppMode] = useState<AppMode>('generator');
-    const [appStage, setAppStage] = useState<AppStage>('idea');
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('idea');
     const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
     const [directorsVision, setDirectorsVision] = useState<string>('');
@@ -51,11 +50,53 @@ const App: React.FC = () => {
     const [continuityData, setContinuityData] = useState<Record<string, SceneContinuityData>>({});
 
     // UI and Loading State
-    const [isLoading, setIsLoading] = useState(false);
-    const [loadingMessage, setLoadingMessage] = useState('');
+    const [isLoading, setIsLoading] = useState(true); // Start true for DB load
+    const [loadingMessage, setLoadingMessage] = useState('Loading project...');
     const [coDirectorResult, setCoDirectorResult] = useState<CoDirectorResult | null>(null);
     const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+    // --- Load project from DB on initial render ---
+    useEffect(() => {
+        const loadProject = async () => {
+            try {
+                const [bible, savedScenes, vision, images, prompts, continuity] = await Promise.all([
+                    db.getStoryBible(),
+                    db.getAllScenes(),
+                    db.getData('directorsVision'),
+                    db.getData('generatedImages'),
+                    db.getData('videoPrompts'),
+                    db.getData('continuityData'),
+                ]);
+
+                if (bible) {
+                    setStoryBible(bible);
+                    setScenes(savedScenes || []);
+                    setDirectorsVision(vision || '');
+                    setGeneratedImages(images || {});
+                    setVideoPrompts(prompts || {});
+                    setContinuityData(continuity || {});
+
+                    if (savedScenes && savedScenes.length > 0) {
+                        setWorkflowStage('scenes');
+                    } else if (vision) {
+                        setWorkflowStage('vision');
+                    } else {
+                        setWorkflowStage('bible');
+                    }
+                } else {
+                    setWorkflowStage('idea');
+                }
+            } catch (error) {
+                console.error("Failed to load project from database", error);
+                addToast("Could not load saved project.", "error");
+            } finally {
+                setIsLoading(false);
+                setLoadingMessage('');
+            }
+        };
+        loadProject();
+    }, []);
     
     // --- Toast Notifications ---
     const removeToast = useCallback((id: number) => {
@@ -73,11 +114,12 @@ const App: React.FC = () => {
         setIsLoading(true);
         setLoadingMessage('Generating your Story Bible...');
         try {
+            await db.clearProjectData(); // Start fresh
             const bible = await generateStoryBible(idea);
             setStoryBible(bible);
-            setAppStage('bible');
+            await db.saveStoryBible(bible);
             setWorkflowStage('bible');
-            addToast('Story Bible generated!', 'success');
+            addToast('Story Bible generated and saved!', 'success');
         } catch (error) {
             addToast(error instanceof Error ? error.message : 'An unknown error occurred', 'error');
         } finally {
@@ -87,7 +129,6 @@ const App: React.FC = () => {
 
     const handleProceedToVision = useCallback(() => {
         if (!storyBible) return;
-        setAppStage('vision');
         setWorkflowStage('vision');
         addToast("Story Bible confirmed. Now, let's set the vision.", 'info');
     }, [storyBible, addToast]);
@@ -98,7 +139,7 @@ const App: React.FC = () => {
         setIsLoading(true);
         setLoadingMessage('Breaking down the plot into scenes...');
         try {
-            const sceneList = await generateSceneList(storyBible, vision);
+            const sceneList = await generateSceneList(storyBible.plotOutline, vision);
             const newScenes: Scene[] = sceneList.map((s, i) => ({
                 id: `scene_${Date.now()}_${i}`,
                 title: s.title,
@@ -106,9 +147,10 @@ const App: React.FC = () => {
                 timeline: emptyTimeline,
             }));
             setScenes(newScenes);
-            setAppStage('scenes');
+            await db.saveData('directorsVision', vision);
+            await db.saveScenes(newScenes);
             setWorkflowStage('scenes');
-            addToast('Scene list created!', 'success');
+            addToast('Scene list created and saved!', 'success');
         } catch (error) {
             addToast(error instanceof Error ? error.message : 'An unknown error occurred', 'error');
         } finally {
@@ -132,7 +174,7 @@ const App: React.FC = () => {
                     previousSceneSummary = scenes[sceneIndex - 1].summary;
                 }
 
-                const shotDescriptions = await generateInitialShotsForScene(storyBible, targetScene, directorsVision, previousSceneSummary);
+                const shotDescriptions = await generateInitialShotsForScene(storyBible.logline, targetScene.summary, directorsVision, previousSceneSummary);
                 const newShots: Shot[] = shotDescriptions.map((desc, index) => ({
                     id: `shot_${Date.now()}_${index}`,
                     description: desc,
@@ -144,8 +186,11 @@ const App: React.FC = () => {
                     transitions: new Array(Math.max(0, newShots.length - 1)).fill('Cut'),
                     negativePrompt: 'floating characters, illogical perspective, weird angles, distorted anatomy, person standing on the camera/viewer, shaky camera, blurry, low quality, watermark, text, signature, ugly, deformed, disfigured, jpeg artifacts, lowres, painting, cartoon, 3d render',
                 };
-
-                setScenes(prevScenes => prevScenes.map(s => s.id === sceneId ? { ...s, timeline: newTimeline } : s));
+                
+                const updatedScene = { ...targetScene, timeline: newTimeline };
+                
+                setScenes(prevScenes => prevScenes.map(s => s.id === sceneId ? updatedScene : s));
+                await db.updateSceneTimeline(sceneId, newTimeline);
                 
                 if (previousSceneSummary) {
                     addToast(`Shots for "${targetScene.title}" created with context from the previous scene.`, 'success');
@@ -159,11 +204,10 @@ const App: React.FC = () => {
                 setIsLoading(false);
             }
         }
-        if (appStage !== 'director') {
-            setAppStage('director');
+        if (workflowStage !== 'director') {
             setWorkflowStage('director');
         }
-    }, [scenes, storyBible, directorsVision, addToast, appStage]);
+    }, [scenes, storyBible, directorsVision, addToast, workflowStage]);
 
     // --- Timeline and Scene State Management ---
     const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
@@ -173,12 +217,21 @@ const App: React.FC = () => {
         return scenes.every(scene => videoPrompts[scene.id]);
     }, [scenes, videoPrompts]);
 
-    const updateActiveSceneTimeline = useCallback((updater: (timeline: TimelineData) => TimelineData) => {
+    const updateActiveSceneTimeline = useCallback(async (updater: (timeline: TimelineData) => TimelineData) => {
+        if (!activeSceneId) return;
+        let updatedTimeline: TimelineData | null = null;
         setScenes(prevScenes =>
-            prevScenes.map(scene =>
-                scene.id === activeSceneId ? { ...scene, timeline: updater(scene.timeline) } : scene
-            )
+            prevScenes.map(scene => {
+                if (scene.id === activeSceneId) {
+                    updatedTimeline = updater(scene.timeline);
+                    return { ...scene, timeline: updatedTimeline };
+                }
+                return scene;
+            })
         );
+        if (updatedTimeline) {
+           await db.updateSceneTimeline(activeSceneId, updatedTimeline);
+        }
     }, [activeSceneId]);
 
     const setShotsForActiveScene = useCallback((setter: React.SetStateAction<Shot[]>) => {
@@ -207,7 +260,7 @@ const App: React.FC = () => {
         setIsCoDirectorLoading(true);
         setCoDirectorResult(null);
         try {
-            const result = await getCoDirectorSuggestions(storyBible, activeScene, objective, directorsVision);
+            const result = await getCoDirectorSuggestions(storyBible.logline, storyBible.plotOutline, activeScene, objective, directorsVision);
             setCoDirectorResult(result);
         } catch (error) {
             addToast(error instanceof Error ? error.message : "An unknown error occurred.", 'error');
@@ -222,7 +275,7 @@ const App: React.FC = () => {
             return;
         };
         try {
-            const objectives = await suggestCoDirectorObjectives(storyBible, activeScene, directorsVision);
+            const objectives = await suggestCoDirectorObjectives(storyBible.logline, activeScene.summary, directorsVision);
             return objectives;
         } catch (error) {
             addToast(error instanceof Error ? error.message : 'Failed to get inspiration', 'error');
@@ -269,10 +322,11 @@ const App: React.FC = () => {
             }
             return { ...scene, timeline };
         };
-
-        setScenes(prev => prev.map(s => s.id === activeSceneId ? applyToScene(s) : s));
+        
+        // This is a synchronous update, so we can pass the updater function directly
+        updateActiveSceneTimeline(currentTimeline => applyToScene({ ...activeScene!, timeline: currentTimeline }).timeline);
         addToast('Suggestion applied!', 'success');
-    }, [activeSceneId, addToast]);
+    }, [activeSceneId, activeScene, updateActiveSceneTimeline, addToast]);
     
     // --- Scene Generation ---
     const handleGenerateImageForScene = useCallback(async (timelineData: TimelineData, sceneId: string) => {
@@ -296,7 +350,10 @@ const App: React.FC = () => {
             
             const imageBase64 = await generateSceneImage(timelineData, directorsVision, previousImageBase64);
             
-            setGeneratedImages(prev => ({ ...prev, [sceneId]: imageBase64 }));
+            const newImages = { ...generatedImages, [sceneId]: imageBase64 };
+            setGeneratedImages(newImages);
+            await db.saveData('generatedImages', newImages);
+
             setImageGenerationState({ sceneId, status: 'success', error: null });
             addToast('Scene image generated!', 'success');
 
@@ -311,14 +368,16 @@ const App: React.FC = () => {
         setIsVideoPromptGenerating(true);
         try {
             const prompt = await generateVideoPrompt(timelineData, directorsVision);
-            setVideoPrompts(prev => ({ ...prev, [sceneId]: prompt }));
+            const newPrompts = { ...videoPrompts, [sceneId]: prompt };
+            setVideoPrompts(newPrompts);
+            await db.saveData('videoPrompts', newPrompts);
             addToast('Video prompt generated!', 'success');
         } catch (error) {
             addToast(error instanceof Error ? error.message : 'Failed to generate video prompt.', 'error');
         } finally {
             setIsVideoPromptGenerating(false);
         }
-    }, [directorsVision, addToast]);
+    }, [directorsVision, addToast, videoPrompts]);
 
      const handleGoToNextScene = useCallback(() => {
         const currentSceneIndex = scenes.findIndex(s => s.id === activeSceneId);
@@ -328,8 +387,27 @@ const App: React.FC = () => {
         }
     }, [scenes, activeSceneId, handleSceneSelect]);
 
+    const getAppStage = () => {
+        if (!storyBible) return 'idea';
+        if (!directorsVision) return 'vision';
+        if (scenes.length === 0) return 'bible'; // Should be vision, but handles edge case
+        if (!activeSceneId) return 'scenes';
+        return 'director';
+    }
 
     const renderContent = () => {
+        if (isLoading && !storyBible) {
+            return (
+                <div className="text-center p-12">
+                     <svg className="animate-spin h-8 w-8 text-indigo-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p className="mt-4 text-gray-400">Loading your project...</p>
+                </div>
+            );
+        }
+
         if (appMode === 'analyzer') {
             return <VideoAnalyzer />;
         }
@@ -348,6 +426,8 @@ const App: React.FC = () => {
                 />
             );
         }
+
+        const appStage = getAppStage();
 
         switch (appStage) {
             case 'idea':
@@ -369,7 +449,7 @@ const App: React.FC = () => {
                         <main className="flex-1">
                             {isLoading && !activeScene && (
                                 <div className="flex items-center justify-center p-8 bg-gray-800/30 rounded-lg h-64">
-                                     <svg className="animate-spin mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                     <svg className="animate-spin mr-3 h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
@@ -466,7 +546,7 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                {appMode === 'generator' && <WorkflowTracker currentStage={workflowStage} />}
+                {appMode === 'generator' && storyBible && <WorkflowTracker currentStage={workflowStage} />}
 
                 <div className="mt-12 fade-in">
                     {renderContent()}

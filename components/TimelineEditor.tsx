@@ -211,7 +211,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const handleRefineDescription = useCallback(async (shot: Shot) => {
         setSuggestionState({ shotId: shot.id, type: 'description' });
         try {
-            const refinedDesc = await refineShotDescription(shot, scene, storyBible, directorsVision);
+            // FIX: Pass the correct arguments (strings) instead of entire objects.
+            const refinedDesc = await refineShotDescription(shot.description, scene.summary, storyBible.logline, directorsVision);
             setShots(prev => prev.map(s => s.id === shot.id ? { ...s, description: refinedDesc } : s));
         } catch (e) {
             console.error(e);
@@ -223,7 +224,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const handleSuggestEnhancers = useCallback(async (shot: Shot) => {
         setSuggestionState({ shotId: shot.id, type: 'enhancers' });
         try {
-            const suggested = await suggestShotEnhancers(shot, scene, storyBible, directorsVision);
+            // FIX: Pass the correct arguments (strings) instead of entire objects.
+            const suggested = await suggestShotEnhancers(shot.description, scene.summary, storyBible.logline, directorsVision);
             setShotEnhancers(prev => ({ ...prev, [shot.id]: suggested }));
         } catch (e) {
             console.error(e);

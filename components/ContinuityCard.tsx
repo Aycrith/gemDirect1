@@ -111,6 +111,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
         const analysis = await analyzeVideoFrames(frames);
         setContinuityData(prev => ({ ...prev!, videoAnalysis: analysis, status: 'scoring' }));
 
+        // FIX: Pass the correct arguments to match the function signature.
         const result = await scoreContinuity(storyBible, directorsVision, scene, analysis);
         setContinuityData(prev => ({ ...prev!, continuityResult: result, status: 'complete' }));
 

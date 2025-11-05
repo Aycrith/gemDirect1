@@ -70,6 +70,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, setStor
         if (!storyBible) return;
         setRefiningField(field);
         try {
+            // FIX: Pass the correct arguments to the updated refineStoryBibleField function.
             const refinedText = await refineStoryBibleField(field, storyBible);
             handleFieldChange(field, refinedText);
         } catch (e) {
