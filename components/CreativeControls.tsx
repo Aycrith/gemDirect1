@@ -8,6 +8,8 @@ import LensIcon from './icons/LensIcon';
 import LightingIcon from './icons/LightingIcon';
 import VfxIcon from './icons/VfxIcon';
 import DramaMaskIcon from './icons/DramaMaskIcon';
+import Tooltip from './Tooltip';
+import { CINEMATIC_TERMS } from '../utils/cinematicTerms';
 
 interface CreativeControlsProps {
   value: Partial<Omit<CreativeEnhancers, 'transitions'>>;
@@ -23,17 +25,19 @@ const MOOD_OPTIONS = ["Suspenseful", "Epic", "Gritty", "Dreamlike", "Tense", "En
 const VFX_OPTIONS = ["Bleach Bypass", "Chromatic Aberration", "Color Grading (Teal & Orange)", "Day-for-Night", "Desaturated", "Film Grain", "Glitch Effect", "Glow/Bloom", "High Contrast", "Lens Dirt/Smudges", "Light Leaks", "Motion Blur", "Particle Effects", "Scanlines", "VHS Look", "Vignette"];
 const PLOT_ENHANCEMENTS_OPTIONS = ["Add Character Action", "Introduce Conflict", "Foreshadowing Moment", "Heighten Emotion", "Add Dialogue Snippet", "Reveal a Detail"];
 
-const ControlButton: React.FC<{ label: string; selected: boolean; onClick: () => void; }> = ({ label, selected, onClick }) => (
-    <button
-        onClick={onClick}
-        className={`px-3 py-1.5 text-sm font-medium rounded-full border transition-all duration-200 ${selected ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-700 hover:border-gray-500'}`}
-    >
-        {label}
-    </button>
+const ControlButton: React.FC<{ label: string; selected: boolean; onClick: () => void; description: string; }> = ({ label, selected, onClick, description }) => (
+    <Tooltip text={description}>
+        <button
+            onClick={onClick}
+            className={`px-3 py-1.5 text-sm font-medium rounded-full border transition-all duration-200 ${selected ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-700 hover:border-gray-500'}`}
+        >
+            {label}
+        </button>
+    </Tooltip>
 )
 
-const ControlSection: React.FC<{ title: string; icon: React.ReactNode; options: string[]; selected: string[]; onToggle: (option: string) => void;}> = 
-({ title, icon, options, selected, onToggle }) => {
+const ControlSection: React.FC<{ title: string; icon: React.ReactNode; options: string[]; selected: string[]; onToggle: (option: string) => void; categoryId: keyof typeof CINEMATIC_TERMS; }> = 
+({ title, icon, options, selected, onToggle, categoryId }) => {
     return (
     <div>
         <label className="flex items-center text-sm font-medium text-gray-300 mb-3">
@@ -47,6 +51,7 @@ const ControlSection: React.FC<{ title: string; icon: React.ReactNode; options: 
                     label={option} 
                     selected={selected.includes(option)}
                     onClick={() => onToggle(option)}
+                    description={CINEMATIC_TERMS[categoryId]?.[option] || ''}
                 />
             ))}
         </div>
@@ -57,12 +62,24 @@ const ControlSection: React.FC<{ title: string; icon: React.ReactNode; options: 
 
 const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) => {
 
-    const handleToggle = (category: keyof Omit<CreativeEnhancers, 'transitions'>, option: string) => {
+    const handleToggle = (category: keyof Omit<CreativeEnhancers, 'transitions' | 'plotEnhancements'>, option: string) => {
         const currentSelection = value[category] || [];
         const newSelection = currentSelection.includes(option)
             ? currentSelection.filter(item => item !== option)
             : [...currentSelection, option];
         
+        onChange({
+            ...value,
+            [category]: newSelection,
+        });
+    };
+    
+    const handlePlotToggle = (category: 'plotEnhancements', option: string) => {
+        const currentSelection = value[category] || [];
+        const newSelection = currentSelection.includes(option)
+            ? currentSelection.filter(item => item !== option)
+            : [...currentSelection, option];
+
         onChange({
             ...value,
             [category]: newSelection,
@@ -77,6 +94,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
                 options={FRAMING_OPTIONS}
                 selected={value.framing || []}
                 onToggle={(option) => handleToggle('framing', option)}
+                categoryId="framing"
             />
             <ControlSection 
                 title="Camera Movement"
@@ -84,6 +102,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
                 options={MOVEMENT_OPTIONS}
                 selected={value.movement || []}
                 onToggle={(option) => handleToggle('movement', option)}
+                categoryId="movement"
             />
              <ControlSection 
                 title="Lens & Focus"
@@ -91,6 +110,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
                 options={LENS_OPTIONS}
                 selected={value.lens || []}
                 onToggle={(option) => handleToggle('lens', option)}
+                categoryId="lens"
             />
             <ControlSection 
                 title="Editing & Pacing"
@@ -98,13 +118,15 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
                 options={PACING_OPTIONS}
                 selected={value.pacing || []}
                 onToggle={(option) => handleToggle('pacing', option)}
+                categoryId="pacing"
             />
              <ControlSection 
                 title="Plot & Action"
                 icon={<DramaMaskIcon className="w-5 h-5 mr-2 text-indigo-400" />}
                 options={PLOT_ENHANCEMENTS_OPTIONS}
                 selected={value.plotEnhancements || []}
-                onToggle={(option) => handleToggle('plotEnhancements', option)}
+                onToggle={(option) => handlePlotToggle('plotEnhancements', option)}
+                categoryId="plotEnhancements"
             />
             <ControlSection 
                 title="Lighting Style"
@@ -112,6 +134,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
                 options={LIGHTING_OPTIONS}
                 selected={value.lighting || []}
                 onToggle={(option) => handleToggle('lighting', option)}
+                categoryId="lighting"
             />
             <ControlSection 
                 title="Mood & Tone"
@@ -119,6 +142,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
                 options={MOOD_OPTIONS}
                 selected={value.mood || []}
                 onToggle={(option) => handleToggle('mood', option)}
+                categoryId="mood"
             />
              <ControlSection 
                 title="Visual Style & VFX"
@@ -126,6 +150,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
                 options={VFX_OPTIONS}
                 selected={value.vfx || []}
                 onToggle={(option) => handleToggle('vfx', option)}
+                categoryId="vfx"
             />
         </div>
     )

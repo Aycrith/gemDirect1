@@ -1,210 +1,199 @@
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { AnalysisResult, Shot, ShotEnhancers } from '../types';
+import { GoogleGenAI, Type } from "@google/genai";
+import { AnalysisResult, CoDirectorResult, Shot } from "../types";
 
-const API_KEY = process.env.API_KEY;
+// Note: API key is automatically sourced from process.env.API_KEY
+// FIX: Initialize GoogleGenAI with a named apiKey parameter as per guidelines.
+const ai = new GoogleGenAI({apiKey: process.env.API_KEY as string});
 
-if (!API_KEY) {
-    throw new Error("API_KEY environment variable not set");
-}
+/**
+ * Analyzes video frames to identify shots and suggest improvements.
+ */
+export const analyzeVideoFrames = async (frames: string[]): Promise<AnalysisResult> => {
 
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+    // FIX: Use a recommended model for complex text and image tasks.
+    const model = 'gemini-2.5-pro'; 
 
-// Constants for available options to guide the AI suggestions
-const FRAMING_OPTIONS = ["Bird's-Eye View", "Close-Up", "Cowboy Shot", "Establishing Shot", "Extreme Close-Up", "Full Shot", "High Angle", "Low Angle", "Medium Shot", "Over-the-Shoulder", "Point of View", "Two Shot", "Wide Shot", "Worm's-Eye View"];
-const MOVEMENT_OPTIONS = ["Arc Shot", "Crane/Jib Shot", "Dolly Zoom", "Dutch Tilt", "Follow Shot", "Handheld", "Pan", "Pull Out", "Push In", "Static Shot", "Steadicam", "Tilt", "Tracking Shot", "Whip Pan", "Zoom In/Out"];
-const LENS_OPTIONS = ["Anamorphic", "Bokeh", "Deep Focus", "Fisheye Lens", "Lens Flare", "Rack Focus", "Shallow Depth of Field", "Soft Focus", "Split Diopter", "Telephoto", "Tilt-Shift", "Wide-Angle"];
-const PACING_OPTIONS = ["Bullet Time", "Chaotic", "Cross-Cutting", "Fast-Paced", "Freeze Frame", "Graceful", "Jump Cut", "Long Take", "Montage", "Slow Motion", "Smash Cut", "Speed Ramp"];
-const LIGHTING_OPTIONS = ["Low-Key (Chiaroscuro)", "High-Key", "Backlight / Rim Light", "Golden Hour", "Neon Glow", "Hard Lighting"];
-const MOOD_OPTIONS = ["Suspenseful", "Epic", "Gritty", "Dreamlike", "Tense", "Energetic", "Nostalgic"];
-const VFX_OPTIONS = ["Bleach Bypass", "Chromatic Aberration", "Color Grading (Teal & Orange)", "Day-for-Night", "Desaturated", "Film Grain", "Glitch Effect", "Glow/Bloom", "High Contrast", "Lens Dirt/Smudges", "Light Leaks", "Motion Blur", "Particle Effects", "Scanlines", "VHS Look", "Vignette"];
-const PLOT_ENHANCEMENTS_OPTIONS = ["Add Character Action", "Introduce Conflict", "Foreshadowing Moment", "Heighten Emotion", "Add Dialogue Snippet", "Reveal a Detail"];
-const TRANSITION_OPTIONS = ["Cut", "Dissolve", "Wipe", "Match Cut", "J-Cut", "L-Cut", "Whip Pan", "Glitch Effect", "Fade to Black"];
+    const prompt = `
+        You are an expert film editor. Your task is to analyze a sequence of video frames and break it down into distinct cinematic shots.
 
-const imagePartsFromFrames = (frames: string[]) => {
-    return frames.map(frame => ({
+        1.  **Identify Every Distinct Shot**: Meticulously analyze the frames to identify every single shot change. A new shot is defined by a clear cut, a significant change in camera angle, or a major shift in subject or location.
+        2.  **Format the Output Strictly**: For the 'feedback' field, you MUST list each shot on a new line. Each line must start with the prefix "Shot <number>: " followed by a concise description of the action in that shot.
+            Example format:
+            "Shot 1: A wide establishing shot of a futuristic city skyline at dusk.
+            Shot 2: Close-up on a character's face looking out a window.
+            Shot 3: A fast-paced tracking shot following a flying vehicle through canyons of buildings."
+        3.  **Create a Generative Prompt**: For the 'improvement_prompt' field, synthesize all the identified shots into a single, cohesive prompt for a generative video AI. This prompt should aim to recreate the sequence with enhanced cinematic quality, incorporating dynamic camera work, lighting, and pacing.
+
+        Interpret the cinematic intent, do not just describe the frames literally.
+    `;
+
+    const imageParts = frames.map((frame) => ({
         inlineData: {
             mimeType: 'image/jpeg',
-            data: frame.split(',')[1], // remove base64 prefix
+            data: frame,
         },
     }));
-}
 
-const generateWithTimeout = <T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> => {
-    const timeoutPromise = new Promise<T>((_, reject) => {
-        setTimeout(() => {
-            reject(new Error(timeoutMessage));
-        }, timeoutMs);
-    });
-    return Promise.race([promise, timeoutPromise]);
+    const contents = {
+        parts: [
+            { text: prompt },
+            ...imageParts,
+        ],
+    };
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            feedback: {
+                type: Type.STRING,
+                description: "A description of all distinct cinematic shots. CRITICAL: Each shot MUST be on a new line and MUST start with 'Shot <number>: ' (e.g., 'Shot 1: ...')."
+            },
+            improvement_prompt: {
+                type: Type.STRING,
+                description: "A generative AI prompt to recreate the scene with cinematic enhancements. Use markdown for techniques and '--[Transition]-->' for shot changes."
+            }
+        },
+        required: ['feedback', 'improvement_prompt'],
+    };
+
+    try {
+        // FIX: Use ai.models.generateContent to generate content as per guidelines.
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: contents,
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: responseSchema,
+            },
+        });
+        
+        // FIX: Extract text from response using the .text property as per guidelines.
+        const jsonText = response.text.trim();
+        const result = JSON.parse(jsonText);
+
+        return result as AnalysisResult;
+
+    } catch (error) {
+        console.error("Error analyzing video frames with Gemini:", error);
+        throw new Error("Failed to analyze video. Please check the console for details.");
+    }
 };
 
 
-export const generateShotList = async (frames: string[]): Promise<Shot[]> => {
-    const model = 'gemini-2.5-flash'; // Switched to a faster model for multimodal input
-    const prompt = `Analyze these sequential frames from a 10-second video clip. Break the action down into distinct shots or beats (ideally 2-3 for a short clip). For each shot, provide a concise, cinematic description and a short, catchy title.
-    Respond with a valid JSON array, where each object has an "id" (e.g., "shot_1"), a "title" (e.g., "The Alley Chase"), and a "description". Do not include any other text.
-    Example: [{"id": "shot_1", "title": "The Reveal", "description": "A wide shot of a car drifting around a dusty corner."}]`;
-
-    try {
-        const apiCall = ai.models.generateContent({
-            model,
-            contents: { parts: [...imagePartsFromFrames(frames), { text: prompt }] },
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.OBJECT,
-                        properties: {
-                            id: { type: Type.STRING },
-                            title: { type: Type.STRING },
-                            description: { type: Type.STRING },
-                        },
-                    },
-                },
-            },
-        });
-
-        const response: GenerateContentResponse = await generateWithTimeout(
-            apiCall, 
-            60000, 
-            'AI shot detection timed out. The model may be busy or the video is too complex. Please try again.'
-        );
-
-        const result = JSON.parse(response.text);
-        if (Array.isArray(result) && result.length > 0) {
-            return result.map((shot, index) => ({ ...shot, id: shot.id || `shot_${index + 1}` })); // Ensure ID exists
-        }
-        // Fallback for unexpected but valid JSON
-        return [{ id: 'shot_1', title: 'Full Scene', description: 'The AI could not split the video into shots. Please describe the entire sequence here.' }];
-    } catch (error) {
-        console.error("Error generating shot list:", error);
-        if (error instanceof Error) {
-            throw error; // Re-throw the specific error (e.g., timeout)
-        }
-        throw new Error("AI failed to generate a shot list for the video.");
-    }
-}
-
-export const suggestEnhancementsForTimeline = async (shots: Shot[]): Promise<{ shotEnhancers: ShotEnhancers, transitions: string[], negativePrompts: string[] }> => {
-    const model = 'gemini-2.5-flash'; // Switched to a faster model for suggestion generation
-    const shotDescriptions = shots.map(s => `  - ${s.id} (${s.title}): ${s.description}`).join('\n');
+/**
+ * Generates co-director suggestions based on a timeline and a creative objective.
+ */
+export const getCoDirectorSuggestions = async (shots: Shot[], transitions: string[], objective: string): Promise<CoDirectorResult> => {
     
+    // FIX: Use a recommended model for complex text tasks.
+    const model = 'gemini-2.5-pro';
+
+    const timelineString = shots.map((shot, index) => {
+        const transition = transitions[index] ? `\n--[${transitions[index]}]-->\n` : '';
+        return `Shot ${index + 1} (${shot.id}): ${shot.description}${transition}`;
+    }).join('');
+
     const prompt = `
-        Based on the following shot list from a video, suggest a complete creative blueprint to make the scene more impactful.
-        
-        Shot List:
-        ${shotDescriptions}
+        You are an expert AI Film Co-Director. Your task is to analyze a cinematic timeline and a creative objective, then provide actionable suggestions to enhance the final video.
 
-        Your response MUST be a single, valid JSON object with three keys: "shotEnhancers", "transitions", and "negativePrompts".
-        1. "shotEnhancers": An object where each key is a shot id from the list. The value for each shot id should be an object containing suggested creative enhancers. For each category below, choose ONE OR TWO options you feel would best complement that specific shot.
-        2. "transitions": An array of strings suggesting a transition between each shot. The number of transitions should be exactly one less than the number of shots.
-        3. "negativePrompts": An array of 3-5 strings suggesting things to AVOID (e.g., "shaky camera", "dull colors") based on the overall tone.
+        **Current Timeline:**
+        ${timelineString}
 
-        Available Options:
-        - framing: ${JSON.stringify(FRAMING_OPTIONS)}
-        - movement: ${JSON.stringify(MOVEMENT_OPTIONS)}
-        - lens: ${JSON.stringify(LENS_OPTIONS)}
-        - pacing: ${JSON.stringify(PACING_OPTIONS)}
-        - lighting: ${JSON.stringify(LIGHTING_OPTIONS)}
-        - mood: ${JSON.stringify(MOOD_OPTIONS)}
-        - vfx: ${JSON.stringify(VFX_OPTIONS)}
-        - plotEnhancements: ${JSON.stringify(PLOT_ENHANCEMENTS_OPTIONS)}
-        - transitions: ${JSON.stringify(TRANSITION_OPTIONS)}
+        **Creative Objective:**
+        "${objective}"
+
+        **Your Task:**
+        1.  **Thematic Concept**: Come up with a short, catchy thematic concept (2-5 words) that encapsulates the creative objective for this timeline.
+        2.  **Reasoning**: Briefly explain your overall strategy for achieving the objective, based on the provided timeline.
+        3.  **Suggested Changes**: Provide a list of 3-5 specific, actionable changes that are creative and diverse. For each change, specify the type of action ('UPDATE_SHOT', 'ADD_SHOT_AFTER', 'UPDATE_TRANSITION'), the target shot ID or transition index, a payload with the new data, and a human-readable description. Suggestions can include completely new shot ideas, combining enhancers, or altering transitions to fit the new theme.
     `;
-
-    try {
-         const apiCall = ai.models.generateContent({
-            model,
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json"
+    
+    // This defines the structure of the JSON we expect back from the model.
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            thematic_concept: {
+                type: Type.STRING,
+                description: "A short, catchy thematic concept (2-5 words) that encapsulates the creative objective."
             },
-        });
-
-        const response: GenerateContentResponse = await generateWithTimeout(
-            apiCall, 
-            60000, 
-            'AI suggestion generation timed out. The model may be busy. Please try again.'
-        );
-
-        const jsonString = response.text.trim().replace(/```json|```/g, '');
-        return JSON.parse(jsonString);
-
-    } catch(error) {
-        console.error("Error suggesting creative enhancements:", error);
-        if (error instanceof Error) {
-            throw error; // Re-throw the specific error (e.g., timeout)
-        }
-        throw new Error("AI failed to generate creative suggestions.");
-    }
-}
-
-
-export const analyzeVideoAction = async (shots: Shot[], shotEnhancers: ShotEnhancers, transitions: string[], negativePrompt: string): Promise<AnalysisResult> => {
-    const model = 'gemini-2.5-pro'; // Keep Pro model for high-quality final analysis
-
-    const timelineDescription = shots.map((shot, index) => {
-        const enhancers = shotEnhancers[shot.id] || {};
-        const enhancerStrings = Object.entries(enhancers)
-            .map(([key, value]) => {
-                if (Array.isArray(value) && value.length > 0) {
-                     const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
-                    return `**${formattedKey}**: ${value.join(', ')}`;
+            reasoning: {
+                type: Type.STRING,
+                description: "A brief explanation of the overall strategy for achieving the objective."
+            },
+            suggested_changes: {
+                type: Type.ARRAY,
+                description: "A list of specific, actionable changes to the timeline.",
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        type: { 
+                            type: Type.STRING,
+                            description: "The type of change: 'UPDATE_SHOT', 'ADD_SHOT_AFTER', or 'UPDATE_TRANSITION'."
+                        },
+                        shot_id: { 
+                            type: Type.STRING,
+                            description: "The ID of the shot to update. Required for 'UPDATE_SHOT'."
+                        },
+                        after_shot_id: { 
+                            type: Type.STRING,
+                            description: "The ID of the shot after which to add a new shot. Required for 'ADD_SHOT_AFTER'."
+                        },
+                        transition_index: {
+                            type: Type.INTEGER,
+                            description: "The zero-based index of the transition to update. Required for 'UPDATE_TRANSITION'."
+                        },
+                        payload: {
+                            type: Type.OBJECT,
+                            description: "An object containing the new data for the shot or transition.",
+                            properties: {
+                                description: { type: Type.STRING },
+                                title: { type: Type.STRING },
+                                enhancers: { 
+                                    type: Type.OBJECT,
+                                    description: "Cinematic style enhancers for the shot. All properties are optional.",
+                                    properties: {
+                                        framing: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                        movement: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                        lens: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                        pacing: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                        lighting: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                        mood: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                        vfx: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                        plotEnhancements: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                    }
+                                },
+                                type: { type: Type.STRING } // For transitions
+                            }
+                        },
+                        description: {
+                            type: Type.STRING,
+                            description: "A human-readable description of the suggested change."
+                        }
+                    },
+                    required: ['type', 'payload', 'description']
                 }
-                return null;
-            })
-            .filter(Boolean)
-            .join('; ');
-
-        let shotBlock = `**Shot ${index + 1} (${shot.title || 'Untitled'}):** "${shot.description}"\n*Creative Direction*: ${enhancerStrings || 'None specified'}.`;
-
-        if (index < transitions.length) {
-            shotBlock += `\n\n*--[${transitions[index] || 'Cut'}]-->*\n`;
-        }
-        return shotBlock;
-    }).join('\n');
-    
-    const prompt = `
-    You are a world-class VFX supervisor and cinematographer, tasked with improving a 10-second video clip described by the following timeline.
-    
-    **Timeline & Creative Direction:**
-    ${timelineDescription}
-    
-    **Overall Guideline / Negative Prompt (apply globally):** ${negativePrompt.trim() ? negativePrompt.trim() : 'None specified'}.
-
-    Based on this timeline, provide two distinct pieces of content in JSON format: 
-    1.  **Cinematic Feedback**: A detailed critique of the described action as a whole sequence, covering pacing, flow between shots, and overall impact based on the creative direction provided. Use markdown for formatting.
-    2.  **Improvement & Remix Prompt**: A highly specific, creative, and sequential prompt to remix or improve this video. This prompt MUST be technically detailed, narrating the sequence shot-by-shot. Directly incorporate the creative direction for EACH shot and the specified transitions BETWEEN them to create a cohesive and actionable instruction for a video generation AI. Use markdown for formatting.`;
+            }
+        },
+        required: ['thematic_concept', 'reasoning', 'suggested_changes']
+    };
 
     try {
         const response = await ai.models.generateContent({
-            model,
+            model: model,
             contents: prompt,
             config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        feedback: {
-                            type: Type.STRING,
-                            description: "Detailed critique of the cinematic action. Use markdown for lists and emphasis.",
-                        },
-                        improvement_prompt: {
-                            type: Type.STRING,
-                            description: "A creative, technical, and specific prompt for remixing the video, incorporating all selected creative direction and suggesting transitions. Use markdown for structure.",
-                        },
-                    },
-                    required: ["feedback", "improvement_prompt"],
-                },
+                responseMimeType: 'application/json',
+                responseSchema: responseSchema,
             },
         });
         
-        const jsonString = response.text;
-        return JSON.parse(jsonString);
+        const jsonText = response.text.trim();
+        const result = JSON.parse(jsonText);
+
+        return result as CoDirectorResult;
 
     } catch (error) {
-        console.error("Error analyzing video action:", error);
-        throw new Error("Failed to get analysis from AI. Please check the console for more details.");
+        console.error("Error getting co-director suggestions from Gemini:", error);
+        throw new Error("Failed to get suggestions. Please check the console for details.");
     }
 };

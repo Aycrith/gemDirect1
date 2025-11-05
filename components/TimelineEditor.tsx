@@ -8,6 +8,7 @@ import SaveIcon from './icons/SaveIcon';
 import UploadCloudIcon from './icons/UploadCloudIcon';
 import PlusIcon from './icons/PlusIcon';
 import TrashIcon from './icons/TrashIcon';
+import NegativePromptSuggestions from './NegativePromptSuggestions';
 
 interface TimelineEditorProps {
     shots: Shot[];
@@ -21,6 +22,9 @@ interface TimelineEditorProps {
     processingStage: ProcessingStage;
     onSaveTimeline: () => void;
     onLoadTimeline: () => void;
+    negativePrompt: string;
+    setNegativePrompt: React.Dispatch<React.SetStateAction<string>>;
+    suggestedNegativePrompts: string[];
 }
 
 const ShotCard: React.FC<{
@@ -52,10 +56,10 @@ const ShotCard: React.FC<{
             />
             <div className="mt-4">
                  <button 
-                    onClick={() => setIsEditingStyle(!isEditingStyle)}
+                    onClick={() => setIsEditingStyle(true)}
                     className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors font-medium"
                 >
-                    {isEditingStyle ? 'Hide' : 'Edit'} Cinematic Style {isEditingStyle ? '▾' : '▸'}
+                    Edit Cinematic Style ▸
                 </button>
             </div>
              <button
@@ -65,12 +69,35 @@ const ShotCard: React.FC<{
             >
                 <TrashIcon className="w-4 h-4" />
             </button>
+            
             {isEditingStyle && (
-                 <div className="mt-4 pt-4 border-t border-gray-700">
-                    <CreativeControls 
-                        value={enhancers}
-                        onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)}
-                    />
+                <div 
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 flex items-center justify-center p-4 animate-fade-in"
+                    onClick={() => setIsEditingStyle(false)}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby={`dialog-title-${shot.id}`}
+                >
+                    <div 
+                        className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" 
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="p-6">
+                            <h3 id={`dialog-title-${shot.id}`} className="text-lg font-bold text-indigo-400 mb-4">Editing Style for "{shot.title}"</h3>
+                            <CreativeControls 
+                                value={enhancers}
+                                onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)}
+                            />
+                            <div className="text-right mt-6 pt-4 border-t border-gray-700">
+                                <button 
+                                    onClick={() => setIsEditingStyle(false)} 
+                                    className="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 transition-colors"
+                                >
+                                    Done
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
@@ -78,7 +105,10 @@ const ShotCard: React.FC<{
 }
 
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
-    shots, setShots, shotEnhancers, setShotEnhancers, transitions, setTransitions, isProcessing, processingStatus, processingStage, onSaveTimeline, onLoadTimeline
+    shots, setShots, shotEnhancers, setShotEnhancers, transitions, setTransitions, 
+    isProcessing, processingStatus, processingStage, 
+    onSaveTimeline, onLoadTimeline,
+    negativePrompt, setNegativePrompt, suggestedNegativePrompts
 }) => {
     
     const handleDescriptionChange = (id: string, newDescription: string) => {
@@ -113,32 +143,39 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const handleDeleteShot = (id: string) => {
         const shotIndex = shots.findIndex(shot => shot.id === id);
-        setShots(shots.filter(shot => shot.id !== id));
+        if (shotIndex === -1) return;
+
+        setShots(prev => prev.filter(shot => shot.id !== id));
         
-        // Remove associated enhancers
         setShotEnhancers(prev => {
             const newEnhancers = { ...prev };
             delete newEnhancers[id];
             return newEnhancers;
         });
 
-        // Remove the transition *before* the deleted shot
-        if (shotIndex > -1 && shotIndex < transitions.length) {
-            const newTransitions = [...transitions];
-            // If it's not the first shot, remove the transition before it.
-            // If it is the first shot, remove the transition after it.
-            newTransitions.splice(shotIndex > 0 ? shotIndex - 1 : 0, 1);
-            setTransitions(newTransitions);
+        // If there's at least one shot left, adjust transitions
+        if (shots.length > 1) {
+            setTransitions(prev => {
+                const newTransitions = [...prev];
+                // Remove the transition *before* the deleted shot, unless it's the first shot
+                const transitionIndexToRemove = shotIndex > 0 ? shotIndex - 1 : 0;
+                newTransitions.splice(transitionIndexToRemove, 1);
+                return newTransitions;
+            });
+        } else {
+            // No shots left, or only one left, so no transitions
+            setTransitions([]);
         }
     }
+
 
     return (
         <div className="my-6">
             <div className="flex justify-between items-center mb-2">
-                <label className="flex items-center text-sm font-medium text-gray-300">
-                    <TimelineIcon className="w-5 h-5 mr-2" />
-                    1. Creative Timeline (Editable)
-                </label>
+                <h2 className="flex items-center text-lg font-semibold text-gray-200">
+                    <TimelineIcon className="w-5 h-5 mr-2 text-indigo-400" />
+                    Director's Console
+                </h2>
                 <div className="flex items-center gap-2">
                      <button onClick={onLoadTimeline} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-300 bg-gray-700/50 border border-gray-600 rounded-md hover:bg-gray-700 transition-colors">
                         <UploadCloudIcon className="w-4 h-4" />
@@ -150,47 +187,60 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     </button>
                 </div>
             </div>
-            <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
+            <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6 space-y-6">
                 {isProcessing ? (
                      <div className="flex flex-col items-center justify-center text-center text-gray-400 h-48">
                         <ProgressBar stage={processingStage} />
                         <p className="mt-4 text-sm animate-pulse">{processingStatus}</p>
                     </div>
                 ) : (
-                    <div className="space-y-4">
-                        {shots.length > 0 ? shots.map((shot, index) => (
-                           <React.Fragment key={shot.id}>
-                                <ShotCard 
-                                    shot={shot}
-                                    onDescriptionChange={handleDescriptionChange}
-                                    onTitleChange={handleTitleChange}
-                                    onDelete={handleDeleteShot}
-                                    enhancers={shotEnhancers[shot.id] || {}}
-                                    onEnhancersChange={handleEnhancersChange}
-                                />
-                                {index < shots.length - 1 && (
-                                    <TransitionSelector
-                                        value={transitions[index] || ''}
-                                        onChange={(newTransition) => handleTransitionChange(index, newTransition)}
-                                    />
+                    <>
+                        <div>
+                             <label className="block text-sm font-medium text-gray-300 mb-2">
+                                Creative Timeline
+                            </label>
+                            <div className="space-y-4">
+                                {shots.length > 0 ? shots.map((shot, index) => (
+                                <React.Fragment key={shot.id}>
+                                        <ShotCard 
+                                            shot={shot}
+                                            onDescriptionChange={handleDescriptionChange}
+                                            onTitleChange={handleTitleChange}
+                                            onDelete={handleDeleteShot}
+                                            enhancers={shotEnhancers[shot.id] || {}}
+                                            onEnhancersChange={handleEnhancersChange}
+                                        />
+                                        {index < shots.length - 1 && (
+                                            <TransitionSelector
+                                                value={transitions[index] || ''}
+                                                onChange={(newTransition) => handleTransitionChange(index, newTransition)}
+                                            />
+                                        )}
+                                </React.Fragment>
+                                )) : (
+                                    <div className="text-center text-gray-500 py-8">
+                                        <p>No shots in the timeline.</p>
+                                        <p className="text-sm">Upload a video for AI analysis or load a saved timeline.</p>
+                                    </div>
                                 )}
-                           </React.Fragment>
-                        )) : (
-                            <div className="text-center text-gray-500 py-8">
-                                <p>No shots in the timeline.</p>
-                                <p className="text-sm">Upload a video for AI analysis or load a saved timeline.</p>
+                                <div className="text-center pt-4">
+                                    <button 
+                                        onClick={handleAddShot}
+                                        className="flex items-center mx-auto gap-2 px-4 py-2 text-sm font-medium text-indigo-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors"
+                                    >
+                                        <PlusIcon className="w-4 h-4" />
+                                        Add Shot
+                                    </button>
+                                </div>
                             </div>
-                        )}
-                         <div className="text-center pt-4">
-                            <button 
-                                onClick={handleAddShot}
-                                className="flex items-center mx-auto gap-2 px-4 py-2 text-sm font-medium text-indigo-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors"
-                            >
-                                <PlusIcon className="w-4 h-4" />
-                                Add Shot
-                            </button>
                         </div>
-                    </div>
+
+                        <NegativePromptSuggestions
+                            suggestions={suggestedNegativePrompts}
+                            negativePrompt={negativePrompt}
+                            setNegativePrompt={setNegativePrompt}
+                        />
+                    </>
                 )}
             </div>
         </div>

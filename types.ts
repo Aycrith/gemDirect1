@@ -46,3 +46,21 @@ export interface ControlSectionConfig {
     icon: ReactNode;
     options: string[];
 }
+
+// Types for AI Co-Director Suggestions
+export type SuggestionPayload = Partial<Shot> & { enhancers?: ShotEnhancers[string] } & { type?: string };
+
+export interface Suggestion {
+  type: 'UPDATE_SHOT' | 'ADD_SHOT_AFTER' | 'UPDATE_TRANSITION';
+  shot_id?: string;
+  after_shot_id?: string;
+  transition_index?: number;
+  payload: SuggestionPayload;
+  description: string; // Human-readable description of the change
+}
+
+export interface CoDirectorResult {
+  thematic_concept: string;
+  reasoning: string;
+  suggested_changes: Suggestion[];
+}

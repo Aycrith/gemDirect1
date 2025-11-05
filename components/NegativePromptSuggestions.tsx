@@ -16,9 +16,9 @@ const NegativePromptSuggestions: React.FC<NegativePromptSuggestionsProps> = ({ s
     }
 
     return (
-         <div className="my-6">
+         <div>
             <label htmlFor="negative-prompt" className="block text-sm font-medium text-gray-300 mb-2">
-                2. Global Style &amp; Negative Prompt
+                Global Style &amp; Negative Prompt
             </label>
             <textarea
                 id="negative-prompt"
