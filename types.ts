@@ -73,31 +73,26 @@ export interface CoDirectorResult {
   suggested_changes: Suggestion[];
 }
 
-// --- New types for Continuity Director ---
-export interface ContinuityScore {
-  narrative_coherence: number;
-  aesthetic_alignment: number;
-  thematic_resonance: number;
-}
-
-export interface RefinementDirective {
-  target: 'story_bible' | 'directors_vision' | 'scene_timeline';
-  suggestion: string;
-  target_field?: keyof StoryBible; // e.g., 'logline', 'plotOutline'
-  scene_id?: string; // To target a specific scene's timeline/summary
-}
-
+// FIX: Add missing type definitions for video continuity analysis features.
 export interface ContinuityResult {
-  scores: ContinuityScore;
+  scores: {
+    narrative_coherence: number;
+    aesthetic_alignment: number;
+    thematic_resonance: number;
+  };
   overall_feedback: string;
-  refinement_directives: RefinementDirective[];
+  refinement_directives: Array<{
+    target: 'Story Bible' | 'Director\'s Vision' | `Scene ${number} Timeline`;
+    target_field?: keyof StoryBible | 'description' | 'enhancers';
+    suggestion: string;
+  }>;
 }
 
 export interface SceneContinuityData {
   videoFile?: File;
   videoSrc?: string;
-  videoAnalysis?: string;
-  continuityResult?: ContinuityResult;
   status: 'idle' | 'analyzing' | 'scoring' | 'complete' | 'error';
   error?: string;
+  videoAnalysis?: string;
+  continuityResult?: ContinuityResult;
 }

@@ -22,7 +22,7 @@ const WorkflowTracker: React.FC<{ currentStage: WorkflowStage }> = ({ currentSta
     const currentStageIndex = STAGES.findIndex(s => s.id === currentStage);
 
     return (
-        <div className="w-full max-w-4xl mx-auto mb-12">
+        <div className="w-full max-w-5xl mx-auto mb-12">
             <div className="flex items-center">
                 {STAGES.map((stage, index) => {
                     const isCompleted = currentStageIndex > index;
@@ -30,7 +30,7 @@ const WorkflowTracker: React.FC<{ currentStage: WorkflowStage }> = ({ currentSta
 
                     return (
                         <React.Fragment key={stage.id}>
-                            <div className="flex flex-col items-center text-center w-28">
+                            <div className="flex flex-col items-center text-center w-32">
                                 <div className={`flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-500 ${
                                     isCurrent ? 'bg-indigo-600 border-indigo-400 shadow-lg shadow-indigo-500/30' : 
                                     isCompleted ? 'bg-indigo-500 border-indigo-500' : 

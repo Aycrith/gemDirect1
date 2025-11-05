@@ -27,7 +27,7 @@ const SuggestionModal: React.FC<{
     }, [onApply]);
     
     const createMarkup = (markdown: string) => {
-        const rawMarkup = marked(markdown);
+        const rawMarkup = marked.parse(markdown);
         return { __html: rawMarkup };
     };
 

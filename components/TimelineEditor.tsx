@@ -12,6 +12,7 @@ import SparklesIcon from './icons/SparklesIcon';
 import { refineShotDescription, suggestShotEnhancers } from '../services/geminiService';
 import Tooltip from './Tooltip';
 import CameraIcon from './icons/CameraIcon';
+import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -27,9 +28,10 @@ interface TimelineEditorProps {
     isGeneratingImage: boolean;
     onGoToNextScene: () => void;
     nextScene: Scene | null;
-    onGenerateVideoPrompt: (timelineData: TimelineData) => void;
-    isGeneratingVideoPrompt: boolean;
-    generatedVideoPrompt: string | null;
+    onGeneratePrompt: (timelineData: TimelineData) => void;
+    isGeneratingPrompt: boolean;
+    generatedPrompt?: string;
+    onProceedToReview?: () => void;
 }
 
 const SuggestionButton: React.FC<{
@@ -44,7 +46,7 @@ const SuggestionButton: React.FC<{
             className="p-1.5 text-yellow-400 hover:text-yellow-300 disabled:text-gray-500 disabled:cursor-wait transition-colors"
         >
             {isLoading ? (
-                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
@@ -148,9 +150,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     isGeneratingImage,
     onGoToNextScene,
     nextScene,
-    onGenerateVideoPrompt,
-    isGeneratingVideoPrompt,
-    generatedVideoPrompt
+    onGeneratePrompt,
+    isGeneratingPrompt,
+    generatedPrompt,
+    onProceedToReview,
 }) => {
     const { shots, shotEnhancers, transitions, negativePrompt } = scene.timeline;
 
@@ -252,10 +255,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         onGenerateImage(timelineData);
     }, [buildTimelineData, onGenerateImage]);
 
-    const handleGenerateVideoPromptClick = useCallback(() => {
+    const handleGeneratePromptClick = useCallback(() => {
         const timelineData = buildTimelineData();
-        onGenerateVideoPrompt(timelineData);
-    }, [buildTimelineData, onGenerateVideoPrompt]);
+        onGeneratePrompt(timelineData);
+    }, [buildTimelineData, onGeneratePrompt]);
     
     return (
         <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-lg p-6">
@@ -321,7 +324,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     >
                          {isGeneratingImage ? (
                              <>
-                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
@@ -334,15 +337,15 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             </>
                          )}
                     </button>
-                    {imageUrl && !generatedVideoPrompt && (
+                    {imageUrl && !generatedPrompt && (
                         <button
-                            onClick={handleGenerateVideoPromptClick}
-                            disabled={isGeneratingVideoPrompt || isGeneratingImage}
+                            onClick={handleGeneratePromptClick}
+                            disabled={isGeneratingPrompt || isGeneratingImage}
                             className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-purple-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-purple-700 focus:outline-none focus:ring-4 focus:ring-purple-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
                         >
-                            {isGeneratingVideoPrompt ? (
+                            {isGeneratingPrompt ? (
                                 <>
-                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
@@ -351,12 +354,12 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             ) : (
                                 <>
                                     <FilmIcon className="mr-3 h-6 w-6" />
-                                    Generate Scene Video Prompt
+                                    Generate Final Prompt
                                 </>
                             )}
                         </button>
                     )}
-                    {generatedVideoPrompt && nextScene && (
+                    {generatedPrompt && nextScene && (
                         <button
                             onClick={onGoToNextScene}
                             className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transform hover:scale-105"
@@ -369,18 +372,27 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     )}
                 </div>
 
-                {generatedVideoPrompt && (
+                {generatedPrompt && (
                      <div className="mt-6 p-4 bg-gray-900/50 border border-gray-700 rounded-lg fade-in">
-                        <h4 className="font-semibold text-purple-300">Video Generation Prompt:</h4>
-                        <p className="text-sm text-gray-300 mt-2 font-mono bg-black/30 p-3 rounded">{generatedVideoPrompt}</p>
+                        <h4 className="font-semibold text-purple-300">Final Generation Prompt:</h4>
+                        <p className="text-sm text-gray-300 mt-2 font-mono bg-black/30 p-3 rounded">{generatedPrompt}</p>
                         <p className="text-xs text-gray-500 mt-2">Use this prompt and the generated keyframe with an external video generation model.</p>
                     </div>
                 )}
 
-                {generatedVideoPrompt && !nextScene && (
-                    <div className="mt-6 p-4 text-center bg-green-900/50 border border-green-800 rounded-lg fade-in">
+                {generatedPrompt && !nextScene && (
+                    <div className="mt-6 p-4 text-center bg-green-900/50 border border-green-800 rounded-lg fade-in space-y-3">
                         <h4 className="font-semibold text-green-300">Final Scene Complete!</h4>
-                        <p className="text-sm text-gray-400 mt-1">You've reached the end of your story bible.</p>
+                        <p className="text-sm text-gray-400">You've reached the end of your story's creative direction.</p>
+                        {onProceedToReview && (
+                            <button
+                                onClick={onProceedToReview}
+                                className="inline-flex items-center justify-center px-6 py-3 bg-cyan-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-cyan-700 focus:outline-none focus:ring-4 focus:ring-cyan-500 focus:ring-opacity-50 transform hover:scale-105"
+                            >
+                                <ClipboardCheckIcon className="mr-3 h-5 w-5" />
+                                Proceed to Continuity Review
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

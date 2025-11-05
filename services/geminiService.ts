@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
+// FIX: Import ContinuityResult type to support new functions.
 import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult } from "../types";
 
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
@@ -112,29 +113,6 @@ export const getPrunedContextForCoDirector = async (
 
     **Your Output:** A single paragraph co-director's brief.`;
     return getPrunedContext(prompt, 'prune context for co-director');
-};
-
-export const getPrunedContextForContinuity = async (
-    storyBible: StoryBible,
-    narrativeContext: string,
-    scene: Scene,
-    directorsVision: string
-): Promise<string> => {
-    const prompt = `You are a continuity supervisor. Your task is to create a "Continuity Checklist" summary (under 200 words) from the provided creative intent. This checklist will be used to score a generated video. Focus on tangible, measurable elements.
-
-    **CRITICAL ELEMENTS TO EXTRACT & SUMMARIZE:**
-    1.  **Narrative Beats:** What are the 2-3 key actions or events that MUST happen in the video to match the scene's summary and timeline?
-    2.  **Aesthetic Mandates:** What are the most critical, non-negotiable visual styles from the Director's Vision (e.g., "must use high-contrast lighting," "must have a handheld camera feel")?
-    3.  **Thematic Goal:** What is the single most important feeling or idea the scene should convey, based on its place in the story?
-
-    **SOURCE MATERIAL:**
-    - Story Logline: ${storyBible.logline}
-    - Narrative Context (Current Act): ${narrativeContext}
-    - Scene: "${scene.title}" - ${scene.summary}
-    - Director's Vision: ${directorsVision}
-
-    **Your Output:** A concise, single-paragraph summary of the continuity checklist.`;
-    return getPrunedContext(prompt, 'prune context for continuity');
 };
 
 // --- Core Story Generation ---
@@ -489,6 +467,139 @@ export const suggestShotEnhancers = async (
     return withRetry(apiCall, context);
 };
 
+// FIX: Add missing functions for video analysis and continuity scoring.
+export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
+    const context = 'analyze video frames';
+    const prompt = `You are a film critic and shot analyst. Based on the following sequence of frames from a video, provide a detailed analysis. Describe the cinematic techniques used, the narrative action, and the overall mood. Structure your analysis in markdown.
+    
+    Key aspects to cover:
+    - **Shot Composition & Framing:** Describe how subjects are framed (e.g., close-ups, wide shots).
+    - **Camera Movement:** Infer camera movement based on frame changes (e.g., pan, tilt, tracking).
+    - **Lighting & Color:** Analyze the lighting style and color palette.
+    - **Narrative Events:** Describe the sequence of events unfolding in the frames.
+    - **Emotional Tone:** What is the overall mood or feeling conveyed?
+    `;
+
+    const imageParts = frames.map(frame => ({
+        inlineData: {
+            mimeType: 'image/jpeg',
+            data: frame,
+        },
+    }));
+
+    const apiCall = async () => {
+        const response = await ai.models.generateContent({
+            model: proModel, // Use pro model for better analysis
+            contents: { parts: [{ text: prompt }, ...imageParts] },
+        });
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for video frame analysis.");
+        }
+        return text.trim();
+    };
+
+    return withRetry(apiCall, context);
+};
+
+export const getPrunedContextForContinuity = async (
+    storyBible: StoryBible,
+    narrativeContext: string,
+    scene: Scene,
+    directorsVision: string
+): Promise<string> => {
+    const prompt = `You are a script supervisor. Your job is to create a concise "Continuity Brief" (under 200 words) for an AI continuity checker. This brief will be used to judge if a generated video matches the original creative intent.
+
+    **CRITICAL INFORMATION TO SUMMARIZE:**
+    1.  **Scene's Core Purpose:** What is the main point of this scene in the story's overall journey?
+    2.  **Key Visuals & Mood:** What are the most important visual and tonal elements from the Director's Vision that MUST appear in the final video?
+    3.  **Essential Action:** What is the single most important action or event that must occur in this scene?
+
+    **SOURCE MATERIAL:**
+    - Story Logline: ${storyBible.logline}
+    - Narrative Context (Current Act): ${narrativeContext}
+    - Scene: "${scene.title}" - ${scene.summary}
+    - Director's Vision: ${directorsVision}
+
+    **Your Output:** A single paragraph continuity brief.`;
+    return getPrunedContext(prompt, 'prune context for continuity check');
+};
+
+export const scoreContinuity = async (
+    prunedContext: string,
+    scene: Scene,
+    videoAnalysis: string,
+): Promise<ContinuityResult> => {
+    const context = 'score cinematic continuity';
+    const shotListString = scene.timeline.shots.map((shot, i) => `Shot ${i + 1}: ${shot.description}`).join('\n');
+
+    const prompt = `
+You are a meticulous AI Continuity Supervisor. Your task is to analyze a generated video (represented by a textual analysis of its frames) and score its adherence to the original creative intent.
+
+**Continuity Brief (The Creative Intent):**
+${prunedContext}
+
+**Original Shot List for this Scene:**
+${shotListString}
+
+**Analysis of the Generated Video's Content:**
+${videoAnalysis}
+
+**Your Task & CRITICAL JSON FORMATTING:**
+Your ENTIRE output must be a single, valid JSON object that perfectly adheres to the provided schema. You must evaluate the video's analysis against the creative brief and shot list.
+- **CRITICAL RULE #1: Your entire response must be a single JSON object. Do not add any text, markdown, or code fences before or after the JSON.**
+- **CRITICAL RULE #2: This is the most important rule. Any time you include a double quote character (") inside of a JSON string value, you MUST escape it with a backslash (\\").** Failure to do this will break the application.
+
+**Evaluation Criteria:**
+- **Narrative Coherence:** Does the video's action match the scene's purpose and shot list?
+- **Aesthetic Alignment:** Does the video's visual style (lighting, color, mood) match the Director's Vision described in the brief?
+- **Thematic Resonance:** Does the video successfully convey the core emotional arc and theme of the scene?
+`;
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            scores: {
+                type: Type.OBJECT,
+                properties: {
+                    narrative_coherence: { type: Type.INTEGER, description: "Score from 1-10 on how well the video's plot matches the script." },
+                    aesthetic_alignment: { type: Type.INTEGER, description: "Score from 1-10 on how well the visuals match the director's vision." },
+                    thematic_resonance: { type: Type.INTEGER, description: "Score from 1-10 on how well the video captures the scene's emotional core." },
+                },
+                required: ['narrative_coherence', 'aesthetic_alignment', 'thematic_resonance']
+            },
+            overall_feedback: { type: Type.STRING, description: "A markdown-formatted paragraph summarizing your findings. CRITICAL: Escape all double quotes (\\\")." },
+            refinement_directives: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        target: { type: Type.STRING, description: "Which creative document to edit: 'Story Bible', 'Director\\'s Vision', or 'Scene [Number] Timeline'." },
+                        target_field: { type: Type.STRING, description: "Optional specific field to edit, e.g., 'logline', 'description'." },
+                        suggestion: { type: Type.STRING, description: "A specific, actionable suggestion for improvement. CRITICAL: Escape all double quotes (\\\")." },
+                    },
+                    required: ['target', 'suggestion']
+                }
+            }
+        },
+        required: ['scores', 'overall_feedback', 'refinement_directives']
+    };
+
+    const apiCall = async (): Promise<ContinuityResult> => {
+        const response = await ai.models.generateContent({
+            model: proModel,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for continuity scoring.");
+        }
+        return JSON.parse(text.trim()) as ContinuityResult;
+    };
+
+    return withRetry(apiCall, context);
+};
 
 // --- Co-Director & Generation ---
 export const generateSceneImage = async (timelineData: TimelineData, directorsVision: string, previousImageBase64?: string): Promise<string> => {
@@ -716,140 +827,5 @@ export const generateVideoPrompt = async (timelineData: TimelineData, directorsV
         return text.trim();
     };
 
-    return withRetry(apiCall, context);
-};
-
-// --- Video Analysis ---
-export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
-    const context = 'analyze video';
-    const prompt = `You are an expert film analyst. Analyze the following sequence of video frames and provide a detailed breakdown of the cinematic techniques used.
-
-    **Your analysis should cover:**
-    1.  **Cinematography:** Describe camera angles (low, high, eye-level), framing (close-up, wide shot), and any camera movement (pan, tilt, tracking).
-    2.  **Editing:** Identify the pacing of the cuts. Are they fast and energetic, or slow and deliberate? Mention any specific transitions if they can be inferred.
-    3.  **Lighting & Color:** Describe the lighting style (high-key, low-key, natural) and the overall color palette. What mood does it create?
-    4.  **Narrative/Action:** Briefly summarize the action or story being told across the frames. What is the subject, and what are they doing?
-    5.  **Overall Impression:** Give your overall assessment of the clip's style and potential genre.
-
-    Present your analysis in well-structured markdown.`;
-
-    const imageParts = frames.map(frame => ({
-        inlineData: {
-            mimeType: 'image/jpeg',
-            data: frame,
-        },
-    }));
-
-    const apiCall = async () => {
-        const response = await ai.models.generateContent({
-            model: proModel,
-            contents: { parts: [...imageParts, { text: prompt }] },
-        });
-
-        const text = response.text;
-        if (!text) {
-            throw new Error("The model returned an empty response for video analysis.");
-        }
-        return text;
-    };
-
-    return withRetry(apiCall, context);
-};
-
-
-export const scoreContinuity = async (
-    prunedContext: string,
-    scene: Scene,
-    videoAnalysis: string
-): Promise<ContinuityResult> => {
-    const context = 'score continuity';
-    const timelineString = scene.timeline.shots.map((shot, index) => {
-        let shotSummary = `${index + 1}. ${shot.description}`;
-        const enhancers = scene.timeline.shotEnhancers[shot.id];
-        if (enhancers && Object.keys(enhancers).length > 0) {
-            const styleElements = Object.entries(enhancers)
-                .flatMap(([key, values]) => (Array.isArray(values) && values.length > 0) ? `${key}: ${values.join(', ')}` : [])
-                .filter(Boolean);
-            if (styleElements.length > 0) {
-                shotSummary += ` [Style: ${styleElements.join('; ')}]`;
-            }
-        }
-        return shotSummary;
-    }).join('\n');
-
-    const prompt = `
-You are an expert film critic and continuity supervisor. Your task is to analyze a generated video by comparing its cinematic analysis against the original creative intent. Provide a quantitative score, qualitative feedback, and actionable suggestions for improvement.
-
-**PART 1: THE CREATIVE INTENT**
-
-**1.1. Continuity Checklist Summary:**
-- ${prunedContext}
-
-**1.2. Scene-Specific Shot-by-Shot Timeline:**
-${timelineString}
-
-**PART 2: THE ACTUAL OUTPUT**
-
-**2.1. Cinematic Analysis of the Generated Video:**
-${videoAnalysis}
-
-**PART 3: YOUR TASK (MUST RETURN VALID JSON)**
-
-Based on a critical comparison of PART 1 (Intent) and PART 2 (Output), generate a JSON object with the following structure:
-1.  **scores**: An object with three numerical scores from 1 (poor match) to 10 (perfect match).
-    - **narrative_coherence**: How well did the video's action match the scene summary and shot descriptions from the timeline?
-    - **aesthetic_alignment**: How well did the video's cinematography, lighting, and mood match the Aesthetic Mandates from the checklist?
-    - **thematic_resonance**: How well did the video's overall feeling connect with the Thematic Goal from the checklist?
-2.  **overall_feedback**: A concise markdown paragraph explaining your scores. What worked well? What were the key discrepancies between intent and reality?
-3.  **refinement_directives**: An array of 1-3 actionable suggestions to improve the creative intent for future generations. Each object in the array must have:
-    - **target**: The area to improve ('story_bible', 'directors_vision', or 'scene_timeline').
-    - **suggestion**: A specific, constructive suggestion for the user. (e.g., "The video felt more like a victory than 'The Ordeal'. To fix this, consider refining the 'scene_timeline' to include more shots that emphasize struggle and sacrifice before the final triumph.").
-    - **target_field**: (Only for 'story_bible' target) Specify which field to edit: 'logline', 'characters', 'setting', or 'plotOutline'.
-    - **scene_id**: (Only for 'scene_timeline' target) Include the ID: "${scene.id}".
-`;
-
-    const responseSchema = {
-        type: Type.OBJECT,
-        properties: {
-            scores: {
-                type: Type.OBJECT,
-                properties: {
-                    narrative_coherence: { type: Type.NUMBER },
-                    aesthetic_alignment: { type: Type.NUMBER },
-                    thematic_resonance: { type: Type.NUMBER },
-                },
-                required: ['narrative_coherence', 'aesthetic_alignment', 'thematic_resonance'],
-            },
-            overall_feedback: { type: Type.STRING },
-            refinement_directives: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        target: { type: Type.STRING },
-                        suggestion: { type: Type.STRING },
-                        target_field: { type: Type.STRING },
-                        scene_id: { type: Type.STRING },
-                    },
-                    required: ['target', 'suggestion'],
-                },
-            },
-        },
-        required: ['scores', 'overall_feedback', 'refinement_directives'],
-    };
-    
-    const apiCall = async () => {
-        const response = await ai.models.generateContent({
-            model: proModel,
-            contents: prompt,
-            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
-        });
-        const text = response.text;
-        if (!text) {
-            throw new Error("The model returned an empty response for continuity scoring.");
-        }
-        return JSON.parse(text.trim()) as ContinuityResult;
-    };
-    
     return withRetry(apiCall, context);
 };
