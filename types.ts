@@ -25,7 +25,6 @@ export interface TimelineData {
     shotEnhancers: ShotEnhancers;
     transitions: string[];
     negativePrompt: string;
-    positiveEnhancers?: string;
 }
 
 export interface Scene {

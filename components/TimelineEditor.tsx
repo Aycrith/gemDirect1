@@ -11,12 +11,15 @@ import FilmIcon from './icons/FilmIcon';
 
 interface TimelineEditorProps {
     scene: Scene;
+    imageUrl?: string;
     setShots: React.Dispatch<React.SetStateAction<Shot[]>>;
     setShotEnhancers: React.Dispatch<React.SetStateAction<ShotEnhancers>>;
     setTransitions: React.Dispatch<React.SetStateAction<string[]>>;
     setNegativePrompt: React.Dispatch<React.SetStateAction<string>>;
-    onGenerateFinalPrompt: (timelineData: TimelineData) => void;
-    isGeneratingPrompt: boolean;
+    onGenerateImage: (timelineData: TimelineData) => void;
+    isGeneratingImage: boolean;
+    onGoToNextScene: () => void;
+    nextScene: Scene | null;
 }
 
 const ShotCard: React.FC<{
@@ -76,12 +79,15 @@ const ShotCard: React.FC<{
 
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
     scene,
+    imageUrl,
     setShots,
     setShotEnhancers,
     setTransitions,
     setNegativePrompt,
-    onGenerateFinalPrompt,
-    isGeneratingPrompt,
+    onGenerateImage,
+    isGeneratingImage,
+    onGoToNextScene,
+    nextScene,
 }) => {
     const { shots, shotEnhancers, transitions, negativePrompt } = scene.timeline;
 
@@ -142,7 +148,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const handleGenerateClick = useCallback(() => {
         let finalNegativePrompt = negativePrompt;
-        let finalPositiveEnhancers = '';
         const violenceNegativePrompt = "graphic violence, blood, gore, combat, weapons, injury, death";
         const realismNegativePrompt = "painting, oil paint, digital art, illustration, AI art, stylized, matte painting, low detail, smudged, plastic, blurry, distorted, low-resolution, waxy, dreamlike, fantasy, glowing, cartoon, AI-generated look, watercolor, posterized";
         const realismPositiveEnhancer = "photorealistic, cinematic film, realistic lighting, crisp focus, high-fidelity detail, real camera physics, true-to-life materials, cinematic realism, 4K";
@@ -150,15 +155,22 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         if (mitigateViolence) finalNegativePrompt = finalNegativePrompt ? `${finalNegativePrompt}, ${violenceNegativePrompt}` : violenceNegativePrompt;
         if (enhanceRealism) {
             finalNegativePrompt = finalNegativePrompt ? `${finalNegativePrompt}, ${realismNegativePrompt}` : realismNegativePrompt;
-            finalPositiveEnhancers = realismPositiveEnhancer;
+            // The image model does not use positive enhancers in the same way, but the negative prompt is still valuable.
         }
 
-        const timelineData: TimelineData = { shots, shotEnhancers, transitions, negativePrompt: finalNegativePrompt.trim(), positiveEnhancers: finalPositiveEnhancers };
-        onGenerateFinalPrompt(timelineData);
-    }, [shots, shotEnhancers, transitions, negativePrompt, mitigateViolence, enhanceRealism, onGenerateFinalPrompt]);
+        const timelineData: TimelineData = { shots, shotEnhancers, transitions, negativePrompt: finalNegativePrompt.trim() };
+        onGenerateImage(timelineData);
+    }, [shots, shotEnhancers, transitions, negativePrompt, mitigateViolence, enhanceRealism, onGenerateImage]);
     
     return (
         <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-lg p-6">
+            {imageUrl && (
+                <div className="mb-6">
+                    <h3 className="text-xl font-bold text-green-400 mb-4">Generated Scene Image</h3>
+                    <img src={`data:image/jpeg;base64,${imageUrl}`} alt={`Generated for ${scene.title}`} className="w-full max-w-4xl mx-auto bg-black rounded-lg object-cover aspect-video shadow-2xl shadow-indigo-500/20 border border-gray-700" />
+                </div>
+            )}
+            
             <h2 className="flex items-center text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500 mb-2">
                 <TimelineIcon className="w-8 h-8 mr-3 text-purple-400" />
                 Director's Console
@@ -206,10 +218,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                     <button
                         onClick={handleGenerateClick}
-                        disabled={isGeneratingPrompt}
+                        disabled={isGeneratingImage}
                         className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-green-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
                     >
-                         {isGeneratingPrompt ? (
+                         {isGeneratingImage ? (
                              <>
                                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -220,11 +232,28 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                          ) : (
                             <>
                                 <FilmIcon className="mr-3 h-6 w-6" />
-                                Generate Final Prompt for Scene
+                                {imageUrl ? 'Re-render Scene as Image' : 'Render Scene as Image'}
                             </>
                          )}
                     </button>
+                    {imageUrl && nextScene && !isGeneratingImage && (
+                        <button
+                            onClick={onGoToNextScene}
+                            className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transform hover:scale-105"
+                        >
+                           Continue to: {nextScene.title}
+                           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+                    )}
                 </div>
+                {imageUrl && !nextScene && !isGeneratingImage && (
+                    <div className="mt-6 p-4 text-center bg-green-900/50 border border-green-800 rounded-lg fade-in">
+                        <h4 className="font-semibold text-green-300">Final Scene Complete!</h4>
+                        <p className="text-sm text-gray-400 mt-1">You've reached the end of your story bible.</p>
+                    </div>
+                )}
             </div>
         </div>
     );

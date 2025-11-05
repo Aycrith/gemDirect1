@@ -4,11 +4,10 @@ import StoryBibleEditor from './components/StoryBibleEditor';
 import SceneNavigator from './components/SceneNavigator';
 import TimelineEditor from './components/TimelineEditor';
 import CoDirector from './components/CoDirector';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateVideoPrompt } from './services/geminiService';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateSceneImage } from './services/geminiService';
 import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
-import FinalPromptModal from './components/FinalPromptModal';
 
 type AppStage = 'idea' | 'bible' | 'scenes' | 'director';
 
@@ -17,27 +16,32 @@ const emptyTimeline: TimelineData = {
     shotEnhancers: {},
     transitions: [],
     negativePrompt: '',
-    positiveEnhancers: '',
 };
 
 const App: React.FC = () => {
-    // Story and State Management
+    // App Flow & State
     const [appStage, setAppStage] = useState<AppStage>('idea');
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('idea');
     const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
     
+    // Image Generation State
+    const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({});
+    const [imageGenerationState, setImageGenerationState] = useState<{
+        sceneId: string | null;
+        status: 'idle' | 'generating' | 'success' | 'error';
+        error: string | null;
+    }>({ sceneId: null, status: 'idle', error: null });
+    const isGeneratingImage = imageGenerationState.status === 'generating';
+
     // UI and Loading State
     const [isLoading, setIsLoading] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
     const [coDirectorResult, setCoDirectorResult] = useState<CoDirectorResult | null>(null);
     const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
-    const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
-    const [finalPrompt, setFinalPrompt] = useState<string>('');
-    const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
+    
     // --- Toast Notifications ---
     const removeToast = useCallback((id: number) => {
         setToasts(prev => prev.filter(toast => toast.id !== id));
@@ -49,7 +53,7 @@ const App: React.FC = () => {
         setTimeout(() => removeToast(id), 5000);
     }, [removeToast]);
 
-    // --- AI Service Handlers ---
+    // --- AI Service Handlers (Story Flow) ---
     const handleGenerateStoryBible = useCallback(async (idea: string) => {
         setIsLoading(true);
         setLoadingMessage('Generating your Story Bible...');
@@ -91,14 +95,21 @@ const App: React.FC = () => {
 
     const handleSceneSelect = useCallback(async (sceneId: string) => {
         setActiveSceneId(sceneId);
-        const targetScene = scenes.find(s => s.id === sceneId);
+        const sceneIndex = scenes.findIndex(s => s.id === sceneId);
+        const targetScene = scenes[sceneIndex];
 
         if (targetScene && targetScene.timeline.shots.length === 0) {
             setIsLoading(true);
             setLoadingMessage(`Generating initial shots for "${targetScene.title}"...`);
             try {
                 if (!storyBible) throw new Error("Story Bible not found.");
-                const shotDescriptions = await generateInitialShotsForScene(storyBible, targetScene);
+                
+                let previousSceneSummary: string | undefined = undefined;
+                if (sceneIndex > 0) {
+                    previousSceneSummary = scenes[sceneIndex - 1].summary;
+                }
+
+                const shotDescriptions = await generateInitialShotsForScene(storyBible, targetScene, previousSceneSummary);
                 const newShots: Shot[] = shotDescriptions.map((desc, index) => ({
                     id: `shot_${Date.now()}_${index}`,
                     description: desc,
@@ -112,7 +123,13 @@ const App: React.FC = () => {
                 };
 
                 setScenes(prevScenes => prevScenes.map(s => s.id === sceneId ? { ...s, timeline: newTimeline } : s));
-                addToast(`Shots generated for "${targetScene.title}"`, 'success');
+                
+                if (previousSceneSummary) {
+                    addToast(`Shots for "${targetScene.title}" created with context from the previous scene.`, 'success');
+                } else {
+                    addToast(`Shots generated for "${targetScene.title}"`, 'success');
+                }
+
             } catch (error) {
                  addToast(error instanceof Error ? error.message : 'An unknown error occurred', 'error');
             } finally {
@@ -216,24 +233,47 @@ const App: React.FC = () => {
         addToast('Suggestion applied!', 'success');
     }, [activeSceneId, addToast]);
     
-    // --- Final Prompt Generation ---
-     const handleGenerateFinalPrompt = useCallback(async (timelineData: TimelineData) => {
+    // --- Scene Image Generation ---
+    const handleGenerateImageForScene = useCallback(async (timelineData: TimelineData, sceneId: string) => {
         if (timelineData.shots.length === 0) {
-            addToast('Cannot generate a prompt from an empty timeline.', 'error');
+            addToast('Cannot generate an image from an empty timeline.', 'error');
             return;
         }
-        setIsGeneratingPrompt(true);
+
+        setImageGenerationState({ sceneId, status: 'generating', error: null });
+
         try {
-            const prompt = await generateVideoPrompt(timelineData);
-            setFinalPrompt(prompt);
-            setIsPromptModalOpen(true);
-            addToast('Final prompt generated!', 'success');
+            const currentSceneIndex = scenes.findIndex(s => s.id === sceneId);
+            let previousImageBase64: string | undefined = undefined;
+
+            if (currentSceneIndex > 0) {
+                const previousSceneId = scenes[currentSceneIndex - 1].id;
+                if (generatedImages[previousSceneId]) {
+                    previousImageBase64 = generatedImages[previousSceneId];
+                }
+            }
+            
+            const imageBase64 = await generateSceneImage(timelineData, previousImageBase64);
+            
+            setGeneratedImages(prev => ({ ...prev, [sceneId]: imageBase64 }));
+            setImageGenerationState({ sceneId, status: 'success', error: null });
+            addToast('Scene image generated!', 'success');
+
         } catch (error) {
-            addToast(error instanceof Error ? error.message : "An unknown error occurred.", 'error');
-        } finally {
-            setIsGeneratingPrompt(false);
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(errorMessage, 'error');
+            setImageGenerationState({ sceneId, status: 'error', error: errorMessage });
         }
-    }, [addToast]);
+    }, [addToast, scenes, generatedImages]);
+
+     const handleGoToNextScene = useCallback(() => {
+        const currentSceneIndex = scenes.findIndex(s => s.id === activeSceneId);
+        if (currentSceneIndex > -1 && currentSceneIndex < scenes.length - 1) {
+            const nextSceneId = scenes[currentSceneIndex + 1].id;
+            handleSceneSelect(nextSceneId);
+        }
+    }, [scenes, activeSceneId, handleSceneSelect]);
+
 
     const renderContent = () => {
         switch (appStage) {
@@ -243,6 +283,9 @@ const App: React.FC = () => {
                 return storyBible && <StoryBibleEditor storyBible={storyBible} setStoryBible={setStoryBible} onContinue={handleGenerateScenes} isLoading={isLoading} />;
             case 'scenes':
             case 'director':
+                 const currentSceneIndex = scenes.findIndex(s => s.id === activeSceneId);
+                 const nextScene = currentSceneIndex > -1 && currentSceneIndex < scenes.length - 1 ? scenes[currentSceneIndex + 1] : null;
+
                  return (
                     <div className="flex flex-col lg:flex-row gap-8">
                         <aside className="lg:w-1/4">
@@ -264,12 +307,15 @@ const App: React.FC = () => {
                                      <TimelineEditor
                                         key={activeScene.id}
                                         scene={activeScene}
+                                        imageUrl={generatedImages[activeScene.id]}
                                         setShots={setShotsForActiveScene}
                                         setShotEnhancers={setShotEnhancersForActiveScene}
                                         setTransitions={setTransitionsForActiveScene}
                                         setNegativePrompt={setNegativePromptForActiveScene}
-                                        onGenerateFinalPrompt={handleGenerateFinalPrompt}
-                                        isGeneratingPrompt={isGeneratingPrompt}
+                                        onGenerateImage={(timelineData) => handleGenerateImageForScene(timelineData, activeScene.id)}
+                                        isGeneratingImage={isGeneratingImage && imageGenerationState.sceneId === activeScene.id}
+                                        onGoToNextScene={handleGoToNextScene}
+                                        nextScene={nextScene}
                                     />
                                 </div>
                             )}
@@ -305,14 +351,6 @@ const App: React.FC = () => {
                     {renderContent()}
                 </div>
 
-                {activeScene && 
-                    <FinalPromptModal 
-                        isOpen={isPromptModalOpen}
-                        onClose={() => setIsPromptModalOpen(false)}
-                        prompt={finalPrompt}
-                        isLoading={isGeneratingPrompt}
-                    />
-                }
             </main>
              <footer className="text-center py-6 text-gray-600 text-sm">
                 <p>Powered by Google Gemini. Built for demonstration purposes.</p>

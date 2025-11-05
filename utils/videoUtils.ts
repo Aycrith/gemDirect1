@@ -88,3 +88,54 @@ export const extractFramesFromVideo = (videoFile: File, fps: number = 1): Promis
         video.load();
     });
 }
+
+export const extractLastFrame = (videoBlob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(videoBlob);
+        video.muted = true;
+        video.playsInline = true;
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) {
+            return reject(new Error('Could not get canvas context.'));
+        }
+
+        const cleanup = () => {
+            URL.revokeObjectURL(video.src);
+        };
+
+        video.addEventListener('loadedmetadata', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            // Seek near the end, but not exactly at the end, which can be problematic.
+            video.currentTime = Math.max(0, video.duration - 0.1);
+        });
+
+        video.addEventListener('seeked', async () => {
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, 'image/jpeg', 0.8));
+            if (blob) {
+                try {
+                    const base64String = await blobToBase64(blob);
+                    cleanup();
+                    resolve(base64String);
+                } catch (error) {
+                    cleanup();
+                    reject(error);
+                }
+            } else {
+                cleanup();
+                reject(new Error('Failed to capture frame.'));
+            }
+        });
+
+        video.addEventListener('error', (e) => {
+            cleanup();
+            reject(new Error(`Video loading error for frame extraction: ${e.message || 'Unknown error'}`));
+        });
+
+        video.load();
+    });
+};

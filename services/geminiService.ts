@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData } from "../types";
 import { FRAMING_OPTIONS, MOVEMENT_OPTIONS, LENS_OPTIONS, PACING_OPTIONS, LIGHTING_OPTIONS, MOOD_OPTIONS, VFX_OPTIONS, PLOT_ENHANCEMENTS_OPTIONS } from "../utils/cinematicTerms";
 
@@ -77,18 +77,21 @@ export const generateSceneList = async (plotOutline: string): Promise<Array<{ ti
     }
 };
 
-export const generateInitialShotsForScene = async (storyBible: StoryBible, scene: { title: string; summary: string }): Promise<string[]> => {
+export const generateInitialShotsForScene = async (storyBible: StoryBible, scene: { title: string; summary: string }, previousSceneSummary?: string): Promise<string[]> => {
     const prompt = `You are a visionary cinematographer. Your task is to create an initial shot list for a scene. The shot descriptions should be concise and focused on the visual action.
 
     **Overall Story Context:**
     - Logline: ${storyBible.logline}
     - Setting: ${storyBible.setting}
+    ${previousSceneSummary ? `
+    **Previous Scene Summary (for context):**
+    - ${previousSceneSummary}` : ''}
 
     **Current Scene:**
     - Title: ${scene.title}
     - Summary: ${scene.summary}
 
-    Based on the context, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene.`;
+    Based on the context, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene. Make sure the shots logically follow from the previous scene if provided.`;
     
     const responseSchema = {
         type: Type.ARRAY,
@@ -206,11 +209,11 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
     }
 };
 
-export const generateVideoPrompt = async (timelineData: TimelineData): Promise<string> => {
-    const { shots, shotEnhancers, transitions, negativePrompt, positiveEnhancers } = timelineData;
+export const generateImagePrompt = async (timelineData: TimelineData): Promise<string> => {
+    const { shots, shotEnhancers, negativePrompt } = timelineData;
 
-    let detailedTimeline = shots.map((shot, index) => {
-        let shotString = `Shot ${index + 1}: ${shot.description}\n`;
+    let detailedTimeline = shots.map((shot) => {
+        let shotString = `Shot: ${shot.description}\n`;
         const enhancers = shotEnhancers[shot.id];
         if (enhancers && Object.keys(enhancers).length > 0) {
             const styleElements = Object.entries(enhancers)
@@ -218,12 +221,11 @@ export const generateVideoPrompt = async (timelineData: TimelineData): Promise<s
                 .filter(Boolean);
             if(styleElements.length > 0) shotString += '  Style: ' + styleElements.join('; ') + '\n';
         }
-        const transition = (index < transitions.length && transitions[index]) ? `\n--[${transitions[index]}]-->\n\n` : '';
-        return shotString + transition;
+        return shotString;
     }).join('');
 
     const prompt = `
-        You are an expert prompt engineer for a generative video AI. Synthesize the provided cinematic timeline into a single, cohesive, and powerful generative prompt.
+        You are an expert prompt engineer for a generative image AI. Synthesize the provided cinematic timeline into a single, cohesive, and powerful generative prompt for a cinematic still image that captures the key moment of the scene.
 
         **Provided Cinematic Timeline:**
         ${detailedTimeline}
@@ -231,14 +233,10 @@ export const generateVideoPrompt = async (timelineData: TimelineData): Promise<s
         **Global Style Notes / Negative Prompt:**
         "${negativePrompt || 'None'}"
 
-        ${positiveEnhancers ? `**Mandatory Realism Enhancers:**\n"${positiveEnhancers}"\n` : ''}
-
         **Your Task:**
-        Combine all shot descriptions, styles, transitions, and global notes into one single paragraph. This prompt should be a fluid, descriptive narrative.
-        - Integrate concepts from "Mandatory Realism Enhancers" if provided.
-        - Naturally describe each shot and its style enhancers.
-        - Use the format "--[Transition Name]-->" to indicate transitions.
-        - The final output MUST be a single block of raw prompt text.
+        Combine all shot descriptions, styles, and global notes into one single paragraph. This prompt should be a fluid, descriptive narrative for a single, powerful image representing the scene.
+        - Focus on the most visually striking moment or the emotional core of the scene.
+        - The final output MUST be a single block of raw prompt text. Do not include transitions.
     `;
 
     try {
@@ -248,7 +246,48 @@ export const generateVideoPrompt = async (timelineData: TimelineData): Promise<s
         });
         return response.text.trim();
     } catch (error) {
-        console.error("Error generating video prompt:", error);
-        throw new Error("Failed to generate the final video prompt.");
+        console.error("Error generating image prompt:", error);
+        throw new Error("Failed to generate the final image prompt.");
+    }
+};
+
+export const generateSceneImage = async (
+    timelineData: TimelineData,
+    previousImageBase64?: string
+): Promise<string> => {
+    const prompt = await generateImagePrompt(timelineData);
+    
+    const imagePart = previousImageBase64 ? {
+        inlineData: {
+            mimeType: 'image/jpeg',
+            data: previousImageBase64,
+        },
+    } : null;
+
+    const textPart = {
+        text: `Based on the previous image (if provided) for visual continuity, and the following prompt, generate a new cinematic image that continues the story. Prompt: "${prompt}"`
+    };
+
+    const parts = imagePart ? [imagePart, textPart] : [textPart];
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: { parts: parts },
+            config: {
+                responseModalities: [Modality.IMAGE],
+            },
+        });
+
+        for (const part of response.candidates[0].content.parts) {
+            if (part.inlineData) {
+                return part.inlineData.data;
+            }
+        }
+        throw new Error("No image was generated in the response.");
+
+    } catch (error) {
+        console.error("Error generating scene image:", error);
+        throw new Error(`Failed to generate scene image. ${commonError}`);
     }
 };
