@@ -402,6 +402,20 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 }
 
+// Define the schema for creative enhancers to be reused.
+const enhancersSchema = {
+    type: Type.OBJECT,
+    properties: {
+        framing: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Close-Up', 'Wide Shot'" },
+        movement: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Tracking Shot', 'Handheld'" },
+        lens: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Shallow Depth of Field', 'Lens Flare'" },
+        pacing: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Slow Motion', 'Fast-Paced'" },
+        lighting: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'High-Key', 'Low-Key (Chiaroscuro)'" },
+        mood: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Suspenseful', 'Dreamlike'" },
+        vfx: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Film Grain', 'Glitch Effect'" },
+        plotEnhancements: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Foreshadowing Moment', 'Introduce Conflict'" },
+    },
+};
 
 export const getCoDirectorSuggestions = async (prunedContext: string, scene: Scene, objective: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<CoDirectorResult> => {
     const context = 'get Co-Director suggestions';
@@ -447,7 +461,7 @@ export const getCoDirectorSuggestions = async (prunedContext: string, scene: Sce
                                 description: { type: Type.STRING },
                                 title: { type: Type.STRING },
                                 type: { type: Type.STRING },
-                                enhancers: { type: Type.OBJECT }
+                                enhancers: enhancersSchema
                             }
                         },
                         description: { type: Type.STRING }
@@ -511,7 +525,7 @@ export const batchProcessShotEnhancements = async (
             properties: {
                 shot_id: { type: Type.STRING },
                 refined_description: { type: Type.STRING },
-                suggested_enhancers: { type: Type.OBJECT }
+                suggested_enhancers: enhancersSchema
             },
             required: ['shot_id']
         }
@@ -539,22 +553,20 @@ export const batchProcessShotEnhancements = async (
 
 export const analyzeVideoFrames = async (frames: string[], logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const context = 'analyze video frames';
-    const contents = {
-        parts: [
-            { text: "Analyze this sequence of video frames. Describe the key visual elements, characters, actions, and overall cinematic style (camera movement, lighting, color). Provide your analysis as a concise markdown-formatted summary." },
-            ...frames.map(frame => ({
-                inlineData: {
-                    mimeType: 'image/jpeg',
-                    data: frame,
-                },
-            }))
-        ]
-    };
+    const contents = [
+        { text: "Analyze this sequence of video frames. Describe the key visual elements, characters, actions, and overall cinematic style (camera movement, lighting, color). Provide your analysis as a concise markdown-formatted summary." },
+        ...frames.map(frame => ({
+            inlineData: {
+                mimeType: 'image/jpeg',
+                data: frame,
+            },
+        }))
+    ];
     
      const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model, // Using flash for faster analysis
-            contents,
+            contents: { parts: contents },
         });
         const text = response.text;
         if (!text) {

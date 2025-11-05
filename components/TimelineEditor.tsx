@@ -188,7 +188,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const queueTask = useCallback((shot: Shot, action: 'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS') => {
         setSuggestionState(prev => ({ processingIds: new Set(prev.processingIds).add(shot.id) }));
-// FIX: Explicitly type prevQueue to fix downstream type inference issues.
+        // FIX: Explicitly type prevQueue to fix downstream type inference issues.
         setQueuedTasks((prevQueue: Map<string, BatchShotTask>) => {
             const newQueue = new Map(prevQueue);
             const existingTask = newQueue.get(shot.id);
@@ -291,8 +291,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             <div className="space-y-4">
                 {shots.map((shot, index) => (
                     <React.Fragment key={shot.id}>
-{/* FIX: Pass the correct handler functions ('handleRefineDescription', 'handleSuggestEnhancers') to the 'ShotCard' component props. */}
-                        <ShotCard {...{shot, index, totalShots: shots.length, enhancers: shotEnhancers[shot.id] || {}, onDescriptionChange: handleDescriptionChange, onEnhancersChange: handleEnhancersChange, onDeleteShot: handleDeleteShot, onAddShotAfter: handleAddShotAfter, onRefineDescription: handleRefineDescription, onSuggestEnhancers: handleSuggestEnhancers, suggestionState}} />
+                        <ShotCard shot={shot} index={index} totalShots={shots.length} enhancers={shotEnhancers[shot.id] || {}} onDescriptionChange={handleDescriptionChange} onEnhancersChange={handleEnhancersChange} onDeleteShot={handleDeleteShot} onAddShotAfter={handleAddShotAfter} onRefineDescription={handleRefineDescription} onSuggestEnhancers={handleSuggestEnhancers} suggestionState={suggestionState} />
                         {index < shots.length - 1 && (
                             <TransitionSelector value={transitions[index]} onChange={(newValue) => handleTransitionChange(index, newValue)} />
                         )}

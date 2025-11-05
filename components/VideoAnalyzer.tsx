@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-// FIX: Import `ApiLogCallback` and `ApiStateChangeCallback` types for the function signature.
+// FIX: Import `ApiLogCallback` and `ApiStateChangeCallback` types to satisfy function signature.
 import { analyzeVideoFrames, ApiLogCallback, ApiStateChangeCallback } from '../services/geminiService';
 import { extractFramesFromVideo } from '../utils/videoUtils';
 import FileUpload from './FileUpload';
