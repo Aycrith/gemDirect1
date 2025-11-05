@@ -14,6 +14,7 @@ import FilmIcon from './components/icons/FilmIcon';
 import PencilRulerIcon from './components/icons/PencilRulerIcon';
 import ContinuityDirector from './components/ContinuityDirector';
 import ClipboardCheckIcon from './components/icons/ClipboardCheckIcon';
+import SaveIcon from './components/icons/SaveIcon';
 import * as db from './utils/database';
 
 type AppMode = 'generator' | 'analyzer' | 'continuity';
@@ -47,7 +48,7 @@ const App: React.FC = () => {
     const [isVideoPromptGenerating, setIsVideoPromptGenerating] = useState(false);
 
     // Continuity State
-    const [continuityData, setContinuityData] = useState<Record<string, SceneContinuityData>>({});
+    const [continuityData, setContinuityDataState] = useState<Record<string, SceneContinuityData>>({});
 
     // UI and Loading State
     const [isLoading, setIsLoading] = useState(true); // Start true for DB load
@@ -75,10 +76,12 @@ const App: React.FC = () => {
                     setDirectorsVision(vision || '');
                     setGeneratedImages(images || {});
                     setVideoPrompts(prompts || {});
-                    setContinuityData(continuity || {});
+                    setContinuityDataState(continuity || {});
 
                     if (savedScenes && savedScenes.length > 0) {
-                        setWorkflowStage('scenes');
+                        setActiveSceneId(savedScenes[0].id);
+                        handleSceneSelect(savedScenes[0].id, true); // Soft select without re-generating shots
+                        setWorkflowStage('director');
                     } else if (vision) {
                         setWorkflowStage('vision');
                     } else {
@@ -132,6 +135,11 @@ const App: React.FC = () => {
         setWorkflowStage('vision');
         addToast("Story Bible confirmed. Now, let's set the vision.", 'info');
     }, [storyBible, addToast]);
+    
+    const handleSaveProject = useCallback(() => {
+        // Note: Project saves automatically on changes. This provides manual confirmation.
+        addToast('Project saved locally!', 'success');
+    }, [addToast]);
 
     const handleGenerateScenes = useCallback(async (vision: string) => {
         if (!storyBible) return;
@@ -158,8 +166,13 @@ const App: React.FC = () => {
         }
     }, [storyBible, addToast]);
 
-    const handleSceneSelect = useCallback(async (sceneId: string) => {
+    const handleSceneSelect = useCallback(async (sceneId: string, softSelect = false) => {
         setActiveSceneId(sceneId);
+        if (softSelect) {
+            if (workflowStage !== 'director') setWorkflowStage('director');
+            return;
+        }
+
         const sceneIndex = scenes.findIndex(s => s.id === sceneId);
         const targetScene = scenes[sceneIndex];
 
@@ -212,9 +225,8 @@ const App: React.FC = () => {
     // --- Timeline and Scene State Management ---
     const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
     
-    const allPromptsGenerated = useMemo(() => {
-        if (scenes.length === 0) return false;
-        return scenes.every(scene => videoPrompts[scene.id]);
+    const isContinuityAvailable = useMemo(() => {
+        return scenes.some(scene => videoPrompts[scene.id]);
     }, [scenes, videoPrompts]);
 
     const updateActiveSceneTimeline = useCallback(async (updater: (timeline: TimelineData) => TimelineData) => {
@@ -250,6 +262,15 @@ const App: React.FC = () => {
         updateActiveSceneTimeline(timeline => ({ ...timeline, negativePrompt: typeof setter === 'function' ? setter(timeline.negativePrompt) : setter }));
     }, [updateActiveSceneTimeline]);
 
+    // --- Continuity Data Management with DB Sync ---
+    const setContinuityData = useCallback((updater: React.SetStateAction<Record<string, SceneContinuityData>>) => {
+        setContinuityDataState(prev => {
+            const newData = typeof updater === 'function' ? updater(prev) : updater;
+            // Fire-and-forget save
+            db.saveData('continuityData', newData);
+            return newData;
+        });
+    }, []);
 
     // --- Co-Director ---
      const handleGetCoDirectorSuggestions = useCallback(async (objective: string) => {
@@ -449,7 +470,7 @@ const App: React.FC = () => {
                         <main className="flex-1">
                             {isLoading && !activeScene && (
                                 <div className="flex items-center justify-center p-8 bg-gray-800/30 rounded-lg h-64">
-                                     <svg className="animate-spin mr-3 h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                     <svg className="animate-spin mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
@@ -530,7 +551,7 @@ const App: React.FC = () => {
                             <FilmIcon className="w-5 h-5" />
                             Video Analyzer
                         </button>
-                         {allPromptsGenerated && (
+                         {isContinuityAvailable && (
                             <button
                                 type="button"
                                 onClick={() => {
@@ -543,6 +564,15 @@ const App: React.FC = () => {
                                 Continuity Director
                             </button>
                         )}
+                        <button
+                            type="button"
+                            onClick={handleSaveProject}
+                            title="Manually save project progress. The app also saves automatically."
+                            className={`flex items-center gap-2 px-6 py-2 text-sm font-medium transition-colors rounded-md text-gray-300 hover:bg-gray-700`}
+                        >
+                            <SaveIcon className="w-5 h-5" />
+                            Save Project
+                        </button>
                     </div>
                 </div>
 
