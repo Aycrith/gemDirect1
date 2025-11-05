@@ -12,7 +12,7 @@ const commonError = "An error occurred. Please check the console for details. If
 // --- Core Story Generation ---
 
 export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
-    const prompt = `You are a master storyteller and screenwriter. Based on the following user idea, generate a compelling "Story Bible" that establishes a strong narrative foundation. The tone should be cinematic and evocative.
+    const prompt = `You are a master storyteller and screenwriter, deeply familiar with literary principles. Based on the following user idea, generate a compelling "Story Bible" that establishes a strong, plot-driven narrative foundation.
 
     User Idea: "${idea}"
 
@@ -20,7 +20,7 @@ export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
     1.  **logline**: A single, concise sentence that captures the essence of the story (protagonist, goal, conflict).
     2.  **characters**: A markdown-formatted list of 2-3 key characters with a brief, compelling description for each.
     3.  **setting**: A paragraph describing the world, time, and atmosphere of the story.
-    4.  **plotOutline**: A markdown-formatted, 3-act structure (Act I, Act II, Act III) outlining the main plot points.`;
+    4.  **plotOutline**: A markdown-formatted, 3-act structure (Act I, Act II, Act III). **Crucially, you must structure this plot using archetypal stages of 'The Hero's Journey' as a guide.** For example, Act I should contain 'The Ordinary World' and 'The Call to Adventure'. Act II should build through 'Tests, Allies, and Enemies' to 'The Ordeal'. Act III should cover 'The Road Back' and 'The Resurrection'. This structure is essential for producing a high-quality, resonant story.`;
 
     const responseSchema = {
         type: Type.OBJECT,
@@ -51,17 +51,17 @@ export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
 };
 
 export const generateSceneList = async (plotOutline: string, directorsVision: string): Promise<Array<{ title: string; summary: string }>> => {
-    const prompt = `You are an expert film director. Your task is to break down the following plot outline into a series of distinct, actionable scenes, keeping the overall cinematic vision in mind.
+    const prompt = `You are an expert film director with a strong understanding of narrative pacing. Your task is to break down the following plot outline into a series of distinct, actionable scenes, keeping the overall cinematic vision in mind.
 
-    **Plot Outline:**
+    **Plot Outline (Structured on The Hero's Journey):**
     ${plotOutline}
 
     **Director's Vision / Cinematic Style:**
     "${directorsVision}"
 
-    Based on the above context, generate a JSON array of scenes. Each scene object should have:
+    Based on the above context, generate a JSON array of scenes. For each scene, consider its function within the broader narrative structure. Each scene object should have:
     1.  **title**: A short, evocative title for the scene that aligns with the Director's Vision.
-    2.  **summary**: A one-sentence description of what happens in this scene.`;
+    2.  **summary**: A one-sentence description of what happens in this scene and its primary narrative purpose (e.g., "The hero meets their mentor and receives a crucial tool," or "The hero faces their first major test, revealing their core weakness.").`;
 
     const responseSchema = {
         type: Type.ARRAY,
@@ -93,26 +93,31 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
 };
 
 export const generateInitialShotsForScene = async (
-    logline: string, 
-    sceneSummary: string, 
-    directorsVision: string, 
+    logline: string,
+    plotOutline: string,
+    sceneSummary: string,
+    directorsVision: string,
     previousSceneSummary?: string
 ): Promise<string[]> => {
-    const prompt = `You are a visionary cinematographer. Create an initial shot list for a scene. The shot descriptions should be concise and focused on the visual action, aligning with the established Director's Vision.
+    const prompt = `You are a visionary cinematographer who understands that every shot must serve the story. Create an initial shot list for a scene, ensuring it aligns with the Director's Vision and the scene's specific purpose within the overall plot.
 
-    **Director's Vision / Cinematic Style:**
+    **Director's Vision / Cinematic Style (includes potential Animation Styles):**
     "${directorsVision}"
 
-    **Overall Story Logline (for context):**
+    **Overall Story Logline:**
     ${logline}
+
+    **Overall Plot Outline (for narrative context):**
+    ${plotOutline}
     ${previousSceneSummary ? `
-    **Previous Scene Summary (for context):**
+    **Previous Scene Summary (for continuity):**
     ${previousSceneSummary}` : ''}
 
-    **Current Scene Summary:**
+    **Current Scene Summary & Purpose:**
     ${sceneSummary}
 
-    Based on the context, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene. Make sure the shots logically follow from the previous scene if provided.`;
+    **Your Task:**
+    Based on all the context, especially the scene's place in the plot outline, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene. For example, if this scene is 'The Ordeal', the shots should be tense and climactic. If it's 'Meeting the Mentor', they should establish wisdom and guidance.`;
     
     const responseSchema = {
         type: Type.ARRAY,
@@ -158,10 +163,18 @@ export const suggestStoryIdeas = async (): Promise<string[]> => {
     }
 };
 
-export const suggestDirectorsVisions = async (logline: string): Promise<string[]> => {
-    const prompt = `You are a film theorist. Based on this story logline, suggest 3 distinct and evocative "Director's Visions" or cinematic styles. Each should be a short paragraph. Return a JSON array of strings.
+export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<string[]> => {
+    const prompt = `You are a film theorist and animation historian. Based on this story bible, suggest 3 distinct and evocative "Director's Visions". These can be live-action cinematic styles or animation art styles. Each should be a short paragraph that describes the visual language.
 
-    Story Logline: ${logline}`;
+    **Story Bible:**
+    - Logline: ${storyBible.logline}
+    - Plot: ${storyBible.plotOutline}
+
+    Return a JSON array of strings.
+
+    Example cinematic style: "A gritty, neo-noir aesthetic with high-contrast, low-key lighting (chiaroscuro), constant rain, and a sense of urban decay. Camera work is mostly handheld and claustrophobic."
+    Example animation style: "A dynamic, comic-book visual language like 'Into the Spider-Verse', using Ben-Day dots, expressive text on-screen, and variable frame rates to heighten the action."`;
+    
     const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
     try {
         const response = await ai.models.generateContent({
@@ -384,16 +397,16 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
     }).join('\n');
 
     const prompt = `
-        **Objective:** Generate a single, photorealistic, cinematic keyframe image representing a scene.
+        **Objective:** Generate a single, cinematic keyframe image representing a scene, strictly adhering to the specified style.
 
-        **Director's Vision / Style:** ${directorsVision}
+        **Director's Vision / Cinematic or Animation Style:** ${directorsVision}
 
         **Scene Timeline (key moments):**
         ${detailedTimeline}
 
-        **Negative Prompt (AVOID):** ${negativePrompt || 'None'}
+        **Negative Prompt (AVOID THESE):** ${negativePrompt || 'None'}
 
-        **Task:** Synthesize the vision and timeline into a concise, descriptive prompt for an image generator. The prompt should describe the single most impactful, representative moment of the scene as a static image. Focus on composition, lighting, character expression, and mood to create a visually stunning keyframe. This is a prompt for a single image, not a video.
+        **Task:** Synthesize the vision and timeline into a concise, descriptive prompt for an image generator. The prompt must describe the single most impactful, representative moment of the scene as a static image. Focus on composition, lighting, character expression, and mood to create a visually stunning keyframe that perfectly matches the Director's Vision. If an animation style is specified, the output must match that style. This is a prompt for a single image, not a video.
     `;
 
     const imageParts = [];
@@ -464,12 +477,12 @@ export const getCoDirectorSuggestions = async (
     }).join('\n');
 
     const prompt = `
-You are an expert AI Film Co-Director. Your task is to analyze a cinematic timeline and provide creative, actionable suggestions that align with a high-level artistic vision and a specific creative objective.
+You are an expert AI Film Co-Director. Your task is to analyze a cinematic timeline and provide creative, actionable suggestions that align with a high-level artistic vision, a specific creative objective, and the scene's narrative purpose.
 
 **Director's Vision / Cinematic Style:**
 "${directorsVision}"
 
-**Overall Story Context:**
+**Overall Story Context (structured on The Hero's Journey):**
 - Logline: ${logline}
 - Key Plot Points: ${plotOutline}
 
@@ -483,13 +496,13 @@ ${timelineString}
 "${objective}"
 
 **Your Task & CRITICAL JSON FORMATTING INSTRUCTIONS:**
-Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Your suggestions must improve upon the current shot-list and styles to better align with BOTH the Director's Vision and the user's immediate creative objective. You should feel free to change existing styles or add new ones.
-- **The most critical rule is handling quotation marks inside JSON strings.** If you need to include a double quote character (") inside any string value (like in the 'reasoning' or 'description' fields), you MUST escape it with a backslash (e.g., "The character yelled, \\"Stop!\\""). Failure to do this will result in an invalid JSON.
+Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Your suggestions must improve the current timeline to better align with the Director's Vision, the user's objective, and **the scene's structural purpose within the Hero's Journey framework of the plot.**
+- **The most critical rule is handling quotation marks inside JSON strings.** If you need to include a double quote character (") inside any string value, you MUST escape it with a backslash (e.g., "The character yelled, \\"Stop!\\"").
 - Do not add any text or markdown formatting before or after the JSON object.
 - **Thematic Concept (thematic_concept)**: A short, evocative theme (2-5 words) that synthesizes the vision and objective.
-- **Reasoning (reasoning)**: Explain your strategy. How do the changes serve the objective, the Director's Vision, and the overall story?
+- **Reasoning (reasoning)**: Explain your strategy. How do your changes serve the scene's narrative function (e.g., "To better reflect this as a 'Refusal of the Call' moment, I've added shots that visually isolate the protagonist...") as well as the Director's Vision and user's objective?
 - **Suggested Changes (suggested_changes)**: Provide a list of 5-8 specific, cohesive changes. Be bold and transformative.
-- **Vocabulary**: When populating the 'enhancers' payload, use common and appropriate cinematic terms for the following categories: framing, movement, lens, pacing, lighting, mood, vfx, and plotEnhancements. Be creative but realistic.
+- **Vocabulary**: When populating the 'enhancers' payload, use common and appropriate cinematic terms for the following categories: framing, movement, lens, pacing, lighting, mood, vfx, and plotEnhancements.
     `;
     
     const responseSchema = {
@@ -576,9 +589,9 @@ export const generateVideoPrompt = async (timelineData: TimelineData, directorsV
     }).join('\n');
 
     const prompt = `
-        You are an expert prompt engineer for a state-of-the-art generative video AI. Your task is to synthesize the provided cinematic timeline and Director's Vision into a single, cohesive, and powerful generative prompt. The goal is to create a short, photorealistic, cinematic video clip that captures the key moment of the scene with impeccable quality.
+        You are an expert prompt engineer for a state-of-the-art generative video AI. Your task is to synthesize the provided cinematic timeline and Director's Vision into a single, cohesive, and powerful generative prompt. The goal is to create a short, cinematic video clip that captures the key moment of the scene with impeccable quality.
 
-        **Director's Vision / Desired Cinematic Style:**
+        **Director's Vision / Desired Cinematic or Animation Style:**
         "${directorsVision}"
 
         **Provided Cinematic Timeline for the Scene:**
@@ -588,7 +601,7 @@ export const generateVideoPrompt = async (timelineData: TimelineData, directorsV
         "${negativePrompt || 'None'}"
 
         **Your Task & Prompt Format:**
-        Based on ALL the information, create a single, comprehensive paragraph. This paragraph is the final prompt. It should describe the continuous action of a short video clip (3-5 seconds). Start with the most important shot and seamlessly blend details from other shots and enhancers. Describe camera movement, character actions, lighting changes, and the overall mood. Be vivid and concise. This is the only text that will be fed to the video model.
+        Based on ALL the information, create a single, comprehensive paragraph. This paragraph is the final prompt. It should describe the continuous action of a short video clip (3-5 seconds), perfectly capturing the specified **Director's Vision (whether cinematic or animated)**. Start with the most important shot and seamlessly blend details from other shots and enhancers. Describe camera movement, character actions, lighting changes, and the overall mood. Be vivid and concise. **This is the only text that will be fed to the video model, so it must be a masterpiece of descriptive language.**
     `;
     
     try {
@@ -671,9 +684,9 @@ You are an expert film critic and continuity supervisor. Your task is to analyze
 
 **PART 1: THE CREATIVE INTENT**
 
-**1.1. Overall Story Bible (Thematic Foundation):**
+**1.1. Overall Story Bible (Thematic Foundation & Narrative Structure):**
 - Logline: ${logline}
-- Plot Outline: ${plotOutline}
+- Plot Outline (Hero's Journey): ${plotOutline}
 
 **1.2. Director's Vision (Aesthetic Guardrail):**
 - "${directorsVision}"
@@ -694,11 +707,11 @@ Based on a critical comparison of PART 1 (Intent) and PART 2 (Output), generate 
 1.  **scores**: An object with three numerical scores from 1 (poor match) to 10 (perfect match).
     - **narrative_coherence**: How well did the video's action match the scene summary and shot descriptions?
     - **aesthetic_alignment**: How well did the video's cinematography, lighting, and mood match the Director's Vision and chosen enhancers?
-    - **thematic_resonance**: How well did the video's overall feeling connect with the Story Bible's logline and plot?
+    - **thematic_resonance**: How well did the video's overall feeling connect with the Story Bible's logline, plot, and its intended narrative function within the Hero's Journey structure?
 2.  **overall_feedback**: A concise markdown paragraph explaining your scores. What worked well? What were the key discrepancies between intent and reality?
 3.  **refinement_directives**: An array of 1-3 actionable suggestions to improve the creative intent for future generations. Each object in the array must have:
     - **target**: The area to improve ('story_bible', 'directors_vision', or 'scene_timeline').
-    - **suggestion**: A specific, constructive suggestion for the user. (e.g., "The Director's Vision should be more specific about lighting, perhaps adding 'chiaroscuro' to better match the gritty theme.").
+    - **suggestion**: A specific, constructive suggestion for the user. (e.g., "The video felt more like a victory than 'The Ordeal'. To fix this, consider refining the 'scene_timeline' to include more shots that emphasize struggle and sacrifice before the final triumph.").
     - **target_field**: (Only for 'story_bible' target) Specify which field to edit: 'logline', 'characters', 'setting', or 'plotOutline'.
     - **scene_id**: (Only for 'scene_timeline' target) Include the ID: "${scene.id}".
 `;

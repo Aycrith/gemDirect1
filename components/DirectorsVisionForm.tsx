@@ -46,7 +46,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
                     onChange={(e) => setVision(e.target.value)}
                     rows={4}
                     className="w-full bg-gray-800 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3"
-                    placeholder="e.g., A fast-paced, kinetic style inspired by Edgar Wright, with whip pans, smash cuts, and a vibrant, saturated color palette."
+                    placeholder="e.g., 'A fast-paced, kinetic style inspired by Edgar Wright...' or 'A lush, hand-painted Ghibli aesthetic with an emphasis on nature...' or 'Spider-Verse-style dynamic comic book visuals.'"
                 />
                 <button
                     type="submit"

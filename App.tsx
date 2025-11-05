@@ -187,7 +187,7 @@ const App: React.FC = () => {
                     previousSceneSummary = scenes[sceneIndex - 1].summary;
                 }
 
-                const shotDescriptions = await generateInitialShotsForScene(storyBible.logline, targetScene.summary, directorsVision, previousSceneSummary);
+                const shotDescriptions = await generateInitialShotsForScene(storyBible.logline, storyBible.plotOutline, targetScene.summary, directorsVision, previousSceneSummary);
                 const newShots: Shot[] = shotDescriptions.map((desc, index) => ({
                     id: `shot_${Date.now()}_${index}`,
                     description: desc,
