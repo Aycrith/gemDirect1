@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, CoDirectorResult, Shot } from "../types";
+import { AnalysisResult, CoDirectorResult, Shot, TimelineData } from "../types";
 
 // Note: API key is automatically sourced from process.env.API_KEY
 // FIX: Initialize GoogleGenAI with a named apiKey parameter as per guidelines.
@@ -105,7 +105,13 @@ export const getCoDirectorSuggestions = async (shots: Shot[], transitions: strin
         **Your Task:**
         1.  **Thematic Concept**: Come up with a short, catchy thematic concept (2-5 words) that encapsulates the creative objective for this timeline.
         2.  **Reasoning**: Briefly explain your overall strategy for achieving the objective, based on the provided timeline.
-        3.  **Suggested Changes**: Provide a list of 3-5 specific, actionable changes that are creative and diverse. For each change, specify the type of action ('UPDATE_SHOT', 'ADD_SHOT_AFTER', 'UPDATE_TRANSITION'), the target shot ID or transition index, a payload with the new data, and a human-readable description. Suggestions can include completely new shot ideas, combining enhancers, or altering transitions to fit the new theme.
+        3.  **Suggested Changes**: Provide a list of 5-8 specific, actionable changes. Your suggestions should work together as a cohesive whole to transform the scene according to the objective. Propose creative changes across different cinematic categories (e.g., add a new shot, change camera movement, adjust lighting, add VFX) to create a unified and impactful result. For each change, specify the type of action ('UPDATE_SHOT', 'ADD_SHOT_AFTER', 'UPDATE_TRANSITION'), the target shot ID or transition index, a payload with the new data, and a human-readable description.
+        
+        **CRITICAL JSON FORMATTING RULES**:
+        - Your entire output MUST be a single, valid JSON object that strictly adheres to the provided schema. Do not include any text, explanations, or markdown formatting (like \`\`\`json) outside of this JSON object.
+        - **THE MOST IMPORTANT RULE**: Every double quote character (") that appears inside of a JSON string value MUST be escaped with a backslash (\\). This is a common point of failure.
+        - For example, if a description is "Add a 'Dutch Tilt' shot", the JSON string value must be written as "Add a \\"Dutch Tilt\\" shot".
+        - This rule is mandatory for ALL string fields, especially the 'description' fields. Before finishing, double-check that every quote inside a string is properly escaped. An unescaped quote will break the entire response.
     `;
     
     // This defines the structure of the JSON we expect back from the model.
@@ -167,7 +173,7 @@ export const getCoDirectorSuggestions = async (shots: Shot[], transitions: strin
                         },
                         description: {
                             type: Type.STRING,
-                            description: "A human-readable description of the suggested change."
+                            description: "A human-readable description of the suggested change. IMPORTANT: Any double quotes within this string must be escaped, e.g., \\\"a quote\\\"."
                         }
                     },
                     required: ['type', 'payload', 'description']
@@ -195,5 +201,66 @@ export const getCoDirectorSuggestions = async (shots: Shot[], transitions: strin
     } catch (error) {
         console.error("Error getting co-director suggestions from Gemini:", error);
         throw new Error("Failed to get suggestions. Please check the console for details.");
+    }
+};
+
+
+/**
+ * Generates a final, cohesive remix prompt from the timeline data.
+ */
+export const generateRemixPrompt = async (timelineData: TimelineData): Promise<string> => {
+    const { shots, shotEnhancers, transitions, negativePrompt } = timelineData;
+    const model = 'gemini-2.5-pro';
+
+    let detailedTimeline = '';
+    shots.forEach((shot, index) => {
+        detailedTimeline += `Shot ${index + 1}: ${shot.description}\n`;
+        const enhancers = shotEnhancers[shot.id];
+        if (enhancers && Object.keys(enhancers).length > 0) {
+            detailedTimeline += '  Style: ';
+            const styleElements = Object.entries(enhancers)
+                .map(([key, value]) => {
+                    if (Array.isArray(value) && value.length > 0) {
+                        // A simple way to make the key more readable
+                        const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                        return `${formattedKey}: ${value.join(', ')}`;
+                    }
+                    return null;
+                })
+                .filter(Boolean);
+            detailedTimeline += styleElements.join('; ') + '\n';
+        }
+
+        if (index < transitions.length && transitions[index]) {
+            detailedTimeline += `\n--[${transitions[index]}]-->\n\n`;
+        }
+    });
+
+    const prompt = `
+        You are an expert prompt engineer for a generative video AI. Your task is to synthesize a detailed cinematic timeline into a single, cohesive, and powerful generative prompt.
+
+        **Provided Cinematic Timeline:**
+        ${detailedTimeline}
+
+        **Global Style Notes / Negative Prompt:**
+        "${negativePrompt || 'None'}"
+
+        **Your Task:**
+        Combine all the shot descriptions, cinematic styles, transitions, and global notes into one single paragraph. This prompt should be a fluid, descriptive narrative that an AI video generator can use to create the entire sequence.
+        - Start with the global style notes if any are provided.
+        - Describe each shot and its specific style enhancers naturally within the narrative.
+        - Use the format "--[Transition Name]-->" to clearly indicate the transition between shots.
+        - The final output MUST be a single block of text. Do not use markdown formatting like backticks or lists. Just return the raw prompt text.
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+        });
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error generating remix prompt:", error);
+        throw new Error("Failed to generate the final remix prompt.");
     }
 };

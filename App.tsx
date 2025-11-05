@@ -7,10 +7,11 @@ import FeedbackCard from './components/FeedbackCard';
 import CoDirector from './components/CoDirector';
 import ExamplePrompts from './components/ExamplePrompts';
 import { extractFramesFromVideo } from './utils/videoUtils';
-import { analyzeVideoFrames, getCoDirectorSuggestions } from './services/geminiService';
+import { analyzeVideoFrames, getCoDirectorSuggestions, generateRemixPrompt } from './services/geminiService';
 import { Shot, ShotEnhancers, AnalysisResult, CoDirectorResult, Suggestion, TimelineData, ToastMessage } from './types';
 import { ProcessingStage } from './components/ProgressBar';
 import Toast from './components/Toast';
+import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
 
 const App: React.FC = () => {
     // Video and analysis state
@@ -28,10 +29,16 @@ const App: React.FC = () => {
     const [negativePrompt, setNegativePrompt] = useState('');
     const [suggestedNegativePrompts, setSuggestedNegativePrompts] = useState<string[]>(['shaky camera', 'blurry', 'low quality', 'watermark']);
 
+    // Final Remix State
+    const [finalRemixPrompt, setFinalRemixPrompt] = useState<string | null>(null);
+    const [isRemixing, setIsRemixing] = useState(false);
+
     // UI State
     const [processingStage, setProcessingStage] = useState<ProcessingStage>('idle');
     const [processingStatus, setProcessingStatus] = useState('');
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
+    const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('upload');
+
 
     useEffect(() => {
         if (videoFile) {
@@ -59,6 +66,7 @@ const App: React.FC = () => {
         setShots([]);
         setShotEnhancers({});
         setTransitions([]);
+        setWorkflowStage('analyze');
         addToast(`Selected video: ${file.name}`, 'info');
     };
 
@@ -104,11 +112,13 @@ const App: React.FC = () => {
             setShotEnhancers({}); // Reset enhancers
 
             addToast('Analysis complete!', 'success');
+            setWorkflowStage('direct');
 
         } catch (error) {
             console.error(error);
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             addToast(`Analysis Failed: ${errorMessage}`, 'error');
+            setWorkflowStage('analyze'); // Revert to analyze on failure
         } finally {
             setIsLoading(false);
             setProcessingStage('idle');
@@ -204,6 +214,11 @@ const App: React.FC = () => {
                         setShotEnhancers(data.shotEnhancers || {});
                         setTransitions(data.transitions || []);
                         setNegativePrompt(data.negativePrompt || '');
+                        setVideoFile(null);
+                        setVideoSrc('');
+                        setAnalysisResult(null);
+                        setCoDirectorResult(null);
+                        setWorkflowStage('direct');
                         addToast('Timeline loaded!', 'success');
                     } catch (err) {
                         addToast('Failed to load timeline. Invalid file format.', 'error');
@@ -215,6 +230,57 @@ const App: React.FC = () => {
         input.click();
     };
 
+    const handleGenerateRemix = async () => {
+        if (shots.length === 0) {
+            addToast('Cannot generate a remix from an empty timeline.', 'error');
+            return;
+        }
+        setIsRemixing(true);
+        setFinalRemixPrompt(null);
+        try {
+            const timelineData: TimelineData = { shots, shotEnhancers, transitions, negativePrompt };
+            const prompt = await generateRemixPrompt(timelineData);
+            setFinalRemixPrompt(prompt);
+            addToast('Remix prompt generated!', 'success');
+        } catch (error) {
+            console.error(error);
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(`Remix Failed: ${errorMessage}`, 'error');
+        } finally {
+            setIsRemixing(false);
+        }
+    };
+
+    const RemixPromptModal: React.FC<{ prompt: string; onClose: () => void }> = ({ prompt, onClose }) => {
+        const [copied, setCopied] = useState(false);
+        const handleCopy = () => {
+            navigator.clipboard.writeText(prompt);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        };
+    
+        return (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 fade-in" onClick={onClose}>
+                <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-3xl" onClick={e => e.stopPropagation()}>
+                    <div className="p-6">
+                        <h3 className="text-lg font-bold text-green-400 mb-4">Final Remix Prompt</h3>
+                        <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto text-gray-300 text-sm whitespace-pre-wrap font-mono select-all">
+                            {prompt}
+                        </div>
+                        <div className="flex justify-end gap-4 mt-6 pt-4 border-t border-gray-700">
+                            <button onClick={handleCopy} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${copied ? 'bg-green-700 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                                {copied ? 'Copied!' : 'Copy to Clipboard'}
+                            </button>
+                            <button onClick={onClose} className="px-4 py-2 text-sm font-semibold rounded-md bg-gray-600 text-white hover:bg-gray-700 transition-colors">
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="bg-gray-900 text-white min-h-screen font-sans">
             <Toast toasts={toasts} removeToast={removeToast} />
@@ -224,55 +290,81 @@ const App: React.FC = () => {
                         Cinematic Action Remixer
                     </h1>
                     <p className="mt-2 text-lg text-gray-400 max-w-2xl mx-auto">
-                        Upload a video, get an AI-powered cinematic breakdown, and remix it into a masterpiece.
+                        An AI-powered workflow to break down, enhance, and remix video action sequences.
                     </p>
                 </header>
+                
+                <WorkflowTracker currentStage={workflowStage} />
 
-                <div className="max-w-4xl mx-auto">
-                    {!videoSrc ? (
-                         <FileUpload onFileSelect={handleFileSelect} />
-                    ) : (
-                        <VideoPlayer src={videoSrc} />
-                    )}
-                </div>
+                {workflowStage === 'upload' && (
+                    <div className="max-w-4xl mx-auto mt-12 fade-in">
+                        <FileUpload onFileSelect={handleFileSelect} />
+                    </div>
+                )}
+                
+                {workflowStage !== 'upload' && (
+                    <div className="fade-in">
+                        {videoSrc && (
+                             <div className="max-w-4xl mx-auto">
+                                <VideoPlayer src={videoSrc} />
+                            </div>
+                        )}
+                        
+                        {workflowStage === 'analyze' && (
+                            <AnalyzeButton onClick={handleAnalyzeClick} isLoading={isLoading} disabled={!videoFile} />
+                        )}
 
-                {videoFile && (
-                    <AnalyzeButton onClick={handleAnalyzeClick} isLoading={isLoading} />
+                        {(workflowStage === 'direct' || workflowStage === 'refine') && (
+                             <div className="mt-8 space-y-12">
+                                <section id="analysis-results">
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                        <FeedbackCard title="Cinematic Breakdown" content={analysisResult?.feedback || null} isLoading={isLoading} />
+                                        <FeedbackCard title="Generative Prompt" content={analysisResult ? `\`\`\`\n${analysisResult.improvement_prompt}\n\`\`\`` : null} isLoading={isLoading} />
+                                    </div>
+                                </section>
+
+                                <section id="co-director">
+                                     <CoDirector
+                                        onGetSuggestions={handleGetCoDirectorSuggestions}
+                                        isLoading={isCoDirectorLoading}
+                                        result={coDirectorResult}
+                                        onApplySuggestion={handleApplySuggestion}
+                                        onClose={() => setCoDirectorResult(null)}
+                                    />
+                                </section>
+                                
+                                <section id="timeline-editor" onFocus={() => setWorkflowStage('refine')} onMouseEnter={() => setWorkflowStage('refine')}>
+                                    <TimelineEditor
+                                        shots={shots}
+                                        setShots={setShots}
+                                        shotEnhancers={shotEnhancers}
+                                        setShotEnhancers={setShotEnhancers}
+                                        transitions={transitions}
+                                        setTransitions={setTransitions}
+                                        isProcessing={isLoading}
+                                        processingStatus={processingStatus}
+                                        processingStage={processingStage}
+                                        onSaveTimeline={handleSaveTimeline}
+                                        onLoadTimeline={handleLoadTimeline}
+                                        negativePrompt={negativePrompt}
+                                        setNegativePrompt={setNegativePrompt}
+                                        suggestedNegativePrompts={suggestedNegativePrompts}
+                                        onGenerateRemix={handleGenerateRemix}
+                                        isRemixing={isRemixing}
+                                    />
+                                </section>
+
+                                <section id="examples">
+                                    <ExamplePrompts />
+                                </section>
+                             </div>
+                        )}
+                    </div>
                 )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 my-8">
-                    <FeedbackCard title="Cinematic Breakdown" content={analysisResult?.feedback || null} isLoading={isLoading} />
-                    <FeedbackCard title="Generative Prompt" content={analysisResult ? `\`\`\`\n${analysisResult.improvement_prompt}\n\`\`\`` : null} isLoading={isLoading} />
-                </div>
-                
-                <TimelineEditor
-                    shots={shots}
-                    setShots={setShots}
-                    shotEnhancers={shotEnhancers}
-                    setShotEnhancers={setShotEnhancers}
-                    transitions={transitions}
-                    setTransitions={setTransitions}
-                    isProcessing={isLoading}
-                    processingStatus={processingStatus}
-                    processingStage={processingStage}
-                    onSaveTimeline={handleSaveTimeline}
-                    onLoadTimeline={handleLoadTimeline}
-                    negativePrompt={negativePrompt}
-                    setNegativePrompt={setNegativePrompt}
-                    suggestedNegativePrompts={suggestedNegativePrompts}
-                />
-                
-                <CoDirector
-                    onGetSuggestions={handleGetCoDirectorSuggestions}
-                    isLoading={isCoDirectorLoading}
-                    result={coDirectorResult}
-                    onApplySuggestion={handleApplySuggestion}
-                    onClose={() => setCoDirectorResult(null)}
-                />
-
-                <div className="mt-12">
-                   <ExamplePrompts />
-                </div>
+                {finalRemixPrompt && (
+                    <RemixPromptModal prompt={finalRemixPrompt} onClose={() => setFinalRemixPrompt(null)} />
+                )}
 
             </main>
              <footer className="text-center py-6 text-gray-600 text-sm">

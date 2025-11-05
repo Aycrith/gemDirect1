@@ -101,11 +101,16 @@ const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, re
 
     return (
         <div className="my-6">
-            <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
-                <label htmlFor="objective" className="flex items-center text-sm font-medium text-gray-300 mb-2">
-                    <LightbulbIcon className="w-5 h-5 mr-2 text-yellow-400" />
-                    AI Co-Director: What's your creative goal?
-                </label>
+            <div className="bg-gray-800/50 backdrop-blur-sm border-2 border-indigo-500/50 rounded-lg p-6 shadow-xl shadow-indigo-500/10">
+                 <div className="mb-4 text-center sm:text-left">
+                    <h2 className="flex items-center justify-center sm:justify-start text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-400">
+                        <LightbulbIcon className="w-8 h-8 mr-3 text-yellow-300" />
+                        Start Here: AI Co-Director
+                    </h2>
+                    <p className="text-gray-400 mt-2 max-w-3xl mx-auto sm:mx-0">
+                        This is the fastest way to remix your video. Describe the mood, style, or changes you want, and the AI will suggest specific, creative edits to your timeline.
+                    </p>
+                </div>
                 <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3">
                      <input
                         id="objective"

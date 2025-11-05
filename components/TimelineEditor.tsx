@@ -9,6 +9,7 @@ import UploadCloudIcon from './icons/UploadCloudIcon';
 import PlusIcon from './icons/PlusIcon';
 import TrashIcon from './icons/TrashIcon';
 import NegativePromptSuggestions from './NegativePromptSuggestions';
+import SparklesIcon from './icons/SparklesIcon';
 
 interface TimelineEditorProps {
     shots: Shot[];
@@ -25,6 +26,8 @@ interface TimelineEditorProps {
     negativePrompt: string;
     setNegativePrompt: React.Dispatch<React.SetStateAction<string>>;
     suggestedNegativePrompts: string[];
+    onGenerateRemix: () => void;
+    isRemixing: boolean;
 }
 
 const ShotCard: React.FC<{
@@ -107,7 +110,7 @@ const ShotCard: React.FC<{
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
     shots, setShots, shotEnhancers, setShotEnhancers, transitions, setTransitions, 
     isProcessing, processingStatus, processingStage, 
-    onSaveTimeline, onLoadTimeline,
+    onSaveTimeline, onLoadTimeline, onGenerateRemix, isRemixing,
     negativePrompt, setNegativePrompt, suggestedNegativePrompts
 }) => {
     
@@ -174,7 +177,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             <div className="flex justify-between items-center mb-2">
                 <h2 className="flex items-center text-lg font-semibold text-gray-200">
                     <TimelineIcon className="w-5 h-5 mr-2 text-indigo-400" />
-                    Director's Console
+                    Director's Console (Fine-Tuning)
                 </h2>
                 <div className="flex items-center gap-2">
                      <button onClick={onLoadTimeline} className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-300 bg-gray-700/50 border border-gray-600 rounded-md hover:bg-gray-700 transition-colors">
@@ -218,9 +221,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                         )}
                                 </React.Fragment>
                                 )) : (
-                                    <div className="text-center text-gray-500 py-8">
-                                        <p>No shots in the timeline.</p>
-                                        <p className="text-sm">Upload a video for AI analysis or load a saved timeline.</p>
+                                    <div className="text-center text-gray-500 py-8 border-2 border-dashed border-gray-700 rounded-lg">
+                                        <TimelineIcon className="w-10 h-10 mx-auto mb-3 text-gray-600" />
+                                        <p className="font-semibold">Your timeline is empty.</p>
+                                        <p className="text-sm">Analyze a video or load a timeline to begin editing.</p>
                                     </div>
                                 )}
                                 <div className="text-center pt-4">
@@ -240,6 +244,31 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             negativePrompt={negativePrompt}
                             setNegativePrompt={setNegativePrompt}
                         />
+
+                        <div className="mt-8 pt-6 border-t border-gray-700 text-center">
+                            <button
+                                onClick={onGenerateRemix}
+                                disabled={isRemixing || shots.length === 0}
+                                className="inline-flex items-center justify-center w-full sm:w-auto px-8 py-4 bg-green-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
+                                aria-disabled={isRemixing || shots.length === 0}
+                            >
+                                {isRemixing ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Generating Remix...
+                                    </>
+                                ) : (
+                                    <>
+                                        <SparklesIcon className="mr-3 h-6 w-6" />
+                                        Generate Final Remix Prompt
+                                    </>
+                                )}
+                            </button>
+                            <p className="text-xs text-gray-500 mt-3">Combines all your edits into a final, powerful prompt for a generative video AI.</p>
+                        </div>
                     </>
                 )}
             </div>
