@@ -1,5 +1,5 @@
 import { openDB, DBSchema } from 'idb';
-import { StoryBible, Scene, TimelineData, ShotEnhancers } from '../types';
+import { StoryBible, Scene, TimelineData } from '../types';
 
 const DB_NAME = 'cinematic-story-db';
 const DB_VERSION = 1;
@@ -47,10 +47,14 @@ export const saveScenes = async (scenes: Scene[]) => {
 export const getAllScenes = async () => (await dbPromise).getAllFromIndex(SCENES_STORE, 'by-order');
 export const updateSceneTimeline = async (sceneId: string, timeline: TimelineData) => {
     const db = await dbPromise;
-    const scene = await db.get(SCENES_STORE, sceneId);
+    const tx = db.transaction(SCENES_STORE, 'readwrite');
+    const scene = await tx.store.get(sceneId);
     if (scene) {
-        await db.put(SCENES_STORE, { ...scene, timeline });
+        // Perform the put within the same transaction
+        await tx.store.put({ ...scene, timeline });
     }
+    // Ensure the transaction completes
+    await tx.done;
 };
 
 // Misc Data (Director's Vision, Generated Images/Prompts)

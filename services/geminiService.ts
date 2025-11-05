@@ -92,12 +92,13 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
     }
 };
 
+// OPTIMIZATION: Instead of the full plotOutline, this function now accepts a focused `narrativeContext` string.
+// This reduces token count and provides the model with only the most relevant information (the current act and adjacent scenes).
 export const generateInitialShotsForScene = async (
     logline: string,
-    plotOutline: string,
+    narrativeContext: string,
     sceneSummary: string,
     directorsVision: string,
-    previousSceneSummary?: string
 ): Promise<string[]> => {
     const prompt = `You are a visionary cinematographer who understands that every shot must serve the story. Create an initial shot list for a scene, ensuring it aligns with the Director's Vision and the scene's specific purpose within the overall plot.
 
@@ -107,17 +108,14 @@ export const generateInitialShotsForScene = async (
     **Overall Story Logline:**
     ${logline}
 
-    **Overall Plot Outline (for narrative context):**
-    ${plotOutline}
-    ${previousSceneSummary ? `
-    **Previous Scene Summary (for continuity):**
-    ${previousSceneSummary}` : ''}
+    **Narrative Context (Current Act & Adjacent Scenes):**
+    ${narrativeContext}
 
     **Current Scene Summary & Purpose:**
     ${sceneSummary}
 
     **Your Task:**
-    Based on all the context, especially the scene's place in the plot outline, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene. For example, if this scene is 'The Ordeal', the shots should be tense and climactic. If it's 'Meeting the Mentor', they should establish wisdom and guidance.`;
+    Based on all the context, especially the scene's place in the provided narrative context, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene. For example, if this scene is 'The Ordeal', the shots should be tense and climactic. If it's 'Meeting the Mentor', they should establish wisdom and guidance.`;
     
     const responseSchema = {
         type: Type.ARRAY,
@@ -444,9 +442,11 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
     }
 };
 
+// OPTIMIZATION: Instead of the full plotOutline, this function now accepts a focused `narrativeContext` string.
+// This reduces token count and focuses the AI on the current act and its purpose within the story.
 export const getCoDirectorSuggestions = async (
     logline: string, 
-    plotOutline: string, 
+    narrativeContext: string, 
     activeScene: Scene, 
     objective: string, 
     directorsVision: string
@@ -482,9 +482,9 @@ You are an expert AI Film Co-Director. Your task is to analyze a cinematic timel
 **Director's Vision / Cinematic Style:**
 "${directorsVision}"
 
-**Overall Story Context (structured on The Hero's Journey):**
+**Overall Story Context:**
 - Logline: ${logline}
-- Key Plot Points: ${plotOutline}
+- Current Narrative Act & Context: ${narrativeContext}
 
 **Current Scene Context:**
 - Scene: ${activeScene.title} - ${activeScene.summary}
@@ -658,13 +658,15 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
 };
 
 
+// OPTIMIZATION: Instead of the entire StoryBible, this function now accepts the `logline` and a focused `narrativeContext`.
+// This dramatically reduces the token count and focuses the AI's analysis on the most pertinent information.
 export const scoreContinuity = async (
-    storyBible: StoryBible,
+    logline: string,
+    narrativeContext: string,
     directorsVision: string,
     scene: Scene,
     videoAnalysis: string
 ): Promise<ContinuityResult> => {
-    const { logline, plotOutline } = storyBible;
     const timelineString = scene.timeline.shots.map((shot, index) => {
         let shotSummary = `${index + 1}. ${shot.description}`;
         const enhancers = scene.timeline.shotEnhancers[shot.id];
@@ -684,9 +686,9 @@ You are an expert film critic and continuity supervisor. Your task is to analyze
 
 **PART 1: THE CREATIVE INTENT**
 
-**1.1. Overall Story Bible (Thematic Foundation & Narrative Structure):**
+**1.1. Overall Story & Thematic Context:**
 - Logline: ${logline}
-- Plot Outline (Hero's Journey): ${plotOutline}
+- Current Narrative Act & Context (Hero's Journey): ${narrativeContext}
 
 **1.2. Director's Vision (Aesthetic Guardrail):**
 - "${directorsVision}"
@@ -707,7 +709,7 @@ Based on a critical comparison of PART 1 (Intent) and PART 2 (Output), generate 
 1.  **scores**: An object with three numerical scores from 1 (poor match) to 10 (perfect match).
     - **narrative_coherence**: How well did the video's action match the scene summary and shot descriptions?
     - **aesthetic_alignment**: How well did the video's cinematography, lighting, and mood match the Director's Vision and chosen enhancers?
-    - **thematic_resonance**: How well did the video's overall feeling connect with the Story Bible's logline, plot, and its intended narrative function within the Hero's Journey structure?
+    - **thematic_resonance**: How well did the video's overall feeling connect with the Story's logline, its narrative context, and its intended function within the Hero's Journey structure?
 2.  **overall_feedback**: A concise markdown paragraph explaining your scores. What worked well? What were the key discrepancies between intent and reality?
 3.  **refinement_directives**: An array of 1-3 actionable suggestions to improve the creative intent for future generations. Each object in the array must have:
     - **target**: The area to improve ('story_bible', 'directors_vision', or 'scene_timeline').

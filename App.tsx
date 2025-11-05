@@ -111,6 +111,57 @@ const App: React.FC = () => {
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => removeToast(id), 5000);
     }, [removeToast]);
+    
+    // --- Context Optimization ---
+    const getNarrativeContext = useCallback((sceneId: string): string => {
+        if (!storyBible || !scenes.length) return '';
+        
+        const sceneIndex = scenes.findIndex(s => s.id === sceneId);
+        const scene = scenes[sceneIndex];
+        if (sceneIndex === -1) return '';
+
+        const plotLines = storyBible.plotOutline.split('\n');
+        // Find the indices of where each Act starts.
+        const actStarts: Record<string, number> = {
+            'act i': plotLines.findIndex(l => l.toLowerCase().includes('act i')),
+            'act ii': plotLines.findIndex(l => l.toLowerCase().includes('act ii')),
+            'act iii': plotLines.findIndex(l => l.toLowerCase().includes('act iii')),
+        };
+
+        // Determine which act the scene belongs to based on its position in the scene list.
+        const sceneFraction = scenes.length > 1 ? sceneIndex / (scenes.length - 1) : 0;
+        let currentActKey: 'act i' | 'act ii' | 'act iii' = 'act i';
+        if (actStarts['act iii'] !== -1 && sceneFraction >= 0.7) {
+            currentActKey = 'act iii';
+        } else if (actStarts['act ii'] !== -1 && sceneFraction >= 0.3) {
+            currentActKey = 'act ii';
+        }
+
+        let actText = '';
+        const start = actStarts[currentActKey];
+        if (start !== -1) {
+            let end: number | undefined;
+            if (currentActKey === 'act i') end = actStarts['act ii'] !== -1 ? actStarts['act ii'] : actStarts['act iii'];
+            if (currentActKey === 'act ii') end = actStarts['act iii'] !== -1 ? actStarts['act iii'] : undefined;
+            actText = plotLines.slice(start, end).join('\n');
+        } else {
+            // Fallback if acts aren't found
+            actText = storyBible.plotOutline;
+        }
+
+        const prevSceneSummary = sceneIndex > 0 ? `PREVIOUS SCENE: ${scenes[sceneIndex - 1].summary}` : 'This is the opening scene.';
+        const nextSceneSummary = sceneIndex < scenes.length - 1 ? `NEXT SCENE: ${scenes[sceneIndex + 1].summary}` : 'This is the final scene.';
+
+        return `
+This scene, "${scene.title}", occurs within the following narrative act:
+${actText}
+
+CONTEXT FROM ADJACENT SCENES:
+- ${prevSceneSummary}
+- ${nextSceneSummary}
+        `.trim();
+    }, [storyBible, scenes]);
+
 
     // --- AI Service Handlers (Story Flow) ---
     const handleGenerateStoryBible = useCallback(async (idea: string) => {
@@ -173,8 +224,7 @@ const App: React.FC = () => {
             return;
         }
 
-        const sceneIndex = scenes.findIndex(s => s.id === sceneId);
-        const targetScene = scenes[sceneIndex];
+        const targetScene = scenes.find(s => s.id === sceneId);
 
         if (targetScene && targetScene.timeline.shots.length === 0) {
             setIsLoading(true);
@@ -182,12 +232,10 @@ const App: React.FC = () => {
             try {
                 if (!storyBible) throw new Error("Story Bible not found.");
                 
-                let previousSceneSummary: string | undefined = undefined;
-                if (sceneIndex > 0) {
-                    previousSceneSummary = scenes[sceneIndex - 1].summary;
-                }
+                // OPTIMIZATION: Generate and pass focused narrative context instead of the whole plot outline.
+                const narrativeContext = getNarrativeContext(sceneId);
 
-                const shotDescriptions = await generateInitialShotsForScene(storyBible.logline, storyBible.plotOutline, targetScene.summary, directorsVision, previousSceneSummary);
+                const shotDescriptions = await generateInitialShotsForScene(storyBible.logline, narrativeContext, targetScene.summary, directorsVision);
                 const newShots: Shot[] = shotDescriptions.map((desc, index) => ({
                     id: `shot_${Date.now()}_${index}`,
                     description: desc,
@@ -205,11 +253,7 @@ const App: React.FC = () => {
                 setScenes(prevScenes => prevScenes.map(s => s.id === sceneId ? updatedScene : s));
                 await db.updateSceneTimeline(sceneId, newTimeline);
                 
-                if (previousSceneSummary) {
-                    addToast(`Shots for "${targetScene.title}" created with context from the previous scene.`, 'success');
-                } else {
-                    addToast(`Shots generated for "${targetScene.title}"`, 'success');
-                }
+                addToast(`Shots generated for "${targetScene.title}"`, 'success');
 
             } catch (error) {
                  addToast(error instanceof Error ? error.message : 'An unknown error occurred', 'error');
@@ -220,7 +264,7 @@ const App: React.FC = () => {
         if (workflowStage !== 'director') {
             setWorkflowStage('director');
         }
-    }, [scenes, storyBible, directorsVision, addToast, workflowStage]);
+    }, [scenes, storyBible, directorsVision, addToast, workflowStage, getNarrativeContext]);
 
     // --- Timeline and Scene State Management ---
     const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
@@ -281,14 +325,16 @@ const App: React.FC = () => {
         setIsCoDirectorLoading(true);
         setCoDirectorResult(null);
         try {
-            const result = await getCoDirectorSuggestions(storyBible.logline, storyBible.plotOutline, activeScene, objective, directorsVision);
+            // OPTIMIZATION: Generate and pass focused narrative context.
+            const narrativeContext = getNarrativeContext(activeScene.id);
+            const result = await getCoDirectorSuggestions(storyBible.logline, narrativeContext, activeScene, objective, directorsVision);
             setCoDirectorResult(result);
         } catch (error) {
             addToast(error instanceof Error ? error.message : "An unknown error occurred.", 'error');
         } finally {
             setIsCoDirectorLoading(false);
         }
-    }, [storyBible, activeScene, directorsVision, addToast]);
+    }, [storyBible, activeScene, directorsVision, addToast, getNarrativeContext]);
 
     const handleGetCoDirectorInspiration = useCallback(async () => {
         if (!storyBible || !activeScene) {

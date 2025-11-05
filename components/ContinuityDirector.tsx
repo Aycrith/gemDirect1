@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage } from '../types';
 import ContinuityCard from './ContinuityCard';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
@@ -24,6 +24,55 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
   setContinuityData,
   addToast,
 }) => {
+  // OPTIMIZATION: Implement the same context pruning logic here to ensure
+  // the continuity scoring is as efficient as the generation steps.
+  const getNarrativeContext = useCallback((sceneId: string): string => {
+      if (!storyBible || !scenes.length) return '';
+      
+      const sceneIndex = scenes.findIndex(s => s.id === sceneId);
+      const scene = scenes[sceneIndex];
+      if (sceneIndex === -1) return '';
+
+      const plotLines = storyBible.plotOutline.split('\n');
+      const actStarts: Record<string, number> = {
+          'act i': plotLines.findIndex(l => l.toLowerCase().includes('act i')),
+          'act ii': plotLines.findIndex(l => l.toLowerCase().includes('act ii')),
+          'act iii': plotLines.findIndex(l => l.toLowerCase().includes('act iii')),
+      };
+
+      const sceneFraction = scenes.length > 1 ? sceneIndex / (scenes.length - 1) : 0;
+      let currentActKey: 'act i' | 'act ii' | 'act iii' = 'act i';
+      if (actStarts['act iii'] !== -1 && sceneFraction >= 0.7) {
+          currentActKey = 'act iii';
+      } else if (actStarts['act ii'] !== -1 && sceneFraction >= 0.3) {
+          currentActKey = 'act ii';
+      }
+
+      let actText = '';
+      const start = actStarts[currentActKey];
+      if (start !== -1) {
+          let end: number | undefined;
+          if (currentActKey === 'act i') end = actStarts['act ii'] !== -1 ? actStarts['act ii'] : actStarts['act iii'];
+          if (currentActKey === 'act ii') end = actStarts['act iii'] !== -1 ? actStarts['act iii'] : undefined;
+          actText = plotLines.slice(start, end).join('\n');
+      } else {
+          actText = storyBible.plotOutline;
+      }
+
+      const prevSceneSummary = sceneIndex > 0 ? `PREVIOUS SCENE: ${scenes[sceneIndex - 1].summary}` : 'This is the opening scene.';
+      const nextSceneSummary = sceneIndex < scenes.length - 1 ? `NEXT SCENE: ${scenes[sceneIndex + 1].summary}` : 'This is the final scene.';
+
+      return `
+This scene, "${scene.title}", occurs within the following narrative act:
+${actText}
+
+CONTEXT FROM ADJACENT SCENES:
+- ${prevSceneSummary}
+- ${nextSceneSummary}
+      `.trim();
+  }, [storyBible, scenes]);
+
+
   return (
     <div className="max-w-7xl mx-auto">
       <header className="text-center mb-10">
@@ -41,7 +90,8 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
             key={scene.id}
             scene={scene}
             sceneNumber={index + 1}
-            storyBible={storyBible}
+            logline={storyBible.logline}
+            narrativeContext={getNarrativeContext(scene.id)}
             directorsVision={directorsVision}
             generatedImage={generatedImages[scene.id]}
             videoPrompt={videoPrompts[scene.id]}

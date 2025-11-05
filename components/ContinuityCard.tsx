@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Scene, StoryBible, SceneContinuityData, ToastMessage, ContinuityResult } from '../types';
+import { Scene, SceneContinuityData, ToastMessage, ContinuityResult } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
 import { analyzeVideoFrames, scoreContinuity } from '../services/geminiService';
 import FileUpload from './FileUpload';
@@ -9,7 +9,8 @@ import { marked } from 'marked';
 interface ContinuityCardProps {
   scene: Scene;
   sceneNumber: number;
-  storyBible: StoryBible;
+  logline: string;
+  narrativeContext: string;
   directorsVision: string;
   generatedImage: string;
   videoPrompt: string;
@@ -92,7 +93,8 @@ const ResultDisplay: React.FC<{ result: ContinuityResult }> = ({ result }) => {
 const ContinuityCard: React.FC<ContinuityCardProps> = ({
   scene,
   sceneNumber,
-  storyBible,
+  logline,
+  narrativeContext,
   directorsVision,
   generatedImage,
   videoPrompt,
@@ -111,8 +113,8 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
         const analysis = await analyzeVideoFrames(frames);
         setContinuityData(prev => ({ ...prev!, videoAnalysis: analysis, status: 'scoring' }));
 
-        // FIX: Pass the correct arguments to match the function signature.
-        const result = await scoreContinuity(storyBible, directorsVision, scene, analysis);
+        // OPTIMIZATION: Call scoreContinuity with the pruned, focused context instead of the whole bible.
+        const result = await scoreContinuity(logline, narrativeContext, directorsVision, scene, analysis);
         setContinuityData(prev => ({ ...prev!, continuityResult: result, status: 'complete' }));
 
         addToast(`Analysis complete for Scene ${sceneNumber}`, 'success');
@@ -122,7 +124,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
         setContinuityData(prev => ({ ...prev!, status: 'error', error }));
         addToast(`Analysis failed for Scene ${sceneNumber}: ${error}`, 'error');
     }
-  }, [scene, sceneNumber, storyBible, directorsVision, setContinuityData, addToast]);
+  }, [scene, sceneNumber, logline, narrativeContext, directorsVision, setContinuityData, addToast]);
 
   const renderStatus = () => {
       if (data.status === 'idle') {
