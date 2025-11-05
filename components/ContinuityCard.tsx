@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
-import { Scene, SceneContinuityData, ToastMessage, ContinuityResult } from '../types';
+import { Scene, StoryBible, SceneContinuityData, ToastMessage, ContinuityResult } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
-import { analyzeVideoFrames, scoreContinuity } from '../services/geminiService';
+import { analyzeVideoFrames, scoreContinuity, getPrunedContextForContinuity } from '../services/geminiService';
 import FileUpload from './FileUpload';
 import VideoPlayer from './VideoPlayer';
 import { marked } from 'marked';
@@ -9,7 +9,7 @@ import { marked } from 'marked';
 interface ContinuityCardProps {
   scene: Scene;
   sceneNumber: number;
-  logline: string;
+  storyBible: StoryBible;
   narrativeContext: string;
   directorsVision: string;
   generatedImage: string;
@@ -59,7 +59,7 @@ const ScoreCircle: React.FC<{ label: string; score: number }> = ({ label, score 
 
 const ResultDisplay: React.FC<{ result: ContinuityResult }> = ({ result }) => {
     const createMarkup = (markdown: string) => {
-        const rawMarkup = marked(markdown, { sanitize: true });
+        const rawMarkup = marked(markdown);
         return { __html: rawMarkup };
     };
 
@@ -93,7 +93,7 @@ const ResultDisplay: React.FC<{ result: ContinuityResult }> = ({ result }) => {
 const ContinuityCard: React.FC<ContinuityCardProps> = ({
   scene,
   sceneNumber,
-  logline,
+  storyBible,
   narrativeContext,
   directorsVision,
   generatedImage,
@@ -113,8 +113,8 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
         const analysis = await analyzeVideoFrames(frames);
         setContinuityData(prev => ({ ...prev!, videoAnalysis: analysis, status: 'scoring' }));
 
-        // OPTIMIZATION: Call scoreContinuity with the pruned, focused context instead of the whole bible.
-        const result = await scoreContinuity(logline, narrativeContext, directorsVision, scene, analysis);
+        const prunedContext = await getPrunedContextForContinuity(storyBible, narrativeContext, scene, directorsVision);
+        const result = await scoreContinuity(prunedContext, scene, analysis);
         setContinuityData(prev => ({ ...prev!, continuityResult: result, status: 'complete' }));
 
         addToast(`Analysis complete for Scene ${sceneNumber}`, 'success');
@@ -124,7 +124,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
         setContinuityData(prev => ({ ...prev!, status: 'error', error }));
         addToast(`Analysis failed for Scene ${sceneNumber}: ${error}`, 'error');
     }
-  }, [scene, sceneNumber, logline, narrativeContext, directorsVision, setContinuityData, addToast]);
+  }, [scene, sceneNumber, storyBible, narrativeContext, directorsVision, setContinuityData, addToast]);
 
   const renderStatus = () => {
       if (data.status === 'idle') {

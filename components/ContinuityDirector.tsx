@@ -24,8 +24,6 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
   setContinuityData,
   addToast,
 }) => {
-  // OPTIMIZATION: Implement the same context pruning logic here to ensure
-  // the continuity scoring is as efficient as the generation steps.
   const getNarrativeContext = useCallback((sceneId: string): string => {
       if (!storyBible || !scenes.length) return '';
       
@@ -90,7 +88,7 @@ CONTEXT FROM ADJACENT SCENES:
             key={scene.id}
             scene={scene}
             sceneNumber={index + 1}
-            logline={storyBible.logline}
+            storyBible={storyBible}
             narrativeContext={getNarrativeContext(scene.id)}
             directorsVision={directorsVision}
             generatedImage={generatedImages[scene.id]}

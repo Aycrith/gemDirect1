@@ -5,7 +5,7 @@ import SceneNavigator from './components/SceneNavigator';
 import TimelineEditor from './components/TimelineEditor';
 import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateSceneImage, suggestCoDirectorObjectives, generateVideoPrompt } from './services/geminiService';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateSceneImage, suggestCoDirectorObjectives, generateVideoPrompt, getPrunedContextForShotGeneration, getPrunedContextForCoDirector } from './services/geminiService';
 import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
@@ -232,10 +232,10 @@ CONTEXT FROM ADJACENT SCENES:
             try {
                 if (!storyBible) throw new Error("Story Bible not found.");
                 
-                // OPTIMIZATION: Generate and pass focused narrative context instead of the whole plot outline.
                 const narrativeContext = getNarrativeContext(sceneId);
-
-                const shotDescriptions = await generateInitialShotsForScene(storyBible.logline, narrativeContext, targetScene.summary, directorsVision);
+                const prunedContext = await getPrunedContextForShotGeneration(storyBible, narrativeContext, targetScene.summary, directorsVision);
+                
+                const shotDescriptions = await generateInitialShotsForScene(prunedContext);
                 const newShots: Shot[] = shotDescriptions.map((desc, index) => ({
                     id: `shot_${Date.now()}_${index}`,
                     description: desc,
@@ -325,9 +325,9 @@ CONTEXT FROM ADJACENT SCENES:
         setIsCoDirectorLoading(true);
         setCoDirectorResult(null);
         try {
-            // OPTIMIZATION: Generate and pass focused narrative context.
             const narrativeContext = getNarrativeContext(activeScene.id);
-            const result = await getCoDirectorSuggestions(storyBible.logline, narrativeContext, activeScene, objective, directorsVision);
+            const prunedContext = await getPrunedContextForCoDirector(storyBible, narrativeContext, activeScene, directorsVision);
+            const result = await getCoDirectorSuggestions(prunedContext, activeScene, objective);
             setCoDirectorResult(result);
         } catch (error) {
             addToast(error instanceof Error ? error.message : "An unknown error occurred.", 'error');
@@ -507,6 +507,7 @@ CONTEXT FROM ADJACENT SCENES:
             case 'director':
                  const currentSceneIndex = scenes.findIndex(s => s.id === activeSceneId);
                  const nextScene = currentSceneIndex > -1 && currentSceneIndex < scenes.length - 1 ? scenes[currentSceneIndex + 1] : null;
+                 const narrativeContext = useMemo(() => activeSceneId ? getNarrativeContext(activeSceneId) : '', [activeSceneId, getNarrativeContext]);
 
                  return (
                     <div className="flex flex-col lg:flex-row gap-8">
@@ -538,6 +539,7 @@ CONTEXT FROM ADJACENT SCENES:
                                         scene={activeScene}
                                         storyBible={storyBible}
                                         directorsVision={directorsVision}
+                                        narrativeContext={narrativeContext}
                                         imageUrl={generatedImages[activeScene.id]}
                                         setShots={setShotsForActiveScene}
                                         setShotEnhancers={setShotEnhancersForActiveScene}

@@ -48,6 +48,94 @@ const withRetry = async <T>(apiCall: () => Promise<T>, context: string): Promise
     throw handleApiError(lastError, context);
 };
 
+// --- Context Pruning & Summarization ---
+
+const getPrunedContext = async (prompt: string, context: string): Promise<string> => {
+    const apiCall = async () => {
+        const response = await ai.models.generateContent({
+            model: model, // Use the faster model for summarization
+            contents: prompt,
+            config: {
+                temperature: 0.2, // Low temperature for factual, consistent summarization
+            }
+        });
+        const text = response.text;
+        if (!text) {
+            throw new Error(`The model returned an empty response for ${context}.`);
+        }
+        return text.trim();
+    };
+    return withRetry(apiCall, context);
+};
+
+export const getPrunedContextForShotGeneration = async (
+    storyBible: StoryBible,
+    narrativeContext: string,
+    sceneSummary: string,
+    directorsVision: string
+): Promise<string> => {
+    const prompt = `You are a script supervisor. Your job is to create a concise "Creative Brief" for an AI Cinematographer. Distill the following information into a single, focused paragraph (under 150 words).
+
+    **CRITICAL INFORMATION TO INCLUDE:**
+    1.  **Scene's Core Purpose:** What is the main point of this scene in the story's overall journey (e.g., "The hero's lowest point," "Meeting the mentor").
+    2.  **Key Visuals & Mood:** What are the most important elements of the Director's Vision that apply here? (e.g., "gritty neo-noir lighting," "Ghibli-style nature").
+    3.  **Emotional Arc:** What is the emotional shift that should happen from the beginning to the end of the scene?
+
+    **SOURCE MATERIAL:**
+    - Story Logline: ${storyBible.logline}
+    - Narrative Context (Current Act of the Hero's Journey): ${narrativeContext}
+    - Scene Summary: ${sceneSummary}
+    - Director's Vision: ${directorsVision}
+
+    **Your Output:** A single paragraph creative brief.`;
+    return getPrunedContext(prompt, 'prune context for shot generation');
+};
+
+export const getPrunedContextForCoDirector = async (
+    storyBible: StoryBible,
+    narrativeContext: string,
+    scene: Scene,
+    directorsVision: string
+): Promise<string> => {
+    const prompt = `You are an expert script analyst. Your job is to create a concise "Co-Director's Brief" (under 200 words) that summarizes the creative sandbox for the current scene. The brief should focus on the *goals and constraints* for making creative suggestions.
+
+    **CRITICAL INFORMATION TO SUMMARIZE:**
+    1.  **Narrative Function:** What is this scene's specific job within the plot's current act (based on The Hero's Journey)?
+    2.  **Aesthetic Guardrails:** What are the key visual and tonal rules from the Director's Vision that MUST be followed?
+    3.  **Character/Plot Development:** What key character change or plot point must be accomplished in this scene?
+
+    **SOURCE MATERIAL:**
+    - Story Logline: ${storyBible.logline}
+    - Narrative Context (Current Act): ${narrativeContext}
+    - Scene: "${scene.title}" - ${scene.summary}
+    - Director's Vision: ${directorsVision}
+
+    **Your Output:** A single paragraph co-director's brief.`;
+    return getPrunedContext(prompt, 'prune context for co-director');
+};
+
+export const getPrunedContextForContinuity = async (
+    storyBible: StoryBible,
+    narrativeContext: string,
+    scene: Scene,
+    directorsVision: string
+): Promise<string> => {
+    const prompt = `You are a continuity supervisor. Your task is to create a "Continuity Checklist" summary (under 200 words) from the provided creative intent. This checklist will be used to score a generated video. Focus on tangible, measurable elements.
+
+    **CRITICAL ELEMENTS TO EXTRACT & SUMMARIZE:**
+    1.  **Narrative Beats:** What are the 2-3 key actions or events that MUST happen in the video to match the scene's summary and timeline?
+    2.  **Aesthetic Mandates:** What are the most critical, non-negotiable visual styles from the Director's Vision (e.g., "must use high-contrast lighting," "must have a handheld camera feel")?
+    3.  **Thematic Goal:** What is the single most important feeling or idea the scene should convey, based on its place in the story?
+
+    **SOURCE MATERIAL:**
+    - Story Logline: ${storyBible.logline}
+    - Narrative Context (Current Act): ${narrativeContext}
+    - Scene: "${scene.title}" - ${scene.summary}
+    - Director's Vision: ${directorsVision}
+
+    **Your Output:** A concise, single-paragraph summary of the continuity checklist.`;
+    return getPrunedContext(prompt, 'prune context for continuity');
+};
 
 // --- Core Story Generation ---
 
@@ -133,28 +221,16 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
 };
 
 export const generateInitialShotsForScene = async (
-    logline: string,
-    narrativeContext: string,
-    sceneSummary: string,
-    directorsVision: string,
+    prunedContext: string
 ): Promise<string[]> => {
     const context = 'generate shots for scene';
-    const prompt = `You are a visionary cinematographer who understands that every shot must serve the story. Create an initial shot list for a scene, ensuring it aligns with the Director's Vision and the scene's specific purpose within the overall plot.
+    const prompt = `You are a visionary cinematographer who understands that every shot must serve the story. Based on the following focused Creative Brief, create an initial shot list for the scene.
 
-    **Director's Vision / Cinematic Style (includes potential Animation Styles):**
-    "${directorsVision}"
-
-    **Overall Story Logline:**
-    ${logline}
-
-    **Narrative Context (Current Act & Adjacent Scenes):**
-    ${narrativeContext}
-
-    **Current Scene Summary & Purpose:**
-    ${sceneSummary}
+    **Creative Brief:**
+    "${prunedContext}"
 
     **Your Task:**
-    Based on all the context, especially the scene's place in the provided narrative context, generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene. For example, if this scene is 'The Ordeal', the shots should be tense and climactic. If it's 'Meeting the Mentor', they should establish wisdom and guidance.`;
+    Generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene, perfectly aligning with the provided brief. Ensure the shots create a cohesive and emotionally resonant sequence.`;
     
     const responseSchema = {
         type: Type.ARRAY,
@@ -316,8 +392,7 @@ export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleCo
 
 export const refineShotDescription = async (
     shotDescription: string, 
-    sceneSummary: string,
-    logline: string, 
+    narrativeContext: string,
     directorsVision: string
 ): Promise<string> => {
     const context = 'refine description';
@@ -326,12 +401,9 @@ export const refineShotDescription = async (
     **Director's Vision / Cinematic Style:**
     "${directorsVision}"
 
-    **Scene Summary:**
-    ${sceneSummary}
+    **Narrative Context (Current Act, adjacent scenes, etc):**
+    ${narrativeContext}
     
-    **Story Logline:**
-    ${logline}
-
     **Current Shot Description to Refine:**
     "${shotDescription}"
 
@@ -365,8 +437,7 @@ export const refineShotDescription = async (
 
 export const suggestShotEnhancers = async (
     shotDescription: string, 
-    sceneSummary: string, 
-    logline: string, 
+    narrativeContext: string,
     directorsVision: string
 ): Promise<Partial<Omit<CreativeEnhancers, 'transitions'>>> => {
     const context = 'suggest enhancers';
@@ -375,11 +446,8 @@ export const suggestShotEnhancers = async (
     **Director's Vision / Cinematic Style:**
     "${directorsVision}"
     
-    **Story Logline:**
-    ${logline}
-
-    **Scene Summary:**
-    "${sceneSummary}"
+    **Narrative Context (Current Act, adjacent scenes, etc):**
+    "${narrativeContext}"
 
     **Shot Description:**
     "${shotDescription}"
@@ -487,11 +555,9 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
 };
 
 export const getCoDirectorSuggestions = async (
-    logline: string, 
-    narrativeContext: string, 
+    prunedContext: string,
     activeScene: Scene, 
-    objective: string, 
-    directorsVision: string
+    objective: string
 ): Promise<CoDirectorResult> => {
     const context = 'get co-director suggestions';
     const timelineString = activeScene.timeline.shots.map((shot, index) => {
@@ -522,15 +588,8 @@ export const getCoDirectorSuggestions = async (
     const prompt = `
 You are an expert AI Film Co-Director. Your task is to analyze a cinematic timeline and provide creative, actionable suggestions that align with a high-level artistic vision, a specific creative objective, and the scene's narrative purpose.
 
-**Director's Vision / Cinematic Style:**
-"${directorsVision}"
-
-**Overall Story Context:**
-- Logline: ${logline}
-- Current Narrative Act & Context: ${narrativeContext}
-
-**Current Scene Context:**
-- Scene: ${activeScene.title} - ${activeScene.summary}
+**Co-Director's Brief (The Creative Sandbox & Goals):**
+"${prunedContext}"
 
 **Current Shot-List & Style for this Scene:**
 ${timelineString}
@@ -539,7 +598,7 @@ ${timelineString}
 "${objective}"
 
 **Your Task & CRITICAL JSON FORMATTING INSTRUCTIONS:**
-Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Your suggestions must improve the current timeline to better align with the Director's Vision, the user's objective, and **the scene's structural purpose within the Hero's Journey framework of the plot.**
+Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Your suggestions must improve the current timeline to better align with the Director's Vision, the user's objective, and **the scene's structural purpose as outlined in the brief.**
 - **CRITICAL RULE #1: Your entire response must be a single JSON object. Do not add any text, markdown, or code fences before or after the JSON.**
 - **CRITICAL RULE #2: This is the most important rule. Any time you include a double quote character (") inside of a JSON string value, you MUST escape it with a backslash (\\").** For example, if you want to write \`The hero shouted, "Look out!"\`, the JSON string value must be \`"The hero shouted, \\"Look out!\\""\`. Failure to do this will break the application.
 - **The instructions to escape quotes are also repeated in the descriptions for each field in the JSON schema. You MUST follow them.**
@@ -699,9 +758,7 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
 
 
 export const scoreContinuity = async (
-    logline: string,
-    narrativeContext: string,
-    directorsVision: string,
+    prunedContext: string,
     scene: Scene,
     videoAnalysis: string
 ): Promise<ContinuityResult> => {
@@ -725,16 +782,10 @@ You are an expert film critic and continuity supervisor. Your task is to analyze
 
 **PART 1: THE CREATIVE INTENT**
 
-**1.1. Overall Story & Thematic Context:**
-- Logline: ${logline}
-- Current Narrative Act & Context (Hero's Journey): ${narrativeContext}
+**1.1. Continuity Checklist Summary:**
+- ${prunedContext}
 
-**1.2. Director's Vision (Aesthetic Guardrail):**
-- "${directorsVision}"
-
-**1.3. Scene-Specific Plan (Narrative & Execution):**
-- Scene: ${scene.title} - ${scene.summary}
-- Shot-by-Shot Timeline:
+**1.2. Scene-Specific Shot-by-Shot Timeline:**
 ${timelineString}
 
 **PART 2: THE ACTUAL OUTPUT**
@@ -746,9 +797,9 @@ ${videoAnalysis}
 
 Based on a critical comparison of PART 1 (Intent) and PART 2 (Output), generate a JSON object with the following structure:
 1.  **scores**: An object with three numerical scores from 1 (poor match) to 10 (perfect match).
-    - **narrative_coherence**: How well did the video's action match the scene summary and shot descriptions?
-    - **aesthetic_alignment**: How well did the video's cinematography, lighting, and mood match the Director's Vision and chosen enhancers?
-    - **thematic_resonance**: How well did the video's overall feeling connect with the Story's logline, its narrative context, and its intended function within the Hero's Journey structure?
+    - **narrative_coherence**: How well did the video's action match the scene summary and shot descriptions from the timeline?
+    - **aesthetic_alignment**: How well did the video's cinematography, lighting, and mood match the Aesthetic Mandates from the checklist?
+    - **thematic_resonance**: How well did the video's overall feeling connect with the Thematic Goal from the checklist?
 2.  **overall_feedback**: A concise markdown paragraph explaining your scores. What worked well? What were the key discrepancies between intent and reality?
 3.  **refinement_directives**: An array of 1-3 actionable suggestions to improve the creative intent for future generations. Each object in the array must have:
     - **target**: The area to improve ('story_bible', 'directors_vision', or 'scene_timeline').

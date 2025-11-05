@@ -17,6 +17,7 @@ interface TimelineEditorProps {
     scene: Scene;
     storyBible: StoryBible;
     directorsVision: string;
+    narrativeContext: string;
     imageUrl?: string;
     setShots: React.Dispatch<React.SetStateAction<Shot[]>>;
     setShotEnhancers: React.Dispatch<React.SetStateAction<ShotEnhancers>>;
@@ -137,6 +138,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     scene,
     storyBible,
     directorsVision,
+    narrativeContext,
     imageUrl,
     setShots,
     setShotEnhancers,
@@ -211,28 +213,26 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const handleRefineDescription = useCallback(async (shot: Shot) => {
         setSuggestionState({ shotId: shot.id, type: 'description' });
         try {
-            // FIX: Pass the correct arguments (strings) instead of entire objects.
-            const refinedDesc = await refineShotDescription(shot.description, scene.summary, storyBible.logline, directorsVision);
+            const refinedDesc = await refineShotDescription(shot.description, narrativeContext, directorsVision);
             setShots(prev => prev.map(s => s.id === shot.id ? { ...s, description: refinedDesc } : s));
         } catch (e) {
             console.error(e);
         } finally {
             setSuggestionState({ shotId: null, type: null });
         }
-    }, [scene, storyBible, directorsVision, setShots]);
+    }, [narrativeContext, directorsVision, setShots]);
 
     const handleSuggestEnhancers = useCallback(async (shot: Shot) => {
         setSuggestionState({ shotId: shot.id, type: 'enhancers' });
         try {
-            // FIX: Pass the correct arguments (strings) instead of entire objects.
-            const suggested = await suggestShotEnhancers(shot.description, scene.summary, storyBible.logline, directorsVision);
+            const suggested = await suggestShotEnhancers(shot.description, narrativeContext, directorsVision);
             setShotEnhancers(prev => ({ ...prev, [shot.id]: suggested }));
         } catch (e) {
             console.error(e);
         } finally {
             setSuggestionState({ shotId: null, type: null });
         }
-    }, [scene, storyBible, directorsVision, setShotEnhancers]);
+    }, [narrativeContext, directorsVision, setShotEnhancers]);
 
     const buildTimelineData = useCallback(() => {
         let finalNegativePrompt = negativePrompt;
