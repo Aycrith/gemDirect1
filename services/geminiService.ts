@@ -2,15 +2,12 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, CoDirectorResult, Shot, TimelineData } from "../types";
 
 // Note: API key is automatically sourced from process.env.API_KEY
-// FIX: Initialize GoogleGenAI with a named apiKey parameter as per guidelines.
-const ai = new GoogleGenAI({apiKey: process.env.API_KEY as string});
+const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 
 /**
  * Analyzes video frames to identify shots and suggest improvements.
  */
 export const analyzeVideoFrames = async (frames: string[]): Promise<AnalysisResult> => {
-
-    // FIX: Use a recommended model for complex text and image tasks.
     const model = 'gemini-2.5-pro'; 
 
     const prompt = `
@@ -57,7 +54,6 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<AnalysisResu
     };
 
     try {
-        // FIX: Use ai.models.generateContent to generate content as per guidelines.
         const response = await ai.models.generateContent({
             model: model,
             contents: contents,
@@ -67,7 +63,6 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<AnalysisResu
             },
         });
         
-        // FIX: Extract text from response using the .text property as per guidelines.
         const jsonText = response.text.trim();
         const result = JSON.parse(jsonText);
 
@@ -85,7 +80,6 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<AnalysisResu
  */
 export const getCoDirectorSuggestions = async (shots: Shot[], transitions: string[], objective: string): Promise<CoDirectorResult> => {
     
-    // FIX: Use a recommended model for complex text tasks.
     const model = 'gemini-2.5-pro';
 
     const timelineString = shots.map((shot, index) => {
@@ -109,9 +103,10 @@ export const getCoDirectorSuggestions = async (shots: Shot[], transitions: strin
         
         **CRITICAL JSON FORMATTING RULES**:
         - Your entire output MUST be a single, valid JSON object that strictly adheres to the provided schema. Do not include any text, explanations, or markdown formatting (like \`\`\`json) outside of this JSON object.
-        - **THE MOST IMPORTANT RULE**: Every double quote character (") that appears inside of a JSON string value MUST be escaped with a backslash (\\). This is a common point of failure.
-        - For example, if a description is "Add a 'Dutch Tilt' shot", the JSON string value must be written as "Add a \\"Dutch Tilt\\" shot".
-        - This rule is mandatory for ALL string fields, especially the 'description' fields. Before finishing, double-check that every quote inside a string is properly escaped. An unescaped quote will break the entire response.
+        - **ESCAPE DOUBLE QUOTES**: This is the most important rule. Any double quote character (") that appears inside a JSON string value MUST be escaped with a backslash (\\). An unescaped quote will break the entire response.
+        - **CORRECT EXAMPLE**: If a description is 'Add a "Dutch Tilt" camera angle', the JSON string value must be "Add a \\"Dutch Tilt\\" camera angle".
+        - **STRONGLY PREFERRED ALTERNATIVE**: To avoid errors, please try to rephrase sentences to use single quotes (' ') instead of double quotes (" ") whenever possible. Single quotes do not need to be escaped and are much safer. For example, write "Add a 'Dutch Tilt' camera angle" instead of the above.
+        - This rule is mandatory for all string fields, especially the 'description' field.
     `;
     
     // This defines the structure of the JSON we expect back from the model.

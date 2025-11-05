@@ -31,4 +31,4 @@ const ExamplePrompts: React.FC = () => {
     )
 };
 
-export default ExamplePrompts;
+export default React.memo(ExamplePrompts);

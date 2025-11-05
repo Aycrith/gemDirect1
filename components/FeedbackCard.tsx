@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { marked } from 'marked';
 
@@ -42,4 +41,4 @@ const FeedbackCard: React.FC<FeedbackCardProps> = ({ title, content, isLoading }
   );
 };
 
-export default FeedbackCard;
+export default React.memo(FeedbackCard);

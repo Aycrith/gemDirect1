@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 interface VideoPlayerProps {
@@ -16,4 +15,4 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ src }) => {
   );
 };
 
-export default VideoPlayer;
+export default React.memo(VideoPlayer);

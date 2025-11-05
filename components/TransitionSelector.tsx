@@ -78,4 +78,4 @@ const TransitionSelector: React.FC<TransitionSelectorProps> = ({ value, onChange
     );
 };
 
-export default TransitionSelector;
+export default React.memo(TransitionSelector);

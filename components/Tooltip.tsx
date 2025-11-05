@@ -28,4 +28,4 @@ const Tooltip: React.FC<TooltipProps> = ({ text, children }) => {
   );
 };
 
-export default Tooltip;
+export default React.memo(Tooltip);

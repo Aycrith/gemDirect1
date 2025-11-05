@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Shot, ShotEnhancers } from '../types';
 import TimelineIcon from './icons/TimelineIcon';
 import CreativeControls from './CreativeControls';
@@ -37,8 +37,13 @@ const ShotCard: React.FC<{
     onDelete: (id: string) => void;
     enhancers: ShotEnhancers[string];
     onEnhancersChange: (id:string, newEnhancers: ShotEnhancers[string]) => void;
-}> = ({ shot, onDescriptionChange, onTitleChange, onDelete, enhancers, onEnhancersChange }) => {
+}> = React.memo(({ shot, onDescriptionChange, onTitleChange, onDelete, enhancers, onEnhancersChange }) => {
     const [isEditingStyle, setIsEditingStyle] = useState(false);
+    
+    const handleOnDelete = useCallback(() => onDelete(shot.id), [shot.id, onDelete]);
+    const handleOnDescriptionChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => onDescriptionChange(shot.id, e.target.value), [shot.id, onDescriptionChange]);
+    const handleOnTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => onTitleChange(shot.id, e.target.value), [shot.id, onTitleChange]);
+    const handleOnEnhancersChange = useCallback((newEnhancers: ShotEnhancers[string]) => onEnhancersChange(shot.id, newEnhancers), [shot.id, onEnhancersChange]);
 
     return (
         <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 relative group">
@@ -46,7 +51,7 @@ const ShotCard: React.FC<{
                 type="text"
                 className="block w-full bg-transparent font-bold text-indigo-400 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-lg mb-2 p-1 -ml-1"
                 value={shot.title || ''}
-                onChange={(e) => onTitleChange(shot.id, e.target.value)}
+                onChange={handleOnTitleChange}
                 placeholder="Untitled Shot"
                 aria-label={`Title for ${shot.id}`}
             />
@@ -54,7 +59,7 @@ const ShotCard: React.FC<{
                 rows={3}
                 className="block w-full bg-gray-900 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3"
                 value={shot.description}
-                onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
+                onChange={handleOnDescriptionChange}
                 aria-label={`Description for ${shot.id}`}
             />
             <div className="mt-4">
@@ -66,7 +71,7 @@ const ShotCard: React.FC<{
                 </button>
             </div>
              <button
-                onClick={() => onDelete(shot.id)}
+                onClick={handleOnDelete}
                 className="absolute top-2 right-2 p-1.5 rounded-full bg-gray-700 text-gray-400 hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
                 aria-label={`Delete ${shot.title || 'shot'}`}
             >
@@ -89,7 +94,7 @@ const ShotCard: React.FC<{
                             <h3 id={`dialog-title-${shot.id}`} className="text-lg font-bold text-indigo-400 mb-4">Editing Style for "{shot.title}"</h3>
                             <CreativeControls 
                                 value={enhancers}
-                                onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)}
+                                onChange={handleOnEnhancersChange}
                             />
                             <div className="text-right mt-6 pt-4 border-t border-gray-700">
                                 <button 
@@ -105,7 +110,7 @@ const ShotCard: React.FC<{
             )}
         </div>
     )
-}
+});
 
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
     shots, setShots, shotEnhancers, setShotEnhancers, transitions, setTransitions, 
@@ -114,37 +119,37 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     negativePrompt, setNegativePrompt, suggestedNegativePrompts
 }) => {
     
-    const handleDescriptionChange = (id: string, newDescription: string) => {
-        setShots(shots.map(shot => shot.id === id ? { ...shot, description: newDescription } : shot));
-    };
+    const handleDescriptionChange = useCallback((id: string, newDescription: string) => {
+        setShots(currentShots => currentShots.map(shot => shot.id === id ? { ...shot, description: newDescription } : shot));
+    }, [setShots]);
     
-    const handleTitleChange = (id: string, newTitle: string) => {
-        setShots(shots.map(shot => shot.id === id ? { ...shot, title: newTitle } : shot));
-    }
+    const handleTitleChange = useCallback((id: string, newTitle: string) => {
+        setShots(currentShots => currentShots.map(shot => shot.id === id ? { ...shot, title: newTitle } : shot));
+    }, [setShots]);
 
-    const handleEnhancersChange = (id: string, newEnhancers: ShotEnhancers[string]) => {
+    const handleEnhancersChange = useCallback((id: string, newEnhancers: ShotEnhancers[string]) => {
         setShotEnhancers(prev => ({ ...prev, [id]: newEnhancers }));
-    };
+    }, [setShotEnhancers]);
 
-    const handleTransitionChange = (index: number, newTransition: string) => {
-        const newTransitions = [...transitions];
-        newTransitions[index] = newTransition;
-        setTransitions(newTransitions);
-    };
+    const handleTransitionChange = useCallback((index: number, newTransition: string) => {
+        setTransitions(currentTransitions => {
+            const newTransitions = [...currentTransitions];
+            newTransitions[index] = newTransition;
+            return newTransitions;
+        });
+    }, [setTransitions]);
 
-    const handleAddShot = () => {
+    const handleAddShot = useCallback(() => {
         const newShot: Shot = {
             id: `shot_${Date.now()}`,
             title: 'New Shot',
             description: ''
         };
-        setShots([...shots, newShot]);
-        if (shots.length > 0) {
-            setTransitions([...transitions, 'Cut']);
-        }
-    };
+        setShots(currentShots => [...currentShots, newShot]);
+        setTransitions(currentTransitions => [...currentTransitions, 'Cut']);
+    }, [setShots, setTransitions]);
 
-    const handleDeleteShot = (id: string) => {
+    const handleDeleteShot = useCallback((id: string) => {
         const shotIndex = shots.findIndex(shot => shot.id === id);
         if (shotIndex === -1) return;
 
@@ -156,20 +161,17 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             return newEnhancers;
         });
 
-        // If there's at least one shot left, adjust transitions
         if (shots.length > 1) {
             setTransitions(prev => {
                 const newTransitions = [...prev];
-                // Remove the transition *before* the deleted shot, unless it's the first shot
                 const transitionIndexToRemove = shotIndex > 0 ? shotIndex - 1 : 0;
                 newTransitions.splice(transitionIndexToRemove, 1);
                 return newTransitions;
             });
         } else {
-            // No shots left, or only one left, so no transitions
             setTransitions([]);
         }
-    }
+    }, [shots, setShots, setShotEnhancers, setTransitions]);
 
 
     return (
@@ -276,4 +278,4 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     );
 };
 
-export default TimelineEditor;
+export default React.memo(TimelineEditor);

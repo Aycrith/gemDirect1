@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { CoDirectorResult, Suggestion } from '../types';
 import LightbulbIcon from './icons/LightbulbIcon';
 import SparklesIcon from './icons/SparklesIcon';
@@ -17,13 +17,13 @@ const SuggestionModal: React.FC<{
   result: CoDirectorResult;
   onApply: (suggestion: Suggestion) => void;
   onClose: () => void;
-}> = ({ result, onApply, onClose }) => {
+}> = React.memo(({ result, onApply, onClose }) => {
     const [appliedIndices, setAppliedIndices] = useState<number[]>([]);
 
-    const handleApply = (suggestion: Suggestion, index: number) => {
+    const handleApply = useCallback((suggestion: Suggestion, index: number) => {
         onApply(suggestion);
         setAppliedIndices(prev => [...prev, index]);
-    }
+    }, [onApply]);
     
     const createMarkup = (markdown: string) => {
         const rawMarkup = marked(markdown, { sanitize: true });
@@ -86,18 +86,18 @@ const SuggestionModal: React.FC<{
             </div>
         </div>
     );
-};
+});
 
 
 const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, result, onApplySuggestion, onClose }) => {
     const [objective, setObjective] = useState('');
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = useCallback((e: React.FormEvent) => {
         e.preventDefault();
         if (objective.trim()) {
             onGetSuggestions(objective);
         }
-    }
+    }, [objective, onGetSuggestions]);
 
     return (
         <div className="my-6">
@@ -142,4 +142,4 @@ const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, re
     )
 }
 
-export default CoDirector;
+export default React.memo(CoDirector);

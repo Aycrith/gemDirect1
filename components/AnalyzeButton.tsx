@@ -37,4 +37,4 @@ const AnalyzeButton: React.FC<AnalyzeButtonProps> = ({ onClick, isLoading, disab
     );
 };
 
-export default AnalyzeButton;
+export default React.memo(AnalyzeButton);

@@ -33,4 +33,4 @@ const Toast: React.FC<{ toasts: ToastMessage[]; removeToast: (id: number) => voi
     );
 };
 
-export default Toast;
+export default React.memo(Toast);

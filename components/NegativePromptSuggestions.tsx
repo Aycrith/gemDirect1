@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import PlusIcon from './icons/PlusIcon';
 
 interface NegativePromptSuggestionsProps {
@@ -9,11 +9,11 @@ interface NegativePromptSuggestionsProps {
 
 const NegativePromptSuggestions: React.FC<NegativePromptSuggestionsProps> = ({ suggestions, negativePrompt, setNegativePrompt }) => {
 
-    const handleAddSuggestion = (suggestion: string) => {
+    const handleAddSuggestion = useCallback((suggestion: string) => {
         if (!negativePrompt.includes(suggestion)) {
             setNegativePrompt(prev => prev ? `${prev}, ${suggestion}` : suggestion);
         }
-    }
+    }, [negativePrompt, setNegativePrompt]);
 
     return (
          <div>
@@ -50,4 +50,4 @@ const NegativePromptSuggestions: React.FC<NegativePromptSuggestionsProps> = ({ s
     )
 }
 
-export default NegativePromptSuggestions;
+export default React.memo(NegativePromptSuggestions);

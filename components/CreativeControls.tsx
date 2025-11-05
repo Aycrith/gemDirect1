@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { CreativeEnhancers } from '../types';
 import CameraIcon from './icons/CameraIcon';
 import DancerIcon from './icons/DancerIcon';
@@ -25,7 +25,7 @@ const MOOD_OPTIONS = ["Suspenseful", "Epic", "Gritty", "Dreamlike", "Tense", "En
 const VFX_OPTIONS = ["Bleach Bypass", "Chromatic Aberration", "Color Grading (Teal & Orange)", "Day-for-Night", "Desaturated", "Film Grain", "Glitch Effect", "Glow/Bloom", "High Contrast", "Lens Dirt/Smudges", "Light Leaks", "Motion Blur", "Particle Effects", "Scanlines", "VHS Look", "Vignette"];
 const PLOT_ENHANCEMENTS_OPTIONS = ["Add Character Action", "Introduce Conflict", "Foreshadowing Moment", "Heighten Emotion", "Add Dialogue Snippet", "Reveal a Detail"];
 
-const ControlButton: React.FC<{ label: string; selected: boolean; onClick: () => void; description: string; }> = ({ label, selected, onClick, description }) => (
+const ControlButton: React.FC<{ label: string; selected: boolean; onClick: () => void; description: string; }> = React.memo(({ label, selected, onClick, description }) => (
     <Tooltip text={description}>
         <button
             onClick={onClick}
@@ -34,10 +34,10 @@ const ControlButton: React.FC<{ label: string; selected: boolean; onClick: () =>
             {label}
         </button>
     </Tooltip>
-)
+));
 
 const ControlSection: React.FC<{ title: string; icon: React.ReactNode; options: string[]; selected: string[]; onToggle: (option: string) => void; categoryId: keyof typeof CINEMATIC_TERMS; }> = 
-({ title, icon, options, selected, onToggle, categoryId }) => {
+React.memo(({ title, icon, options, selected, onToggle, categoryId }) => {
     return (
     <div>
         <label className="flex items-center text-sm font-medium text-gray-300 mb-3">
@@ -57,12 +57,12 @@ const ControlSection: React.FC<{ title: string; icon: React.ReactNode; options: 
         </div>
     </div>
     );
-};
+});
 
 
 const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) => {
 
-    const handleToggle = (category: keyof Omit<CreativeEnhancers, 'transitions' | 'plotEnhancements'>, option: string) => {
+    const handleToggle = useCallback((category: keyof Omit<CreativeEnhancers, 'transitions' | 'plotEnhancements'>, option: string) => {
         const currentSelection = value[category] || [];
         const newSelection = currentSelection.includes(option)
             ? currentSelection.filter(item => item !== option)
@@ -72,9 +72,9 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
             ...value,
             [category]: newSelection,
         });
-    };
+    }, [value, onChange]);
     
-    const handlePlotToggle = (category: 'plotEnhancements', option: string) => {
+    const handlePlotToggle = useCallback((category: 'plotEnhancements', option: string) => {
         const currentSelection = value[category] || [];
         const newSelection = currentSelection.includes(option)
             ? currentSelection.filter(item => item !== option)
@@ -84,7 +84,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
             ...value,
             [category]: newSelection,
         });
-    };
+    }, [value, onChange]);
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 p-1">
@@ -156,4 +156,4 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
     )
 }
 
-export default CreativeControls;
+export default React.memo(CreativeControls);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import FileUpload from './components/FileUpload';
 import VideoPlayer from './components/VideoPlayer';
 import TimelineEditor from './components/TimelineEditor';
@@ -12,6 +12,36 @@ import { Shot, ShotEnhancers, AnalysisResult, CoDirectorResult, Suggestion, Time
 import { ProcessingStage } from './components/ProgressBar';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
+
+const RemixPromptModal: React.FC<{ prompt: string; onClose: () => void }> = ({ prompt, onClose }) => {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = () => {
+        navigator.clipboard.writeText(prompt);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 fade-in" onClick={onClose}>
+            <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-3xl" onClick={e => e.stopPropagation()}>
+                <div className="p-6">
+                    <h3 className="text-lg font-bold text-green-400 mb-4">Final Remix Prompt</h3>
+                    <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto text-gray-300 text-sm whitespace-pre-wrap font-mono select-all">
+                        {prompt}
+                    </div>
+                    <div className="flex justify-end gap-4 mt-6 pt-4 border-t border-gray-700">
+                        <button onClick={handleCopy} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${copied ? 'bg-green-700 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
+                            {copied ? 'Copied!' : 'Copy to Clipboard'}
+                        </button>
+                        <button onClick={onClose} className="px-4 py-2 text-sm font-semibold rounded-md bg-gray-600 text-white hover:bg-gray-700 transition-colors">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const App: React.FC = () => {
     // Video and analysis state
@@ -48,17 +78,17 @@ const App: React.FC = () => {
         }
     }, [videoFile]);
 
-    const addToast = (message: string, type: ToastMessage['type'] = 'info') => {
+    const removeToast = useCallback((id: number) => {
+        setToasts(prev => prev.filter(toast => toast.id !== id));
+    }, []);
+
+    const addToast = useCallback((message: string, type: ToastMessage['type'] = 'info') => {
         const id = Date.now();
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => removeToast(id), 5000);
-    };
+    }, [removeToast]);
 
-    const removeToast = (id: number) => {
-        setToasts(prev => prev.filter(toast => toast.id !== id));
-    };
-
-    const handleFileSelect = (file: File) => {
+    const handleFileSelect = useCallback((file: File) => {
         setVideoFile(file);
         // Reset previous results when a new file is selected
         setAnalysisResult(null);
@@ -68,9 +98,9 @@ const App: React.FC = () => {
         setTransitions([]);
         setWorkflowStage('analyze');
         addToast(`Selected video: ${file.name}`, 'info');
-    };
+    }, [addToast]);
 
-    const handleAnalyzeClick = async () => {
+    const handleAnalyzeClick = useCallback(async () => {
         if (!videoFile) return;
 
         setIsLoading(true);
@@ -124,9 +154,9 @@ const App: React.FC = () => {
             setProcessingStage('idle');
             setProcessingStatus('');
         }
-    };
+    }, [videoFile, addToast]);
 
-    const handleGetCoDirectorSuggestions = async (objective: string) => {
+    const handleGetCoDirectorSuggestions = useCallback(async (objective: string) => {
         if (shots.length === 0) {
             addToast('Please analyze a video first to create a timeline.', 'error');
             return;
@@ -143,32 +173,42 @@ const App: React.FC = () => {
         } finally {
             setIsCoDirectorLoading(false);
         }
-    };
+    }, [shots, transitions, addToast]);
     
-    const handleApplySuggestion = (suggestion: Suggestion) => {
+    const handleApplySuggestion = useCallback((suggestion: Suggestion) => {
         console.log("Applying suggestion:", suggestion);
         switch (suggestion.type) {
             case 'UPDATE_SHOT':
-                if (suggestion.shot_id && suggestion.payload.description) {
-                    setShots(prev => prev.map(shot => shot.id === suggestion.shot_id ? { ...shot, description: suggestion.payload.description as string } : shot));
-                }
-                if (suggestion.shot_id && suggestion.payload.enhancers) {
-                     setShotEnhancers(prev => ({...prev, [suggestion.shot_id as string]: { ...prev[suggestion.shot_id as string], ...suggestion.payload.enhancers }}));
+                if (suggestion.shot_id) {
+                    if (suggestion.payload.description) {
+                        setShots(prev => prev.map(shot => shot.id === suggestion.shot_id ? { ...shot, description: suggestion.payload.description as string } : shot));
+                    }
+                    if (suggestion.payload.enhancers) {
+                         setShotEnhancers(prev => ({...prev, [suggestion.shot_id as string]: { ...prev[suggestion.shot_id as string], ...suggestion.payload.enhancers }}));
+                    }
                 }
                 break;
             case 'ADD_SHOT_AFTER':
                 if (suggestion.after_shot_id && suggestion.payload.description) {
                     const newShot: Shot = { id: `shot_${Date.now()}`, title: suggestion.payload.title || 'New Scene', description: suggestion.payload.description };
-                    const index = shots.findIndex(s => s.id === suggestion.after_shot_id);
-                    if (index > -1) {
-                        const newShots = [...shots];
-                        newShots.splice(index + 1, 0, newShot);
-                        setShots(newShots);
-
-                        const newTransitions = [...transitions];
-                        newTransitions.splice(index + 1, 0, 'Cut');
-                        setTransitions(newTransitions);
-                    }
+                    setShots(prevShots => {
+                        const index = prevShots.findIndex(s => s.id === suggestion.after_shot_id);
+                        if (index > -1) {
+                            const newShots = [...prevShots];
+                            newShots.splice(index + 1, 0, newShot);
+                            return newShots;
+                        }
+                        return prevShots;
+                    });
+                    setTransitions(prevTransitions => {
+                         const index = shots.findIndex(s => s.id === suggestion.after_shot_id);
+                         if (index > -1) {
+                            const newTransitions = [...prevTransitions];
+                            newTransitions.splice(index + 1, 0, 'Cut');
+                            return newTransitions;
+                         }
+                         return prevTransitions;
+                    });
                 }
                 break;
             case 'UPDATE_TRANSITION':
@@ -184,9 +224,9 @@ const App: React.FC = () => {
                 break;
         }
          addToast('Suggestion applied!', 'success');
-    };
+    }, [addToast, shots]);
 
-    const handleSaveTimeline = () => {
+    const handleSaveTimeline = useCallback(() => {
         const timelineData: TimelineData = { shots, shotEnhancers, transitions, negativePrompt };
         const dataStr = JSON.stringify(timelineData, null, 2);
         const blob = new Blob([dataStr], {type: "application/json"});
@@ -197,9 +237,9 @@ const App: React.FC = () => {
         a.click();
         URL.revokeObjectURL(url);
         addToast('Timeline saved!', 'success');
-    };
+    }, [shots, shotEnhancers, transitions, negativePrompt, addToast]);
     
-    const handleLoadTimeline = () => {
+    const handleLoadTimeline = useCallback(() => {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.json';
@@ -228,9 +268,9 @@ const App: React.FC = () => {
             }
         };
         input.click();
-    };
+    }, [addToast]);
 
-    const handleGenerateRemix = async () => {
+    const handleGenerateRemix = useCallback(async () => {
         if (shots.length === 0) {
             addToast('Cannot generate a remix from an empty timeline.', 'error');
             return;
@@ -249,37 +289,10 @@ const App: React.FC = () => {
         } finally {
             setIsRemixing(false);
         }
-    };
+    }, [shots, shotEnhancers, transitions, negativePrompt, addToast]);
 
-    const RemixPromptModal: React.FC<{ prompt: string; onClose: () => void }> = ({ prompt, onClose }) => {
-        const [copied, setCopied] = useState(false);
-        const handleCopy = () => {
-            navigator.clipboard.writeText(prompt);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        };
-    
-        return (
-            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 fade-in" onClick={onClose}>
-                <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-3xl" onClick={e => e.stopPropagation()}>
-                    <div className="p-6">
-                        <h3 className="text-lg font-bold text-green-400 mb-4">Final Remix Prompt</h3>
-                        <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto text-gray-300 text-sm whitespace-pre-wrap font-mono select-all">
-                            {prompt}
-                        </div>
-                        <div className="flex justify-end gap-4 mt-6 pt-4 border-t border-gray-700">
-                            <button onClick={handleCopy} className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${copied ? 'bg-green-700 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>
-                                {copied ? 'Copied!' : 'Copy to Clipboard'}
-                            </button>
-                            <button onClick={onClose} className="px-4 py-2 text-sm font-semibold rounded-md bg-gray-600 text-white hover:bg-gray-700 transition-colors">
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    };
+    const handleCloseCoDirector = useCallback(() => setCoDirectorResult(null), []);
+    const handleCloseRemixModal = useCallback(() => setFinalRemixPrompt(null), []);
 
     return (
         <div className="bg-gray-900 text-white min-h-screen font-sans">
@@ -329,7 +342,7 @@ const App: React.FC = () => {
                                         isLoading={isCoDirectorLoading}
                                         result={coDirectorResult}
                                         onApplySuggestion={handleApplySuggestion}
-                                        onClose={() => setCoDirectorResult(null)}
+                                        onClose={handleCloseCoDirector}
                                     />
                                 </section>
                                 
@@ -363,7 +376,7 @@ const App: React.FC = () => {
                 )}
 
                 {finalRemixPrompt && (
-                    <RemixPromptModal prompt={finalRemixPrompt} onClose={() => setFinalRemixPrompt(null)} />
+                    <RemixPromptModal prompt={finalRemixPrompt} onClose={handleCloseRemixModal} />
                 )}
 
             </main>

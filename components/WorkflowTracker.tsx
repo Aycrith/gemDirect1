@@ -51,4 +51,4 @@ const WorkflowTracker: React.FC<{ currentStage: WorkflowStage }> = ({ currentSta
     );
 };
 
-export default WorkflowTracker;
+export default React.memo(WorkflowTracker);
