@@ -14,7 +14,7 @@ export type ApiLogCallback = (log: Omit<ApiCallLog, 'id' | 'timestamp'>) => void
 
 
 // Centralized API error handler
-const handleApiError = (error: unknown, context: string): Error => {
+export const handleApiError = (error: unknown, context: string): Error => {
     console.error(`Error during ${context}:`, error);
     if (error instanceof Error) {
         const message = error.message.toLowerCase();
@@ -31,7 +31,7 @@ const handleApiError = (error: unknown, context: string): Error => {
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
 
-const withRetry = async <T>(
+export const withRetry = async <T>(
     apiCall: () => Promise<{ result: T, tokens: number }>, 
     context: string, 
     modelName: string,
@@ -673,42 +673,4 @@ export const scoreContinuity = async (prunedContext: string, scene: Scene, video
         return { result, tokens };
     };
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
-};
-
-/**
- * Creates a structured JSON object representing a video generation request.
- * This is a local utility function and does not make an API call.
- * @param timeline The timeline data for the scene.
- * @param directorsVision The overall vision for the project.
- * @param sceneInfo The title and summary of the scene.
- * @returns A JSON object ready to be used with an external video generation tool.
- */
-export const generateVideoPrompt = (
-    timeline: TimelineData,
-    directorsVision: string,
-    sceneInfo: { title: string; summary: string }
-): object => {
-    
-    const formattedTimeline: object[] = [];
-    timeline.shots.forEach((shot, index) => {
-        formattedTimeline.push({
-            shot_number: index + 1,
-            description: shot.description,
-            enhancers: timeline.shotEnhancers[shot.id] || {}
-        });
-        if (index < timeline.transitions.length) {
-            formattedTimeline.push({
-                type: 'transition',
-                style: timeline.transitions[index]
-            });
-        }
-    });
-
-    return {
-        request_type: "video_generation",
-        scene_info: sceneInfo,
-        director_vision: directorsVision,
-        timeline: formattedTimeline,
-        global_style_and_negative_prompt: timeline.negativePrompt
-    };
 };

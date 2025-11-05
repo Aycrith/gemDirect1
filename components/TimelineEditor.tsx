@@ -174,7 +174,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         if (queuedTasks.size === 0) return;
 
         const tasksToProcess = Array.from(queuedTasks.values());
-        setQueuedTasks(new Map());
+        // FIX: Explicitly provide generic types to `new Map()` to prevent TypeScript from
+        // inferring a weak type (e.g., `Map<any, any>`) and corrupting the state's type.
+        setQueuedTasks(new Map<string, BatchShotTask>());
 
         try {
             const results = await batchProcessShotEnhancements(tasksToProcess, narrativeContext, directorsVision, onApiLog, onApiStateChange);

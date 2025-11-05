@@ -7,7 +7,8 @@ import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import ContinuityDirector from './components/ContinuityDirector';
 import FinalPromptModal from './components/FinalPromptModal';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateVideoPrompt } from './services/geminiService';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions } from './services/geminiService';
+import { generateVideoPromptFromTimeline } from './services/videoGenerationService';
 import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
@@ -24,12 +25,6 @@ const emptyTimeline: TimelineData = {
     shotEnhancers: {},
     transitions: [],
     negativePrompt: '',
-};
-
-type GenerationModalState = {
-    isOpen: boolean;
-    sceneId: string | null;
-    jsonPayload: string | null;
 };
 
 const AppContent: React.FC = () => {
@@ -57,16 +52,13 @@ const AppContent: React.FC = () => {
     const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({}); // Keyframes
     const [continuityData, setContinuityData] = useState<Record<string, SceneContinuityData>>({});
     
-    const [generationModalState, setGenerationModalState] = useState<GenerationModalState>({
-        isOpen: false, sceneId: null, jsonPayload: null
-    });
-
     // UI and Loading State
     const [isLoading, setIsLoading] = useState(true);
     const [loadingMessage, setLoadingMessage] = useState('Loading project...');
     const [coDirectorResult, setCoDirectorResult] = useState<CoDirectorResult | null>(null);
     const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
+    const [finalPrompt, setFinalPrompt] = useState<string | null>(null);
 
 
     useEffect(() => {
@@ -213,39 +205,51 @@ const AppContent: React.FC = () => {
             }
         }
     };
-    
-    const handleProceedToReview = () => setWorkflowStage('continuity');
 
-    const updateActiveSceneTimeline = useCallback((updater: (prevTimeline: TimelineData) => TimelineData) => {
+    const updateActiveSceneTimeline = (timelineUpdater: (prevTimeline: TimelineData) => TimelineData) => {
         if (!activeSceneId) return;
         setScenes(prevScenes =>
-            prevScenes.map(scene => scene.id === activeSceneId ? { ...scene, timeline: updater(scene.timeline) } : scene)
+            prevScenes.map(s =>
+                s.id === activeSceneId ? { ...s, timeline: timelineUpdater(s.timeline) } : s
+            )
         );
-    }, [activeSceneId]);
-
-    const handleGenerateVideo = async (sceneId: string, timelineData: TimelineData) => {
-        const activeScene = scenes.find(s => s.id === sceneId);
-        if (!directorsVision || !activeScene) return;
-
-        try {
-            const payloadObject = generateVideoPrompt(
-                timelineData, 
-                directorsVision,
-                { title: activeScene.title, summary: activeScene.summary }
-            );
-            const jsonPayload = JSON.stringify(payloadObject, null, 2);
-            setGenerationModalState({ isOpen: true, sceneId, jsonPayload });
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error creating payload';
-            console.error(error);
-            addToast(`Failed to generate request: ${errorMessage}`, 'error');
-        }
     };
 
-    const handleGetCoDirectorSuggestions = async (objective: string) => {
-        if (!activeSceneId) return;
+    const handleSetShots = (setter: React.SetStateAction<Shot[]>) => {
+        updateActiveSceneTimeline(prev => ({
+            ...prev,
+            shots: typeof setter === 'function' ? setter(prev.shots) : setter
+        }));
+    };
+
+    const handleSetShotEnhancers = (setter: React.SetStateAction<ShotEnhancers>) => {
+        updateActiveSceneTimeline(prev => ({
+            ...prev,
+            shotEnhancers: typeof setter === 'function' ? setter(prev.shotEnhancers) : setter
+        }));
+    };
+
+    const handleSetTransitions = (setter: React.SetStateAction<string[]>) => {
+        updateActiveSceneTimeline(prev => ({
+            ...prev,
+            transitions: typeof setter === 'function' ? setter(prev.transitions) : setter
+        }));
+    };
+
+    const handleSetNegativePrompt = (setter: React.SetStateAction<string>) => {
+        updateActiveSceneTimeline(prev => ({
+            ...prev,
+            negativePrompt: typeof setter === 'function' ? setter(prev.negativePrompt) : setter
+        }));
+    };
+
+    const handleCoDirectorSubmit = async (objective: string) => {
+        if (!activeSceneId || !storyBible || !directorsVision) {
+            addToast("Cannot get suggestions without an active scene and context.", 'error');
+            return;
+        }
         const activeScene = scenes.find(s => s.id === activeSceneId);
-        if (!activeScene || !storyBible || !directorsVision) return;
+        if (!activeScene) return;
 
         setIsCoDirectorLoading(true);
         setCoDirectorResult(null);
@@ -254,83 +258,103 @@ const AppContent: React.FC = () => {
             const result = await getCoDirectorSuggestions(prunedContext, activeScene, objective, handleApiLog, handleApiStateChange);
             setCoDirectorResult(result);
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             addToast(`Co-Director failed: ${errorMessage}`, 'error');
         } finally {
             setIsCoDirectorLoading(false);
         }
     };
     
-    const handleApplySuggestion = (suggestion: Suggestion) => {
-        updateActiveSceneTimeline(prev => {
-            let newShots = [...prev.shots];
-            let newEnhancers = { ...prev.shotEnhancers };
-            let newTransitions = [...prev.transitions];
-            if (suggestion.type === 'UPDATE_SHOT' && suggestion.shot_id) {
-                newShots = newShots.map(s => s.id === suggestion.shot_id ? { ...s, description: suggestion.payload.description || s.description } : s);
-                if (suggestion.payload.enhancers) newEnhancers[suggestion.shot_id] = { ...newEnhancers[suggestion.shot_id], ...suggestion.payload.enhancers };
-            } else if (suggestion.type === 'ADD_SHOT_AFTER' && suggestion.after_shot_id) {
-                const newShot: Shot = { id: `shot_${Date.now()}`, description: suggestion.payload.description || '', title: suggestion.payload.title };
-                const index = newShots.findIndex(s => s.id === suggestion.after_shot_id);
-                if (index > -1) {
-                    newShots.splice(index + 1, 0, newShot);
-                    newTransitions.splice(index + 1, 0, 'Cut');
-                    if (suggestion.payload.enhancers) newEnhancers[newShot.id] = suggestion.payload.enhancers;
-                }
-            } else if (suggestion.type === 'UPDATE_TRANSITION' && suggestion.transition_index !== undefined) {
-                if (suggestion.transition_index < newTransitions.length) newTransitions[suggestion.transition_index] = suggestion.payload.type || newTransitions[suggestion.transition_index];
-            }
-            return { ...prev, shots: newShots, shotEnhancers: newEnhancers, transitions: newTransitions };
-        });
-        addToast("Co-Director's suggestion applied!", "success");
-    };
+    const handleApplySuggestion = useCallback((suggestion: Suggestion) => {
+        setScenes(prevScenes => {
+            if (!activeSceneId) return prevScenes;
+            return prevScenes.map(scene => {
+                if (scene.id !== activeSceneId) return scene;
 
-    const onSaveProject = useCallback(async () => {
+                let newTimeline = { ...scene.timeline };
+                const { type, payload } = suggestion;
+
+                if (type === 'UPDATE_SHOT' && suggestion.shot_id) {
+                    newTimeline.shots = newTimeline.shots.map(shot =>
+                        shot.id === suggestion.shot_id ? { ...shot, ...payload } : shot
+                    );
+                    if (payload.enhancers) {
+                        newTimeline.shotEnhancers = {
+                            ...newTimeline.shotEnhancers,
+                            [suggestion.shot_id]: { ...(newTimeline.shotEnhancers[suggestion.shot_id] || {}), ...payload.enhancers }
+                        };
+                    }
+                } else if (type === 'ADD_SHOT_AFTER' && suggestion.after_shot_id && payload.description) {
+                    const newShot: Shot = { id: `shot_${Date.now()}`, description: payload.description, title: payload.title };
+                    const index = newTimeline.shots.findIndex(s => s.id === suggestion.after_shot_id);
+                    if (index > -1) {
+                        newTimeline.shots.splice(index + 1, 0, newShot);
+                        newTimeline.transitions.splice(index, 0, 'Cut');
+                        if (payload.enhancers) {
+                            newTimeline.shotEnhancers[newShot.id] = payload.enhancers;
+                        }
+                    }
+                } else if (type === 'UPDATE_TRANSITION' && typeof suggestion.transition_index !== 'undefined' && payload.type) {
+                     if (suggestion.transition_index < newTimeline.transitions.length) {
+                        newTimeline.transitions[suggestion.transition_index] = payload.type;
+                    }
+                }
+
+                return { ...scene, timeline: newTimeline };
+            });
+        });
+        addToast('Suggestion applied!', 'success');
+    }, [activeSceneId]);
+    
+    const handleGetInspiration = async () => {
+        if (!storyBible || !activeSceneId) return;
+        const activeScene = scenes.find(s => s.id === activeSceneId);
+        if (!activeScene) return;
+        return suggestCoDirectorObjectives(storyBible.logline, activeScene.summary, directorsVision, handleApiLog, handleApiStateChange);
+    }
+    
+    const handleSaveProject = async () => {
         setIsLoading(true);
-        setLoadingMessage("Saving project...");
+        setLoadingMessage('Saving project...');
         try {
             if (storyBible) await db.saveStoryBible(storyBible);
-            if (scenes.length > 0) await db.saveScenes(scenes);
-            if (directorsVision) await db.saveData('directorsVision', directorsVision);
-            if (Object.keys(generatedImages).length > 0) await db.saveData('generatedImages', generatedImages);
-            if (Object.keys(continuityData).length > 0) await db.saveData('continuityData', continuityData);
+            await db.saveScenes(scenes);
+            await db.saveData('directorsVision', directorsVision);
+            await db.saveData('generatedImages', generatedImages);
+            await db.saveData('continuityData', continuityData);
             await db.saveData('workflowStage', workflowStage);
-            addToast("Project Saved Successfully!", "success");
+            addToast('Project saved successfully!', 'success');
         } catch (error) {
-            addToast("Error saving project.", "error");
+            console.error("Failed to save project", error);
+            addToast('Failed to save project.', 'error');
         } finally {
             setIsLoading(false);
         }
-    }, [storyBible, scenes, directorsVision, generatedImages, continuityData, workflowStage, addToast]);
-    
-    const handleClearProject = async () => {
-        if (window.confirm("Are you sure you want to delete all data?")) {
-            await db.clearProjectData();
-            window.location.reload();
-        }
     };
     
-    const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
-    const activeSceneIndex = useMemo(() => scenes.findIndex(s => s.id === activeSceneId), [scenes, activeSceneId]);
-    const nextScene = useMemo(() => (activeSceneIndex > -1 && activeSceneIndex < scenes.length - 1) ? scenes[activeSceneIndex + 1] : null, [scenes, activeSceneIndex]);
-    
-    const handleGoToNextScene = useCallback(() => {
-        if (nextScene) handleSceneSelect(nextScene.id);
-    }, [nextScene]);
-
-    const renderContent = () => {
-        if (isLoading) {
-            return (
-                <div className="text-center p-10">
-                    <svg className="animate-spin h-10 w-10 text-indigo-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <p className="mt-4 text-lg font-semibold text-gray-200">{loadingMessage}</p>
-                </div>
-            );
+    const handleGenerateVideo = (sceneId: string, timeline: TimelineData) => {
+        const activeScene = scenes.find(s => s.id === sceneId);
+        if (!activeScene || !directorsVision) {
+            addToast('Could not generate video request: missing scene data or director\'s vision.', 'error');
+            return;
         }
         
+        const jsonPayload = generateVideoPromptFromTimeline(timeline, directorsVision, activeScene.summary);
+        setFinalPrompt(jsonPayload);
+    };
+
+    const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
+    
+    const getNextScene = () => {
+        if (!activeSceneId) return null;
+        const currentIndex = scenes.findIndex(s => s.id === activeSceneId);
+        if (currentIndex > -1 && currentIndex < scenes.length - 1) {
+            return scenes[currentIndex + 1];
+        }
+        return null;
+    }
+
+    const renderStageContent = () => {
         switch (workflowStage) {
             case 'idea':
                 return <StoryIdeaForm onSubmit={handleStoryBibleSubmit} isLoading={isLoading} onApiStateChange={handleApiStateChange} onApiLog={handleApiLog} />;
@@ -338,52 +362,57 @@ const AppContent: React.FC = () => {
                 if (storyBible) return <StoryBibleEditor storyBible={storyBible} setStoryBible={setStoryBible} onContinue={() => setWorkflowStage('vision')} isLoading={isLoading} onApiStateChange={handleApiStateChange} onApiLog={handleApiLog} />;
                 return null;
             case 'vision':
-                if (storyBible) return <DirectorsVisionForm storyBible={storyBible} onSubmit={handleDirectorsVisionSubmit} isLoading={isLoading} onApiStateChange={handleApiStateChange} onApiLog={handleApiLog} />;
-                return null;
+                 if (storyBible) return <DirectorsVisionForm onSubmit={handleDirectorsVisionSubmit} isLoading={isLoading} storyBible={storyBible} onApiStateChange={handleApiStateChange} onApiLog={handleApiLog} />;
+                 return null;
             case 'director':
-                 if (activeScene) {
-                    return (
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            <div className="lg:col-span-1">
-                                <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={handleSceneSelect} />
-                            </div>
-                            <div className="lg:col-span-2 space-y-6">
+            case 'scenes': // Let 'scenes' fall through to 'director' as it's the main interaction view
+                if (!storyBible || !directorsVision) return <p>Missing Story Bible or Director's Vision.</p>;
+                return (
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
+                        <div className="md:col-span-1 lg:col-span-1">
+                            <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={handleSceneSelect} />
+                        </div>
+                        <div className="md:col-span-2 lg:col-span-3">
+                            {isLoading && <p>{loadingMessage}</p>}
+                            {activeScene && !isLoading && (
+                                <>
                                 <CoDirector 
+                                    onGetSuggestions={handleCoDirectorSubmit}
                                     isLoading={isCoDirectorLoading}
                                     result={coDirectorResult}
-                                    onGetSuggestions={handleGetCoDirectorSuggestions}
                                     onApplySuggestion={handleApplySuggestion}
                                     onClose={() => setCoDirectorResult(null)}
-                                    onGetInspiration={() => suggestCoDirectorObjectives(storyBible!.logline, activeScene.summary, directorsVision, handleApiLog, handleApiStateChange)}
+                                    onGetInspiration={handleGetInspiration}
                                     onApiLog={handleApiLog}
                                 />
                                 <TimelineEditor
-                                    key={activeScene.id}
                                     scene={activeScene}
-                                    storyBible={storyBible!}
+                                    storyBible={storyBible}
                                     directorsVision={directorsVision}
                                     narrativeContext={getNarrativeContext(activeScene.id)}
-                                    setShots={updater => updateActiveSceneTimeline(t => ({ ...t, shots: typeof updater === 'function' ? updater(t.shots) : updater }))}
-                                    setShotEnhancers={updater => updateActiveSceneTimeline(t => ({ ...t, shotEnhancers: typeof updater === 'function' ? updater(t.shotEnhancers) : updater }))}
-                                    setTransitions={updater => updateActiveSceneTimeline(t => ({ ...t, transitions: typeof updater === 'function' ? updater(t.transitions) : updater }))}
-                                    setNegativePrompt={updater => updateActiveSceneTimeline(t => ({ ...t, negativePrompt: typeof updater === 'function' ? updater(t.negativePrompt) : updater }))}
-                                    onGoToNextScene={handleGoToNextScene}
-                                    nextScene={nextScene}
-                                    onProceedToReview={handleProceedToReview}
+                                    setShots={handleSetShots}
+                                    setShotEnhancers={handleSetShotEnhancers}
+                                    setTransitions={handleSetTransitions}
+                                    setNegativePrompt={handleSetNegativePrompt}
+                                    onGoToNextScene={() => {
+                                        const nextScene = getNextScene();
+                                        if (nextScene) handleSceneSelect(nextScene.id);
+                                    }}
+                                    nextScene={getNextScene()}
+                                    onProceedToReview={() => setWorkflowStage('continuity')}
                                     onApiStateChange={handleApiStateChange}
                                     onApiLog={handleApiLog}
                                     onGenerateVideo={handleGenerateVideo}
                                     sceneContinuity={continuityData[activeScene.id]}
                                 />
-                            </div>
+                                </>
+                            )}
                         </div>
-                    );
-                }
-                return <p>Loading scene...</p>;
-            case 'continuity':
-                 if (storyBible) {
-                    return (
-                        <ContinuityDirector
+                    </div>
+                );
+             case 'continuity':
+                if (!storyBible || !directorsVision) return <p>Missing Story Bible or Director's Vision.</p>;
+                return <ContinuityDirector 
                             scenes={scenes}
                             storyBible={storyBible}
                             directorsVision={directorsVision}
@@ -393,53 +422,42 @@ const AppContent: React.FC = () => {
                             addToast={addToast}
                             onApiStateChange={handleApiStateChange}
                             onApiLog={handleApiLog}
-                        />
-                    );
-                }
-                return <p>Loading continuity review...</p>;
+                        />;
             default:
-                return <p>Welcome! Please start with an idea.</p>;
+                return <p>Welcome to the Cinematic Story Generator!</p>;
         }
-    };
+    }
     
+    if (isLoading && !storyBible) {
+      return <div className="flex justify-center items-center h-screen"><p>{loadingMessage}</p></div>
+    }
+
     return (
-        <div className="min-h-screen bg-gray-900 text-gray-100">
+        <div className="p-4 sm:p-8 max-w-screen-2xl mx-auto">
             <Toast toasts={toasts} removeToast={removeToast} />
-            <FinalPromptModal
-                isOpen={generationModalState.isOpen}
-                onClose={() => setGenerationModalState({ isOpen: false, sceneId: null, jsonPayload: null })}
-                jsonPayload={generationModalState.jsonPayload}
-            />
-            <main className="container mx-auto px-4 py-8">
-                <header className="text-center mb-12">
-                    <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-500 to-pink-500">Cinematic Story Generator</h1>
-                    <p className="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">From a simple idea to a complete, production-ready cinematic package.</p>
-                </header>
-                
-                <WorkflowTracker currentStage={workflowStage} />
+            <div className="flex justify-between items-start mb-8">
+                 <h1 className="text-3xl sm:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">Cinematic Story Generator</h1>
+                 <div className="flex items-center gap-4">
+                    <button onClick={handleSaveProject} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700 disabled:opacity-50">
+                        <SaveIcon className="w-4 h-4" /> Save Project
+                    </button>
+                    <button onClick={() => setIsUsageDashboardOpen(true)} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700">
+                        <BarChartIcon className="w-4 h-4" /> Usage
+                    </button>
+                 </div>
+            </div>
 
-                {renderContent()}
+            <WorkflowTracker currentStage={workflowStage} />
 
-                <UsageDashboard isOpen={isUsageDashboardOpen} onClose={() => setIsUsageDashboardOpen(false)} />
-
-                {storyBible && (
-                    <div className="fixed bottom-4 right-4 z-30 flex gap-2">
-                         <button onClick={() => setIsUsageDashboardOpen(true)} className="p-3 bg-gray-600 text-white rounded-full shadow-lg hover:bg-gray-700 transition-colors" aria-label="Open Usage Dashboard">
-                            <BarChartIcon className="w-6 h-6" />
-                        </button>
-                         <button onClick={onSaveProject} className="p-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors" aria-label="Save Project">
-                            <SaveIcon className="w-6 h-6" />
-                        </button>
-                         <button onClick={handleClearProject} className="p-3 bg-red-600 text-white rounded-full shadow-lg hover:bg-red-700 transition-colors" aria-label="Clear Project">
-                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                    </div>
-                )}
-                 <ApiStatusIndicator />
-            </main>
+            {renderStageContent()}
+            
+            <ApiStatusIndicator />
+            <UsageDashboard isOpen={isUsageDashboardOpen} onClose={() => setIsUsageDashboardOpen(false)} />
+            <FinalPromptModal isOpen={!!finalPrompt} onClose={() => setFinalPrompt(null)} jsonPayload={finalPrompt} />
         </div>
     );
 };
+
 
 const App: React.FC = () => (
     <ApiStatusProvider>
@@ -447,6 +465,6 @@ const App: React.FC = () => (
             <AppContent />
         </UsageProvider>
     </ApiStatusProvider>
-)
+);
 
 export default App;

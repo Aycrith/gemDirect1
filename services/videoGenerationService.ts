@@ -1,51 +1,51 @@
-import { GoogleGenAI } from "@google/genai";
+import { TimelineData } from '../types';
 
-export const generateVideo = async (
-    prompt: string, 
-    image?: { imageBytes: string, mimeType: string },
-    onStatusUpdate?: (status: string) => void
-): Promise<{ videoUrl: string, videoBlob: Blob }> => {
-    // A new instance must be created for each call to ensure the latest API key is used.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+/**
+ * Generates a structured JSON string from the timeline data, suitable for use with an external video generation tool.
+ * @param timeline The scene's timeline data (shots, enhancers, transitions).
+ * @param directorsVision The overall visual style guide.
+ * @param sceneSummary A brief summary of the scene's purpose.
+ * @returns A formatted JSON string representing the video generation request.
+ */
+export const generateVideoPromptFromTimeline = (
+    timeline: TimelineData, 
+    directorsVision: string,
+    sceneSummary: string
+): string => {
     
-    onStatusUpdate?.("Initiating video generation...");
+    const interleavedTimeline = timeline.shots.reduce((acc: any[], shot, index) => {
+        const shotData = {
+            type: 'shot',
+            shot_number: index + 1,
+            description: shot.description,
+            enhancers: timeline.shotEnhancers[shot.id] || {}
+        };
+        acc.push(shotData);
 
-    let operation = await ai.models.generateVideos({
-        model: 'veo-3.1-fast-generate-preview',
-        prompt: prompt,
-        image: image,
-        config: {
-            numberOfVideos: 1,
-            resolution: '720p',
-            aspectRatio: '16:9'
+        if (index < timeline.transitions.length) {
+            const transitionData = {
+                type: 'transition',
+                transition_type: timeline.transitions[index]
+            };
+            acc.push(transitionData);
         }
-    });
 
-    onStatusUpdate?.("Video generation in progress... this may take several minutes.");
-    
-    let checks = 0;
-    while (!operation.done) {
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Poll every 10 seconds
-        checks++;
-        onStatusUpdate?.(`Video generation in progress... (checked ${checks} time(s))`);
-        operation = await ai.operations.getVideosOperation({ operation: operation });
-    }
+        return acc;
+    }, []);
 
-    const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-    if (!downloadLink) {
-        throw new Error("Video generation completed, but no download link was found.");
-    }
-    
-    onStatusUpdate?.("Generation complete. Downloading video...");
+    const payload = {
+        request_metadata: {
+            tool: "Cinematic Story Generator",
+            timestamp: new Date().toISOString(),
+            description: "This payload is designed for use with an external video generation model (e.g., via LM Studio, ComfyUI, or another API)."
+        },
+        generation_config: {
+            scene_summary: sceneSummary,
+            directors_vision: directorsVision,
+            global_negative_prompt: timeline.negativePrompt
+        },
+        timeline: interleavedTimeline
+    };
 
-    // The response.body contains the MP4 bytes. You must append an API key when fetching.
-    const response = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
-    if (!response.ok) {
-        throw new Error(`Failed to download video: ${response.statusText}`);
-    }
-
-    const videoBlob = await response.blob();
-    const videoUrl = URL.createObjectURL(videoBlob);
-    
-    return { videoUrl, videoBlob };
+    return JSON.stringify(payload, null, 2);
 };
