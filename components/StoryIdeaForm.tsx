@@ -1,14 +1,15 @@
 import React, { useState, useCallback } from 'react';
 import SparklesIcon from './icons/SparklesIcon';
-import { suggestStoryIdeas, ApiStateChangeCallback } from '../services/geminiService';
+import { suggestStoryIdeas, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 
 interface StoryIdeaFormProps {
     onSubmit: (idea: string) => void;
     isLoading: boolean;
     onApiStateChange: ApiStateChangeCallback;
+    onApiLog: ApiLogCallback;
 }
 
-const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onApiStateChange }) => {
+const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onApiStateChange, onApiLog }) => {
     const [idea, setIdea] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
@@ -24,7 +25,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
         setIsSuggesting(true);
         setSuggestions([]);
         try {
-            const result = await suggestStoryIdeas(onApiStateChange);
+            const result = await suggestStoryIdeas(onApiLog, onApiStateChange);
             setSuggestions(result);
         } catch (e) {
             console.error(e);
@@ -32,7 +33,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
         } finally {
             setIsSuggesting(false);
         }
-    }, [onApiStateChange]);
+    }, [onApiStateChange, onApiLog]);
 
     return (
         <div className="max-w-3xl mx-auto text-center">

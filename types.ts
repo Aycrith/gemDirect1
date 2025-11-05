@@ -108,3 +108,12 @@ export interface BatchShotResult {
     refined_description?: string;
     suggested_enhancers?: Partial<Omit<CreativeEnhancers, 'transitions'>>;
 }
+
+export interface ApiCallLog {
+    id: number;
+    timestamp: number;
+    context: string;
+    model: string;
+    tokens: number;
+    status: 'success' | 'error';
+}

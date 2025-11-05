@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { analyzeVideoFrames } from '../services/geminiService';
+// FIX: Import `ApiLogCallback` and `ApiStateChangeCallback` types for the function signature.
+import { analyzeVideoFrames, ApiLogCallback, ApiStateChangeCallback } from '../services/geminiService';
 import { extractFramesFromVideo } from '../utils/videoUtils';
 import FileUpload from './FileUpload';
 import VideoPlayer from './VideoPlayer';
@@ -13,6 +14,11 @@ const VideoAnalyzer: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
     const [error, setError] = useState<string | null>(null);
+
+    // FIX: Add dummy callbacks to satisfy the analyzeVideoFrames function signature.
+    // In a fully integrated app, these would typically come from a context provider.
+    const dummyApiLogCallback: ApiLogCallback = (log) => { console.log('API call logged (dummy):', log); };
+    const dummyApiStateChangeCallback: ApiStateChangeCallback = (status, message) => { console.log(`API state changed (dummy): ${status} - ${message}`); };
 
     const handleFileSelect = useCallback(async (file: File) => {
         // Reset state for new analysis
@@ -32,7 +38,8 @@ const VideoAnalyzer: React.FC = () => {
             setFrames(extractedFrames);
             
             setLoadingMessage('Analyzing video content with AI...');
-            const videoAnalysis = await analyzeVideoFrames(extractedFrames);
+            // FIX: Pass the required callbacks to the `analyzeVideoFrames` function.
+            const videoAnalysis = await analyzeVideoFrames(extractedFrames, dummyApiLogCallback, dummyApiStateChangeCallback);
             setAnalysis(videoAnalysis);
 
         } catch (err) {

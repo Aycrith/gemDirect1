@@ -1,16 +1,18 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 // FIX: Import ContinuityResult type to support new functions.
-import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult } from "../types";
+import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog } from "../types";
 import { ApiStatus } from "../contexts/ApiStatusContext";
 
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 const model = 'gemini-2.5-flash';
 const proModel = 'gemini-2.5-pro';
+const imageModel = 'gemini-2.5-flash-image';
 
 const commonError = "An error occurred. Please check the console for details. If the error persists, the model may be overloaded.";
 
 // Define a callback type for state changes
 export type ApiStateChangeCallback = (status: ApiStatus, message: string) => void;
+export type ApiLogCallback = (log: Omit<ApiCallLog, 'id' | 'timestamp'>) => void;
 
 
 // Centralized API error handler
@@ -31,13 +33,21 @@ const handleApiError = (error: unknown, context: string): Error => {
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
 
-const withRetry = async <T>(apiCall: () => Promise<T>, context: string, onStateChange?: ApiStateChangeCallback): Promise<T> => {
+const withRetry = async <T>(
+    apiCall: () => Promise<{ result: T, tokens: number }>, 
+    context: string, 
+    modelName: string,
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<T> => {
     let lastError: unknown = new Error(`API call failed for ${context}`);
     onStateChange?.('loading', `Requesting: ${context}...`);
+
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
-            const result = await apiCall();
+            const { result, tokens } = await apiCall();
             onStateChange?.('success', `${context} successful!`);
+            logApiCall({ context, model: modelName, tokens, status: 'success' });
             return result;
         } catch (error) {
             lastError = error;
@@ -59,12 +69,13 @@ const withRetry = async <T>(apiCall: () => Promise<T>, context: string, onStateC
     }
     const finalError = handleApiError(lastError, context);
     onStateChange?.('error', finalError.message);
+    logApiCall({ context, model: modelName, tokens: 0, status: 'error' });
     throw finalError;
 };
 
 // --- Context Pruning & Summarization ---
 
-const getPrunedContext = async (prompt: string, context: string, onStateChange?: ApiStateChangeCallback): Promise<string> => {
+const getPrunedContext = async (prompt: string, context: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model, // Use the faster model for summarization
@@ -77,9 +88,12 @@ const getPrunedContext = async (prompt: string, context: string, onStateChange?:
         if (!text) {
             throw new Error(`The model returned an empty response for ${context}.`);
         }
-        return text.trim();
+        const result = text.trim();
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, model, logApiCall, onStateChange);
 };
 
 export const getPrunedContextForShotGeneration = async (
@@ -87,6 +101,7 @@ export const getPrunedContextForShotGeneration = async (
     narrativeContext: string,
     sceneSummary: string,
     directorsVision: string,
+    logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
     const prompt = `You are a script supervisor. Your job is to create a concise "Creative Brief" for an AI Cinematographer. Distill the following information into a single, focused paragraph (under 150 words).
@@ -103,7 +118,7 @@ export const getPrunedContextForShotGeneration = async (
     - Director's Vision: ${directorsVision}
 
     **Your Output:** A single paragraph creative brief.`;
-    return getPrunedContext(prompt, 'prune context for shot generation', onStateChange);
+    return getPrunedContext(prompt, 'prune context for shot generation', logApiCall, onStateChange);
 };
 
 export const getPrunedContextForCoDirector = async (
@@ -111,6 +126,7 @@ export const getPrunedContextForCoDirector = async (
     narrativeContext: string,
     scene: Scene,
     directorsVision: string,
+    logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
     const prompt = `You are an expert script analyst. Your job is to create a concise "Co-Director's Brief" (under 200 words) that summarizes the creative sandbox for the current scene. The brief should focus on the *goals and constraints* for making creative suggestions.
@@ -127,12 +143,12 @@ export const getPrunedContextForCoDirector = async (
     - Director's Vision: ${directorsVision}
 
     **Your Output:** A single paragraph co-director's brief.`;
-    return getPrunedContext(prompt, 'prune context for co-director', onStateChange);
+    return getPrunedContext(prompt, 'prune context for co-director', logApiCall, onStateChange);
 };
 
 // --- Core Story Generation ---
 
-export const generateStoryBible = async (idea: string, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
+export const generateStoryBible = async (idea: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
     const context = 'generate Story Bible';
     const prompt = `You are a master storyteller and screenwriter, deeply familiar with literary principles. Based on the following user idea, generate a compelling "Story Bible" that establishes a strong, plot-driven narrative foundation.
 
@@ -165,13 +181,16 @@ export const generateStoryBible = async (idea: string, onStateChange?: ApiStateC
         if (!text) {
             throw new Error("The model returned an empty response for Story Bible.");
         }
-        return JSON.parse(text.trim()) as StoryBible;
+        const result = JSON.parse(text.trim()) as StoryBible;
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, model, logApiCall, onStateChange);
 };
 
-export const generateSceneList = async (plotOutline: string, directorsVision: string, onStateChange?: ApiStateChangeCallback): Promise<Array<{ title: string; summary: string }>> => {
+export const generateSceneList = async (plotOutline: string, directorsVision: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<Array<{ title: string; summary: string }>> => {
     const context = 'generate scene list';
     const prompt = `You are an expert film director with a strong understanding of narrative pacing. Your task is to break down the following plot outline into a series of distinct, actionable scenes, keeping the overall cinematic vision in mind.
 
@@ -207,14 +226,18 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
         if (!text) {
             throw new Error("The model returned an empty response for scene list.");
         }
-        return JSON.parse(text.trim());
+        const result = JSON.parse(text.trim());
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, model, logApiCall, onStateChange);
 };
 
 export const generateInitialShotsForScene = async (
     prunedContext: string,
+    logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<string[]> => {
     const context = 'generate shots for scene';
@@ -241,15 +264,18 @@ export const generateInitialShotsForScene = async (
         if (!text) {
             throw new Error("The model returned an empty response for initial shots.");
         }
-        return JSON.parse(text.trim());
+        const result = JSON.parse(text.trim());
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 // --- AI-Assisted Guidance & Suggestions ---
 
-export const suggestStoryIdeas = async (onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
+export const suggestStoryIdeas = async (logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
     const context = 'suggest ideas';
     const prompt = "You are a creative muse. Generate 3 diverse and compelling one-sentence story ideas for a cinematic experience. Return a JSON array of strings.";
     const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
@@ -264,13 +290,16 @@ export const suggestStoryIdeas = async (onStateChange?: ApiStateChangeCallback):
         if (!text) {
             throw new Error("The model returned an empty response for story ideas.");
         }
-        return JSON.parse(text.trim());
+        const result = JSON.parse(text.trim());
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
     
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, model, logApiCall, onStateChange);
 };
 
-export const suggestDirectorsVisions = async (storyBible: StoryBible, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
+export const suggestDirectorsVisions = async (storyBible: StoryBible, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
     const context = 'suggest visions';
     const prompt = `You are a film theorist and animation historian. Based on this story bible, suggest 3 distinct and evocative "Director's Visions". These can be live-action cinematic styles or animation art styles. Each should be a short paragraph that describes the visual language.
 
@@ -295,13 +324,16 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible, onStateCha
         if (!text) {
             throw new Error("The model returned an empty response for director's visions.");
         }
-        return JSON.parse(text.trim());
+        const result = JSON.parse(text.trim());
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, model, logApiCall, onStateChange);
 };
 
-export const suggestCoDirectorObjectives = async (logline: string, sceneSummary: string, directorsVision: string, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
+export const suggestCoDirectorObjectives = async (logline: string, sceneSummary: string, directorsVision: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
     const context = 'suggest objectives';
     const prompt = `You are a creative film director's assistant. Based on the provided story logline, scene summary, and director's vision, suggest 3 diverse and actionable creative objectives for the AI Co-Director. The objectives should be concise, starting with a verb, and guide the AI towards a specific creative direction for the scene.
 
@@ -336,13 +368,16 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
         if (!text) {
             throw new Error("The model returned an empty response for co-director objectives.");
         }
-        return JSON.parse(text.trim());
+        const result = JSON.parse(text.trim());
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, model, logApiCall, onStateChange);
 };
 
-export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleContext: StoryBible, onStateChange?: ApiStateChangeCallback): Promise<string> => {
+export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleContext: StoryBible, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const context = `refine ${field}`;
     const currentValue = fullBibleContext[field];
     const prompt = `You are an expert editor. A user is working on a story bible and wants to refine one section. Based on the full story context, revise the following **${field}** to be more compelling, concise, and cinematic.
@@ -378,16 +413,20 @@ export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleCo
             throw new Error(`The model returned an empty response when refining ${field}.`);
         }
         const parsed = JSON.parse(text.trim());
-        return parsed.refined_text;
+        const result = parsed.refined_text;
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, model, logApiCall, onStateChange);
 };
 
 export const batchProcessShotEnhancements = async (
     tasks: BatchShotTask[],
     narrativeContext: string,
     directorsVision: string,
+    logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<BatchShotResult[]> => {
     const context = 'batch process shot enhancements';
@@ -446,7 +485,7 @@ export const batchProcessShotEnhancements = async (
         }
     };
 
-    const apiCall = async (): Promise<BatchShotResult[]> => {
+    const apiCall = async (): Promise<{ result: BatchShotResult[], tokens: number }> => {
         const response = await ai.models.generateContent({
             model: proModel,
             contents: prompt,
@@ -456,14 +495,17 @@ export const batchProcessShotEnhancements = async (
         if (!text) {
             throw new Error("The model returned an empty response for batch processing.");
         }
-        return JSON.parse(text.trim()) as BatchShotResult[];
+        const result = JSON.parse(text.trim()) as BatchShotResult[];
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 // FIX: Add missing functions for video analysis and continuity scoring.
-export const analyzeVideoFrames = async (frames: string[], onStateChange?: ApiStateChangeCallback): Promise<string> => {
+export const analyzeVideoFrames = async (frames: string[], logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const context = 'analyze video frames';
     const prompt = `You are a film critic and shot analyst. Based on the following sequence of frames from a video, provide a detailed analysis. Describe the cinematic techniques used, the narrative action, and the overall mood. Structure your analysis in markdown.
     
@@ -491,10 +533,13 @@ export const analyzeVideoFrames = async (frames: string[], onStateChange?: ApiSt
         if (!text) {
             throw new Error("The model returned an empty response for video frame analysis.");
         }
-        return text.trim();
+        const result = text.trim();
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 export const getPrunedContextForContinuity = async (
@@ -502,6 +547,7 @@ export const getPrunedContextForContinuity = async (
     narrativeContext: string,
     scene: Scene,
     directorsVision: string,
+    logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
     const prompt = `You are a script supervisor. Your job is to create a concise "Continuity Brief" (under 200 words) for an AI continuity checker. This brief will be used to judge if a generated video matches the original creative intent.
@@ -518,13 +564,14 @@ export const getPrunedContextForContinuity = async (
     - Director's Vision: ${directorsVision}
 
     **Your Output:** A single paragraph continuity brief.`;
-    return getPrunedContext(prompt, 'prune context for continuity check', onStateChange);
+    return getPrunedContext(prompt, 'prune context for continuity check', logApiCall, onStateChange);
 };
 
 export const scoreContinuity = async (
     prunedContext: string,
     scene: Scene,
     videoAnalysis: string,
+    logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<ContinuityResult> => {
     const context = 'score cinematic continuity';
@@ -582,7 +629,7 @@ Your ENTIRE output must be a single, valid JSON object that perfectly adheres to
         required: ['scores', 'overall_feedback', 'refinement_directives']
     };
 
-    const apiCall = async (): Promise<ContinuityResult> => {
+    const apiCall = async (): Promise<{ result: ContinuityResult, tokens: number }> => {
         const response = await ai.models.generateContent({
             model: proModel,
             contents: prompt,
@@ -592,14 +639,17 @@ Your ENTIRE output must be a single, valid JSON object that perfectly adheres to
         if (!text) {
             throw new Error("The model returned an empty response for continuity scoring.");
         }
-        return JSON.parse(text.trim()) as ContinuityResult;
+        const result = JSON.parse(text.trim()) as ContinuityResult;
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 // --- Co-Director & Generation ---
-export const generateSceneImage = async (timelineData: TimelineData, directorsVision: string, onStateChange?: ApiStateChangeCallback, previousImageBase64?: string): Promise<string> => {
+export const generateSceneImage = async (timelineData: TimelineData, directorsVision: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback, previousImageBase64?: string): Promise<string> => {
     const context = 'generate image';
     const { shots, shotEnhancers, negativePrompt } = timelineData;
 
@@ -640,7 +690,7 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
 
     const apiCall = async () => {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
+            model: imageModel,
             contents: {
                 parts: [
                     ...imageParts,
@@ -654,18 +704,23 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
 
         const part = response.candidates?.[0]?.content?.parts?.[0];
         if (part?.inlineData) {
-            return part.inlineData.data;
+            const result = part.inlineData.data;
+            // Image models don't return token usage, so we log 0 tokens but the call is still tracked.
+            // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+            const tokens = response.usageMetadata?.totalTokenCount || 0;
+            return { result, tokens };
         }
         throw new Error("Image generation failed: No image data in response.");
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, imageModel, logApiCall, onStateChange);
 };
 
 export const getCoDirectorSuggestions = async (
     prunedContext: string,
     activeScene: Scene, 
     objective: string,
+    logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<CoDirectorResult> => {
     const context = 'get co-director suggestions';
@@ -768,13 +823,16 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
         if (!text) {
             throw new Error("The model returned an empty response for co-director suggestions. This could be due to a content safety block.");
         }
-        return JSON.parse(text.trim()) as CoDirectorResult;
+        const result = JSON.parse(text.trim()) as CoDirectorResult;
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
     
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
-export const generateVideoPrompt = async (timelineData: TimelineData, directorsVision: string, onStateChange?: ApiStateChangeCallback): Promise<string> => {
+export const generateVideoPrompt = async (timelineData: TimelineData, directorsVision: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const context = 'generate video prompt';
     const { shots, shotEnhancers, negativePrompt } = timelineData;
 
@@ -822,8 +880,11 @@ export const generateVideoPrompt = async (timelineData: TimelineData, directorsV
         if (!text) {
             throw new Error("The model returned an empty response for the video prompt.");
         }
-        return text.trim();
+        const result = text.trim();
+        // FIX: Property 'totalTokens' does not exist on type 'GenerateContentResponseUsageMetadata'. Use 'totalTokenCount' instead.
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
     };
 
-    return withRetry(apiCall, context, onStateChange);
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };

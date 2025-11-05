@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import PaintBrushIcon from './icons/PaintBrushIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { suggestDirectorsVisions, ApiStateChangeCallback } from '../services/geminiService';
+import { suggestDirectorsVisions, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import { StoryBible } from '../types';
 
 interface DirectorsVisionFormProps {
@@ -9,9 +9,10 @@ interface DirectorsVisionFormProps {
     isLoading: boolean;
     storyBible: StoryBible;
     onApiStateChange: ApiStateChangeCallback;
+    onApiLog: ApiLogCallback;
 }
 
-const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isLoading, storyBible, onApiStateChange }) => {
+const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isLoading, storyBible, onApiStateChange, onApiLog }) => {
     const [vision, setVision] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
@@ -27,14 +28,14 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
         setIsSuggesting(true);
         setSuggestions([]);
         try {
-            const result = await suggestDirectorsVisions(storyBible, onApiStateChange);
+            const result = await suggestDirectorsVisions(storyBible, onApiLog, onApiStateChange);
             setSuggestions(result);
         } catch (e) {
             console.error(e);
         } finally {
             setIsSuggesting(false);
         }
-    }, [storyBible, onApiStateChange]);
+    }, [storyBible, onApiStateChange, onApiLog]);
 
     return (
         <div className="max-w-3xl mx-auto text-center">

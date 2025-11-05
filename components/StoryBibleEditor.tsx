@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { StoryBible } from '../types';
 import BookOpenIcon from './icons/BookOpenIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { refineStoryBibleField, ApiStateChangeCallback } from '../services/geminiService';
+import { refineStoryBibleField, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import Tooltip from './Tooltip';
 
 
@@ -12,6 +12,7 @@ interface StoryBibleEditorProps {
     onContinue: () => void;
     isLoading: boolean;
     onApiStateChange: ApiStateChangeCallback;
+    onApiLog: ApiLogCallback;
 }
 
 const EditableSection: React.FC<{ 
@@ -60,7 +61,7 @@ const EditableSection: React.FC<{
     );
 };
 
-const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, setStoryBible, onContinue, isLoading, onApiStateChange }) => {
+const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, setStoryBible, onContinue, isLoading, onApiStateChange, onApiLog }) => {
     const [refiningField, setRefiningField] = useState<keyof StoryBible | null>(null);
 
     const handleFieldChange = useCallback((field: keyof StoryBible, value: string) => {
@@ -71,14 +72,14 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, setStor
         if (!storyBible) return;
         setRefiningField(field);
         try {
-            const refinedText = await refineStoryBibleField(field, storyBible, onApiStateChange);
+            const refinedText = await refineStoryBibleField(field, storyBible, onApiLog, onApiStateChange);
             handleFieldChange(field, refinedText);
         } catch (e) {
             console.error(e);
         } finally {
             setRefiningField(null);
         }
-    }, [storyBible, handleFieldChange, onApiStateChange]);
+    }, [storyBible, handleFieldChange, onApiStateChange, onApiLog]);
 
     if (!storyBible) return null;
 

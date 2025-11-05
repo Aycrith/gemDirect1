@@ -9,7 +9,7 @@ import TrashIcon from './icons/TrashIcon';
 import PlusIcon from './icons/PlusIcon';
 import FilmIcon from './icons/FilmIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { batchProcessShotEnhancements, ApiStateChangeCallback } from '../services/geminiService';
+import { batchProcessShotEnhancements, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import Tooltip from './Tooltip';
 import CameraIcon from './icons/CameraIcon';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
@@ -34,6 +34,7 @@ interface TimelineEditorProps {
     generatedPrompt?: string;
     onProceedToReview?: () => void;
     onApiStateChange: ApiStateChangeCallback;
+    onApiLog: ApiLogCallback;
 }
 
 const SuggestionButton: React.FC<{
@@ -154,7 +155,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     isGeneratingPrompt,
     generatedPrompt,
     onProceedToReview,
-    onApiStateChange
+    onApiStateChange,
+    onApiLog
 }) => {
     const { shots, shotEnhancers, transitions, negativePrompt } = scene.timeline;
     const { updateApiStatus } = useApiStatus();
@@ -174,7 +176,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setQueuedTasks(new Map()); // Clear queue immediately
 
         try {
-            const results = await batchProcessShotEnhancements(tasksToProcess, narrativeContext, directorsVision, onApiStateChange);
+            const results = await batchProcessShotEnhancements(tasksToProcess, narrativeContext, directorsVision, onApiLog, onApiStateChange);
 
             let shotsUpdater = (prev: Shot[]) => prev;
             let enhancersUpdater = (prev: ShotEnhancers) => prev;
@@ -206,7 +208,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 return { processingIds: newProcessingIds };
             });
         }
-    }, [queuedTasks, narrativeContext, directorsVision, setShots, setShotEnhancers, onApiStateChange]);
+    }, [queuedTasks, narrativeContext, directorsVision, setShots, setShotEnhancers, onApiStateChange, onApiLog]);
 
     const queueTask = useCallback((shot: Shot, action: 'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS') => {
         setSuggestionState(prev => ({ processingIds: new Set(prev.processingIds).add(shot.id) }));
