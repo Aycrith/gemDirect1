@@ -1,5 +1,3 @@
-
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult } from "../types";
 
@@ -248,7 +246,10 @@ export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleCo
     **Current ${field.toUpperCase()} to Refine:**
     "${currentValue}"
 
-    Return a JSON object with a single key "refined_text" containing only the new, improved text.`;
+    **Your Task & CRITICAL JSON FORMATTING:**
+    Your ENTIRE output must be a single, valid JSON object with a single key "refined_text".
+    - **CRITICAL:** If you use any double quotes (") inside the "refined_text" string, you MUST escape them with a backslash (\\").
+    - Do not add any text or markdown formatting before or after the JSON object.`;
 
     const responseSchema = {
         type: Type.OBJECT,
@@ -294,7 +295,10 @@ export const refineShotDescription = async (
     **Current Shot Description to Refine:**
     "${shotDescription}"
 
-    Return a JSON object with a single key "refined_description" containing the improved text.`;
+    **Your Task & CRITICAL JSON FORMATTING:**
+    Your ENTIRE output must be a single, valid JSON object with a single key "refined_description".
+    - **CRITICAL:** If you use any double quotes (") inside the "refined_description" string, you MUST escape them with a backslash (\\"). For example: "The hero shouted, \\"Look out!\\" as the ship tilted."
+    - Do not add any text or markdown formatting before or after the JSON object.`;
 
     const responseSchema = {
         type: Type.OBJECT,
@@ -497,33 +501,31 @@ ${timelineString}
 
 **Your Task & CRITICAL JSON FORMATTING INSTRUCTIONS:**
 Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Your suggestions must improve the current timeline to better align with the Director's Vision, the user's objective, and **the scene's structural purpose within the Hero's Journey framework of the plot.**
-- **The most critical rule is handling quotation marks inside JSON strings.** If you need to include a double quote character (") inside any string value, you MUST escape it with a backslash (e.g., "The character yelled, \\"Stop!\\"").
-- Do not add any text or markdown formatting before or after the JSON object.
-- **Thematic Concept (thematic_concept)**: A short, evocative theme (2-5 words) that synthesizes the vision and objective.
-- **Reasoning (reasoning)**: Explain your strategy. How do your changes serve the scene's narrative function (e.g., "To better reflect this as a 'Refusal of the Call' moment, I've added shots that visually isolate the protagonist...") as well as the Director's Vision and user's objective?
-- **Suggested Changes (suggested_changes)**: Provide a list of 5-8 specific, cohesive changes. Be bold and transformative.
+- **CRITICAL RULE #1: Your entire response must be a single JSON object. Do not add any text, markdown, or code fences before or after the JSON.**
+- **CRITICAL RULE #2: This is the most important rule. Any time you include a double quote character (") inside of a JSON string value, you MUST escape it with a backslash (\\").** For example, if you want to write \`The hero shouted, "Look out!"\`, the JSON string value must be \`"The hero shouted, \\"Look out!\\""\`. Failure to do this will break the application.
+- **The instructions to escape quotes are also repeated in the descriptions for each field in the JSON schema. You MUST follow them.**
 - **Vocabulary**: When populating the 'enhancers' payload, use common and appropriate cinematic terms for the following categories: framing, movement, lens, pacing, lighting, mood, vfx, and plotEnhancements.
     `;
     
     const responseSchema = {
         type: Type.OBJECT,
         properties: {
-            thematic_concept: { type: Type.STRING },
-            reasoning: { type: Type.STRING },
+            thematic_concept: { type: Type.STRING, description: "A short, evocative theme (2-5 words). CRITICAL: All double quotes in this string MUST be escaped with a backslash (e.g., \\\"The Hero's Burden\\\")." },
+            reasoning: { type: Type.STRING, description: "Detailed reasoning for the suggested changes. CRITICAL: All double quotes in this string MUST be escaped with a backslash (e.g., \\\"This shot enhances the feeling of isolation...\\\")." },
             suggested_changes: {
                 type: Type.ARRAY,
                 items: {
                     type: Type.OBJECT,
                     properties: {
-                        type: { type: Type.STRING, description: "'UPDATE_SHOT', 'ADD_SHOT_AFTER', 'UPDATE_TRANSITION'." },
-                        shot_id: { type: Type.STRING },
-                        after_shot_id: { type: Type.STRING },
-                        transition_index: { type: Type.INTEGER },
+                        type: { type: Type.STRING, description: "'UPDATE_SHOT', 'ADD_SHOT_AFTER', or 'UPDATE_TRANSITION'." },
+                        shot_id: { type: Type.STRING, description: "The ID of the shot to update. Only for 'UPDATE_SHOT'." },
+                        after_shot_id: { type: Type.STRING, description: "The ID of the shot to add a new shot after. Only for 'ADD_SHOT_AFTER'." },
+                        transition_index: { type: Type.INTEGER, description: "The index of the transition to update. Only for 'UPDATE_TRANSITION'." },
                         payload: {
                             type: Type.OBJECT,
                             properties: {
-                                description: { type: Type.STRING },
-                                title: { type: Type.STRING },
+                                description: { type: Type.STRING, description: "The new or updated shot description. CRITICAL: All double quotes MUST be escaped (e.g., \\\"A close-up on the hero's face...\\\")." },
+                                title: { type: Type.STRING, description: "The title for a new shot. CRITICAL: All double quotes MUST be escaped." },
                                 enhancers: { 
                                     type: Type.OBJECT,
                                     properties: {
@@ -537,10 +539,10 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
                                         plotEnhancements: { type: Type.ARRAY, items: { type: Type.STRING } },
                                     }
                                 },
-                                type: { type: Type.STRING }
+                                type: { type: Type.STRING, description: "The new transition type (e.g., 'Dissolve')." }
                             }
                         },
-                        description: { type: Type.STRING }
+                        description: { type: Type.STRING, description: "A human-readable summary of the change being suggested. CRITICAL: All double quotes in this string MUST be escaped (e.g., \\\"This change will improve the pacing...\\\")." }
                     },
                     required: ['type', 'payload', 'description']
                 }
