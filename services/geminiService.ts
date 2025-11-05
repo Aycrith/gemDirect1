@@ -1,6 +1,6 @@
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers } from "../types";
-import { FRAMING_OPTIONS, MOVEMENT_OPTIONS, LENS_OPTIONS, PACING_OPTIONS, LIGHTING_OPTIONS, MOOD_OPTIONS, VFX_OPTIONS, PLOT_ENHANCEMENTS_OPTIONS } from "../utils/cinematicTerms";
+import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult } from "../types";
 
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 const model = 'gemini-2.5-flash';
@@ -320,17 +320,10 @@ export const suggestShotEnhancers = async (shot: Shot, scene: Scene, storyBible:
     "${shot.description}"
 
     **Your Task & CRITICAL JSON FORMATTING:**
-    Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Select 1-2 options for each category that best fit the shot. Only include categories that are highly relevant; do not suggest for every category.
+    Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Select 1-2 appropriate cinematic terms for each relevant category. Only include categories that are highly relevant; do not suggest for every category.
 
-    **Vocabulary (use exact string values from these lists):**
-    *   framing: [${FRAMING_OPTIONS.join(', ')}]
-    *   movement: [${MOVEMENT_OPTIONS.join(', ')}]
-    *   lens: [${LENS_OPTIONS.join(', ')}]
-    *   pacing: [${PACING_OPTIONS.join(', ')}]
-    *   lighting: [${LIGHTING_OPTIONS.join(', ')}]
-    *   mood: [${MOOD_OPTIONS.join(', ')}]
-    *   vfx: [${VFX_OPTIONS.join(', ')}]
-    *   plotEnhancements: [${PLOT_ENHANCEMENTS_OPTIONS.join(', ')}]
+    **Categories to consider:**
+    framing, movement, lens, pacing, lighting, mood, vfx, plotEnhancements.
     `;
     
     const responseSchema = {
@@ -431,9 +424,29 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
 
 export const getCoDirectorSuggestions = async (storyBible: StoryBible, activeScene: Scene, objective: string, directorsVision: string): Promise<CoDirectorResult> => {
     const timelineString = activeScene.timeline.shots.map((shot, index) => {
-        const transition = activeScene.timeline.transitions[index] ? `\n--[${activeScene.timeline.transitions[index]}]-->\n` : '';
-        return `Shot ${index + 1} (${shot.id}): ${shot.description}${transition}`;
-    }).join('');
+        let shotSummary = `Shot ${index + 1}: "${shot.description}"`;
+        const enhancers = activeScene.timeline.shotEnhancers[shot.id];
+
+        if (enhancers && Object.keys(enhancers).length > 0) {
+            const styleElements = Object.entries(enhancers)
+                .flatMap(([key, values]) => {
+                    if (Array.isArray(values) && values.length > 0) {
+                        return `${key}: ${values.join(', ')}`;
+                    }
+                    return [];
+                });
+            
+            if (styleElements.length > 0) {
+                shotSummary += ` (Enhancers: ${styleElements.join('; ')})`;
+            }
+        }
+        
+        const transition = activeScene.timeline.transitions[index];
+        if (transition && index < activeScene.timeline.shots.length - 1) {
+            return shotSummary + ` --[${transition}]-->`;
+        }
+        return shotSummary;
+    }).join('\n');
 
     const prompt = `
 You are an expert AI Film Co-Director. Your task is to analyze a cinematic timeline and provide creative, actionable suggestions that align with a high-level artistic vision and a specific creative objective.
@@ -448,28 +461,20 @@ You are an expert AI Film Co-Director. Your task is to analyze a cinematic timel
 **Current Scene Context:**
 - Scene: ${activeScene.title} - ${activeScene.summary}
 
-**Current Shot-List for this Scene:**
+**Current Shot-List & Style for this Scene:**
 ${timelineString}
 
 **User's Creative Objective for this Scene:**
 "${objective}"
 
 **Your Task & CRITICAL JSON FORMATTING INSTRUCTIONS:**
-Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Your suggestions must align with BOTH the Director's Vision and the user's immediate creative objective.
+Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Your suggestions must improve upon the current shot-list and styles to better align with BOTH the Director's Vision and the user's immediate creative objective. You should feel free to change existing styles or add new ones.
 - **The most critical rule is handling quotation marks inside JSON strings.** If you need to include a double quote character (") inside any string value (like in the 'reasoning' or 'description' fields), you MUST escape it with a backslash (e.g., "The character yelled, \\"Stop!\\""). Failure to do this will result in an invalid JSON.
 - Do not add any text or markdown formatting before or after the JSON object.
 - **Thematic Concept (thematic_concept)**: A short, evocative theme (2-5 words) that synthesizes the vision and objective.
 - **Reasoning (reasoning)**: Explain your strategy. How do the changes serve the objective, the Director's Vision, and the overall story?
-- **Suggested Changes (suggested_changes)**: Provide a list of 5-8 specific, cohesive changes. Use the provided cinematic vocabulary. Be bold and transformative.
-- **Vocabulary (for 'enhancers' payload)**: Use exact string values from these lists:
-    *   framing: [${FRAMING_OPTIONS.join(', ')}]
-    *   movement: [${MOVEMENT_OPTIONS.join(', ')}]
-    *   lens: [${LENS_OPTIONS.join(', ')}]
-    *   pacing: [${PACING_OPTIONS.join(', ')}]
-    *   lighting: [${LIGHTING_OPTIONS.join(', ')}]
-    *   mood: [${MOOD_OPTIONS.join(', ')}]
-    *   vfx: [${VFX_OPTIONS.join(', ')}]
-    *   plotEnhancements: [${PLOT_ENHANCEMENTS_OPTIONS.join(', ')}]
+- **Suggested Changes (suggested_changes)**: Provide a list of 5-8 specific, cohesive changes. Be bold and transformative.
+- **Vocabulary**: When populating the 'enhancers' payload, use common and appropriate cinematic terms for the following categories: framing, movement, lens, pacing, lighting, mood, vfx, and plotEnhancements. Be creative but realistic.
     `;
     
     const responseSchema = {
@@ -536,17 +541,24 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
 export const generateVideoPrompt = async (timelineData: TimelineData, directorsVision: string): Promise<string> => {
     const { shots, shotEnhancers, negativePrompt } = timelineData;
 
-    let detailedTimeline = shots.map((shot) => {
-        let shotString = `Shot: ${shot.description}\n`;
+    const detailedTimeline = shots.map((shot, index) => {
+        let shotSummary = `${index + 1}. ${shot.description}`;
         const enhancers = shotEnhancers[shot.id];
         if (enhancers && Object.keys(enhancers).length > 0) {
             const styleElements = Object.entries(enhancers)
-                .map(([key, value]) => Array.isArray(value) && value.length > 0 ? `${key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}: ${value.join(', ')}` : null)
-                .filter(Boolean);
-            if(styleElements.length > 0) shotString += '  Style: ' + styleElements.join('; ') + '\n';
+                .flatMap(([key, values]) => {
+                    if (Array.isArray(values) && values.length > 0) {
+                        return `${key}: ${values.join(', ')}`;
+                    }
+                    return [];
+                });
+            
+            if (styleElements.length > 0) {
+                shotSummary += ` [Style: ${styleElements.join('; ')}]`;
+            }
         }
-        return shotString;
-    }).join('');
+        return shotSummary;
+    }).join('\n');
 
     const prompt = `
         You are an expert prompt engineer for a state-of-the-art generative video AI. Your task is to synthesize the provided cinematic timeline and Director's Vision into a single, cohesive, and powerful generative prompt. The goal is to create a short, photorealistic, cinematic video clip that captures the key moment of the scene with impeccable quality.
@@ -614,5 +626,110 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
     } catch (error) {
         console.error("Error analyzing video frames:", error);
         throw new Error(`Failed to analyze video. ${commonError}`);
+    }
+};
+
+
+export const scoreContinuity = async (
+    storyBible: StoryBible,
+    directorsVision: string,
+    scene: Scene,
+    videoAnalysis: string
+): Promise<ContinuityResult> => {
+    const timelineString = scene.timeline.shots.map((shot, index) => {
+        let shotSummary = `${index + 1}. ${shot.description}`;
+        const enhancers = scene.timeline.shotEnhancers[shot.id];
+        if (enhancers && Object.keys(enhancers).length > 0) {
+            const styleElements = Object.entries(enhancers)
+                .flatMap(([key, values]) => (Array.isArray(values) && values.length > 0) ? `${key}: ${values.join(', ')}` : [])
+                .filter(Boolean);
+            if (styleElements.length > 0) {
+                shotSummary += ` [Style: ${styleElements.join('; ')}]`;
+            }
+        }
+        return shotSummary;
+    }).join('\n');
+
+    const prompt = `
+You are an expert film critic and continuity supervisor. Your task is to analyze a generated video by comparing its cinematic analysis against the original creative intent. Provide a quantitative score, qualitative feedback, and actionable suggestions for improvement.
+
+**PART 1: THE CREATIVE INTENT**
+
+**1.1. Overall Story Bible (Thematic Foundation):**
+- Logline: ${storyBible.logline}
+- Plot Outline: ${storyBible.plotOutline}
+
+**1.2. Director's Vision (Aesthetic Guardrail):**
+- "${directorsVision}"
+
+**1.3. Scene-Specific Plan (Narrative & Execution):**
+- Scene: ${scene.title} - ${scene.summary}
+- Shot-by-Shot Timeline:
+${timelineString}
+
+**PART 2: THE ACTUAL OUTPUT**
+
+**2.1. Cinematic Analysis of the Generated Video:**
+${videoAnalysis}
+
+**PART 3: YOUR TASK (MUST RETURN VALID JSON)**
+
+Based on a critical comparison of PART 1 (Intent) and PART 2 (Output), generate a JSON object with the following structure:
+1.  **scores**: An object with three numerical scores from 1 (poor match) to 10 (perfect match).
+    - **narrative_coherence**: How well did the video's action match the scene summary and shot descriptions?
+    - **aesthetic_alignment**: How well did the video's cinematography, lighting, and mood match the Director's Vision and chosen enhancers?
+    - **thematic_resonance**: How well did the video's overall feeling connect with the Story Bible's logline and plot?
+2.  **overall_feedback**: A concise markdown paragraph explaining your scores. What worked well? What were the key discrepancies between intent and reality?
+3.  **refinement_directives**: An array of 1-3 actionable suggestions to improve the creative intent for future generations. Each object in the array must have:
+    - **target**: The area to improve ('story_bible', 'directors_vision', or 'scene_timeline').
+    - **suggestion**: A specific, constructive suggestion for the user. (e.g., "The Director's Vision should be more specific about lighting, perhaps adding 'chiaroscuro' to better match the gritty theme.").
+    - **target_field**: (Only for 'story_bible' target) Specify which field to edit: 'logline', 'characters', 'setting', or 'plotOutline'.
+    - **scene_id**: (Only for 'scene_timeline' target) Include the ID: "${scene.id}".
+`;
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            scores: {
+                type: Type.OBJECT,
+                properties: {
+                    narrative_coherence: { type: Type.NUMBER },
+                    aesthetic_alignment: { type: Type.NUMBER },
+                    thematic_resonance: { type: Type.NUMBER },
+                },
+                required: ['narrative_coherence', 'aesthetic_alignment', 'thematic_resonance'],
+            },
+            overall_feedback: { type: Type.STRING },
+            refinement_directives: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        target: { type: Type.STRING },
+                        suggestion: { type: Type.STRING },
+                        target_field: { type: Type.STRING },
+                        scene_id: { type: Type.STRING },
+                    },
+                    required: ['target', 'suggestion'],
+                },
+            },
+        },
+        required: ['scores', 'overall_feedback', 'refinement_directives'],
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: proModel,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for continuity scoring.");
+        }
+        return JSON.parse(text.trim()) as ContinuityResult;
+    } catch (error) {
+        console.error("Error scoring continuity:", error);
+        throw new Error(`Failed to score continuity. ${commonError}`);
     }
 };

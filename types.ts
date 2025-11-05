@@ -72,3 +72,32 @@ export interface CoDirectorResult {
   reasoning: string;
   suggested_changes: Suggestion[];
 }
+
+// --- New types for Continuity Director ---
+export interface ContinuityScore {
+  narrative_coherence: number;
+  aesthetic_alignment: number;
+  thematic_resonance: number;
+}
+
+export interface RefinementDirective {
+  target: 'story_bible' | 'directors_vision' | 'scene_timeline';
+  suggestion: string;
+  target_field?: keyof StoryBible; // e.g., 'logline', 'plotOutline'
+  scene_id?: string; // To target a specific scene's timeline/summary
+}
+
+export interface ContinuityResult {
+  scores: ContinuityScore;
+  overall_feedback: string;
+  refinement_directives: RefinementDirective[];
+}
+
+export interface SceneContinuityData {
+  videoFile?: File;
+  videoSrc?: string;
+  videoAnalysis?: string;
+  continuityResult?: ContinuityResult;
+  status: 'idle' | 'analyzing' | 'scoring' | 'complete' | 'error';
+  error?: string;
+}

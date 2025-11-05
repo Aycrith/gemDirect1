@@ -6,15 +6,17 @@ import TimelineEditor from './components/TimelineEditor';
 import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getCoDirectorSuggestions, generateSceneImage, suggestCoDirectorObjectives, generateVideoPrompt } from './services/geminiService';
-import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage } from './types';
+import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
 import VideoAnalyzer from './components/VideoAnalyzer';
 import FilmIcon from './components/icons/FilmIcon';
 import PencilRulerIcon from './components/icons/PencilRulerIcon';
+import ContinuityDirector from './components/ContinuityDirector';
+import ClipboardCheckIcon from './components/icons/ClipboardCheckIcon';
 
 type AppStage = 'idea' | 'bible' | 'vision' | 'scenes' | 'director';
-type AppMode = 'generator' | 'analyzer';
+type AppMode = 'generator' | 'analyzer' | 'continuity';
 
 const emptyTimeline: TimelineData = {
     shots: [],
@@ -44,6 +46,9 @@ const App: React.FC = () => {
     
     const [videoPrompts, setVideoPrompts] = useState<Record<string, string>>({});
     const [isVideoPromptGenerating, setIsVideoPromptGenerating] = useState(false);
+
+    // Continuity State
+    const [continuityData, setContinuityData] = useState<Record<string, SceneContinuityData>>({});
 
     // UI and Loading State
     const [isLoading, setIsLoading] = useState(false);
@@ -162,6 +167,11 @@ const App: React.FC = () => {
 
     // --- Timeline and Scene State Management ---
     const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
+    
+    const allPromptsGenerated = useMemo(() => {
+        if (scenes.length === 0) return false;
+        return scenes.every(scene => videoPrompts[scene.id]);
+    }, [scenes, videoPrompts]);
 
     const updateActiveSceneTimeline = useCallback((updater: (timeline: TimelineData) => TimelineData) => {
         setScenes(prevScenes =>
@@ -323,6 +333,21 @@ const App: React.FC = () => {
         if (appMode === 'analyzer') {
             return <VideoAnalyzer />;
         }
+        
+        if (appMode === 'continuity') {
+            return (
+                <ContinuityDirector 
+                    scenes={scenes}
+                    storyBible={storyBible!}
+                    directorsVision={directorsVision}
+                    generatedImages={generatedImages}
+                    videoPrompts={videoPrompts}
+                    continuityData={continuityData}
+                    setContinuityData={setContinuityData}
+                    addToast={addToast}
+                />
+            );
+        }
 
         switch (appStage) {
             case 'idea':
@@ -425,6 +450,19 @@ const App: React.FC = () => {
                             <FilmIcon className="w-5 h-5" />
                             Video Analyzer
                         </button>
+                         {allPromptsGenerated && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setAppMode('continuity');
+                                    setWorkflowStage('continuity');
+                                }}
+                                className={`flex items-center gap-2 px-6 py-2 text-sm font-medium transition-colors rounded-md ${appMode === 'continuity' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700'}`}
+                            >
+                                <ClipboardCheckIcon className="w-5 h-5" />
+                                Continuity Director
+                            </button>
+                        )}
                     </div>
                 </div>
 

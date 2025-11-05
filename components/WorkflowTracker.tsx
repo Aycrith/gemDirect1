@@ -5,8 +5,9 @@ import ClapperboardIcon from './icons/ClapperboardIcon';
 import TimelineIcon from './icons/TimelineIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import PaintBrushIcon from './icons/PaintBrushIcon';
+import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 
-export type WorkflowStage = 'idea' | 'bible' | 'vision' | 'scenes' | 'director';
+export type WorkflowStage = 'idea' | 'bible' | 'vision' | 'scenes' | 'director' | 'continuity';
 
 const STAGES = [
     { id: 'idea', name: 'Story Idea', icon: <LightbulbIcon className="w-6 h-6 text-gray-300" /> },
@@ -14,13 +15,14 @@ const STAGES = [
     { id: 'vision', name: 'Set Vision', icon: <PaintBrushIcon className="w-6 h-6 text-gray-300" /> },
     { id: 'scenes', name: 'Scene List', icon: <ClapperboardIcon className="w-6 h-6 text-gray-300" /> },
     { id: 'director', name: 'Direct Scene', icon: <TimelineIcon className="w-6 h-6 text-gray-300" /> },
+    { id: 'continuity', name: 'Continuity Review', icon: <ClipboardCheckIcon className="w-6 h-6 text-gray-300" /> },
 ];
 
 const WorkflowTracker: React.FC<{ currentStage: WorkflowStage }> = ({ currentStage }) => {
     const currentStageIndex = STAGES.findIndex(s => s.id === currentStage);
 
     return (
-        <div className="w-full max-w-3xl mx-auto mb-12">
+        <div className="w-full max-w-4xl mx-auto mb-12">
             <div className="flex items-center">
                 {STAGES.map((stage, index) => {
                     const isCompleted = currentStageIndex > index;
@@ -28,7 +30,7 @@ const WorkflowTracker: React.FC<{ currentStage: WorkflowStage }> = ({ currentSta
 
                     return (
                         <React.Fragment key={stage.id}>
-                            <div className="flex flex-col items-center text-center w-24">
+                            <div className="flex flex-col items-center text-center w-28">
                                 <div className={`flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-500 ${
                                     isCurrent ? 'bg-indigo-600 border-indigo-400 shadow-lg shadow-indigo-500/30' : 
                                     isCompleted ? 'bg-indigo-500 border-indigo-500' : 
