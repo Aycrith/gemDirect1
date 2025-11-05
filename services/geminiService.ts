@@ -38,7 +38,11 @@ export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        return JSON.parse(response.text.trim()) as StoryBible;
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for Story Bible.");
+        }
+        return JSON.parse(text.trim()) as StoryBible;
     } catch (error) {
         console.error("Error generating Story Bible:", error);
         throw new Error(`Failed to generate Story Bible. ${commonError}`);
@@ -79,7 +83,11 @@ export const generateSceneList = async (storyBible: StoryBible, directorsVision:
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        return JSON.parse(response.text.trim());
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for scene list.");
+        }
+        return JSON.parse(text.trim());
     } catch (error) {
         console.error("Error generating scene list:", error);
         throw new Error(`Failed to generate scene list. ${commonError}`);
@@ -116,7 +124,11 @@ export const generateInitialShotsForScene = async (storyBible: StoryBible, scene
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        return JSON.parse(response.text.trim());
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for initial shots.");
+        }
+        return JSON.parse(text.trim());
     } catch (error) {
         console.error("Error generating initial shots:", error);
         throw new Error(`Failed to generate shots for scene. ${commonError}`);
@@ -134,7 +146,11 @@ export const suggestStoryIdeas = async (): Promise<string[]> => {
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        return JSON.parse(response.text.trim());
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for story ideas.");
+        }
+        return JSON.parse(text.trim());
     } catch (error) {
         console.error("Error suggesting story ideas:", error);
         throw new Error(`Failed to suggest ideas. ${commonError}`);
@@ -154,7 +170,11 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<s
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        return JSON.parse(response.text.trim());
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for director's visions.");
+        }
+        return JSON.parse(text.trim());
     } catch (error) {
         console.error("Error suggesting visions:", error);
         throw new Error(`Failed to suggest visions. ${commonError}`);
@@ -192,7 +212,11 @@ export const suggestCoDirectorObjectives = async (storyBible: StoryBible, scene:
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        return JSON.parse(response.text.trim());
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for co-director objectives.");
+        }
+        return JSON.parse(text.trim());
     } catch (error) {
         console.error("Error suggesting co-director objectives:", error);
         throw new Error(`Failed to suggest objectives. ${commonError}`);
@@ -227,7 +251,11 @@ export const refineStoryBibleField = async (field: keyof StoryBible, storyBible:
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        const parsed = JSON.parse(response.text.trim());
+        const text = response.text;
+        if (!text) {
+            throw new Error(`The model returned an empty response when refining ${field}.`);
+        }
+        const parsed = JSON.parse(text.trim());
         return parsed.refined_text;
     } catch (error) {
         console.error(`Error refining ${field}:`, error);
@@ -264,7 +292,11 @@ export const refineShotDescription = async (shot: Shot, scene: Scene, storyBible
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        const parsed = JSON.parse(response.text.trim());
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response when refining shot description.");
+        }
+        const parsed = JSON.parse(text.trim());
         return parsed.refined_description;
     } catch (error) {
         console.error("Error refining shot description:", error);
@@ -321,7 +353,11 @@ export const suggestShotEnhancers = async (shot: Shot, scene: Scene, storyBible:
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        return JSON.parse(response.text.trim());
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for shot enhancers.");
+        }
+        return JSON.parse(text.trim());
     } catch (error) {
         console.error("Error suggesting shot enhancers:", error);
         throw new Error(`Failed to suggest enhancers. ${commonError}`);
@@ -486,7 +522,11 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
-        return JSON.parse(response.text.trim()) as CoDirectorResult;
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for co-director suggestions. This could be due to a content safety block.");
+        }
+        return JSON.parse(text.trim()) as CoDirectorResult;
     } catch (error) {
         console.error("Error getting co-director suggestions:", error);
         throw new Error(`Failed to get suggestions. ${commonError}`);
@@ -529,7 +569,11 @@ export const generateVideoPrompt = async (timelineData: TimelineData, directorsV
             model: proModel,
             contents: prompt
         });
-        return response.text.trim();
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for the video prompt.");
+        }
+        return text.trim();
     } catch (error) {
         console.error("Error generating video prompt:", error);
         throw new Error(`Failed to generate video prompt. ${commonError}`);
@@ -562,7 +606,11 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
             contents: { parts: [...imageParts, { text: prompt }] },
         });
 
-        return response.text;
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for video analysis.");
+        }
+        return text;
     } catch (error) {
         console.error("Error analyzing video frames:", error);
         throw new Error(`Failed to analyze video. ${commonError}`);
