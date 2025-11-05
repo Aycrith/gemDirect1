@@ -7,9 +7,52 @@ const proModel = 'gemini-2.5-pro';
 
 const commonError = "An error occurred. Please check the console for details. If the error persists, the model may be overloaded.";
 
+// Centralized API error handler
+const handleApiError = (error: unknown, context: string): Error => {
+    console.error(`Error during ${context}:`, error);
+    if (error instanceof Error) {
+        const message = error.message.toLowerCase();
+        // Check for specific markers of a rate limit or quota error
+        if (message.includes('429') || message.includes('quota') || message.includes('resource_exhausted')) {
+            return new Error(`API rate limit exceeded during ${context}. Please check your plan and billing details, or wait and try again.`);
+        }
+    }
+    // Fallback to a generic error if the specific check fails
+    return new Error(`Failed to ${context}. ${commonError}`);
+};
+
+// --- Exponential Backoff Retry Logic ---
+const MAX_RETRIES = 3;
+const INITIAL_BACKOFF_MS = 1000;
+
+const withRetry = async <T>(apiCall: () => Promise<T>, context: string): Promise<T> => {
+    let lastError: unknown = new Error(`API call failed for ${context}`);
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+            return await apiCall();
+        } catch (error) {
+            lastError = error;
+            const errorMessage = error instanceof Error ? error.message.toLowerCase() : '';
+            const isRateLimitError = errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('resource_exhausted');
+            
+            if (isRateLimitError && attempt < MAX_RETRIES - 1) {
+                const delay = INITIAL_BACKOFF_MS * Math.pow(2, attempt) + Math.random() * 1000; // add jitter
+                console.warn(`Rate limit hit on "${context}". Retrying in ${Math.round(delay/1000)}s... (Attempt ${attempt + 1})`);
+                await new Promise(res => setTimeout(res, delay));
+            } else {
+                // Not a rate-limit error, or this was the final attempt. Break and throw.
+                break;
+            }
+        }
+    }
+    throw handleApiError(lastError, context);
+};
+
+
 // --- Core Story Generation ---
 
 export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
+    const context = 'generate Story Bible';
     const prompt = `You are a master storyteller and screenwriter, deeply familiar with literary principles. Based on the following user idea, generate a compelling "Story Bible" that establishes a strong, plot-driven narrative foundation.
 
     User Idea: "${idea}"
@@ -30,8 +73,8 @@ export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
         },
         required: ['logline', 'characters', 'setting', 'plotOutline'],
     };
-
-    try {
+    
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model,
             contents: prompt,
@@ -42,13 +85,13 @@ export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
             throw new Error("The model returned an empty response for Story Bible.");
         }
         return JSON.parse(text.trim()) as StoryBible;
-    } catch (error) {
-        console.error("Error generating Story Bible:", error);
-        throw new Error(`Failed to generate Story Bible. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
 export const generateSceneList = async (plotOutline: string, directorsVision: string): Promise<Array<{ title: string; summary: string }>> => {
+    const context = 'generate scene list';
     const prompt = `You are an expert film director with a strong understanding of narrative pacing. Your task is to break down the following plot outline into a series of distinct, actionable scenes, keeping the overall cinematic vision in mind.
 
     **Plot Outline (Structured on The Hero's Journey):**
@@ -73,7 +116,7 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
         },
     };
 
-    try {
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model,
             contents: prompt,
@@ -84,20 +127,18 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
             throw new Error("The model returned an empty response for scene list.");
         }
         return JSON.parse(text.trim());
-    } catch (error) {
-        console.error("Error generating scene list:", error);
-        throw new Error(`Failed to generate scene list. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
-// OPTIMIZATION: Instead of the full plotOutline, this function now accepts a focused `narrativeContext` string.
-// This reduces token count and provides the model with only the most relevant information (the current act and adjacent scenes).
 export const generateInitialShotsForScene = async (
     logline: string,
     narrativeContext: string,
     sceneSummary: string,
     directorsVision: string,
 ): Promise<string[]> => {
+    const context = 'generate shots for scene';
     const prompt = `You are a visionary cinematographer who understands that every shot must serve the story. Create an initial shot list for a scene, ensuring it aligns with the Director's Vision and the scene's specific purpose within the overall plot.
 
     **Director's Vision / Cinematic Style (includes potential Animation Styles):**
@@ -120,7 +161,7 @@ export const generateInitialShotsForScene = async (
         items: { type: Type.STRING },
     };
     
-    try {
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: proModel,
             contents: prompt,
@@ -131,18 +172,19 @@ export const generateInitialShotsForScene = async (
             throw new Error("The model returned an empty response for initial shots.");
         }
         return JSON.parse(text.trim());
-    } catch (error) {
-        console.error("Error generating initial shots:", error);
-        throw new Error(`Failed to generate shots for scene. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
 // --- AI-Assisted Guidance & Suggestions ---
 
 export const suggestStoryIdeas = async (): Promise<string[]> => {
+    const context = 'suggest ideas';
     const prompt = "You are a creative muse. Generate 3 diverse and compelling one-sentence story ideas for a cinematic experience. Return a JSON array of strings.";
     const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
-    try {
+    
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model,
             contents: prompt,
@@ -153,13 +195,13 @@ export const suggestStoryIdeas = async (): Promise<string[]> => {
             throw new Error("The model returned an empty response for story ideas.");
         }
         return JSON.parse(text.trim());
-    } catch (error) {
-        console.error("Error suggesting story ideas:", error);
-        throw new Error(`Failed to suggest ideas. ${commonError}`);
-    }
+    };
+    
+    return withRetry(apiCall, context);
 };
 
 export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<string[]> => {
+    const context = 'suggest visions';
     const prompt = `You are a film theorist and animation historian. Based on this story bible, suggest 3 distinct and evocative "Director's Visions". These can be live-action cinematic styles or animation art styles. Each should be a short paragraph that describes the visual language.
 
     **Story Bible:**
@@ -172,7 +214,8 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<s
     Example animation style: "A dynamic, comic-book visual language like 'Into the Spider-Verse', using Ben-Day dots, expressive text on-screen, and variable frame rates to heighten the action."`;
     
     const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
-    try {
+
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model,
             contents: prompt,
@@ -183,13 +226,13 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<s
             throw new Error("The model returned an empty response for director's visions.");
         }
         return JSON.parse(text.trim());
-    } catch (error) {
-        console.error("Error suggesting visions:", error);
-        throw new Error(`Failed to suggest visions. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
 export const suggestCoDirectorObjectives = async (logline: string, sceneSummary: string, directorsVision: string): Promise<string[]> => {
+    const context = 'suggest objectives';
     const prompt = `You are a creative film director's assistant. Based on the provided story logline, scene summary, and director's vision, suggest 3 diverse and actionable creative objectives for the AI Co-Director. The objectives should be concise, starting with a verb, and guide the AI towards a specific creative direction for the scene.
 
     **Director's Vision / Cinematic Style:**
@@ -213,7 +256,7 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
         items: { type: Type.STRING },
     };
     
-    try {
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model,
             contents: prompt,
@@ -224,16 +267,13 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
             throw new Error("The model returned an empty response for co-director objectives.");
         }
         return JSON.parse(text.trim());
-    } catch (error) {
-        console.error("Error suggesting co-director objectives:", error);
-        throw new Error(`Failed to suggest objectives. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
-
-// FIX: Changed function signature to accept the full story bible and the field key.
-// This simplifies the call site and ensures the function has all the context it needs.
 export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleContext: StoryBible): Promise<string> => {
+    const context = `refine ${field}`;
     const currentValue = fullBibleContext[field];
     const prompt = `You are an expert editor. A user is working on a story bible and wants to refine one section. Based on the full story context, revise the following **${field}** to be more compelling, concise, and cinematic.
 
@@ -257,7 +297,7 @@ export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleCo
         required: ['refined_text'],
     };
 
-    try {
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model,
             contents: prompt,
@@ -269,10 +309,9 @@ export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleCo
         }
         const parsed = JSON.parse(text.trim());
         return parsed.refined_text;
-    } catch (error) {
-        console.error(`Error refining ${field}:`, error);
-        throw new Error(`Failed to refine ${field}. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
 export const refineShotDescription = async (
@@ -281,6 +320,7 @@ export const refineShotDescription = async (
     logline: string, 
     directorsVision: string
 ): Promise<string> => {
+    const context = 'refine description';
     const prompt = `You are a screenwriter and cinematographer. Refine the following shot description to be more vivid, detailed, and cinematic. Ensure it aligns with the scene's context and the director's overall vision.
 
     **Director's Vision / Cinematic Style:**
@@ -305,7 +345,8 @@ export const refineShotDescription = async (
         properties: { refined_description: { type: Type.STRING } },
         required: ['refined_description'],
     };
-    try {
+
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model,
             contents: prompt,
@@ -317,10 +358,9 @@ export const refineShotDescription = async (
         }
         const parsed = JSON.parse(text.trim());
         return parsed.refined_description;
-    } catch (error) {
-        console.error("Error refining shot description:", error);
-        throw new Error(`Failed to refine description. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
 export const suggestShotEnhancers = async (
@@ -329,6 +369,7 @@ export const suggestShotEnhancers = async (
     logline: string, 
     directorsVision: string
 ): Promise<Partial<Omit<CreativeEnhancers, 'transitions'>>> => {
+    const context = 'suggest enhancers';
     const prompt = `You are an expert AI Cinematographer. For the given shot, suggest a cohesive set of creative enhancers that align with the scene's context and the overall Director's Vision.
 
     **Director's Vision / Cinematic Style:**
@@ -364,7 +405,7 @@ export const suggestShotEnhancers = async (
         }
     };
 
-    try {
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: model,
             contents: prompt,
@@ -375,15 +416,15 @@ export const suggestShotEnhancers = async (
             throw new Error("The model returned an empty response for shot enhancers.");
         }
         return JSON.parse(text.trim());
-    } catch (error) {
-        console.error("Error suggesting shot enhancers:", error);
-        throw new Error(`Failed to suggest enhancers. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
 
 // --- Co-Director & Generation ---
 export const generateSceneImage = async (timelineData: TimelineData, directorsVision: string, previousImageBase64?: string): Promise<string> => {
+    const context = 'generate image';
     const { shots, shotEnhancers, negativePrompt } = timelineData;
 
     const detailedTimeline = shots.map((shot) => {
@@ -421,7 +462,7 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
         });
     }
 
-    try {
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-image',
             contents: {
@@ -440,14 +481,11 @@ export const generateSceneImage = async (timelineData: TimelineData, directorsVi
             return part.inlineData.data;
         }
         throw new Error("Image generation failed: No image data in response.");
-    } catch (error) {
-        console.error("Error generating scene image:", error);
-        throw new Error(`Failed to generate image. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
-// OPTIMIZATION: Instead of the full plotOutline, this function now accepts a focused `narrativeContext` string.
-// This reduces token count and focuses the AI on the current act and its purpose within the story.
 export const getCoDirectorSuggestions = async (
     logline: string, 
     narrativeContext: string, 
@@ -455,6 +493,7 @@ export const getCoDirectorSuggestions = async (
     objective: string, 
     directorsVision: string
 ): Promise<CoDirectorResult> => {
+    const context = 'get co-director suggestions';
     const timelineString = activeScene.timeline.shots.map((shot, index) => {
         let shotSummary = `Shot ${index + 1}: "${shot.description}"`;
         const enhancers = activeScene.timeline.shotEnhancers[shot.id];
@@ -551,7 +590,7 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
         required: ['thematic_concept', 'reasoning', 'suggested_changes']
     };
 
-    try {
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: proModel,
             contents: prompt,
@@ -562,13 +601,13 @@ Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to
             throw new Error("The model returned an empty response for co-director suggestions. This could be due to a content safety block.");
         }
         return JSON.parse(text.trim()) as CoDirectorResult;
-    } catch (error) {
-        console.error("Error getting co-director suggestions:", error);
-        throw new Error(`Failed to get suggestions. ${commonError}`);
-    }
+    };
+    
+    return withRetry(apiCall, context);
 };
 
 export const generateVideoPrompt = async (timelineData: TimelineData, directorsVision: string): Promise<string> => {
+    const context = 'generate video prompt';
     const { shots, shotEnhancers, negativePrompt } = timelineData;
 
     const detailedTimeline = shots.map((shot, index) => {
@@ -606,7 +645,7 @@ export const generateVideoPrompt = async (timelineData: TimelineData, directorsV
         Based on ALL the information, create a single, comprehensive paragraph. This paragraph is the final prompt. It should describe the continuous action of a short video clip (3-5 seconds), perfectly capturing the specified **Director's Vision (whether cinematic or animated)**. Start with the most important shot and seamlessly blend details from other shots and enhancers. Describe camera movement, character actions, lighting changes, and the overall mood. Be vivid and concise. **This is the only text that will be fed to the video model, so it must be a masterpiece of descriptive language.**
     `;
     
-    try {
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: proModel,
             contents: prompt
@@ -616,14 +655,14 @@ export const generateVideoPrompt = async (timelineData: TimelineData, directorsV
             throw new Error("The model returned an empty response for the video prompt.");
         }
         return text.trim();
-    } catch (error) {
-        console.error("Error generating video prompt:", error);
-        throw new Error(`Failed to generate video prompt. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
 // --- Video Analysis ---
 export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
+    const context = 'analyze video';
     const prompt = `You are an expert film analyst. Analyze the following sequence of video frames and provide a detailed breakdown of the cinematic techniques used.
 
     **Your analysis should cover:**
@@ -642,7 +681,7 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
         },
     }));
 
-    try {
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: proModel,
             contents: { parts: [...imageParts, { text: prompt }] },
@@ -653,15 +692,12 @@ export const analyzeVideoFrames = async (frames: string[]): Promise<string> => {
             throw new Error("The model returned an empty response for video analysis.");
         }
         return text;
-    } catch (error) {
-        console.error("Error analyzing video frames:", error);
-        throw new Error(`Failed to analyze video. ${commonError}`);
-    }
+    };
+
+    return withRetry(apiCall, context);
 };
 
 
-// OPTIMIZATION: Instead of the entire StoryBible, this function now accepts the `logline` and a focused `narrativeContext`.
-// This dramatically reduces the token count and focuses the AI's analysis on the most pertinent information.
 export const scoreContinuity = async (
     logline: string,
     narrativeContext: string,
@@ -669,6 +705,7 @@ export const scoreContinuity = async (
     scene: Scene,
     videoAnalysis: string
 ): Promise<ContinuityResult> => {
+    const context = 'score continuity';
     const timelineString = scene.timeline.shots.map((shot, index) => {
         let shotSummary = `${index + 1}. ${shot.description}`;
         const enhancers = scene.timeline.shotEnhancers[shot.id];
@@ -749,8 +786,8 @@ Based on a critical comparison of PART 1 (Intent) and PART 2 (Output), generate 
         },
         required: ['scores', 'overall_feedback', 'refinement_directives'],
     };
-
-    try {
+    
+    const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: proModel,
             contents: prompt,
@@ -761,8 +798,7 @@ Based on a critical comparison of PART 1 (Intent) and PART 2 (Output), generate 
             throw new Error("The model returned an empty response for continuity scoring.");
         }
         return JSON.parse(text.trim()) as ContinuityResult;
-    } catch (error) {
-        console.error("Error scoring continuity:", error);
-        throw new Error(`Failed to score continuity. ${commonError}`);
-    }
+    };
+    
+    return withRetry(apiCall, context);
 };
