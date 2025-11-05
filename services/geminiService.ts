@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 // FIX: Import ContinuityResult type to support new functions.
-import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult } from "../types";
+import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult } from "../types";
 
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 const model = 'gemini-2.5-flash';
@@ -368,100 +368,78 @@ export const refineStoryBibleField = async (field: keyof StoryBible, fullBibleCo
     return withRetry(apiCall, context);
 };
 
-export const refineShotDescription = async (
-    shotDescription: string, 
+export const batchProcessShotEnhancements = async (
+    tasks: BatchShotTask[],
     narrativeContext: string,
     directorsVision: string
-): Promise<string> => {
-    const context = 'refine description';
-    const prompt = `You are a screenwriter and cinematographer. Refine the following shot description to be more vivid, detailed, and cinematic. Ensure it aligns with the scene's context and the director's overall vision.
+): Promise<BatchShotResult[]> => {
+    const context = 'batch process shot enhancements';
 
-    **Director's Vision / Cinematic Style:**
+    const taskDescriptions = tasks.map(task => {
+        return `{
+            "shot_id": "${task.shot_id}",
+            "description": "${task.description.replace(/"/g, '\\"')}",
+            "actions": ["${task.actions.join('", "')}"]
+        }`;
+    }).join(',\n');
+
+    const prompt = `You are an expert AI screenwriter and cinematographer. I have a batch of tasks to improve several cinematic shots. Please process all of them and return a single JSON array with the results.
+
+    **Director's Vision / Cinematic Style (applies to all shots):**
     "${directorsVision}"
 
-    **Narrative Context (Current Act, adjacent scenes, etc):**
-    ${narrativeContext}
-    
-    **Current Shot Description to Refine:**
-    "${shotDescription}"
-
-    **Your Task & CRITICAL JSON FORMATTING:**
-    Your ENTIRE output must be a single, valid JSON object with a single key "refined_description".
-    - **CRITICAL:** If you use any double quotes (") inside the "refined_description" string, you MUST escape them with a backslash (\\"). For example: "The hero shouted, \\"Look out!\\" as the ship tilted."
-    - Do not add any text or markdown formatting before or after the JSON object.`;
-
-    const responseSchema = {
-        type: Type.OBJECT,
-        properties: { refined_description: { type: Type.STRING } },
-        required: ['refined_description'],
-    };
-
-    const apiCall = async () => {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
-        });
-        const text = response.text;
-        if (!text) {
-            throw new Error("The model returned an empty response when refining shot description.");
-        }
-        const parsed = JSON.parse(text.trim());
-        return parsed.refined_description;
-    };
-
-    return withRetry(apiCall, context);
-};
-
-export const suggestShotEnhancers = async (
-    shotDescription: string, 
-    narrativeContext: string,
-    directorsVision: string
-): Promise<Partial<Omit<CreativeEnhancers, 'transitions'>>> => {
-    const context = 'suggest enhancers';
-    const prompt = `You are an expert AI Cinematographer. For the given shot, suggest a cohesive set of creative enhancers that align with the scene's context and the overall Director's Vision.
-
-    **Director's Vision / Cinematic Style:**
-    "${directorsVision}"
-    
-    **Narrative Context (Current Act, adjacent scenes, etc):**
+    **Narrative Context (applies to all shots):**
     "${narrativeContext}"
 
-    **Shot Description:**
-    "${shotDescription}"
+    **Tasks to Perform (JSON Array):**
+    [
+        ${taskDescriptions}
+    ]
 
     **Your Task & CRITICAL JSON FORMATTING:**
-    Your ENTIRE output MUST be a single, valid JSON object that perfectly adheres to the provided schema. Select 1-2 appropriate cinematic terms for each relevant category. Only include categories that are highly relevant; do not suggest for every category.
-
-    **Categories to consider:**
-    framing, movement, lens, pacing, lighting, mood, vfx, plotEnhancements.
+    Your ENTIRE output must be a single, valid JSON array of objects. Each object in the array must correspond to one of the input tasks and have a matching "shot_id".
+    - For each task with an action of "REFINE_DESCRIPTION", add a "refined_description" key with a more vivid, detailed, and cinematic description.
+    - For each task with an action of "SUGGEST_ENHANCERS", add a "suggested_enhancers" key with a JSON object of relevant cinematic terms (framing, movement, etc.).
+    - If a task has both actions, include both "refined_description" and "suggested_enhancers" in its result object.
+    - **CRITICAL:** Ensure all double quotes within string values in your final JSON output are properly escaped with a backslash (\\").
     `;
-    
+
     const responseSchema = {
-        type: Type.OBJECT,
-        properties: {
-            framing: { type: Type.ARRAY, items: { type: Type.STRING } },
-            movement: { type: Type.ARRAY, items: { type: Type.STRING } },
-            lens: { type: Type.ARRAY, items: { type: Type.STRING } },
-            pacing: { type: Type.ARRAY, items: { type: Type.STRING } },
-            lighting: { type: Type.ARRAY, items: { type: Type.STRING } },
-            mood: { type: Type.ARRAY, items: { type: Type.STRING } },
-            vfx: { type: Type.ARRAY, items: { type: Type.STRING } },
-            plotEnhancements: { type: Type.ARRAY, items: { type: Type.STRING } },
+        type: Type.ARRAY,
+        items: {
+            type: Type.OBJECT,
+            properties: {
+                shot_id: { type: Type.STRING },
+                refined_description: { type: Type.STRING, description: "The refined shot description. CRITICAL: All double quotes must be escaped." },
+                suggested_enhancers: {
+                    type: Type.OBJECT,
+                    properties: {
+                        framing: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        movement: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        lens: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        pacing: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        lighting: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        mood: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        vfx: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        plotEnhancements: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    }
+                }
+            },
+            required: ['shot_id']
         }
     };
 
-    const apiCall = async () => {
+    const apiCall = async (): Promise<BatchShotResult[]> => {
         const response = await ai.models.generateContent({
-            model: model,
+            model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
         const text = response.text;
         if (!text) {
-            throw new Error("The model returned an empty response for shot enhancers.");
+            throw new Error("The model returned an empty response for batch processing.");
         }
-        return JSON.parse(text.trim());
+        return JSON.parse(text.trim()) as BatchShotResult[];
     };
 
     return withRetry(apiCall, context);

@@ -1,5 +1,5 @@
-import React, { useState, useCallback, memo } from 'react';
-import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible } from '../types';
+import React, { useState, useCallback, memo, useRef } from 'react';
+import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible, BatchShotTask } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 import NegativePromptSuggestions from './NegativePromptSuggestions';
@@ -9,7 +9,7 @@ import TrashIcon from './icons/TrashIcon';
 import PlusIcon from './icons/PlusIcon';
 import FilmIcon from './icons/FilmIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { refineShotDescription, suggestShotEnhancers } from '../services/geminiService';
+import { batchProcessShotEnhancements } from '../services/geminiService';
 import Tooltip from './Tooltip';
 import CameraIcon from './icons/CameraIcon';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
@@ -46,7 +46,7 @@ const SuggestionButton: React.FC<{
             className="p-1.5 text-yellow-400 hover:text-yellow-300 disabled:text-gray-500 disabled:cursor-wait transition-colors"
         >
             {isLoading ? (
-                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
@@ -69,15 +69,13 @@ const ShotCard: React.FC<{
     onAddShotAfter: (id: string) => void;
     onRefineDescription: (shot: Shot) => void;
     onSuggestEnhancers: (shot: Shot) => void;
-    suggestionState: { shotId: string | null; type: 'description' | 'enhancers' | null };
+    suggestionState: { processingIds: Set<string> };
 }> = memo(({ 
     shot, index, totalShots, enhancers, onDescriptionChange, onEnhancersChange, 
     onDeleteShot, onAddShotAfter, onRefineDescription, onSuggestEnhancers, suggestionState 
 }) => {
     const [isExpanded, setIsExpanded] = useState(index < 2);
-    
-    const isSuggestingDesc = suggestionState.shotId === shot.id && suggestionState.type === 'description';
-    const isSuggestingEnhancers = suggestionState.shotId === shot.id && suggestionState.type === 'enhancers';
+    const isProcessing = suggestionState.processingIds.has(shot.id);
 
     return (
         <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg">
@@ -111,7 +109,7 @@ const ShotCard: React.FC<{
                     />
                      <SuggestionButton 
                         onClick={() => onRefineDescription(shot)}
-                        isLoading={isSuggestingDesc}
+                        isLoading={isProcessing}
                         tooltip="Refine Description with AI"
                     />
                 </div>
@@ -121,7 +119,7 @@ const ShotCard: React.FC<{
                     <div className="flex justify-end -mb-2">
                          <SuggestionButton 
                             onClick={() => onSuggestEnhancers(shot)}
-                            isLoading={isSuggestingEnhancers}
+                            isLoading={isProcessing}
                             tooltip="Suggest Enhancers with AI"
                         />
                     </div>
@@ -159,8 +157,85 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const [mitigateViolence, setMitigateViolence] = useState(false);
     const [enhanceRealism, setEnhanceRealism] = useState(true);
-    const [suggestionState, setSuggestionState] = useState<{ shotId: string | null; type: 'description' | 'enhancers' | null }>({ shotId: null, type: null });
     
+    // --- Batching and Debouncing Logic ---
+    const batchTimeoutRef = useRef<number | null>(null);
+    const [queuedTasks, setQueuedTasks] = useState<Map<string, BatchShotTask>>(new Map());
+    const [suggestionState, setSuggestionState] = useState<{ processingIds: Set<string> }>({ processingIds: new Set() });
+
+    const processTaskQueue = useCallback(async () => {
+        if (queuedTasks.size === 0) return;
+
+        const tasksToProcess = Array.from(queuedTasks.values());
+        setQueuedTasks(new Map()); // Clear queue immediately
+
+        try {
+            const results = await batchProcessShotEnhancements(tasksToProcess, narrativeContext, directorsVision);
+
+            let shotsUpdater = (prev: Shot[]) => prev;
+            let enhancersUpdater = (prev: ShotEnhancers) => prev;
+
+            results.forEach(result => {
+                if (result.refined_description) {
+                    const prevUpdater = shotsUpdater;
+                    shotsUpdater = (prev) => prevUpdater(prev).map(s => s.id === result.shot_id ? { ...s, description: result.refined_description! } : s);
+                }
+                if (result.suggested_enhancers) {
+                    const prevUpdater = enhancersUpdater;
+                    enhancersUpdater = (prev) => {
+                        const newEnhancers = { ...prev };
+                        newEnhancers[result.shot_id] = { ...newEnhancers[result.shot_id], ...result.suggested_enhancers };
+                        return prevUpdater(newEnhancers);
+                    };
+                }
+            });
+
+            setShots(shotsUpdater);
+            setShotEnhancers(enhancersUpdater);
+
+        } catch (e) {
+            console.error("Batch processing failed:", e);
+        } finally {
+            setSuggestionState(prev => {
+                const newProcessingIds = new Set(prev.processingIds);
+                tasksToProcess.forEach(task => newProcessingIds.delete(task.shot_id));
+                return { processingIds: newProcessingIds };
+            });
+        }
+    }, [queuedTasks, narrativeContext, directorsVision, setShots, setShotEnhancers]);
+
+    const queueTask = useCallback((shot: Shot, action: 'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS') => {
+        setSuggestionState(prev => ({ processingIds: new Set(prev.processingIds).add(shot.id) }));
+
+        setQueuedTasks(prevQueue => {
+            const newQueue = new Map(prevQueue);
+            const existingTask = newQueue.get(shot.id) || { shot_id: shot.id, description: shot.description, actions: [] };
+            
+            if (!existingTask.actions.includes(action)) {
+                existingTask.actions.push(action);
+            }
+            existingTask.description = shot.description;
+            newQueue.set(shot.id, existingTask);
+            return newQueue;
+        });
+
+        if (batchTimeoutRef.current) {
+            clearTimeout(batchTimeoutRef.current);
+        }
+        batchTimeoutRef.current = window.setTimeout(processTaskQueue, 750);
+    }, [processTaskQueue]);
+
+
+    const handleRefineDescription = useCallback((shot: Shot) => {
+        queueTask(shot, 'REFINE_DESCRIPTION');
+    }, [queueTask]);
+
+    const handleSuggestEnhancers = useCallback((shot: Shot) => {
+        queueTask(shot, 'SUGGEST_ENHANCERS');
+    }, [queueTask]);
+    // --- End of Batching Logic ---
+
+
     const handleDescriptionChange = useCallback((id: string, newDescription: string) => {
         setShots(prevShots => prevShots.map(s => s.id === id ? { ...s, description: newDescription } : s));
     }, [setShots]);
@@ -212,30 +287,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             });
         }
     }, [shots, setShots, setTransitions]);
-
-    const handleRefineDescription = useCallback(async (shot: Shot) => {
-        setSuggestionState({ shotId: shot.id, type: 'description' });
-        try {
-            const refinedDesc = await refineShotDescription(shot.description, narrativeContext, directorsVision);
-            setShots(prev => prev.map(s => s.id === shot.id ? { ...s, description: refinedDesc } : s));
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setSuggestionState({ shotId: null, type: null });
-        }
-    }, [narrativeContext, directorsVision, setShots]);
-
-    const handleSuggestEnhancers = useCallback(async (shot: Shot) => {
-        setSuggestionState({ shotId: shot.id, type: 'enhancers' });
-        try {
-            const suggested = await suggestShotEnhancers(shot.description, narrativeContext, directorsVision);
-            setShotEnhancers(prev => ({ ...prev, [shot.id]: suggested }));
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setSuggestionState({ shotId: null, type: null });
-        }
-    }, [narrativeContext, directorsVision, setShotEnhancers]);
 
     const buildTimelineData = useCallback(() => {
         let finalNegativePrompt = negativePrompt;
@@ -324,7 +375,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     >
                          {isGeneratingImage ? (
                              <>
-                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
@@ -345,7 +396,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         >
                             {isGeneratingPrompt ? (
                                 <>
-                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>

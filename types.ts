@@ -96,3 +96,15 @@ export interface SceneContinuityData {
   videoAnalysis?: string;
   continuityResult?: ContinuityResult;
 }
+
+export interface BatchShotTask {
+    shot_id: string;
+    description: string;
+    actions: Array<'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS'>;
+}
+
+export interface BatchShotResult {
+    shot_id: string;
+    refined_description?: string;
+    suggested_enhancers?: Partial<Omit<CreativeEnhancers, 'transitions'>>;
+}
