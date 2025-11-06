@@ -1,5 +1,5 @@
 import React, { useState, useCallback, memo, useRef } from 'react';
-import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible, BatchShotTask, SceneContinuityData } from '../types';
+import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible, BatchShotTask, SceneContinuityData, BatchShotResult } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 import NegativePromptSuggestions from './NegativePromptSuggestions';
@@ -173,14 +173,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const processTaskQueue = useCallback(async () => {
         if (queuedTasks.size === 0) return;
 
-        const tasksToProcess = Array.from(queuedTasks.values());
-        // FIX: Explicitly provide generic types to `new Map()` to prevent TypeScript from
-        // inferring a weak type (e.g., `Map<any, any>`) and corrupting the state's type.
+        // FIX: Explicitly type `tasksToProcess` to resolve type inference issue.
+        const tasksToProcess: BatchShotTask[] = Array.from(queuedTasks.values());
         setQueuedTasks(new Map<string, BatchShotTask>());
 
         try {
             const results = await batchProcessShotEnhancements(tasksToProcess, narrativeContext, directorsVision, onApiLog, onApiStateChange);
-            results.forEach(result => {
+            results.forEach((result: BatchShotResult) => {
                 if (result.refined_description) {
                     setShots(prev => prev.map(s => s.id === result.shot_id ? { ...s, description: result.refined_description! } : s));
                 }
@@ -193,7 +192,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         } finally {
             setSuggestionState(prev => {
                 const newProcessingIds = new Set(prev.processingIds);
-                tasksToProcess.forEach(task => newProcessingIds.delete(task.shot_id));
+                // FIX: Explicitly type `task` to ensure type safety.
+                tasksToProcess.forEach((task: BatchShotTask) => newProcessingIds.delete(task.shot_id));
                 return { processingIds: newProcessingIds };
             });
         }
@@ -201,8 +201,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const queueTask = useCallback((shot: Shot, action: 'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS') => {
         setSuggestionState(prev => ({ processingIds: new Set(prev.processingIds).add(shot.id) }));
-        // FIX: Explicitly type `prevQueue` to prevent TypeScript from inferring it as `Map<unknown, unknown>`,
-        // which was causing a cascade of type errors downstream.
         setQueuedTasks((prevQueue: Map<string, BatchShotTask>) => {
             const newQueue = new Map(prevQueue);
             const existingTask = newQueue.get(shot.id);

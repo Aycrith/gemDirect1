@@ -547,7 +547,8 @@ export const batchProcessShotEnhancements = async (
         return { result, tokens };
     };
 
-    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
+    // FIX: Explicitly specify the generic type for `withRetry` to ensure correct type inference.
+    return withRetry<BatchShotResult[]>(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
 // --- Image and Video Analysis ---
@@ -563,13 +564,21 @@ export const generateKeyframeForScene = async (prompt: string, logApiCall: ApiLo
             },
         });
         
-        for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData) {
-                const base64ImageBytes: string = part.inlineData.data;
-                const tokens = response.usageMetadata?.totalTokenCount || 0;
-                return { result: base64ImageBytes, tokens };
+        const candidate = response.candidates?.[0];
+        if (candidate?.content?.parts) {
+            for (const part of candidate.content.parts) {
+                if (part.inlineData) {
+                    const base64ImageBytes: string = part.inlineData.data;
+                    const tokens = response.usageMetadata?.totalTokenCount || 0;
+                    return { result: base64ImageBytes, tokens };
+                }
             }
         }
+
+        if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+            throw new Error(`Image generation failed with reason: ${candidate.finishReason}. This could be due to safety filters or an invalid prompt.`);
+        }
+        
         throw new Error("The model did not return an image for the scene keyframe.");
     };
 
