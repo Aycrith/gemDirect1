@@ -86,11 +86,24 @@ const AppContent: React.FC = () => {
                     setGeneratedImages(images || {});
                     setContinuityData(savedContinuityData || {});
                     
-                    let loadedStage: WorkflowStage = savedStage || 'bible';
-                    if (!vision) loadedStage = 'bible';
-                    else if (!savedScenes || savedScenes.length === 0) loadedStage = 'vision';
-                    
-                    setWorkflowStage(loadedStage);
+                    let determinedStage: WorkflowStage = 'bible';
+                    if (vision) determinedStage = 'vision';
+                    if (savedScenes && savedScenes.length > 0) determinedStage = 'director';
+
+                    // Prefer the saved stage if it's not "ahead" of what's possible with the loaded data.
+                    const stageOrder: WorkflowStage[] = ['idea', 'bible', 'vision', 'director', 'continuity'];
+                    const savedStageIndex = stageOrder.indexOf(savedStage);
+                    const determinedStageIndex = stageOrder.indexOf(determinedStage);
+
+                    let finalStage: WorkflowStage = determinedStage;
+                    if (savedStage && savedStageIndex <= determinedStageIndex) {
+                        finalStage = savedStage;
+                    }
+                    if (savedStage === 'continuity' && determinedStageIndex >= stageOrder.indexOf('director')) {
+                        finalStage = 'continuity';
+                    }
+
+                    setWorkflowStage(finalStage);
 
                     if (savedScenes && savedScenes.length > 0) {
                         setActiveSceneId(savedScenes[0].id);
@@ -381,7 +394,6 @@ const AppContent: React.FC = () => {
                  if (storyBible) return <DirectorsVisionForm onSubmit={handleDirectorsVisionSubmit} isLoading={isLoading} storyBible={storyBible} onApiStateChange={handleApiStateChange} onApiLog={handleApiLog} />;
                  return null;
             case 'director':
-            case 'scenes': // Let 'scenes' fall through to 'director' as it's the main interaction view
                 if (!storyBible || !directorsVision) return <p>Missing Story Bible or Director's Vision.</p>;
                 return (
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
@@ -464,7 +476,7 @@ const AppContent: React.FC = () => {
                  </div>
             </div>
 
-            <WorkflowTracker currentStage={workflowStage} />
+            <WorkflowTracker currentStage={workflowStage} onStageClick={setWorkflowStage} />
 
             {renderStageContent()}
             

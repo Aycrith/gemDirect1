@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo, useRef } from 'react';
+import React, { useState, useCallback, useRef, memo } from 'react';
 import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible, BatchShotTask, SceneContinuityData, BatchShotResult } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
@@ -57,7 +57,6 @@ const SuggestionButton: React.FC<{
     </Tooltip>
 ));
 
-
 const ShotCard: React.FC<{
     shot: Shot;
     index: number;
@@ -70,15 +69,14 @@ const ShotCard: React.FC<{
     onRefineDescription: (shot: Shot) => void;
     onSuggestEnhancers: (shot: Shot) => void;
     suggestionState: { processingIds: Set<string> };
-}> = memo(({ 
+}> = ({ 
     shot, index, totalShots, enhancers, onDescriptionChange, onEnhancersChange, 
     onDeleteShot, onAddShotAfter, onRefineDescription, onSuggestEnhancers, suggestionState 
 }) => {
-    const [isExpanded, setIsExpanded] = useState(index < 2);
     const isProcessing = suggestionState.processingIds.has(shot.id);
 
     return (
-        <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg">
+        <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg fade-in">
             <div className="p-4 border-b border-gray-700 flex justify-between items-center">
                 <h4 className="font-bold text-gray-200">Shot {index + 1}</h4>
                 <div className="flex items-center gap-2">
@@ -90,44 +88,29 @@ const ShotCard: React.FC<{
                             <TrashIcon className="w-5 h-5" />
                         </button>
                     )}
-                    <button
-                        onClick={() => setIsExpanded(!isExpanded)}
-                        className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300 font-medium text-sm transition-colors"
-                    >
-                        {isExpanded ? (
-                            <>
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" /></svg>
-                                Hide Controls
-                            </>
-                        ) : (
-                            <>
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                                Show Controls
-                            </>
-                        )}
-                    </button>
                 </div>
             </div>
-            <div className="p-4">
-                <div className="flex items-start gap-2">
-                    <textarea
-                        value={shot.description}
-                        onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
-                        rows={3}
-                        className="flex-grow w-full bg-gray-900/50 p-2 border border-gray-600 rounded-md focus:ring-1 focus:ring-indigo-500 text-sm text-gray-300"
-                        placeholder="Describe the action in this shot..."
-                    />
-                     <SuggestionButton 
-                        onClick={() => onRefineDescription(shot)}
-                        isLoading={isProcessing}
-                        tooltip="Refine Description with AI"
-                    />
+            <div className="p-4 space-y-4">
+                <div>
+                    <div className="flex items-start gap-2">
+                        <textarea
+                            value={shot.description}
+                            onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
+                            rows={3}
+                            className="flex-grow w-full bg-gray-900/50 p-2 border border-gray-600 rounded-md focus:ring-1 focus:ring-indigo-500 text-sm text-gray-300"
+                            placeholder="Describe the action in this shot..."
+                        />
+                         <SuggestionButton 
+                            onClick={() => onRefineDescription(shot)}
+                            isLoading={isProcessing}
+                            tooltip="Refine Description with AI"
+                        />
+                    </div>
                 </div>
-            </div>
-            {isExpanded && (
-                <div className="p-4 border-t border-gray-700 fade-in">
+                
+                <div className="border-t border-gray-700 pt-4">
                     <div className="flex justify-between items-center mb-2">
-                        <p className="text-sm font-semibold text-gray-300">Creative Enhancers</p>
+                        <p className="text-sm font-semibold text-gray-300">Creative Enhancers (Directing Controls)</p>
                         <SuggestionButton 
                             onClick={() => onSuggestEnhancers(shot)}
                             isLoading={isProcessing}
@@ -139,11 +122,10 @@ const ShotCard: React.FC<{
                         onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)}
                     />
                 </div>
-            )}
+            </div>
         </div>
     );
-});
-
+};
 
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
     scene,
@@ -254,20 +236,38 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setShotEnhancers(prev => { const newEnhancers = { ...prev }; delete newEnhancers[id]; return newEnhancers; });
         setTransitions(prev => {
             const newTransitions = [...prev];
-            if (shotIndex < prev.length) newTransitions.splice(shotIndex, 1);
-            else if (shotIndex > 0) newTransitions.splice(shotIndex - 1, 1);
+            if (shotIndex === 0) {
+                 if (newTransitions.length > 0) newTransitions.shift();
+            } else if (shotIndex > 0) {
+                 newTransitions.splice(shotIndex - 1, 1);
+            }
             return newTransitions;
         });
     }, [shots, setShots, setShotEnhancers, setTransitions]);
 
     const handleAddShotAfter = useCallback((id: string) => {
-        const newShot: Shot = { id: `shot_${Date.now()}`, description: 'A new scene begins.' };
+        const newShot: Shot = { id: `shot_${Date.now()}`, description: 'A new shot.' };
         const index = shots.findIndex(s => s.id === id);
         if (index > -1) {
             setShots(prev => { const newShots = [...prev]; newShots.splice(index + 1, 0, newShot); return newShots; });
-            setTransitions(prev => { const newTransitions = [...prev]; newTransitions.splice(index, 0, 'Cut'); return newTransitions; });
+            setTransitions(prev => { const newTransitions = [...prev]; newTransitions.splice(index + 1, 0, 'Cut'); return newTransitions; });
         }
     }, [shots, setShots, setTransitions]);
+
+    const handleAddShot = useCallback((position: 'start' | 'end') => {
+        const newShot: Shot = { id: `shot_${Date.now()}`, description: `A new ${position === 'start' ? 'opening' : 'closing'} shot.` };
+        if (position === 'start') {
+            setShots(prev => [newShot, ...prev]);
+            if (shots.length > 0) {
+                setTransitions(prev => ['Cut', ...prev]);
+            }
+        } else {
+            setShots(prev => [...prev, newShot]);
+            if (shots.length > 0) {
+                setTransitions(prev => [...prev, 'Cut']);
+            }
+        }
+    }, [shots.length, setShots, setTransitions]);
 
     const buildTimelineData = useCallback(() => {
         let finalNegativePrompt = negativePrompt;
@@ -301,14 +301,33 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             </div>
 
             <div className="space-y-4">
-                {shots.map((shot, index) => (
-                    <React.Fragment key={shot.id}>
-                        <ShotCard shot={shot} index={index} totalShots={shots.length} enhancers={shotEnhancers[shot.id] || {}} onDescriptionChange={handleDescriptionChange} onEnhancersChange={handleEnhancersChange} onDeleteShot={handleDeleteShot} onAddShotAfter={handleAddShotAfter} onRefineDescription={handleRefineDescription} onSuggestEnhancers={handleSuggestEnhancers} suggestionState={suggestionState} />
-                        {index < shots.length - 1 && (
-                            <TransitionSelector value={transitions[index]} onChange={(newValue) => handleTransitionChange(index, newValue)} />
-                        )}
-                    </React.Fragment>
-                ))}
+                <div className="text-center">
+                    <button onClick={() => handleAddShot('start')} className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-indigo-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
+                        <PlusIcon className="w-4 h-4" /> Add Shot to Beginning
+                    </button>
+                </div>
+
+                {shots.length > 0 ? (
+                    shots.map((shot, index) => (
+                        <React.Fragment key={shot.id}>
+                            <ShotCard shot={shot} index={index} totalShots={shots.length} enhancers={shotEnhancers[shot.id] || {}} onDescriptionChange={handleDescriptionChange} onEnhancersChange={handleEnhancersChange} onDeleteShot={handleDeleteShot} onAddShotAfter={handleAddShotAfter} onRefineDescription={handleRefineDescription} onSuggestEnhancers={handleSuggestEnhancers} suggestionState={suggestionState} />
+                            {index < shots.length - 1 && (
+                                <TransitionSelector value={transitions[index]} onChange={(newValue) => handleTransitionChange(index, newValue)} />
+                            )}
+                        </React.Fragment>
+                    ))
+                ) : (
+                    <div className="text-center py-10 text-gray-500 border-2 border-dashed border-gray-700 rounded-lg">
+                        <p className="font-semibold">This scene has no shots.</p>
+                        <p className="text-sm mt-1">Click an "Add Shot" button to build your timeline.</p>
+                    </div>
+                )}
+                
+                <div className="text-center">
+                    <button onClick={() => handleAddShot('end')} className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-indigo-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
+                       <PlusIcon className="w-4 h-4" /> Add Shot to End
+                    </button>
+                </div>
             </div>
 
             <div className="mt-8 pt-6 border-t border-gray-700 space-y-8">
@@ -368,4 +387,4 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     );
 };
 
-export default memo(TimelineEditor);
+export default TimelineEditor;
