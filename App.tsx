@@ -75,7 +75,13 @@ const AppContent: React.FC = () => {
 
                 if (bible) {
                     setStoryBible(bible);
-                    setScenes(savedScenes || []);
+                    const loadedScenes = savedScenes || [];
+                    // Data sanitization step to prevent crashes from old/corrupt data
+                    const sanitizedScenes = loadedScenes.map(s => ({
+                        ...s,
+                        timeline: s.timeline || emptyTimeline,
+                    }));
+                    setScenes(sanitizedScenes);
                     setDirectorsVision(vision || '');
                     setGeneratedImages(images || {});
                     setContinuityData(savedContinuityData || {});
@@ -414,6 +420,7 @@ const AppContent: React.FC = () => {
                                     onApiLog={handleApiLog}
                                     onGenerateVideo={handleGenerateVideo}
                                     sceneContinuity={continuityData[activeScene.id]}
+                                    generatedImage={generatedImages[activeScene.id]}
                                 />
                                 </>
                             )}

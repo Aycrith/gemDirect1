@@ -31,6 +31,7 @@ interface TimelineEditorProps {
     onApiLog: ApiLogCallback;
     onGenerateVideo: (sceneId: string, timeline: TimelineData) => void;
     sceneContinuity?: SceneContinuityData;
+    generatedImage?: string;
 }
 
 const SuggestionButton: React.FC<{
@@ -159,6 +160,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     onApiLog,
     onGenerateVideo,
     sceneContinuity,
+    generatedImage,
 }) => {
     const { shots, shotEnhancers, transitions, negativePrompt } = scene.timeline;
     const { updateApiStatus } = useApiStatus();
@@ -173,7 +175,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const processTaskQueue = useCallback(async () => {
         if (queuedTasks.size === 0) return;
 
-        // FIX: Explicitly type `tasksToProcess` to resolve type inference issue.
         const tasksToProcess: BatchShotTask[] = Array.from(queuedTasks.values());
         setQueuedTasks(new Map<string, BatchShotTask>());
 
@@ -192,7 +193,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         } finally {
             setSuggestionState(prev => {
                 const newProcessingIds = new Set(prev.processingIds);
-                // FIX: Explicitly type `task` to ensure type safety.
                 tasksToProcess.forEach((task: BatchShotTask) => newProcessingIds.delete(task.shot_id));
                 return { processingIds: newProcessingIds };
             });
@@ -317,6 +317,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             </div>
 
             <div className="mt-8 pt-6 border-t border-gray-700">
+                {generatedImage && (
+                    <div className="mb-6 fade-in">
+                        <h3 className="text-xl font-bold text-green-400 mb-4 text-center">Generated Scene Keyframe</h3>
+                        <div className="max-w-lg mx-auto bg-black rounded-lg overflow-hidden shadow-2xl shadow-green-500/20 border border-gray-700">
+                            <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="w-full aspect-video object-cover" />
+                        </div>
+                    </div>
+                )}
                 {sceneContinuity?.videoSrc && (
                     <div className="mb-6">
                         <h3 className="text-xl font-bold text-green-400 mb-4">Uploaded Scene Video for Analysis</h3>
