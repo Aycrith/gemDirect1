@@ -432,7 +432,7 @@ export const getCoDirectorSuggestions = async (prunedContext: string, scene: Sce
     ${JSON.stringify(scene.timeline, null, 2)}
 
     **Your Task:**
-    Return a single JSON object with the following structure:
+    Return a single JSON object with the following structure. **Crucially, ensure the output is a single, valid JSON object and nothing else. All string values, especially multi-line markdown in 'reasoning' or any 'description' fields, must have properly escaped characters (like \\" for double quotes and \\n for newlines).**
     1.  **thematic_concept**: A short, evocative phrase (3-5 words) that encapsulates your new creative direction for the scene. (e.g., "Echoes of a Fading Memory", "The Walls Close In", "A Dance of Shadows").
     2.  **reasoning**: A markdown-formatted paragraph explaining how your suggestions will achieve the user's objective and align with the thematic concept.
     3.  **suggested_changes**: A JSON array of 2-4 specific, actionable suggestions. Each suggestion object must have:
@@ -484,9 +484,26 @@ export const getCoDirectorSuggestions = async (prunedContext: string, scene: Sce
         if (!text) {
             throw new Error("The model returned an empty response for Co-Director suggestions.");
         }
-        const result = JSON.parse(text.trim()) as CoDirectorResult;
-        const tokens = response.usageMetadata?.totalTokenCount || 0;
-        return { result, tokens };
+        
+        // Add cleanup logic just in case the model wraps the output in markdown.
+        let jsonString = text.trim();
+        if (jsonString.startsWith('```json')) {
+            jsonString = jsonString.substring(7);
+            if (jsonString.endsWith('```')) {
+                jsonString = jsonString.substring(0, jsonString.length - 3);
+            }
+        }
+        jsonString = jsonString.trim();
+        
+        try {
+            const result = JSON.parse(jsonString) as CoDirectorResult;
+            const tokens = response.usageMetadata?.totalTokenCount || 0;
+            return { result, tokens };
+        } catch (parseError) {
+            console.error("Failed to parse JSON from Co-Director suggestions:", jsonString);
+            console.error("Original parse error:", parseError);
+            throw new Error(`The model returned a malformed JSON response. Check the console for the invalid string. Error: ${parseError instanceof Error ? parseError.message : 'Unknown parsing error'}`);
+        }
     };
 
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);

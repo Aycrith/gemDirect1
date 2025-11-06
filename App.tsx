@@ -200,30 +200,47 @@ const AppContent: React.FC = () => {
         }
     };
 
-    const handleSceneSelect = async (sceneId: string) => {
-        setActiveSceneId(sceneId);
-        const selectedScene = scenes.find(s => s.id === sceneId);
-        if (selectedScene && selectedScene.timeline.shots.length === 0) {
-            setIsLoading(true);
-            setLoadingMessage(`Generating initial shots for "${selectedScene.title}"...`);
-            try {
-                if (!storyBible || !directorsVision) throw new Error("Missing context for shot generation.");
-                const prunedContext = await getPrunedContextForShotGeneration(storyBible, getNarrativeContext(sceneId), selectedScene.summary, directorsVision, handleApiLog, handleApiStateChange);
-                const shotDescriptions = await generateInitialShotsForScene(prunedContext, handleApiLog, handleApiStateChange);
-                const newShots: Shot[] = shotDescriptions.map(desc => ({ id: `shot_${Date.now()}_${Math.random()}`, description: desc }));
-                const newTransitions = newShots.length > 1 ? new Array(newShots.length - 1).fill('Cut') : [];
-                setScenes(prevScenes => prevScenes.map(s =>
-                    s.id === sceneId ? { ...s, timeline: { ...s.timeline, shots: newShots, transitions: newTransitions } } : s
-                ));
-                addToast(`Initial shots generated for ${selectedScene.title}`, 'success');
-            } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-                addToast(`Failed to generate initial shots: ${errorMessage}`, 'error');
-            } finally {
-                setIsLoading(false);
-            }
+    const generateShotsForScene = useCallback(async (sceneId: string) => {
+        const sceneToProcess = scenes.find(s => s.id === sceneId);
+        if (!sceneToProcess || sceneToProcess.timeline.shots.length > 0 || !storyBible || !directorsVision) {
+            return;
         }
+    
+        setIsLoading(true);
+        setLoadingMessage(`Generating initial shots for "${sceneToProcess.title}"...`);
+        try {
+            const prunedContext = await getPrunedContextForShotGeneration(storyBible, getNarrativeContext(sceneId), sceneToProcess.summary, directorsVision, handleApiLog, handleApiStateChange);
+            const shotDescriptions = await generateInitialShotsForScene(prunedContext, handleApiLog, handleApiStateChange);
+            const newShots: Shot[] = shotDescriptions.map(desc => ({ id: `shot_${Date.now()}_${Math.random()}`, description: desc }));
+            const newTransitions = newShots.length > 1 ? new Array(newShots.length - 1).fill('Cut') : [];
+            setScenes(prevScenes => prevScenes.map(s =>
+                s.id === sceneId ? { ...s, timeline: { ...s.timeline, shots: newShots, transitions: newTransitions } } : s
+            ));
+            addToast(`Initial shots generated for ${sceneToProcess.title}`, 'success');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(`Failed to generate initial shots: ${errorMessage}`, 'error');
+        } finally {
+            setIsLoading(false);
+        }
+    }, [scenes, storyBible, directorsVision, handleApiLog, handleApiStateChange, getNarrativeContext, addToast]);
+    
+    const handleSceneSelect = (sceneId: string) => {
+        setActiveSceneId(sceneId);
     };
+
+    const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
+
+    useEffect(() => {
+        const isReadyForGeneration = activeScene &&
+                                    activeScene.timeline.shots.length === 0 &&
+                                    (workflowStage === 'director' || workflowStage === 'continuity') &&
+                                    storyBible && directorsVision && !isLoading;
+
+        if (isReadyForGeneration) {
+            generateShotsForScene(activeScene.id);
+        }
+    }, [activeScene, workflowStage, isLoading, storyBible, directorsVision, generateShotsForScene]);
 
     const updateActiveSceneTimeline = (timelineUpdater: (prevTimeline: TimelineData) => TimelineData) => {
         if (!activeSceneId) return;
@@ -371,8 +388,6 @@ const AppContent: React.FC = () => {
             addToast(`Failed to generate keyframe: ${errorMessage}`, 'error');
         }
     };
-
-    const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
     
     const getNextScene = () => {
         if (!activeSceneId) return null;
