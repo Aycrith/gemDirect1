@@ -17,6 +17,9 @@ import FinalPromptModal from './FinalPromptModal';
 import LocalGenerationStatusComponent from './LocalGenerationStatus';
 import TimelineIcon from './icons/TimelineIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
+import Tooltip from './Tooltip';
+import SaveIcon from './icons/SaveIcon';
+import CheckCircleIcon from './icons/CheckCircleIcon';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -120,6 +123,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string } | null>(null);
     const [isGeneratingShotImage, setIsGeneratingShotImage] = useState<Record<string, boolean>>({});
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
+    const [isSaved, setIsSaved] = useState(false);
 
 
     const sceneKeyframe = generatedImages[scene.id];
@@ -144,7 +148,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const handleSaveChanges = () => {
         onUpdateScene({ ...scene, timeline });
-        onApiStateChange('success', 'Timeline saved locally!');
+        setIsSaved(true);
+        setTimeout(() => setIsSaved(false), 2000);
     };
 
     const handleAddShot = () => {
@@ -316,6 +321,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         await onUpdateSceneSummary(scene.id);
         setIsSummaryUpdating(false);
     };
+    
+    const isLocalGenConfigured = localGenSettings.comfyUIUrl && localGenSettings.workflowJson;
 
     return (
         <div className="space-y-6">
@@ -411,12 +418,34 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         <button onClick={handleExportPrompts} className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-full shadow-lg hover:bg-gray-700 transition-colors">
                             Export Prompts
                         </button>
-                        <button onClick={handleGenerateLocally} className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-700 transition-colors">
-                           Generate Locally
-                        </button>
+                        <Tooltip text={!isLocalGenConfigured ? "Please configure ComfyUI server and sync workflow in Settings." : "Generate video using your local ComfyUI server"}>
+                            <button
+                                onClick={handleGenerateLocally}
+                                disabled={!isLocalGenConfigured}
+                                className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
+                            >
+                               Generate Locally
+                            </button>
+                        </Tooltip>
                     </div>
-                    <button onClick={handleSaveChanges} className="px-8 py-3 bg-green-600 text-white font-semibold rounded-full shadow-lg hover:bg-green-700 transition-colors">
-                        Save Timeline
+                     <button
+                        onClick={handleSaveChanges}
+                        disabled={isSaved}
+                        className={`px-8 py-3 text-white font-semibold rounded-full shadow-lg transition-colors w-44 text-center ${
+                            isSaved
+                            ? 'bg-green-600 cursor-default'
+                            : 'bg-green-600 hover:bg-green-700'
+                        }`}
+                    >
+                        {isSaved ? (
+                            <span className="flex items-center justify-center">
+                                <CheckCircleIcon className="w-5 h-5 mr-2" /> Saved
+                            </span>
+                        ) : (
+                            <span className="flex items-center justify-center">
+                                <SaveIcon className="w-5 h-5 mr-2" /> Save Timeline
+                            </span>
+                        )}
                     </button>
                 </div>
             </div>
