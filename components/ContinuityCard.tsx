@@ -1,9 +1,12 @@
-import React, { useCallback } from 'react';
-import { Scene, StoryBible, SceneContinuityData, ToastMessage, ContinuityResult, Suggestion } from '../types';
+
+import React from 'react';
+import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
-import { analyzeVideoFrames, scoreContinuity, getPrunedContextForContinuity, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
+import { analyzeVideoFrames, getPrunedContextForContinuity, scoreContinuity, generateNextSceneFromContinuity } from '../services/geminiService';
 import FileUpload from './FileUpload';
 import VideoPlayer from './VideoPlayer';
+import FeedbackCard from './FeedbackCard';
+import AnalyzeButton from './AnalyzeButton';
 import { marked } from 'marked';
 import SparklesIcon from './icons/SparklesIcon';
 import FilmIcon from './icons/FilmIcon';
@@ -16,155 +19,30 @@ interface ContinuityCardProps {
   directorsVision: string;
   generatedImage: string;
   data: SceneContinuityData;
-  setContinuityData: (updater: React.SetStateAction<SceneContinuityData>) => void;
+  setContinuityData: (updater: (prev: SceneContinuityData) => SceneContinuityData | SceneContinuityData) => void;
   addToast: (message: string, type: ToastMessage['type']) => void;
-  onApiStateChange: ApiStateChangeCallback;
-  onApiLog: ApiLogCallback;
+  onApiStateChange: (status: any, message: string) => void;
+  onApiLog: (log: any) => void;
   onApplyTimelineSuggestion: (suggestion: Suggestion, sceneId: string) => void;
   isRefined: boolean;
   onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
   onExtendTimeline: (sceneId: string, lastFrame: string) => void;
 }
 
-const ScoreCircle: React.FC<{ label: string; score: number }> = ({ label, score }) => {
-  const percentage = score * 10;
-  const circumference = 2 * Math.PI * 27.5; // 2 * pi * r
-  const offset = circumference - (percentage / 100) * circumference;
-  
-  let colorClass = 'text-green-400';
-  let shadowColor = 'shadow-green-500/50';
-  if (score < 7) { colorClass = 'text-yellow-400'; shadowColor = 'shadow-yellow-500/50'; }
-  if (score < 4) { colorClass = 'text-red-400'; shadowColor = 'shadow-red-500/50'; }
-
-  return (
-    <div className="flex flex-col items-center text-center">
-      <div className="relative w-28 h-28">
-         <svg className="w-full h-full" viewBox="0 0 60 60">
-            <defs>
-                <filter id={`glow-${label.replace(/\s+/g, '-')}`}>
-                    <feDropShadow dx="0" dy="0" stdDeviation="1.5" floodColor={colorClass.includes('green') ? '#34d399' : colorClass.includes('yellow') ? '#fbbf24' : '#f87171'} />
-                </filter>
-            </defs>
-          <circle className="text-gray-700/50" strokeWidth="5" stroke="currentColor" fill="transparent" r="27.5" cx="30" cy="30" />
-          <circle
-            className={colorClass}
-            strokeWidth="5"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            stroke="currentColor"
-            fill="transparent"
-            r="27.5"
-            cx="30"
-            cy="30"
-            style={{ 
-                transform: 'rotate(-90deg)', 
-                transformOrigin: 'center', 
-                transition: 'stroke-dashoffset 0.5s ease-out',
-                filter: `url(#glow-${label.replace(/\s+/g, '-')})`
-            }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900/20 rounded-full">
-          <span className={`text-3xl font-bold ${colorClass}`}>{score}</span>
-          <span className={`text-sm font-semibold opacity-70 mt-1 ${colorClass}`}>/10</span>
-        </div>
-      </div>
-      <span className="text-xs font-semibold text-gray-400 mt-2 max-w-[80px]">{label}</span>
-    </div>
-  );
-};
-
-const ResultDisplay: React.FC<{ 
-    result: ContinuityResult;
-    sceneId: string;
-    isRefined: boolean;
-    onApplyTimelineSuggestion: (suggestion: Suggestion, sceneId: string) => void;
-    onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
-    onExtendTimeline: () => void;
-}> = ({ result, sceneId, isRefined, onApplyTimelineSuggestion, onUpdateSceneSummary, onExtendTimeline }) => {
-    const [applyingStatus, setApplyingStatus] = React.useState<Record<number, 'idle' | 'loading' | 'applied'>>({});
-    const [isUpdatingSummary, setIsUpdatingSummary] = React.useState(false);
-
-    const handleApply = (suggestion: Suggestion, index: number) => {
-        setApplyingStatus(prev => ({ ...prev, [index]: 'applied' }));
-        onApplyTimelineSuggestion(suggestion, sceneId);
-    };
-
-    const handleUpdateSummary = async () => {
-        setIsUpdatingSummary(true);
-        await onUpdateSceneSummary(sceneId);
-        setIsUpdatingSummary(false);
-    }
-
-    const createMarkup = (markdown: string) => {
-        const rawMarkup = marked(markdown, { breaks: true });
-        return { __html: rawMarkup };
-    };
-
+const ScoreCircle: React.FC<{ score: number; label: string }> = ({ score, label }) => {
+    const colorClass = score >= 7 ? 'text-green-400' : score >= 4 ? 'text-yellow-400' : 'text-red-400';
     return (
-        <div className="space-y-6">
-            <div className="flex justify-around p-4 bg-gray-900/50 rounded-lg">
-                <ScoreCircle label="Narrative Coherence" score={result.scores.narrative_coherence} />
-                <ScoreCircle label="Aesthetic Alignment" score={result.scores.aesthetic_alignment} />
-                <ScoreCircle label="Thematic Resonance" score={result.scores.thematic_resonance} />
-            </div>
-            <div>
-                 <h4 className="font-semibold text-indigo-400 mb-2">Overall Feedback</h4>
-                 <div className="prose prose-invert prose-sm max-w-none text-gray-300 bg-gray-900/50 p-3 rounded-md" dangerouslySetInnerHTML={createMarkup(result.overall_feedback)} />
-            </div>
-            <div>
-                <h4 className="font-semibold text-yellow-400 mb-2">Actionable Refinement Directives</h4>
-                 <div className="space-y-3">
-                    {result.suggested_changes.map((suggestion, index) => {
-                        const status = applyingStatus[index] || 'idle';
-                        return (
-                        <div key={index} className="bg-gray-900/50 p-3 rounded-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                            <p className="text-sm text-gray-300 flex-grow">{suggestion.description}</p>
-                            <button
-                                onClick={() => handleApply(suggestion, index)}
-                                disabled={status !== 'idle'}
-                                className="w-full sm:w-auto flex-shrink-0 inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-md transition-colors bg-yellow-600 text-white hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
-                            >
-                                {status === 'applied' ? 'Applied ✓' : 'Apply Refinement'}
-                            </button>
-                        </div>
-                    )})}
+        <div className="text-center">
+            <div className={`relative w-20 h-20 mx-auto`}>
+                <svg className="w-full h-full" viewBox="0 0 36 36">
+                    <path className="text-gray-700" strokeWidth="2" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    <path className={`${colorClass} transition-all duration-500`} strokeWidth="2" strokeDasharray={`${score * 10}, 100`} strokeLinecap="round" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <span className={`text-2xl font-bold ${colorClass}`}>{score}</span>
                 </div>
             </div>
-
-            {isRefined && (
-                 <div className="mt-4 pt-4 border-t border-gray-700 text-center bg-indigo-900/30 p-4 rounded-lg">
-                     <h4 className="font-semibold text-indigo-300">Learning & Improvement</h4>
-                     <p className="text-sm text-gray-400 my-2">Incorporate these timeline changes back into the high-level scene summary to improve future AI suggestions.</p>
-                     <button
-                        onClick={handleUpdateSummary}
-                        disabled={isUpdatingSummary}
-                        className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-full transition-colors bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-gray-600 disabled:cursor-wait"
-                    >
-                        {isUpdatingSummary ? (
-                            <>
-                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                Updating...
-                            </>
-                        ) : (
-                             <>
-                                <SparklesIcon className="w-4 h-4 mr-2"/>
-                                Update Scene Summary with AI
-                             </>
-                        )}
-                    </button>
-                 </div>
-            )}
-             <div className="mt-4 pt-4 border-t border-gray-700 text-center">
-                <button
-                    onClick={onExtendTimeline}
-                    className="inline-flex items-center justify-center px-6 py-3 bg-green-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 transform hover:scale-105"
-                >
-                    <FilmIcon className="mr-3 h-5 w-5" />
-                    Extend Timeline
-                </button>
-             </div>
+            <p className="text-xs text-gray-400 mt-2">{label}</p>
         </div>
     );
 };
@@ -176,7 +54,6 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   storyBible,
   narrativeContext,
   directorsVision,
-  generatedImage,
   data,
   setContinuityData,
   addToast,
@@ -185,112 +62,112 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   onApplyTimelineSuggestion,
   isRefined,
   onUpdateSceneSummary,
-  onExtendTimeline,
+  onExtendTimeline
 }) => {
 
-  const handleFileSelect = useCallback(async (file: File) => {
-    setContinuityData({ videoFile: file, videoSrc: URL.createObjectURL(file), status: 'analyzing', error: undefined, frames: [] });
+  const handleFileSelect = (file: File) => {
+    setContinuityData(prev => ({
+      ...prev,
+      videoFile: file,
+      videoSrc: URL.createObjectURL(file),
+      status: 'idle',
+      error: undefined,
+      videoAnalysis: undefined,
+      continuityResult: undefined,
+      frames: undefined
+    }));
+  };
+
+  const handleAnalysis = async () => {
+    if (!data.videoFile) {
+      addToast('Please upload a video file first.', 'error');
+      return;
+    }
 
     try {
-        const frames = await extractFramesFromVideo(file);
-        if (frames.length === 0) throw new Error("Could not extract frames from video.");
-        
-        setContinuityData(prev => ({ ...prev!, frames: frames }));
+      setContinuityData(prev => ({ ...prev, status: 'analyzing', error: undefined }));
+      const frames = await extractFramesFromVideo(data.videoFile, 1);
+      if (frames.length === 0) throw new Error("Could not extract frames. Video might be invalid.");
+      setContinuityData(prev => ({ ...prev, frames }));
 
-        const analysis = await analyzeVideoFrames(frames, onApiLog, onApiStateChange);
-        setContinuityData(prev => ({ ...prev!, videoAnalysis: analysis, status: 'scoring' }));
+      const analysis = await analyzeVideoFrames(frames, onApiLog, onApiStateChange);
+      setContinuityData(prev => ({ ...prev, videoAnalysis: analysis, status: 'scoring' }));
 
-        const prunedContext = await getPrunedContextForContinuity(storyBible, narrativeContext, scene, directorsVision, onApiLog, onApiStateChange);
-        const result = await scoreContinuity(prunedContext, scene, analysis, onApiLog, onApiStateChange);
-        setContinuityData(prev => ({ ...prev!, continuityResult: result, status: 'complete' }));
+      const context = await getPrunedContextForContinuity(storyBible, narrativeContext, scene, directorsVision, onApiLog, onApiStateChange);
+      const result = await scoreContinuity(context, scene, analysis, onApiLog, onApiStateChange);
+      setContinuityData(prev => ({ ...prev, continuityResult: result, status: 'complete' }));
 
-        addToast(`Analysis complete for Scene ${sceneNumber}`, 'success');
+      addToast(`Analysis complete for Scene ${sceneNumber}!`, 'success');
 
     } catch (err) {
-        const error = err instanceof Error ? err.message : 'An unknown error occurred.';
-        setContinuityData(prev => ({ ...prev!, status: 'error', error }));
-        addToast(`Analysis failed for Scene ${sceneNumber}: ${error}`, 'error');
+      const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred.';
+      setContinuityData(prev => ({ ...prev, status: 'error', error: errorMsg }));
+      addToast(errorMsg, 'error');
     }
-  }, [scene, sceneNumber, storyBible, narrativeContext, directorsVision, setContinuityData, addToast, onApiStateChange, onApiLog]);
+  };
 
-  const handleExtend = () => {
-    if (data.frames && data.frames.length > 0) {
-        onExtendTimeline(scene.id, data.frames[data.frames.length - 1]);
-    } else {
-        addToast("Cannot extend: no frames available from the last video.", "error");
-    }
-  }
-
-  const renderStatus = () => {
-      if (data.status === 'idle') {
-          return (
-            <div className="h-full flex flex-col justify-center">
-                <FileUpload onFileSelect={handleFileSelect} />
-            </div>
-          );
-      }
-      if (data.status === 'analyzing') {
-          return <div className="text-center p-8"><p className="text-gray-400 animate-pulse">Analyzing video frames...</p></div>;
-      }
-      if (data.status === 'scoring') {
-          return <div className="text-center p-8"><p className="text-gray-400 animate-pulse">AI is scoring cinematic continuity...</p></div>;
-      }
-      if (data.status === 'error') {
-          return <div className="text-center p-8"><p className="text-red-400">{data.error}</p> <button onClick={() => setContinuityData({ status: 'idle' })} className="mt-2 text-sm text-indigo-400 hover:underline">Try again</button></div>
-      }
-      if (data.status === 'complete' && data.continuityResult) {
-          return <ResultDisplay 
-                    result={data.continuityResult} 
-                    sceneId={scene.id}
-                    onApplyTimelineSuggestion={onApplyTimelineSuggestion}
-                    isRefined={isRefined}
-                    onUpdateSceneSummary={onUpdateSceneSummary}
-                    onExtendTimeline={handleExtend}
-                />;
-      }
-      return null;
-  }
+  const createMarkup = (markdown: string) => {
+    const rawMarkup = marked.parse(markdown);
+    return { __html: rawMarkup as string };
+  };
 
   return (
-    <div className="bg-gray-900/40 ring-1 ring-gray-700/80 rounded-xl shadow-lg">
-        <header className="p-5 border-b border-gray-700/80 rounded-t-xl bg-gray-800/30">
-            <h3 className="font-extrabold text-2xl text-white">
-                <span className="text-indigo-400">Scene {sceneNumber}:</span> {scene.title}
-            </h3>
+    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/80 rounded-xl shadow-lg overflow-hidden">
+        <header className="p-6 bg-gray-900/40 border-b border-gray-700/80">
+            <h3 className="text-xl font-bold text-white">Scene {sceneNumber}: {scene.title}</h3>
             <p className="text-sm text-gray-400 mt-1">{scene.summary}</p>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2">
-            {/* Left Column: Intent */}
-            <div className="p-5 space-y-4 border-r-0 lg:border-r border-gray-700/80">
-                <h4 className="font-semibold text-gray-200 text-lg">Creative Intent</h4>
-                <div>
-                    <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider font-semibold">Scene Keyframe</p>
-                    {generatedImage ? (
-                        <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover ring-1 ring-gray-700" />
-                    ) : (
-                        <div className="aspect-video bg-gray-800/50 flex items-center justify-center rounded-lg">
-                            <p className="text-xs text-gray-500">No keyframe generated</p>
-                        </div>
-                    )}
-                </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-gray-700/80">
+            {/* Left Column: Upload & Video */}
+            <div className="p-6 bg-gray-800/80">
+                {data.videoSrc ? (
+                    <VideoPlayer src={data.videoSrc} />
+                ) : (
+                    <FileUpload onFileSelect={handleFileSelect} />
+                )}
+                {data.videoFile && <AnalyzeButton onClick={handleAnalysis} isLoading={data.status === 'analyzing' || data.status === 'scoring'} />}
+                {data.error && <p className="text-center text-sm text-red-400 mt-4">{data.error}</p>}
             </div>
 
-            {/* Right Column: Result */}
-            <div className="bg-gray-800/20 p-5 flex flex-col rounded-b-xl lg:rounded-r-xl lg:rounded-bl-none">
-                 <h4 className="font-semibold text-gray-200 text-lg mb-4">Actual Output &amp; Analysis</h4>
-                 {data.videoSrc && (
-                     <div className="mb-4">
-                        <VideoPlayer src={data.videoSrc} />
-                     </div>
-                 )}
-                 <div className="flex-grow flex flex-col justify-center">
-                    {renderStatus()}
-                 </div>
+            {/* Right Column: Feedback */}
+            <div className="p-6 bg-gray-800/80">
+                {data.continuityResult ? (
+                    <div className="space-y-6">
+                        <div>
+                            <h4 className="text-lg font-semibold text-indigo-400 mb-4">Continuity Scores</h4>
+                            <div className="grid grid-cols-3 gap-4">
+                               <ScoreCircle score={data.continuityResult.scores.narrative_coherence} label="Narrative" />
+                               <ScoreCircle score={data.continuityResult.scores.aesthetic_alignment} label="Aesthetic" />
+                               <ScoreCircle score={data.continuityResult.scores.thematic_resonance} label="Thematic" />
+                            </div>
+                        </div>
+                        <FeedbackCard title="Overall Feedback" content={data.continuityResult.overall_feedback} isLoading={false} />
+                        <div>
+                            <h4 className="flex items-center text-lg font-semibold text-indigo-400 mb-4"><SparklesIcon className="w-5 h-5 mr-2" /> Suggested Refinements</h4>
+                            <div className="space-y-3 max-h-60 overflow-y-auto pr-2 -mr-2">
+                                {data.continuityResult.suggested_changes.map((s, i) => (
+                                    <div key={i} className="bg-gray-900/70 p-3 rounded-md flex items-center justify-between gap-4">
+                                        <p className="text-sm text-gray-300 flex-1">{s.description}</p>
+                                        <button onClick={() => onApplyTimelineSuggestion(s, scene.id)} className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-indigo-600 text-white hover:bg-indigo-700">Apply</button>
+                                    </div>
+                                ))}
+                            </div>
+                             {isRefined && <button onClick={() => onUpdateSceneSummary(scene.id)} className="text-sm text-yellow-400 mt-4">Update Scene Summary with Refinements</button>}
+                        </div>
+                        {data.frames && data.frames.length > 0 && (
+                             <button onClick={() => onExtendTimeline(scene.id, data.frames![data.frames!.length - 1])} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-yellow-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
+                               <FilmIcon className="w-4 h-4" /> Extend Timeline from this Scene
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    <FeedbackCard title="Analysis & Feedback" content={data.videoAnalysis} isLoading={data.status === 'analyzing' || data.status === 'scoring'} />
+                )}
             </div>
         </div>
     </div>
   );
 };
 
-export default React.memo(ContinuityCard);
+export default ContinuityCard;

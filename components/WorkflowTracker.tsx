@@ -20,11 +20,11 @@ const STAGES = [
 const FlowingLine: React.FC<{ completed: boolean }> = ({ completed }) => (
     <div className="flex-1 h-1.5 rounded-full bg-gray-700 relative overflow-hidden">
         <div
-            className={`absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-indigo-500 to-indigo-400 transition-all duration-700 ease-out ${completed ? 'w-full' : 'w-0'}`}
+            className={`absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700 ease-out ${completed ? 'w-full' : 'w-0'}`}
         />
         {completed && (
             <div
-                className="absolute top-0 left-0 h-full rounded-full w-full bg-gradient-to-r from-transparent via-indigo-300/50 to-transparent animate-flow"
+                className="absolute top-0 left-0 h-full rounded-full w-full bg-gradient-to-r from-transparent via-indigo-300/40 to-transparent animate-flow"
                 style={{
                     animation: 'flow 2.5s linear infinite',
                     backgroundSize: '200% 100%'
@@ -50,6 +50,18 @@ const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ currentStage, onStage
 
     return (
         <div className="w-full max-w-5xl mx-auto mb-12">
+            <style>
+                {`
+                    @keyframes pop-in {
+                        0% { transform: scale(0.8); opacity: 0; }
+                        50% { transform: scale(1.1); opacity: 1; }
+                        100% { transform: scale(1); opacity: 1; }
+                    }
+                    .animate-pop-in {
+                        animation: pop-in 0.4s ease-out forwards;
+                    }
+                `}
+            </style>
             <div className="flex items-center">
                 {STAGES.map((stage, index) => {
                     const stageId = stage.id as WorkflowStage;
@@ -72,7 +84,9 @@ const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ currentStage, onStage
                                     isCompleted ? 'bg-indigo-500 border-indigo-500 group-hover:bg-indigo-400' : 
                                     'bg-gray-800 border-gray-700 group-hover:border-gray-500'
                                 }`}>
-                                    {isCompleted && !isCurrent ? <CheckCircleIcon className="w-7 h-7 text-white" /> : stage.icon}
+                                    <div className={isCurrent ? 'animate-pop-in' : ''}>
+                                        {isCompleted && !isCurrent ? <CheckCircleIcon className="w-7 h-7 text-white" /> : stage.icon}
+                                    </div>
                                     {isCurrent && <span className="absolute -inset-1.5 border-2 border-indigo-500 rounded-full animate-pulse"></span>}
                                 </div>
                                 <p className={`mt-3 text-xs font-semibold tracking-wide transition-colors duration-300 ${

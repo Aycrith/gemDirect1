@@ -41,29 +41,27 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, pa
                         Video Generation Request
                     </h3>
                     
-                    <div className="border-b border-gray-600 mb-4">
-                        <nav className="-mb-px flex space-x-4" aria-label="Tabs">
-                            <button
-                                onClick={() => setView('json')}
-                                className={`${
-                                view === 'json'
-                                    ? 'border-indigo-400 text-indigo-300'
-                                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors`}
-                            >
-                                JSON Payload
-                            </button>
-                            <button
-                                onClick={() => setView('text')}
-                                className={`${
-                                view === 'text'
-                                    ? 'border-indigo-400 text-indigo-300'
-                                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
-                                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors`}
-                            >
-                                Human-Readable Prompt
-                            </button>
-                        </nav>
+                    <div className="mb-4 bg-gray-900/50 p-1 rounded-lg inline-flex" role="tablist">
+                        <button
+                            onClick={() => setView('json')}
+                            role="tab"
+                            aria-selected={view === 'json'}
+                            className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${
+                                view === 'json' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'
+                            }`}
+                        >
+                            JSON Payload
+                        </button>
+                        <button
+                            onClick={() => setView('text')}
+                            role="tab"
+                            aria-selected={view === 'text'}
+                            className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${
+                                view === 'text' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'
+                            }`}
+                        >
+                            Human-Readable Prompt
+                        </button>
                     </div>
 
                     {view === 'json' ? (

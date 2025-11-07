@@ -39,7 +39,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
 
     return (
         <div className="relative max-w-3xl mx-auto text-center bg-gray-900/50 backdrop-blur-lg p-8 rounded-xl ring-1 ring-white/10 overflow-hidden">
-             <div className="absolute -inset-px rounded-xl bg-gradient-to-r from-cyan-500/50 via-green-500/50 to-cyan-500/50 opacity-50 blur-xl"></div>
+             <div className="absolute -inset-px rounded-xl bg-gradient-to-r from-cyan-500/50 via-green-500/50 to-cyan-500/50 opacity-50 blur-xl -z-10"></div>
              <div className="relative">
                 <h2 className="text-3xl font-bold text-gray-100 mb-4">Define Your Director's Vision</h2>
                 <p className="text-gray-400 mb-8">Describe the overall cinematic style, mood, and aesthetic. This will act as a guardrail, influencing the tone of scenes, camera work, and final visuals.</p>
@@ -49,7 +49,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
                         value={vision}
                         onChange={(e) => setVision(e.target.value)}
                         rows={4}
-                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 sm:text-sm text-gray-200 p-3 transition-colors"
+                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-green-500/30 shadow-black/30 focus:ring-2 focus:ring-green-500 focus:border-green-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
                         placeholder="e.g., 'A fast-paced, kinetic style inspired by Edgar Wright...' or 'A lush, hand-painted Ghibli aesthetic with an emphasis on nature...' or 'Spider-Verse-style dynamic comic book visuals.'"
                     />
                     <button
@@ -96,7 +96,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
                                 <button 
                                     key={i} 
                                     onClick={() => setVision(qs)} 
-                                    className="text-left text-sm text-indigo-400 hover:text-indigo-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-200 animate-fade-in-right ring-1 ring-gray-700 hover:ring-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 hover:-translate-y-0.5"
+                                    className="text-left text-sm text-indigo-400 hover:text-indigo-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 transform hover:-translate-y-1"
                                     style={{ animationDelay: `${i * 100}ms` }}
                                 >
                                     {qs}

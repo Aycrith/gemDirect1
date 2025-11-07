@@ -1,523 +1,258 @@
-import React, { useState, useCallback, useRef, memo } from 'react';
-import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible, BatchShotTask, BatchShotResult, LocalGenerationSettings, LocalGenerationStatus } from '../types';
+
+import React, { useState, useCallback } from 'react';
+import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
-import NegativePromptSuggestions from './NegativePromptSuggestions';
-import GenerationControls from './GenerationControls';
-import TimelineIcon from './icons/TimelineIcon';
-import TrashIcon from './icons/TrashIcon';
+import CoDirector from './CoDirector';
 import PlusIcon from './icons/PlusIcon';
-import FilmIcon from './icons/FilmIcon';
+import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { batchProcessShotEnhancements, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
-import Tooltip from './Tooltip';
-import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
-import { useApiStatus } from '../contexts/ApiStatusContext';
-import { queueComfyUIPrompt } from '../services/videoGenerationService';
-import ServerIcon from './icons/ServerIcon';
-import ImageIcon from './icons/ImageIcon';
-// FIX: Renamed component import to avoid name collision with the 'LocalGenerationStatus' type.
-import LocalGenerationStatusComponent from './LocalGenerationStatus';
+import { getCoDirectorSuggestions, getPrunedContextForCoDirector, batchProcessShotEnhancements, getPrunedContextForShotGeneration, generateInitialShotsForScene } from '../services/geminiService';
 
 interface TimelineEditorProps {
     scene: Scene;
-    storyBible: StoryBible;
+    onUpdateScene: (scene: Scene) => void;
     directorsVision: string;
-    narrativeContext: string;
-    setShots: React.Dispatch<React.SetStateAction<Shot[]>>;
-    setShotEnhancers: React.Dispatch<React.SetStateAction<ShotEnhancers>>;
-    setTransitions: React.Dispatch<React.SetStateAction<string[]>>;
-    setNegativePrompt: React.Dispatch<React.SetStateAction<string>>;
-    onGoToNextScene: () => void;
-    nextScene: Scene | null;
-    onProceedToReview?: () => void;
-    onApiStateChange: ApiStateChangeCallback;
-    onApiLog: ApiLogCallback;
-    onGenerateKeyframe: (sceneId: string, timeline: TimelineData) => void;
-    onExportPrompts: (sceneId: string, timeline: TimelineData) => void;
-    generatedImage?: string;
-    shotPreviewImages: Record<string, { image: string, isLoading: boolean }>;
-    onGenerateShotPreview: (shotId: string) => void;
-    localGenerationSettings: LocalGenerationSettings;
-    localGenerationStatus: LocalGenerationStatus;
-    onStartLocalGeneration: (promptId: string, workflowJson: string) => void;
-    onClearLocalGeneration: () => void;
+    storyBible: any;
+    onApiStateChange: (status: any, message: string) => void;
+    onApiLog: (log: any) => void;
+    scenes: Scene[];
 }
 
-const SuggestionButton: React.FC<{
-    onClick: () => void;
-    isLoading: boolean;
-    tooltip: string;
-    icon?: React.ReactNode;
-}> = memo(({ onClick, isLoading, tooltip, icon }) => (
-    <Tooltip text={tooltip}>
-        <button
-            onClick={onClick}
-            disabled={isLoading}
-            className="p-1.5 text-yellow-400 hover:text-yellow-300 disabled:text-gray-500 disabled:cursor-wait transition-colors"
-        >
-            {isLoading ? (
-                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-            ) : (
-                icon || <SparklesIcon className="w-4 h-4" />
-            )}
-        </button>
-    </Tooltip>
-));
-
-const ShotCard: React.FC<{
+const TimelineItem: React.FC<{
     shot: Shot;
     index: number;
-    totalShots: number;
     enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>;
-    preview?: { image: string, isLoading: boolean };
-    onDescriptionChange: (id: string, newDescription: string) => void;
-    onEnhancersChange: (id: string, newEnhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>) => void;
-    onDeleteShot: (id: string) => void;
-    onAddShotAfter: (id: string) => void;
-    onRefineDescription: (shot: Shot) => void;
-    onSuggestEnhancers: (shot: Shot) => void;
-    onGeneratePreview: (shotId: string) => void;
-    suggestionState: { processingIds: Set<string> };
-}> = ({ 
-    shot, index, totalShots, enhancers, preview, onDescriptionChange, onEnhancersChange, 
-    onDeleteShot, onAddShotAfter, onRefineDescription, onSuggestEnhancers, onGeneratePreview, suggestionState 
-}) => {
-    const isProcessingSuggestion = suggestionState.processingIds.has(shot.id);
-    const isPreviewLoading = preview?.isLoading ?? false;
+    onDescriptionChange: (shotId: string, newDescription: string) => void;
+    onEnhancersChange: (shotId: string, newEnhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>) => void;
+    onDeleteShot: (shotId: string) => void;
+}> = ({ shot, index, enhancers, onDescriptionChange, onEnhancersChange, onDeleteShot }) => {
+    const [isControlsVisible, setIsControlsVisible] = useState(false);
 
     return (
-        <div className="bg-gray-900/40 ring-1 ring-gray-700/80 rounded-lg fade-in overflow-hidden">
-            <div className="p-4 bg-gray-800/30 border-b border-gray-700/80 flex justify-between items-center">
-                <h4 className="font-bold text-lg text-gray-100">Shot {index + 1}</h4>
-                <div className="flex items-center gap-1">
-                     <Tooltip text="Add shot after">
-                       <button onClick={() => onAddShotAfter(shot.id)} className="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white transition-colors">
-                          <PlusIcon className="w-4 h-4" />
-                      </button>
-                     </Tooltip>
-                    {totalShots > 1 && (
-                      <Tooltip text="Delete shot">
-                        <button onClick={() => onDeleteShot(shot.id)} className="p-2 rounded-full text-gray-400 hover:bg-red-800/50 hover:text-red-400 transition-colors">
-                            <TrashIcon className="w-4 h-4" />
-                        </button>
-                      </Tooltip>
-                    )}
-                </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3">
-                <div className="md:col-span-1 p-4 space-y-3">
-                    {(preview?.image && !isPreviewLoading) && (
-                         <div className="rounded-lg overflow-hidden ring-1 ring-gray-600">
-                            <img src={`data:image/jpeg;base64,${preview.image}`} alt={`Preview for shot ${index + 1}`} className="w-full aspect-video object-cover"/>
-                        </div>
-                    )}
-                    {isPreviewLoading && (
-                        <div className="aspect-video bg-gray-800 flex items-center justify-center rounded-lg animate-pulse">
-                            <p className="text-sm text-gray-400">Generating preview...</p>
-                        </div>
-                    )}
+        <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/80">
+            <div className="flex justify-between items-start gap-4">
+                <div className="flex-grow">
+                    <label className="block text-sm font-bold text-gray-300 mb-2">Shot {index + 1}</label>
                     <textarea
                         value={shot.description}
                         onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
-                        rows={5}
-                        className="w-full bg-gray-800/70 p-2.5 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-200"
-                        placeholder="Describe the action in this shot..."
+                        rows={3}
+                        className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-2"
+                        placeholder="Describe the shot..."
                     />
-                     <div className="flex items-center gap-2">
-                        <button onClick={() => onRefineDescription(shot)} disabled={isProcessingSuggestion} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold rounded-md bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors">
-                           <SparklesIcon className="w-4 h-4"/> Refine
-                        </button>
-                        <button onClick={() => onGeneratePreview(shot.id)} disabled={isPreviewLoading} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold rounded-md bg-cyan-600/80 text-white hover:bg-cyan-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors">
-                           <ImageIcon className="w-4 h-4"/> Preview
-                        </button>
-                    </div>
                 </div>
-                
-                <div className="md:col-span-2 p-4 bg-black/10">
-                    <div className="flex justify-between items-center mb-2">
-                        <p className="text-sm font-semibold text-gray-300">Creative Enhancers</p>
-                        <SuggestionButton 
-                            onClick={() => onSuggestEnhancers(shot)}
-                            isLoading={isProcessingSuggestion}
-                            tooltip="Suggest Enhancers with AI"
-                        />
-                    </div>
-                    <CreativeControls
-                        value={enhancers}
-                        onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)}
-                    />
+                <div className="flex flex-col items-end gap-2 mt-8">
+                    <button
+                        onClick={() => setIsControlsVisible(!isControlsVisible)}
+                        className={`p-2 rounded-full transition-colors ${isControlsVisible ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+                        aria-label="Toggle creative controls"
+                    >
+                        <SparklesIcon className="w-5 h-5" />
+                    </button>
+                    <button onClick={() => onDeleteShot(shot.id)} className="p-2 rounded-full bg-red-800/50 hover:bg-red-700 text-red-300 transition-colors" aria-label="Delete shot">
+                        <TrashIcon className="w-5 h-5" />
+                    </button>
                 </div>
             </div>
+            {isControlsVisible && (
+                <div className="mt-4 pt-4 border-t border-gray-700/50">
+                    <CreativeControls value={enhancers} onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)} />
+                </div>
+            )}
         </div>
     );
 };
 
-const TimelineEditor: React.FC<TimelineEditorProps> = ({
-    scene,
-    directorsVision,
-    narrativeContext,
-    setShots,
-    setShotEnhancers,
-    setTransitions,
-    setNegativePrompt,
-    onGoToNextScene,
-    nextScene,
-    onProceedToReview,
-    onApiStateChange,
-    onApiLog,
-    onGenerateKeyframe,
-    onExportPrompts,
-    generatedImage,
-    shotPreviewImages,
-    onGenerateShotPreview,
-    localGenerationSettings,
-    localGenerationStatus,
-    onStartLocalGeneration,
-    onClearLocalGeneration,
-}) => {
-    const { shots, shotEnhancers, transitions, negativePrompt } = scene.timeline;
-    const { updateApiStatus } = useApiStatus();
-
-    const [mitigateViolence, setMitigateViolence] = useState(false);
-    const [enhanceRealism, setEnhanceRealism] = useState(true);
+const TimelineEditor: React.FC<TimelineEditorProps> = ({ scene, onUpdateScene, directorsVision, storyBible, onApiStateChange, onApiLog, scenes }) => {
+    const [timeline, setTimeline] = useState<TimelineData>(scene.timeline);
+    const [coDirectorResult, setCoDirectorResult] = useState<any | null>(null);
+    const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
     
-    const batchTimeoutRef = useRef<number | null>(null);
-    const [queuedTasks, setQueuedTasks] = useState<Map<string, BatchShotTask>>(new Map());
-    const [suggestionState, setSuggestionState] = useState<{ processingIds: Set<string> }>({ processingIds: new Set() });
+    const getNarrativeContext = useCallback((sceneId: string): string => {
+        const sceneIndex = scenes.findIndex(s => s.id === sceneId);
+        if (sceneIndex === -1) return "No context found.";
+        
+        const actBreakdown = storyBible.plotOutline.split(/act [iI]+/);
+        let actContext = "General Plot";
+        if (sceneIndex / scenes.length > 0.66 && actBreakdown[3]) actContext = "Act III: " + actBreakdown[3];
+        else if (sceneIndex / scenes.length > 0.33 && actBreakdown[2]) actContext = "Act II: " + actBreakdown[2];
+        else if (actBreakdown[1]) actContext = "Act I: " + actBreakdown[1];
 
-    const processTaskQueue = useCallback(() => {
-        setQueuedTasks((currentTasks: Map<string, BatchShotTask>) => {
-            const tasksToProcess = Array.from(currentTasks.values());
-            
-            if (tasksToProcess.length > 0) {
-                (async () => {
-                    try {
-                        const results = await batchProcessShotEnhancements(tasksToProcess, narrativeContext, directorsVision, onApiLog, onApiStateChange);
-                        results.forEach((result: BatchShotResult) => {
-                            if (result.refined_description) {
-                                setShots(prev => prev.map(s => s.id === result.shot_id ? { ...s, description: result.refined_description! } : s));
-                            }
-                            if (result.suggested_enhancers) {
-                                setShotEnhancers(prev => ({ ...prev, [result.shot_id]: { ...(prev[result.shot_id] || {}), ...result.suggested_enhancers } }));
-                            }
-                        });
-                    } catch (e) {
-                        console.error("Batch processing failed:", e);
-                    } finally {
-                        setSuggestionState(prev => {
-                            const newProcessingIds = new Set(prev.processingIds);
-                            tasksToProcess.forEach(task => newProcessingIds.delete(task.shot_id));
-                            return { processingIds: newProcessingIds };
-                        });
-                    }
-                })();
-            }
-            return new Map<string, BatchShotTask>();
-        });
-    }, [narrativeContext, directorsVision, onApiLog, onApiStateChange, setShots, setShotEnhancers]);
-
-    const queueTask = useCallback((shot: Shot, action: 'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS') => {
-        setSuggestionState(prev => ({ processingIds: new Set(prev.processingIds).add(shot.id) }));
-        setQueuedTasks((prevQueue: Map<string, BatchShotTask>) => {
-            const newQueue = new Map(prevQueue);
-            const existingTask = newQueue.get(shot.id);
-            if (existingTask) {
-                const updatedTask: BatchShotTask = {
-                    ...existingTask,
-                    description: shot.description,
-                    actions: existingTask.actions.includes(action) ? existingTask.actions : [...existingTask.actions, action]
-                };
-                newQueue.set(shot.id, updatedTask);
-            } else {
-                const newTask: BatchShotTask = {
-                    shot_id: shot.id,
-                    description: shot.description,
-                    actions: [action],
-                };
-                newQueue.set(shot.id, newTask);
-            }
-            updateApiStatus('bundling', `Bundling ${newQueue.size} task(s)...`);
-            return newQueue;
-        });
-        if (batchTimeoutRef.current) clearTimeout(batchTimeoutRef.current);
-        batchTimeoutRef.current = window.setTimeout(processTaskQueue, 750);
-    }, [processTaskQueue, updateApiStatus]);
+        return `This scene occurs in: ${actContext.trim()}`;
+    }, [scenes, storyBible]);
 
 
-    const handleRefineDescription = useCallback((shot: Shot) => queueTask(shot, 'REFINE_DESCRIPTION'), [queueTask]);
-    const handleSuggestEnhancers = useCallback((shot: Shot) => queueTask(shot, 'SUGGEST_ENHANCERS'), [queueTask]);
-    const handleRefineAllDescriptions = useCallback(() => shots.forEach(shot => queueTask(shot, 'REFINE_DESCRIPTION')), [shots, queueTask]);
-    const handleSuggestEnhancersForAll = useCallback(() => shots.forEach(shot => queueTask(shot, 'SUGGEST_ENHANCERS')), [shots, queueTask]);
+    const updateTimeline = (newTimeline: Partial<TimelineData>) => {
+        setTimeline(prev => ({ ...prev, ...newTimeline }));
+    };
 
-    const handleDescriptionChange = useCallback((id: string, newDescription: string) => {
-        setShots(prevShots => prevShots.map(s => s.id === id ? { ...s, description: newDescription } : s));
-    }, [setShots]);
+    const handleSaveChanges = () => {
+        onUpdateScene({ ...scene, timeline });
+    };
 
-    const handleEnhancersChange = useCallback((id: string, newEnhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>) => {
-        setShotEnhancers(prev => ({ ...prev, [id]: newEnhancers }));
-    }, [setShotEnhancers]);
-    
-    const handleTransitionChange = useCallback((index: number, newValue: string) => {
-        setTransitions(prev => {
-            const newTransitions = [...prev];
-            newTransitions[index] = newValue;
-            return newTransitions;
-        });
-    }, [setTransitions]);
-
-    const handleDeleteShot = useCallback((id: string) => {
-        const shotIndex = shots.findIndex(s => s.id === id);
-        setShots(prev => prev.filter(s => s.id !== id));
-        setShotEnhancers(prev => { const newEnhancers = { ...prev }; delete newEnhancers[id]; return newEnhancers; });
-        setTransitions(prev => {
-            const newTransitions = [...prev];
-            if (shotIndex === 0) {
-                 if (newTransitions.length > 0) newTransitions.shift();
-            } else if (shotIndex > 0) {
-                 newTransitions.splice(shotIndex - 1, 1);
-            }
-            return newTransitions;
-        });
-    }, [shots, setShots, setShotEnhancers, setTransitions]);
-
-    const handleAddShotAfter = useCallback((id: string) => {
-        const newShot: Shot = { id: `shot_${Date.now()}`, description: 'A new shot.' };
-        const index = shots.findIndex(s => s.id === id);
-        if (index > -1) {
-            setShots(prev => { const newShots = [...prev]; newShots.splice(index + 1, 0, newShot); return newShots; });
-            setTransitions(prev => { const newTransitions = [...prev]; newTransitions.splice(index + 1, 0, 'Cut'); return newTransitions; });
+    const handleAddShot = () => {
+        const newShot: Shot = { id: `shot_${Date.now()}`, description: '' };
+        const newShots = [...timeline.shots, newShot];
+        const newTransitions = [...timeline.transitions];
+        if (newShots.length > 1) {
+            newTransitions.push('Cut');
         }
-    }, [shots, setShots, setTransitions]);
+        updateTimeline({ shots: newShots, transitions: newTransitions });
+    };
 
-    const handleAddShot = useCallback((position: 'start' | 'end') => {
-        const newShot: Shot = { id: `shot_${Date.now()}`, description: `A new ${position === 'start' ? 'opening' : 'closing'} shot.` };
-        if (position === 'start') {
-            setShots(prev => [newShot, ...prev]);
-            if (shots.length > 0) {
-                setTransitions(prev => ['Cut', ...prev]);
-            }
-        } else {
-            setShots(prev => [...prev, newShot]);
-            if (shots.length > 0) {
-                setTransitions(prev => [...prev, 'Cut']);
-            }
+    const handleDeleteShot = (shotId: string) => {
+        const shotIndex = timeline.shots.findIndex(s => s.id === shotId);
+        if (shotIndex === -1) return;
+        
+        const newShots = timeline.shots.filter(s => s.id !== shotId);
+        const newEnhancers = { ...timeline.shotEnhancers };
+        delete newEnhancers[shotId];
+
+        const newTransitions = [...timeline.transitions];
+        if (newShots.length > 0 && shotIndex < newTransitions.length) {
+            newTransitions.splice(shotIndex > 0 ? shotIndex -1 : 0, 1);
+        } else if (newShots.length === 0) {
+            newTransitions.splice(0, newTransitions.length);
         }
-    }, [shots.length, setShots, setTransitions]);
 
-    const buildTimelineData = useCallback(() => {
-        let finalNegativePrompt = negativePrompt;
-        const violenceNegativePrompt = "graphic violence, blood, gore, combat, weapons, injury, death";
-        const realismNegativePrompt = "painting, oil paint, digital art, illustration, AI art, stylized, matte painting, low detail, smudged, plastic, blurry, distorted, low-resolution, waxy, dreamlike, fantasy, glowing, cartoon, AI-generated look, watercolor, posterized";
-        if (mitigateViolence) finalNegativePrompt = finalNegativePrompt ? `${finalNegativePrompt}, ${violenceNegativePrompt}` : violenceNegativePrompt;
-        if (enhanceRealism) finalNegativePrompt = finalNegativePrompt ? `${finalNegativePrompt}, ${realismNegativePrompt}` : realismNegativePrompt;
-        return { shots, shotEnhancers, transitions, negativePrompt: finalNegativePrompt.trim() };
-    }, [shots, shotEnhancers, transitions, negativePrompt, mitigateViolence, enhanceRealism]);
-    
-    const handleQueueLocalGeneration = useCallback(async () => {
+        updateTimeline({ shots: newShots, shotEnhancers: newEnhancers, transitions: newTransitions });
+    };
+
+    const handleGenerateInitialShots = async () => {
         try {
-            // Early exit if keyframe isn't ready. This is also checked in the disabled logic.
-            if (!generatedImage) {
-                throw new Error("Cannot generate locally without a scene keyframe.");
-            }
+            const context = await getPrunedContextForShotGeneration(storyBible, getNarrativeContext(scene.id), scene.summary, directorsVision, onApiLog, onApiStateChange);
+            const shotDescriptions = await generateInitialShotsForScene(context, onApiLog, onApiStateChange);
             
-            const timelineData = buildTimelineData();
-            const payloads = {
-                json: JSON.stringify({
-                    scene_summary: scene.summary,
-                    directors_vision: directorsVision,
-                    timeline: timelineData,
-                }, null, 2),
-                text: "Human-readable prompt generation logic would go here if needed",
-            };
+            const newShots: Shot[] = shotDescriptions.map((desc: string) => ({ id: `shot_${Date.now()}_${Math.random()}`, description: desc }));
+            const newTransitions = new Array(Math.max(0, newShots.length - 1)).fill('Cut');
 
-            // Let the service handle all validation and request logic.
-            const response = await queueComfyUIPrompt(
-                localGenerationSettings,
-                payloads, 
-                generatedImage,
-            );
-            
-            if (response.prompt_id) {
-                 onStartLocalGeneration(response.prompt_id, localGenerationSettings.workflowJson);
-            } else {
-                 throw new Error("ComfyUI did not return a prompt_id.");
-            }
+            updateTimeline({ shots: newShots, transitions: newTransitions, shotEnhancers: {} });
+        } catch (error) {
+            console.error("Failed to generate initial shots:", error);
+        }
+    };
+    
+    const handleGetCoDirectorSuggestions = async (objective: string) => {
+        setIsCoDirectorLoading(true);
+        setCoDirectorResult(null);
+        try {
+            const context = await getPrunedContextForCoDirector(storyBible, getNarrativeContext(scene.id), scene, directorsVision, onApiLog, onApiStateChange);
+            const result = await getCoDirectorSuggestions(context, { ...scene, timeline }, objective, onApiLog, onApiStateChange);
+            setCoDirectorResult(result);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setIsCoDirectorLoading(false);
+        }
+    };
+
+    const handleApplyCoDirectorSuggestion = (suggestion: any) => {
+        console.log("Applying suggestion: ", suggestion);
+        // Implement logic to apply suggestion to timeline state
+    };
+    
+    const handleBatchProcess = async (actions: Array<'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS'>) => {
+        const tasks: BatchShotTask[] = timeline.shots.map(shot => ({
+            shot_id: shot.id,
+            description: shot.description,
+            actions: actions,
+        }));
+
+        if (tasks.length === 0) return;
+
+        try {
+            const narrativeContext = getNarrativeContext(scene.id);
+            const results = await batchProcessShotEnhancements(tasks, narrativeContext, directorsVision, onApiLog, onApiStateChange);
+
+            const newShots = [...timeline.shots];
+            const newEnhancers: ShotEnhancers = JSON.parse(JSON.stringify(timeline.shotEnhancers));
+
+            results.forEach(result => {
+                const shotIndex = newShots.findIndex(s => s.id === result.shot_id);
+                if (shotIndex !== -1) {
+                    if (result.refined_description) {
+                        newShots[shotIndex] = { ...newShots[shotIndex], description: result.refined_description };
+                    }
+                    if (result.suggested_enhancers) {
+                        newEnhancers[result.shot_id] = { ...newEnhancers[result.shot_id], ...result.suggested_enhancers };
+                    }
+                }
+            });
+            updateTimeline({ shots: newShots, shotEnhancers: newEnhancers });
 
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-            // Display specific errors from the pre-flight checks or API call to the user.
-            onApiStateChange('error', errorMessage); // This shows in the status bar and as a toast.
-            console.error("Local generation request failed:", error);
+            console.error("Batch processing failed: ", error);
         }
-    }, [generatedImage, localGenerationSettings, buildTimelineData, directorsVision, scene.summary, onApiStateChange, onStartLocalGeneration]);
-
-
-    const isProcessingSuggestions = suggestionState.processingIds.size > 0;
-    const isWorkflowConfigured = localGenerationSettings.workflowJson && localGenerationSettings.workflowJson.length > 2 && Object.keys(localGenerationSettings.mapping).some(k => localGenerationSettings.mapping[k] !== 'none');
-    const isGeneratingLocally = localGenerationStatus.status === 'queued' || localGenerationStatus.status === 'running';
-
-    const getLocalGenerationTooltip = () => {
-        if (!isWorkflowConfigured) {
-            return 'Sync a workflow and map inputs in Settings to enable local generation.';
-        }
-        if (!generatedImage) {
-            return 'Generate a scene keyframe before starting local generation.';
-        }
-        return 'Send the current timeline and keyframe to your local ComfyUI server.';
     };
 
     return (
-        <div className="bg-gray-900/30 backdrop-blur-sm ring-1 ring-gray-700/50 rounded-lg p-6">
-            <h2 className="flex items-center text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500 mb-2">
-                <TimelineIcon className="w-8 h-8 mr-3 text-purple-400" />
-                Director's Console
-            </h2>
-            <p className="text-sm text-gray-400 mb-6">Now directing: <span className="font-bold text-gray-100">{scene.title}</span></p>
-
-            <div className="bg-gray-800/50 p-3 rounded-lg ring-1 ring-gray-700 mb-6">
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                    <p className="text-sm font-semibold text-gray-300">AI Bulk Actions:</p>
-                    <button onClick={handleRefineAllDescriptions} disabled={isProcessingSuggestions || shots.length === 0} className="text-xs font-semibold px-3 py-1.5 rounded-full bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors flex items-center gap-2">
-                        <SparklesIcon className="w-4 h-4" /> Refine All Descriptions
-                    </button>
-                    <button onClick={handleSuggestEnhancersForAll} disabled={isProcessingSuggestions || shots.length === 0} className="text-xs font-semibold px-3 py-1.5 rounded-full bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors flex items-center gap-2">
-                       <SparklesIcon className="w-4 h-4" /> Suggest Enhancers for All
-                    </button>
-                </div>
-            </div>
+        <div className="space-y-6">
+            <header>
+                <h2 className="text-2xl font-bold text-white">{scene.title}</h2>
+                <p className="text-gray-400 mt-1">{scene.summary}</p>
+            </header>
 
             <div className="space-y-4">
-                <div className="text-center">
-                    <button onClick={() => handleAddShot('start')} className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-indigo-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
-                        <PlusIcon className="w-4 h-4" /> Add Shot to Beginning
-                    </button>
-                </div>
-
-                {shots.length > 0 ? (
-                    shots.map((shot, index) => (
+                {timeline.shots.length > 0 ? (
+                    timeline.shots.map((shot, index) => (
                         <React.Fragment key={shot.id}>
-                            <ShotCard 
-                                shot={shot} 
-                                index={index} 
-                                totalShots={shots.length} 
-                                enhancers={shotEnhancers[shot.id] || {}} 
-                                preview={shotPreviewImages[shot.id]}
-                                onDescriptionChange={handleDescriptionChange} 
-                                onEnhancersChange={handleEnhancersChange} 
-                                onDeleteShot={handleDeleteShot} 
-                                onAddShotAfter={handleAddShotAfter} 
-                                onRefineDescription={handleRefineDescription} 
-                                onSuggestEnhancers={handleSuggestEnhancers} 
-                                onGeneratePreview={onGenerateShotPreview} 
-                                suggestionState={suggestionState} 
+                            <TimelineItem
+                                shot={shot}
+                                index={index}
+                                enhancers={timeline.shotEnhancers[shot.id] || {}}
+                                onDescriptionChange={(shotId, desc) => updateTimeline({ shots: timeline.shots.map(s => s.id === shotId ? { ...s, description: desc } : s) })}
+                                onEnhancersChange={(shotId, enh) => updateTimeline({ shotEnhancers: { ...timeline.shotEnhancers, [shotId]: enh } })}
+                                onDeleteShot={handleDeleteShot}
                             />
-                            {index < shots.length - 1 && (
-                                <TransitionSelector value={transitions[index]} onChange={(newValue) => handleTransitionChange(index, newValue)} />
+                            {index < timeline.shots.length - 1 && (
+                                <TransitionSelector value={timeline.transitions[index] || 'Cut'} onChange={(newVal) => {
+                                    const newTransitions = [...timeline.transitions];
+                                    newTransitions[index] = newVal;
+                                    updateTimeline({ transitions: newTransitions });
+                                }} />
                             )}
                         </React.Fragment>
                     ))
                 ) : (
-                    <div className="text-center py-10 text-gray-500 border-2 border-dashed border-gray-700 rounded-lg">
-                        <p className="font-semibold">This scene has no shots.</p>
-                        <p className="text-sm mt-1">Click an "Add Shot" button to build your timeline.</p>
+                    <div className="text-center py-12 bg-gray-800/30 rounded-lg border-2 border-dashed border-gray-700">
+                        <p className="text-gray-400">This scene has no shots yet.</p>
+                        <button onClick={handleGenerateInitialShots} className="mt-4 inline-flex items-center justify-center px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 disabled:bg-gray-500">
+                           <SparklesIcon className="mr-2 h-5 w-5" /> Generate Initial Shots with AI
+                        </button>
                     </div>
                 )}
-                
-                <div className="text-center">
-                    <button onClick={() => handleAddShot('end')} className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-indigo-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
-                       <PlusIcon className="w-4 h-4" /> Add Shot to End
-                    </button>
-                </div>
             </div>
 
-            <div className="mt-8 pt-8 border-t-2 border-dashed border-gray-700">
-                <div className="bg-gray-800/40 p-6 rounded-lg ring-1 ring-gray-700/50">
-                    <div className="max-w-3xl mx-auto text-center">
-                        <h3 className="text-2xl font-bold text-gray-100">Finalize & Generate</h3>
-                        <p className="text-gray-400 mt-2 mb-8">Configure final output settings and generate your scene's keyframe or full video.</p>
-                    </div>
+            <div className="flex justify-center">
+                <button onClick={handleAddShot} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-300 bg-gray-800/60 border border-gray-700 rounded-full hover:bg-gray-700/80 hover:border-gray-600 transition-colors">
+                    <PlusIcon className="w-4 h-4" /> Add Shot
+                </button>
+            </div>
+            
+             <div className="flex flex-col sm:flex-row justify-center gap-4 mt-4">
+                <button onClick={() => handleBatchProcess(['REFINE_DESCRIPTION'])} className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 disabled:text-gray-500 flex items-center gap-2 justify-center">
+                    <SparklesIcon className="w-4 h-4" /> Refine All Descriptions
+                </button>
+                <button onClick={() => handleBatchProcess(['SUGGEST_ENHANCERS'])} className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 disabled:text-gray-500 flex items-center gap-2 justify-center">
+                    <SparklesIcon className="w-4 h-4" /> Suggest All Enhancers
+                </button>
+            </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                        <div className="space-y-6 bg-gray-900/30 p-5 rounded-lg ring-1 ring-gray-700">
-                            <NegativePromptSuggestions suggestions={['shaky camera', 'blurry', 'low quality', 'watermark', 'text']} negativePrompt={negativePrompt} setNegativePrompt={setNegativePrompt} />
-                            <GenerationControls 
-                                mitigateViolence={mitigateViolence} 
-                                setMitigateViolence={setMitigateViolence} 
-                                enhanceRealism={enhanceRealism} 
-                                setEnhanceRealism={setEnhanceRealism}
-                            />
-                        </div>
-                        
-                        <div className="space-y-4">
-                            <LocalGenerationStatusComponent status={localGenerationStatus} onClear={onClearLocalGeneration} />
+            <CoDirector
+                onGetSuggestions={handleGetCoDirectorSuggestions}
+                isLoading={isCoDirectorLoading}
+                result={coDirectorResult}
+                onApplySuggestion={handleApplyCoDirectorSuggestion}
+                onClose={() => setCoDirectorResult(null)}
+                onGetInspiration={() => Promise.resolve([])}
+                onApiLog={onApiLog}
+            />
 
-                            {generatedImage && !isGeneratingLocally && (
-                                <div className="fade-in">
-                                    <h3 className="text-lg font-bold text-green-400 mb-3 text-center">Generated Scene Keyframe</h3>
-                                    <div className="max-w-md mx-auto bg-black rounded-lg overflow-hidden shadow-2xl shadow-green-500/20 ring-1 ring-gray-600">
-                                        <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="w-full aspect-video object-cover" />
-                                    </div>
-                                </div>
-                            )}
-                            
-                            {!isGeneratingLocally && <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-                                {generatedImage ? (
-                                    <Tooltip text={getLocalGenerationTooltip()}>
-                                    <button
-                                        onClick={handleQueueLocalGeneration}
-                                        disabled={!isWorkflowConfigured || !generatedImage}
-                                        className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105"
-                                    >
-                                        <ServerIcon className="mr-3 h-6 w-6" />
-                                        Generate Video (Local)
-                                    </button>
-                                    </Tooltip>
-                                ) : (
-                                    <button
-                                        onClick={() => onGenerateKeyframe(scene.id, buildTimelineData())}
-                                        className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-green-600 to-cyan-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-green-700 hover:to-cyan-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
-                                    >
-                                        <FilmIcon className="mr-3 h-6 w-6" />
-                                        Generate Scene Keyframe
-                                    </button>
-                                )}
-                                <button
-                                    onClick={() => onExportPrompts(scene.id, buildTimelineData())}
-                                    className="w-full sm:w-auto px-6 py-2 text-sm font-semibold rounded-full transition-all duration-300 ease-in-out bg-gray-700/80 text-gray-200 hover:bg-gray-700 border border-gray-600"
-                                >
-                                    Export Prompts
-                                </button>
-                            </div>}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="mt-12 text-center">
-                    {nextScene ? (
-                        <button onClick={onGoToNextScene} className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transform hover:scale-105">
-                           Continue to: {nextScene.title}
-                           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                        </button>
-                    ) : (
-                        <div className="mt-6 p-4 text-center bg-green-900/50 ring-1 ring-green-800 rounded-lg fade-in space-y-3">
-                            <h4 className="font-semibold text-green-300">Final Scene Complete!</h4>
-                            <p className="text-sm text-gray-400">You've reached the end of your story's creative direction.</p>
-                            {onProceedToReview && (
-                                <button
-                                    onClick={onProceedToReview}
-                                    className="inline-flex items-center justify-center px-6 py-3 bg-cyan-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-cyan-700 focus:outline-none focus:ring-4 focus:ring-cyan-500 focus:ring-opacity-50 transform hover:scale-105"
-                                >
-                                    <ClipboardCheckIcon className="mr-3 h-5 w-5" />
-                                    Proceed to Continuity Review
-                                </button>
-                            )}
-                        </div>
-                    )}
-                </div>
+            <div className="text-center pt-6 border-t border-gray-700/50">
+                <button onClick={handleSaveChanges} className="px-8 py-3 bg-green-600 text-white font-semibold rounded-full shadow-lg hover:bg-green-700 transition-colors">
+                    Save Timeline
+                </button>
             </div>
         </div>
     );

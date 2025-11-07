@@ -127,8 +127,20 @@ const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, re
 
     return (
         <div className="my-6">
-            <div className="relative bg-gray-800/50 backdrop-blur-sm border border-transparent rounded-lg p-6 shadow-xl shadow-yellow-500/10 overflow-hidden">
-                <div className="absolute -inset-px rounded-lg bg-gradient-to-r from-yellow-500/30 via-orange-500/30 to-yellow-500/30 opacity-50 blur-lg"></div>
+            <style>
+            {`
+                @keyframes animated-border-glow {
+                    0% { border-color: rgba(251, 191, 36, 0.4); }
+                    50% { border-color: rgba(249, 115, 22, 0.6); }
+                    100% { border-color: rgba(251, 191, 36, 0.4); }
+                }
+                .animated-border {
+                    animation: animated-border-glow 4s ease-in-out infinite;
+                }
+            `}
+            </style>
+            <div className="relative bg-gray-800/50 backdrop-blur-sm border rounded-lg p-6 shadow-xl shadow-yellow-500/10 overflow-hidden animated-border">
+                
                  <div className="relative">
                     <div className="mb-4 text-center sm:text-left">
                         <h2 className="flex items-center justify-center sm:justify-start text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-400">
@@ -187,7 +199,7 @@ const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, re
                                     <button 
                                         key={i} 
                                         onClick={() => { setObjective(s); setSuggestions([]); }} 
-                                        className="text-left text-sm text-indigo-400 hover:text-indigo-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-200 animate-fade-in-right ring-1 ring-gray-700 hover:ring-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 hover:-translate-y-0.5"
+                                        className="text-left text-sm text-indigo-400 hover:text-indigo-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 transform hover:-translate-y-1"
                                         style={{ animationDelay: `${i * 100}ms` }}
                                     >
                                         {s}

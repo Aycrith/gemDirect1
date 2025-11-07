@@ -1,113 +1,124 @@
+
 import React, { useState, useCallback } from 'react';
 import { StoryBible } from '../types';
+import { marked } from 'marked';
+import { refineEntireStoryBible, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import BookOpenIcon from './icons/BookOpenIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { refineEntireStoryBible, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
+import SaveIcon from './icons/SaveIcon';
+import ClapperboardIcon from './icons/ClapperboardIcon';
 
 interface StoryBibleEditorProps {
     storyBible: StoryBible;
-    setStoryBible: React.Dispatch<React.SetStateAction<StoryBible | null>>;
-    onContinue: () => void;
+    onUpdate: (bible: StoryBible) => void;
+    onGenerateScenes: () => void;
     isLoading: boolean;
     onApiStateChange: ApiStateChangeCallback;
     onApiLog: ApiLogCallback;
 }
 
-const EditableSection: React.FC<{ 
-    title: string; 
-    content: string; 
-    fieldKey: keyof StoryBible;
-    onChange: (value: string) => void; 
-    rows?: number; 
-}> = ({ title, content, onChange, rows = 3 }) => {
-    
-    const getTextAreaHeight = (content: string, baseRows: number) => {
-        const newlines = (content.match(/\n/g) || []).length;
-        return Math.max(baseRows, newlines + 2);
-    }
+const EditableField: React.FC<{ label: string; value: string; onChange: (value: string) => void; rows?: number }> = ({ label, value, onChange, rows = 3 }) => (
+    <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">{label}</label>
+        <textarea
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            rows={rows}
+            className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-indigo-500/30 shadow-black/30 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+        />
+    </div>
+);
 
-    return (
-        <div className="bg-gray-800/50 p-4 rounded-lg ring-1 ring-gray-700/50">
-            <div className="flex justify-between items-center mb-2">
-                 <label className="block text-sm font-bold text-indigo-400">{title}</label>
-            </div>
-            <textarea
-                value={content}
-                onChange={(e) => onChange(e.target.value)}
-                rows={getTextAreaHeight(content, rows)}
-                className="w-full bg-gray-900/50 p-3 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-300 leading-relaxed transition-colors"
-            />
-        </div>
-    );
-};
-
-const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, setStoryBible, onContinue, isLoading, onApiStateChange, onApiLog }) => {
+const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdate, onGenerateScenes, isLoading, onApiStateChange, onApiLog }) => {
+    const [editableBible, setEditableBible] = useState(storyBible);
     const [isRefining, setIsRefining] = useState(false);
 
-    const handleFieldChange = useCallback((field: keyof StoryBible, value: string) => {
-        setStoryBible(prev => prev ? { ...prev, [field]: value } : null);
-    }, [setStoryBible]);
-    
-    const handleRefineBible = useCallback(async () => {
-        if (!storyBible) return;
+    const handleFieldChange = (field: keyof StoryBible, value: string) => {
+        setEditableBible(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleSave = () => {
+        onUpdate(editableBible);
+    };
+
+    const handleRefine = async () => {
         setIsRefining(true);
         try {
-            const refinedBible = await refineEntireStoryBible(storyBible, onApiLog, onApiStateChange);
-            setStoryBible(refinedBible);
+            const refinedBible = await refineEntireStoryBible(editableBible, onApiLog, onApiStateChange);
+            setEditableBible(refinedBible);
+            onUpdate(refinedBible); // Also update parent state
         } catch (e) {
             console.error(e);
+            // Error toast is handled by the service
         } finally {
             setIsRefining(false);
         }
-    }, [storyBible, setStoryBible, onApiStateChange, onApiLog]);
+    };
+    
+    const createMarkup = (markdown: string) => {
+        const rawMarkup = marked.parse(markdown);
+        return { __html: rawMarkup as string };
+    };
 
-    if (!storyBible) return null;
+    const hasChanges = JSON.stringify(storyBible) !== JSON.stringify(editableBible);
 
     return (
-        <div className="max-w-4xl mx-auto">
-            <header className="mb-8 text-center">
-                <h2 className="flex items-center justify-center text-3xl font-bold text-gray-100 mb-2">
-                    <BookOpenIcon className="w-8 h-8 mr-3 text-indigo-400" />
-                    Your Story Bible
-                </h2>
-                <p className="text-gray-400">This is the foundational document for your entire story. Edit the fields below, or use the AI to refine the entire document in one go.</p>
-            </header>
-
-            <div className="space-y-6">
-                <EditableSection title="Logline" content={storyBible.logline} fieldKey="logline" onChange={v => handleFieldChange('logline', v)} rows={2} />
-                <EditableSection title="Characters" content={storyBible.characters} fieldKey="characters" onChange={v => handleFieldChange('characters', v)} rows={5} />
-                <EditableSection title="Setting" content={storyBible.setting} fieldKey="setting" onChange={v => handleFieldChange('setting', v)} rows={5} />
-                <EditableSection title="Plot Outline (3 Acts)" content={storyBible.plotOutline} fieldKey="plotOutline" onChange={v => handleFieldChange('plotOutline', v)} rows={8} />
+        <div className="max-w-4xl mx-auto space-y-8">
+            <div className="text-center">
+                <BookOpenIcon className="w-12 h-12 mx-auto text-indigo-400 mb-4" />
+                <h2 className="text-3xl font-bold text-gray-100">Your Story Bible</h2>
+                <p className="text-gray-400 mt-2">This is the narrative foundation of your project. Refine it here before generating scenes.</p>
             </div>
 
-            <div className="mt-8 pt-6 border-t border-gray-700/50 flex flex-col sm:flex-row justify-center items-center gap-4">
-                 <button
-                    onClick={handleRefineBible}
-                    disabled={isRefining || isLoading}
-                    className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 bg-yellow-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-yellow-700 focus:outline-none focus:ring-4 focus:ring-yellow-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
-                >
-                    {isRefining ? (
-                        <>
-                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Refining...
-                        </>
-                    ) : (
-                        <>
-                            <SparklesIcon className="mr-2 h-5 w-5" />
-                            Refine Entire Bible with AI
-                        </>
-                    )}
-                </button>
-                <button
-                    onClick={onContinue}
-                    disabled={isLoading || isRefining}
-                    className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-3 bg-green-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
-                >
-                    {isLoading ? 'Processing...' : "Continue to Director's Vision"}
-                </button>
+            <div className="bg-gray-800/50 backdrop-blur-lg p-8 rounded-xl ring-1 ring-white/10 space-y-6">
+                <EditableField label="Logline" value={editableBible.logline} onChange={(v) => handleFieldChange('logline', v)} rows={2} />
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <EditableField label="Characters" value={editableBible.characters} onChange={(v) => handleFieldChange('characters', v)} rows={8} />
+                    </div>
+                    <div className="prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 bg-gray-900/50 p-4 rounded-md border border-gray-700/50">
+                        <div dangerouslySetInnerHTML={createMarkup(editableBible.characters)} />
+                    </div>
+                </div>
+
+                <EditableField label="Setting" value={editableBible.setting} onChange={(v) => handleFieldChange('setting', v)} rows={4} />
+                
+                <div>
+                    <EditableField label="Plot Outline (The Hero's Journey)" value={editableBible.plotOutline} onChange={(v) => handleFieldChange('plotOutline', v)} rows={10} />
+                    <div className="mt-4 prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 bg-gray-900/50 p-4 rounded-md border border-gray-700/50 max-h-80 overflow-y-auto">
+                        <div dangerouslySetInnerHTML={createMarkup(editableBible.plotOutline)} />
+                    </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6 border-t border-gray-700/50">
+                    <button
+                        onClick={handleRefine}
+                        disabled={isLoading || isRefining}
+                        className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 bg-yellow-600 text-white font-semibold rounded-full shadow-sm transition-colors hover:bg-yellow-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                    >
+                         {isRefining ? 'Refining...' : <><SparklesIcon className="mr-2 h-5 w-5" /> Refine with AI</>}
+                    </button>
+                    <div className="flex gap-4">
+                        <button
+                            onClick={handleSave}
+                            disabled={!hasChanges || isLoading}
+                            className="inline-flex items-center justify-center px-6 py-2 bg-gray-600 text-white font-semibold rounded-full shadow-sm transition-colors hover:bg-gray-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                        >
+                            <SaveIcon className="mr-2 h-5 w-5" />
+                            Save Changes
+                        </button>
+                        <button
+                            onClick={onGenerateScenes}
+                            disabled={isLoading || hasChanges}
+                            className="inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105"
+                        >
+                            <ClapperboardIcon className="mr-2 h-5 w-5" />
+                            Set Vision & Generate Scenes
+                        </button>
+                    </div>
+                </div>
+                 {hasChanges && <p className="text-center text-yellow-400 text-sm mt-2">You have unsaved changes. Please save before proceeding.</p>}
             </div>
         </div>
     );

@@ -37,7 +37,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
 
     return (
         <div className="relative max-w-3xl mx-auto text-center bg-gray-900/50 backdrop-blur-lg p-8 rounded-xl ring-1 ring-white/10 overflow-hidden">
-            <div className="absolute -inset-px rounded-xl bg-gradient-to-r from-indigo-500/50 via-purple-500/50 to-pink-500/50 opacity-50 blur-xl"></div>
+            <div className="absolute -inset-px rounded-xl bg-gradient-to-r from-indigo-500/50 via-purple-500/50 to-pink-500/50 opacity-50 blur-xl -z-10"></div>
             <div className="relative">
                 <h2 className="text-3xl font-bold text-gray-100 mb-4">Start with an Idea</h2>
                 <p className="text-gray-400 mb-8">Describe the story you want to create. It can be a simple sentence or a detailed paragraph. The AI will use this as the foundation for your entire narrative.</p>
@@ -47,7 +47,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                         value={idea}
                         onChange={(e) => setIdea(e.target.value)}
                         rows={4}
-                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3 transition-colors"
+                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-indigo-500/30 shadow-black/30 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
                         placeholder="e.g., A space explorer finds an ancient artifact that could save humanity, but it's guarded by a sentient AI."
                     />
                     <button
@@ -94,7 +94,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                                 <button 
                                     key={i} 
                                     onClick={() => { setIdea(s); setSuggestions([]); }} 
-                                    className="text-left text-sm text-indigo-400 hover:text-indigo-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-200 animate-fade-in-right ring-1 ring-gray-700 hover:ring-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 hover:-translate-y-0.5"
+                                    className="text-left text-sm text-indigo-400 hover:text-indigo-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 transform hover:-translate-y-1"
                                     style={{ animationDelay: `${i * 100}ms` }}
                                 >
                                     {s}
