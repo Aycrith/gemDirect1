@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
 import CreativeControls from './CreativeControls';
@@ -290,6 +291,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const handleExportPrompts = () => {
         const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary, generatedShotImages);
+        onUpdateScene({ ...scene, generatedPayload: payloads });
         setPromptsToExport(payloads);
         setIsPromptModalOpen(true);
     };
@@ -312,6 +314,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         
         try {
             const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary, generatedShotImages);
+            onUpdateScene({ ...scene, generatedPayload: payloads });
             const response = await queueComfyUIPrompt(localGenSettings, payloads, sceneKeyframe);
             
             if (response.prompt_id) {

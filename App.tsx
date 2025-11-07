@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationSettings, LocalGenerationStatus, SceneContinuityData } from './types';
 import { useProjectData, usePersistentState } from './utils/hooks';
@@ -141,8 +142,8 @@ const AppContent: React.FC = () => {
         setContinuityModal({ sceneId, lastFrame });
     };
 
-    const handleSaveProject = () => {
-        saveProjectToFile({
+    const handleSaveProject = async () => {
+        await saveProjectToFile({
             storyBible,
             directorsVision,
             scenes,

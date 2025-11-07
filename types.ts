@@ -33,6 +33,7 @@ export interface Scene {
     title: string;
     summary: string;
     timeline: TimelineData;
+    generatedPayload?: { json: string; text: string; structured: any[]; negativePrompt: string };
 }
 
 export interface StoryBible {
