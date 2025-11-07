@@ -60,14 +60,23 @@ export interface ControlSectionConfig {
 
 export type SuggestionPayload = Partial<Shot> & { enhancers?: ShotEnhancers[string] } & { type?: string };
 
-export interface Suggestion {
-  type: 'UPDATE_SHOT' | 'ADD_SHOT_AFTER' | 'UPDATE_TRANSITION';
-  shot_id?: string;
-  after_shot_id?: string;
-  transition_index?: number;
-  payload: SuggestionPayload;
-  description: string;
-}
+// --- Discriminated Union for Suggestions ---
+export interface UpdateShotSuggestion { type: 'UPDATE_SHOT'; shot_id: string; payload: SuggestionPayload; description: string; }
+export interface AddShotAfterSuggestion { type: 'ADD_SHOT_AFTER'; after_shot_id: string; payload: SuggestionPayload; description: string; }
+export interface UpdateTransitionSuggestion { type: 'UPDATE_TRANSITION'; transition_index: number; payload: SuggestionPayload; description: string; }
+export interface UpdateStoryBibleSuggestion { type: 'UPDATE_STORY_BIBLE'; payload: { field: keyof StoryBible; new_content: string }; description: string; }
+export interface UpdateDirectorsVisionSuggestion { type: 'UPDATE_DIRECTORS_VISION'; payload: { new_content: string }; description: string; }
+export interface FlagSceneForReviewSuggestion { type: 'FLAG_SCENE_FOR_REVIEW'; payload: { scene_id: string; reason: string }; description: string; }
+
+export type Suggestion =
+    | UpdateShotSuggestion
+    | AddShotAfterSuggestion
+    | UpdateTransitionSuggestion
+    | UpdateStoryBibleSuggestion
+    | UpdateDirectorsVisionSuggestion
+    | FlagSceneForReviewSuggestion;
+// --- End Discriminated Union ---
+
 
 export interface CoDirectorResult {
   thematic_concept: string;
@@ -105,6 +114,11 @@ export interface BatchShotResult {
     shot_id: string;
     refined_description?: string;
     suggested_enhancers?: Partial<Omit<CreativeEnhancers, 'transitions'>>;
+}
+
+export interface DetailedShotResult {
+    description: string;
+    suggested_enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>;
 }
 
 export interface ApiCallLog {

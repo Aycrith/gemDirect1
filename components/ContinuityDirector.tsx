@@ -14,7 +14,7 @@ interface ContinuityDirectorProps {
   addToast: (message: string, type: ToastMessage['type']) => void;
   onApiStateChange: ApiStateChangeCallback;
   onApiLog: ApiLogCallback;
-  onApplyTimelineSuggestion: (suggestion: Suggestion, sceneId: string) => void;
+  onApplySuggestion: (suggestion: Suggestion, sceneId: string) => void;
   refinedSceneIds: Set<string>;
   onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
   onExtendTimeline: (sceneId: string, lastFrame: string) => void;
@@ -30,7 +30,7 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
   addToast,
   onApiStateChange,
   onApiLog,
-  onApplyTimelineSuggestion,
+  onApplySuggestion,
   refinedSceneIds,
   onUpdateSceneSummary,
   onExtendTimeline,
@@ -113,7 +113,7 @@ CONTEXT FROM ADJACENT SCENES:
             addToast={addToast}
             onApiStateChange={onApiStateChange}
             onApiLog={onApiLog}
-            onApplyTimelineSuggestion={onApplyTimelineSuggestion}
+            onApplySuggestion={onApplySuggestion}
             isRefined={refinedSceneIds.has(scene.id)}
             onUpdateSceneSummary={onUpdateSceneSummary}
             onExtendTimeline={onExtendTimeline}

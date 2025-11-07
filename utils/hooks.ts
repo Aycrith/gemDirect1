@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import * as db from './database';
-import { StoryBible, Scene, WorkflowStage, ToastMessage } from '../types';
+import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot } from '../types';
 import { useApiStatus } from '../contexts/ApiStatusContext';
 import { useUsage } from '../contexts/UsageContext';
 import { generateStoryBible, generateSceneList, generateKeyframeForScene } from '../services/geminiService';
@@ -21,18 +21,28 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
         const load = async () => {
             const data = await db.getData(key);
             if (isMounted && data !== undefined && data !== null) {
-                setState(data);
+                // Handle Set deserialization
+                if (initialValue instanceof Set && Array.isArray(data)) {
+                    setState(new Set(data) as T);
+                } else {
+                    setState(data);
+                }
             }
             setIsLoaded(true);
         };
         load();
         return () => { isMounted = false; };
-    }, [key]);
+    }, [key, initialValue]);
 
     // Save data to DB whenever state changes
     useEffect(() => {
         if (isLoaded) {
-            db.saveData(key, state);
+             // Handle Set serialization
+            if (state instanceof Set) {
+                db.saveData(key, Array.from(state));
+            } else {
+                db.saveData(key, state);
+            }
         }
     }, [key, state, isLoaded]);
 
@@ -48,6 +58,7 @@ export function useProjectData() {
     const [directorsVision, setDirectorsVision] = useState<string>('');
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [scenesToReview, setScenesToReview] = usePersistentState('scenesToReview', new Set<string>());
 
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
@@ -91,7 +102,7 @@ export function useProjectData() {
     }, [directorsVision, isLoading]);
 
     useEffect(() => {
-        if (!isLoading && scenes.length > 0) db.saveScenes(scenes);
+        if (!isLoading) db.saveScenes(scenes);
     }, [scenes, isLoading]);
 
     const handleGenerateStoryBible = useCallback(async (idea: string, addToast: (message: string, type: ToastMessage['type']) => void) => {
@@ -162,13 +173,95 @@ export function useProjectData() {
     }, [storyBible, logApiCall, updateApiStatus]);
 
 
+    const applySuggestions = useCallback((suggestions: Suggestion[], sceneIdToUpdate?: string, addToast?: (message: string, type: ToastMessage['type']) => void) => {
+        let newScenes = [...scenes];
+        let newStoryBible = storyBible ? {...storyBible} : null;
+        let newDirectorsVision = directorsVision;
+        let newScenesToReview = new Set(scenesToReview);
+        let changesMade = false;
+        let toastMessage = 'Suggestion applied!';
+    
+        suggestions.forEach(suggestion => {
+            switch (suggestion.type) {
+                case 'UPDATE_STORY_BIBLE':
+                    if (newStoryBible) {
+                        newStoryBible[suggestion.payload.field] = suggestion.payload.new_content;
+                        changesMade = true;
+                        toastMessage = `Story Bible updated: ${suggestion.payload.field} has been changed.`;
+                    }
+                    break;
+                case 'UPDATE_DIRECTORS_VISION':
+                    newDirectorsVision = suggestion.payload.new_content;
+                    changesMade = true;
+                    toastMessage = 'Director\'s Vision has been updated.';
+                    break;
+                case 'FLAG_SCENE_FOR_REVIEW':
+                    newScenesToReview.add(suggestion.payload.scene_id);
+                    changesMade = true;
+                    toastMessage = `A scene has been flagged for review: ${suggestion.payload.reason}`;
+                    break;
+                case 'UPDATE_SHOT':
+                case 'ADD_SHOT_AFTER':
+                case 'UPDATE_TRANSITION':
+                    if (sceneIdToUpdate) {
+                        const sceneIndex = newScenes.findIndex(s => s.id === sceneIdToUpdate);
+                        if (sceneIndex > -1) {
+                            // Deep copy only the scene we're modifying
+                            const sceneToUpdate = JSON.parse(JSON.stringify(newScenes[sceneIndex]));
+                            const timeline: TimelineData = sceneToUpdate.timeline;
+    
+                            if (suggestion.type === 'UPDATE_SHOT') {
+                                const shot = timeline.shots.find(s => s.id === suggestion.shot_id);
+                                if (shot) {
+                                    if (suggestion.payload.description) shot.description = suggestion.payload.description;
+                                    if (suggestion.payload.enhancers) timeline.shotEnhancers[suggestion.shot_id] = { ...(timeline.shotEnhancers[suggestion.shot_id] || {}), ...suggestion.payload.enhancers };
+                                }
+                            } else if (suggestion.type === 'ADD_SHOT_AFTER') {
+                                const afterShotIndex = timeline.shots.findIndex(s => s.id === suggestion.after_shot_id);
+                                if (afterShotIndex > -1) {
+                                    const newShot: Shot = {
+                                        id: `shot_${Date.now()}_${Math.random()}`,
+                                        title: suggestion.payload.title,
+                                        description: suggestion.payload.description || '',
+                                    };
+                                    timeline.shots.splice(afterShotIndex + 1, 0, newShot);
+                                    timeline.transitions.splice(afterShotIndex, 0, 'Cut');
+                                    if (suggestion.payload.enhancers) timeline.shotEnhancers[newShot.id] = suggestion.payload.enhancers;
+                                }
+                            } else if (suggestion.type === 'UPDATE_TRANSITION') {
+                                if (timeline.transitions[suggestion.transition_index] && suggestion.payload.type) {
+                                    timeline.transitions[suggestion.transition_index] = suggestion.payload.type;
+                                }
+                            }
+    
+                            newScenes[sceneIndex] = sceneToUpdate;
+                            changesMade = true;
+                            toastMessage = 'Timeline updated!';
+                        }
+                    }
+                    break;
+            }
+        });
+    
+        if(changesMade) {
+            if (newStoryBible) setStoryBible(newStoryBible);
+            setDirectorsVision(newDirectorsVision);
+            setScenes(newScenes);
+            setScenesToReview(newScenesToReview);
+            addToast?.(toastMessage, 'success');
+        }
+    }, [scenes, storyBible, directorsVision, scenesToReview, setStoryBible, setDirectorsVision, setScenes, setScenesToReview]);
+
+
     return {
         workflowStage, setWorkflowStage,
         storyBible, setStoryBible,
         directorsVision, setDirectorsVision,
         scenes, setScenes,
         isLoading,
+        scenesToReview,
         handleGenerateStoryBible,
-        handleGenerateScenes
+        handleGenerateScenes,
+        applySuggestions,
     };
 }

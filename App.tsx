@@ -25,7 +25,8 @@ const AppContent: React.FC = () => {
     const { 
         workflowStage, setWorkflowStage, storyBible, setStoryBible, 
         directorsVision, setDirectorsVision, scenes, setScenes,
-        handleGenerateStoryBible, handleGenerateScenes, isLoading: isProjectLoading 
+        handleGenerateStoryBible, handleGenerateScenes, isLoading: isProjectLoading,
+        scenesToReview, applySuggestions
     } = useProjectData();
 
     const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
@@ -78,69 +79,12 @@ const AppContent: React.FC = () => {
         setWorkflowStage(stage);
     };
 
-    const handleApplyTimelineSuggestion = (suggestion: Suggestion, sceneId: string) => {
-        const sceneIndex = scenes.findIndex(s => s.id === sceneId);
-        if (sceneIndex === -1) {
-            addToast(`Could not find scene to apply suggestion.`, 'error');
-            return;
-        }
-    
-        const updatedScenes = JSON.parse(JSON.stringify(scenes)); // Deep copy
-        const sceneToUpdate = updatedScenes[sceneIndex];
-        const timeline: TimelineData = sceneToUpdate.timeline;
-        let summaryNeedsUpdate = false;
-    
-        switch (suggestion.type) {
-            case 'UPDATE_SHOT':
-                if (suggestion.shot_id) {
-                    const shot = timeline.shots.find(s => s.id === suggestion.shot_id);
-                    if (shot) {
-                        if (suggestion.payload.description) {
-                            shot.description = suggestion.payload.description;
-                            summaryNeedsUpdate = true;
-                        }
-                        if (suggestion.payload.enhancers) {
-                            timeline.shotEnhancers[suggestion.shot_id] = {
-                                ...(timeline.shotEnhancers[suggestion.shot_id] || {}),
-                                ...suggestion.payload.enhancers
-                            };
-                        }
-                    }
-                }
-                break;
-            case 'ADD_SHOT_AFTER':
-                if (suggestion.after_shot_id) {
-                    const afterShotIndex = timeline.shots.findIndex(s => s.id === suggestion.after_shot_id);
-                    if (afterShotIndex > -1) {
-                        const newShot: Shot = {
-                            id: `shot_${Date.now()}_${Math.random()}`,
-                            title: suggestion.payload.title,
-                            description: suggestion.payload.description || '',
-                        };
-                        timeline.shots.splice(afterShotIndex + 1, 0, newShot);
-                        timeline.transitions.splice(afterShotIndex, 0, 'Cut');
-                        if (suggestion.payload.enhancers) {
-                            timeline.shotEnhancers[newShot.id] = suggestion.payload.enhancers;
-                        }
-                        summaryNeedsUpdate = true;
-                    }
-                }
-                break;
-            case 'UPDATE_TRANSITION':
-                if (suggestion.transition_index !== undefined && suggestion.payload.type) {
-                    if (timeline.transitions[suggestion.transition_index]) {
-                        timeline.transitions[suggestion.transition_index] = suggestion.payload.type;
-                    }
-                }
-                break;
-            default:
-                console.warn("Unknown suggestion type:", suggestion.type);
-        }
+    const handleApplySuggestion = (suggestion: Suggestion, sceneId: string) => {
+        // This is now the single dispatcher for all suggestion types.
+        applySuggestions([suggestion], sceneId, addToast);
         
-        setScenes(updatedScenes);
-    
-        addToast("Suggestion applied successfully!", 'success');
-        if (summaryNeedsUpdate) {
+        // Mark scene as refined if it was a timeline change
+        if (suggestion.type === 'ADD_SHOT_AFTER' || suggestion.type === 'UPDATE_SHOT') {
             setRefinedSceneIds(prev => new Set(prev).add(sceneId));
         }
     };
@@ -198,7 +142,7 @@ const AppContent: React.FC = () => {
                 return (
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         <div className="lg:col-span-1">
-                            <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} />
+                            <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} scenesToReview={scenesToReview} />
                         </div>
                         <div className="lg:col-span-3">
                             {activeScene ? <TimelineEditor 
@@ -213,7 +157,7 @@ const AppContent: React.FC = () => {
                                 onApiStateChange={updateApiStatus} 
                                 onApiLog={logApiCall} 
                                 scenes={scenes}
-                                onApplySuggestion={handleApplyTimelineSuggestion}
+                                onApplySuggestion={handleApplySuggestion}
                                 generatedImages={generatedImages}
                                 generatedShotImages={generatedShotImages}
                                 setGeneratedShotImages={setGeneratedShotImages}
@@ -237,7 +181,7 @@ const AppContent: React.FC = () => {
                     addToast={addToast}
                     onApiStateChange={updateApiStatus}
                     onApiLog={logApiCall}
-                    onApplyTimelineSuggestion={handleApplyTimelineSuggestion}
+                    onApplySuggestion={handleApplySuggestion}
                     refinedSceneIds={refinedSceneIds}
                     onUpdateSceneSummary={handleUpdateSceneSummary}
                     onExtendTimeline={handleExtendTimeline}

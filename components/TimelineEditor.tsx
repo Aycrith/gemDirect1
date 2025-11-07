@@ -1,7 +1,7 @@
 
 
 import React, { useState, useCallback } from 'react';
-import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus } from '../types';
+import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 import CoDirector from './CoDirector';
@@ -10,7 +10,7 @@ import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import ImageIcon from './icons/ImageIcon';
 // FIX: Import 'getCoDirectorSuggestions' and 'batchProcessShotEnhancements' from geminiService.
-import { generateInitialShotsForScene, generateImageForShot, getCoDirectorSuggestions, batchProcessShotEnhancements } from '../services/geminiService';
+import { generateAndDetailInitialShots, generateImageForShot, getCoDirectorSuggestions, batchProcessShotEnhancements, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, getPrunedContextForBatchProcessing } from '../services/geminiService';
 import { generateVideoRequestPayloads } from '../services/payloadService';
 import { queueComfyUIPrompt, trackPromptExecution } from '../services/comfyUIService';
 import FinalPromptModal from './FinalPromptModal';
@@ -175,16 +175,26 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         updateTimeline({ shots: newShots, shotEnhancers: newEnhancers, transitions: newTransitions });
     };
 
-    const handleGenerateInitialShots = async () => {
+    const handleGenerateAndDetailInitialShots = async () => {
         try {
-            const shotDescriptions = await generateInitialShotsForScene(scene.summary, onApiLog, onApiStateChange);
+            const narrativeContext = getNarrativeContext(scene.id);
+            const prunedContext = await getPrunedContextForShotGeneration(storyBible, narrativeContext, scene.summary, directorsVision, onApiLog, onApiStateChange);
+            const detailedShots: DetailedShotResult[] = await generateAndDetailInitialShots(prunedContext, onApiLog, onApiStateChange);
             
-            const newShots: Shot[] = shotDescriptions.map((desc: string) => ({ id: `shot_${Date.now()}_${Math.random()}`, description: desc }));
+            const newShots: Shot[] = [];
+            const newEnhancers: ShotEnhancers = {};
+
+            detailedShots.forEach(result => {
+                const newShot: Shot = { id: `shot_${Date.now()}_${Math.random()}`, description: result.description };
+                newShots.push(newShot);
+                newEnhancers[newShot.id] = result.suggested_enhancers;
+            });
+            
             const newTransitions = new Array(Math.max(0, newShots.length - 1)).fill('Cut');
 
-            updateTimeline({ shots: newShots, transitions: newTransitions, shotEnhancers: {} });
+            updateTimeline({ shots: newShots, transitions: newTransitions, shotEnhancers: newEnhancers });
         } catch (error) {
-            console.error("Failed to generate initial shots:", error);
+            console.error("Failed to generate and detail initial shots:", error);
         }
     };
     
@@ -192,7 +202,17 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setIsCoDirectorLoading(true);
         setCoDirectorResult(null);
         try {
-            const result = await getCoDirectorSuggestions(scene.summary, { ...scene, timeline }, objective, onApiLog, onApiStateChange);
+            const narrativeContext = getNarrativeContext(scene.id);
+            const prunedContext = await getPrunedContextForCoDirector(storyBible, narrativeContext, scene, directorsVision, onApiLog, onApiStateChange);
+            
+            const timelineSummary = timeline.shots.map((shot, index) => {
+                const enhancers = timeline.shotEnhancers[shot.id] || {};
+                const enhancerKeys = Object.keys(enhancers).filter(k => (enhancers as any)[k]?.length > 0);
+                const enhancerString = enhancerKeys.length > 0 ? ` (Style: ${enhancerKeys.join(', ')})` : '';
+                return `Shot ${index + 1} (ID: ${shot.id}): ${shot.description}${enhancerString}`;
+            }).join('\n');
+
+            const result = await getCoDirectorSuggestions(prunedContext, timelineSummary, objective, onApiLog, onApiStateChange);
             setCoDirectorResult(result);
         } catch (error) {
             console.error(error);
@@ -212,7 +232,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
         try {
             const narrativeContext = getNarrativeContext(scene.id);
-            const results = await batchProcessShotEnhancements(tasks, narrativeContext, directorsVision, onApiLog, onApiStateChange);
+            const prunedContext = await getPrunedContextForBatchProcessing(narrativeContext, directorsVision, onApiLog, onApiStateChange);
+            const results = await batchProcessShotEnhancements(tasks, prunedContext, onApiLog, onApiStateChange);
 
             const newShots = [...timeline.shots];
             const newEnhancers: ShotEnhancers = JSON.parse(JSON.stringify(timeline.shotEnhancers));
@@ -349,8 +370,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         <TimelineIcon className="w-12 h-12 text-gray-600 mb-4" />
                         <h3 className="text-lg font-semibold text-gray-300">This scene is an empty canvas.</h3>
                         <p className="text-gray-400 mt-2 max-w-sm">Let's bring it to life. Generate an initial shot list with AI to get started.</p>
-                        <button onClick={handleGenerateInitialShots} className="mt-6 inline-flex items-center justify-center px-6 py-3 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 disabled:bg-gray-500 transform hover:scale-105">
-                           <SparklesIcon className="mr-2 h-5 w-5" /> Generate Initial Shots
+                        <button onClick={handleGenerateAndDetailInitialShots} className="mt-6 inline-flex items-center justify-center px-6 py-3 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 disabled:bg-gray-500 transform hover:scale-105">
+                           <SparklesIcon className="mr-2 h-5 w-5" /> Generate & Detail Initial Shots
                         </button>
                     </div>
                 )}

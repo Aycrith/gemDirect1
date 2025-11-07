@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
@@ -13,6 +11,7 @@ import SparklesIcon from './icons/SparklesIcon';
 import FilmIcon from './icons/FilmIcon';
 import ImageIcon from './icons/ImageIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
+import BookOpenIcon from './icons/BookOpenIcon';
 
 interface ContinuityCardProps {
   scene: Scene;
@@ -26,7 +25,7 @@ interface ContinuityCardProps {
   addToast: (message: string, type: ToastMessage['type']) => void;
   onApiStateChange: (status: any, message: string) => void;
   onApiLog: (log: any) => void;
-  onApplyTimelineSuggestion: (suggestion: Suggestion, sceneId: string) => void;
+  onApplySuggestion: (suggestion: Suggestion, sceneId: string) => void;
   isRefined: boolean;
   onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
   onExtendTimeline: (sceneId: string, lastFrame: string) => void;
@@ -76,7 +75,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   addToast,
   onApiStateChange,
   onApiLog,
-  onApplyTimelineSuggestion,
+  onApplySuggestion,
   isRefined,
   onUpdateSceneSummary,
   onExtendTimeline
@@ -129,6 +128,15 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
 
   const isLoading = data.status === 'analyzing' || data.status === 'scoring';
 
+  const timelineChanges = data.continuityResult?.suggested_changes.filter(s =>
+    s.type === 'UPDATE_SHOT' || s.type === 'ADD_SHOT_AFTER' || s.type === 'UPDATE_TRANSITION'
+  ) || [];
+
+  const projectChanges = data.continuityResult?.suggested_changes.filter(s =>
+    s.type === 'UPDATE_STORY_BIBLE' || s.type === 'UPDATE_DIRECTORS_VISION' || s.type === 'FLAG_SCENE_FOR_REVIEW'
+  ) || [];
+
+
   return (
     <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/80 rounded-xl shadow-lg overflow-hidden">
         <header className="p-6 bg-gray-900/40 border-b border-gray-700/80">
@@ -178,18 +186,36 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                             </div>
                         </div>
                         <FeedbackCard title="Overall Feedback" content={data.continuityResult.overall_feedback} isLoading={false} />
-                        <div>
-                            <h4 className="flex items-center text-lg font-semibold text-indigo-400 mb-4"><SparklesIcon className="w-5 h-5 mr-2" /> Suggested Refinements</h4>
-                            <div className="space-y-3 max-h-60 overflow-y-auto pr-2 -mr-2">
-                                {data.continuityResult.suggested_changes.map((s, i) => (
-                                    <div key={i} className="bg-gray-900/70 p-3 rounded-md flex items-center justify-between gap-4">
-                                        <p className="text-sm text-gray-300 flex-1">{s.description}</p>
-                                        <button onClick={() => onApplyTimelineSuggestion(s, scene.id)} className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-indigo-600 text-white hover:bg-indigo-700">Apply</button>
-                                    </div>
-                                ))}
+                        
+                        {projectChanges.length > 0 && (
+                            <div>
+                                <h4 className="flex items-center text-lg font-semibold text-yellow-400 mb-4"><BookOpenIcon className="w-5 h-5 mr-2" /> Project-Wide Refinements</h4>
+                                <div className="space-y-3 max-h-60 overflow-y-auto pr-2 -mr-2">
+                                    {projectChanges.map((s, i) => (
+                                        <div key={`proj-${i}`} className="bg-yellow-900/40 border border-yellow-700/50 p-3 rounded-md flex items-center justify-between gap-4">
+                                            <p className="text-sm text-yellow-200 flex-1">{s.description}</p>
+                                            <button onClick={() => onApplySuggestion(s, scene.id)} className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-yellow-600 text-white hover:bg-yellow-700">Apply</button>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                             {isRefined && <button onClick={() => onUpdateSceneSummary(scene.id)} className="text-sm text-yellow-400 mt-4">Update Scene Summary with Refinements</button>}
-                        </div>
+                        )}
+
+                        {timelineChanges.length > 0 && (
+                             <div>
+                                <h4 className="flex items-center text-lg font-semibold text-indigo-400 mb-4"><SparklesIcon className="w-5 h-5 mr-2" /> Timeline Refinements</h4>
+                                <div className="space-y-3 max-h-60 overflow-y-auto pr-2 -mr-2">
+                                    {timelineChanges.map((s, i) => (
+                                        <div key={`time-${i}`} className="bg-gray-900/70 p-3 rounded-md flex items-center justify-between gap-4">
+                                            <p className="text-sm text-gray-300 flex-1">{s.description}</p>
+                                            <button onClick={() => onApplySuggestion(s, scene.id)} className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-indigo-600 text-white hover:bg-indigo-700">Apply</button>
+                                        </div>
+                                    ))}
+                                </div>
+                                {isRefined && <button onClick={() => onUpdateSceneSummary(scene.id)} className="text-sm text-yellow-400 mt-4">Update Scene Summary with Refinements</button>}
+                            </div>
+                        )}
+                        
                         {data.frames && data.frames.length > 0 && (
                              <button onClick={() => onExtendTimeline(scene.id, data.frames![data.frames!.length - 1])} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-yellow-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
                                <FilmIcon className="w-4 h-4" /> Extend Timeline from this Scene

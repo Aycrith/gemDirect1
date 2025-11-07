@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion } from "../types";
+import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion, DetailedShotResult } from "../types";
 import { ApiStatus } from "../contexts/ApiStatusContext";
 
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
@@ -144,6 +144,22 @@ export const getPrunedContextForCoDirector = async (
     return getPrunedContext(prompt, 'prune context for co-director', logApiCall, onStateChange);
 };
 
+export const getPrunedContextForBatchProcessing = async (
+    narrativeContext: string,
+    directorsVision: string,
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<string> => {
+    const prompt = `You are a script supervisor. Distill the following creative guidelines into a single, concise "Cinematographer's Brief" (under 100 words). This brief will be used to guide an AI assistant in refining multiple shots within a single scene. Focus on the core rules and feeling.
+
+    **SOURCE MATERIAL:**
+    - Narrative Context (Current Act/Goal): ${narrativeContext}
+    - Director's Vision (Aesthetic & Tone): ${directorsVision}
+
+    **Your Output:** A single paragraph Cinematographer's Brief.`;
+    return getPrunedContext(prompt, 'prune context for batch processing', logApiCall, onStateChange);
+};
+
 // --- Core Story Generation ---
 
 export const generateStoryBible = async (idea: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
@@ -231,38 +247,68 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
-export const generateInitialShotsForScene = async (
+const enhancersSchema = {
+    type: Type.OBJECT,
+    properties: {
+        framing: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Close-Up', 'Wide Shot'" },
+        movement: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Tracking Shot', 'Handheld'" },
+        lens: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Shallow Depth of Field', 'Lens Flare'" },
+        pacing: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Slow Motion', 'Fast-Paced'" },
+        lighting: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'High-Key', 'Low-Key (Chiaroscuro)'" },
+        mood: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Suspenseful', 'Dreamlike'" },
+        vfx: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Film Grain', 'Glitch Effect'" },
+        plotEnhancements: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Foreshadowing Moment', 'Introduce Conflict'" },
+    },
+};
+
+export const generateAndDetailInitialShots = async (
     prunedContext: string,
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
-): Promise<string[]> => {
-    const context = 'generate shots for scene';
-    const prompt = `You are a visionary cinematographer who understands that every shot must serve the story. Based on the following focused Creative Brief, create an initial shot list for the scene.
+): Promise<DetailedShotResult[]> => {
+    const context = 'generate and detail initial shots';
+    const prompt = `You are a visionary cinematographer. Based on the following Creative Brief, generate a complete initial shot list for the scene, including both descriptions and specific creative enhancers for each shot.
 
     **Creative Brief:**
     "${prunedContext}"
 
     **Your Task:**
-    Generate a JSON array of 3-5 strings. Each string is a description for a single cinematic shot that visually tells the story of this scene, perfectly aligning with the provided brief. Ensure the shots create a cohesive and emotionally resonant sequence.`;
+    Generate a JSON object with a single key: "shots".
+    The value should be an array of 3-4 objects. Each object represents a single cinematic shot and must contain:
+    1.  "description": (string) A vivid description of the shot.
+    2.  "suggested_enhancers": (object) A JSON object of creative enhancers (like framing, movement, lighting) that perfectly match the shot's description and the overall brief. Be creative and specific.`;
     
-    const responseSchema = {
-        type: Type.ARRAY,
-        items: { type: Type.STRING },
+    const detailedShotsSchema = {
+        type: Type.OBJECT,
+        properties: {
+            shots: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        description: { type: Type.STRING },
+                        suggested_enhancers: enhancersSchema,
+                    },
+                    required: ['description', 'suggested_enhancers'],
+                },
+            },
+        },
+        required: ['shots'],
     };
     
     const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: proModel,
             contents: prompt,
-            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+            config: { responseMimeType: 'application/json', responseSchema: detailedShotsSchema },
         });
         const text = response.text;
         if (!text) {
-            throw new Error("The model returned an empty response for initial shots.");
+            throw new Error("The model returned an empty response for initial detailed shots.");
         }
         const result = JSON.parse(text.trim());
         const tokens = response.usageMetadata?.totalTokenCount || 0;
-        return { result, tokens };
+        return { result: result.shots, tokens };
     };
 
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
@@ -404,29 +450,16 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
 }
 
 // --- Reusable Schemas for Suggestions and Enhancers ---
-const enhancersSchema = {
-    type: Type.OBJECT,
-    properties: {
-        framing: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Close-Up', 'Wide Shot'" },
-        movement: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Tracking Shot', 'Handheld'" },
-        lens: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Shallow Depth of Field', 'Lens Flare'" },
-        pacing: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Slow Motion', 'Fast-Paced'" },
-        lighting: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'High-Key', 'Low-Key (Chiaroscuro)'" },
-        mood: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Suspenseful', 'Dreamlike'" },
-        vfx: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Film Grain', 'Glitch Effect'" },
-        plotEnhancements: { type: Type.ARRAY, items: { type: Type.STRING }, description: "e.g., 'Foreshadowing Moment', 'Introduce Conflict'" },
-    },
-};
 
 const suggestedChangesSchema = {
     type: Type.ARRAY,
     items: {
         type: Type.OBJECT,
         properties: {
-            type: { type: Type.STRING, description: "One of 'UPDATE_SHOT', 'ADD_SHOT_AFTER', or 'UPDATE_TRANSITION'." },
-            shot_id: { type: Type.STRING, description: "Required for 'UPDATE_SHOT'. The ID of the shot to modify." },
-            after_shot_id: { type: Type.STRING, description: "Required for 'ADD_SHOT_AFTER'. The ID of the shot to add a new shot after." },
-            transition_index: { type: Type.INTEGER, description: "Required for 'UPDATE_TRANSITION'. The index of the transition to modify." },
+            type: { type: Type.STRING, description: "One of 'UPDATE_SHOT', 'ADD_SHOT_AFTER', 'UPDATE_TRANSITION', 'UPDATE_STORY_BIBLE', 'UPDATE_DIRECTORS_VISION', 'FLAG_SCENE_FOR_REVIEW'." },
+            shot_id: { type: Type.STRING, description: "Required for 'UPDATE_SHOT'." },
+            after_shot_id: { type: Type.STRING, description: "Required for 'ADD_SHOT_AFTER'." },
+            transition_index: { type: Type.INTEGER, description: "Required for 'UPDATE_TRANSITION'." },
             payload: {
                 type: Type.OBJECT,
                 description: "The data for the change.",
@@ -434,7 +467,11 @@ const suggestedChangesSchema = {
                     description: { type: Type.STRING, description: "The new shot description." },
                     title: { type: Type.STRING, description: "The title for a new shot." },
                     type: { type: Type.STRING, description: "The new transition type, e.g., 'Dissolve'." },
-                    enhancers: enhancersSchema
+                    enhancers: enhancersSchema,
+                    field: { type: Type.STRING, description: "For UPDATE_STORY_BIBLE, e.g., 'logline', 'characters'." },
+                    new_content: { type: Type.STRING, description: "New content for bible or vision update." },
+                    scene_id: { type: Type.STRING, description: "For FLAG_SCENE_FOR_REVIEW." },
+                    reason: { type: Type.STRING, description: "Reason for flagging a scene." },
                 }
             },
             description: { type: Type.STRING, description: "A human-readable summary of the proposed change." }
@@ -443,9 +480,9 @@ const suggestedChangesSchema = {
     }
 };
 
-export const getCoDirectorSuggestions = async (prunedContext: string, scene: Scene, objective: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<CoDirectorResult> => {
+export const getCoDirectorSuggestions = async (prunedContext: string, timelineSummary: string, objective: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<CoDirectorResult> => {
     const context = 'get Co-Director suggestions';
-    const prompt = `You are an AI Co-Director. Your task is to analyze the provided scene context and timeline, then suggest specific, creative changes to achieve the user's stated objective. You must be bold and imaginative, but your suggestions must respect the established narrative and aesthetic.
+    const prompt = `You are an AI Co-Director. Your task is to analyze the provided scene context and a summary of its timeline, then suggest specific, creative changes to achieve the user's stated objective. You must be bold and imaginative, but your suggestions must respect the established narrative and aesthetic.
 
     **Co-Director's Brief (Key Context):**
     ${prunedContext}
@@ -453,8 +490,8 @@ export const getCoDirectorSuggestions = async (prunedContext: string, scene: Sce
     **User's Creative Objective:**
     "${objective}"
 
-    **Current Scene Timeline (as JSON):**
-    ${JSON.stringify(scene.timeline, null, 2)}
+    **Current Scene Timeline (Summary with Shot IDs):**
+    ${timelineSummary}
 
     **Your Task:**
     Return a single JSON object with the following structure. **Crucially, ensure the output is a single, valid JSON object and nothing else. All string values, especially multi-line markdown in 'reasoning' or any 'description' fields, must have properly escaped characters (like \\" for double quotes and \\n for newlines).**
@@ -517,17 +554,15 @@ export const getCoDirectorSuggestions = async (prunedContext: string, scene: Sce
 
 export const batchProcessShotEnhancements = async (
     tasks: BatchShotTask[],
-    narrativeContext: string,
-    directorsVision: string,
+    prunedContext: string,
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<BatchShotResult[]> => {
     const context = 'batch process shots';
     const prompt = `You are an AI Cinematographer's assistant. You will receive a batch of tasks for different shots within the same scene. For each task, perform the requested actions based on the provided creative context.
 
-    **Overall Creative Context:**
-    - Narrative Focus: ${narrativeContext}
-    - Director's Vision: ${directorsVision}
+    **Cinematographer's Brief:**
+    ${prunedContext}
 
     **Tasks (JSON Array):**
     ${JSON.stringify(tasks, null, 2)}
@@ -749,7 +784,9 @@ export const scoreContinuity = async (prunedContext: string, scene: Scene, video
         *   **aesthetic_alignment**: How well does the video's visual style match the Director's Vision?
         *   **thematic_resonance**: How well does the video capture the intended mood and emotional core of the scene?
     2.  **overall_feedback**: A markdown-formatted paragraph summarizing your assessment. What worked well, and what were the biggest deviations from the plan?
-    3.  **suggested_changes**: A JSON array of 2-3 specific, actionable suggestions to fix the timeline. **This is crucial.** The suggestions must follow the same structured format as the Co-Director's tool, referencing 'shot_id's from the provided timeline. The goal is to correct the blueprint so a future generation will be more accurate.
+    3.  **suggested_changes**: A JSON array of specific, actionable suggestions.
+        *   **Timeline Fixes:** First, suggest changes to the timeline to fix the current scene (using 'UPDATE_SHOT', 'ADD_SHOT_AFTER', etc.).
+        *   **Holistic Review:** **Crucially, consider if the video's issues reveal a deeper problem.** Does the aesthetic clash with the Director's Vision? Does a character's action contradict their description in the Story Bible? If so, suggest high-level changes to those core documents using the **'UPDATE_STORY_BIBLE'** or **'UPDATE_DIRECTORS_VISION'** types. If a change here logically affects another scene, use **'FLAG_SCENE_FOR_REVIEW'** to flag it.
     `;
     
     const responseSchema = {
