@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { LocalGenerationSettings } from '../types';
-import { checkServerConnection, validateWorkflowAndMappings } from '../services/comfyUIService';
+import { checkServerConnection, validateWorkflowAndMappings, checkSystemResources } from '../services/comfyUIService';
 import ShieldCheckIcon from './icons/ShieldCheckIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import AlertTriangleIcon from './icons/AlertTriangleIcon';
@@ -19,6 +19,7 @@ interface CheckResult {
 
 const initialCheckState: Record<string, CheckResult> = {
     connection: { status: 'idle', message: '' },
+    resources: { status: 'idle', message: '' },
     workflow: { status: 'idle', message: '' },
 };
 
@@ -55,11 +56,19 @@ const PreflightCheck: React.FC<PreflightCheckProps> = ({ settings }) => {
             return; // Stop if connection fails
         }
         
-        // Check 2: Workflow & Mappings
+        // Check 2: System Resources (Informational)
+        setCheckResults(prev => ({...prev, resources: { status: 'running', message: 'Checking system resources...' }}));
+        const resourceMessage = await checkSystemResources(settings.comfyUIUrl);
+        const resourceStatus: CheckStatus = resourceMessage.toLowerCase().includes('warning') || resourceMessage.toLowerCase().includes('failed')
+            ? 'error' // Use 'error' status for red color to draw attention to warnings
+            : 'success';
+        setCheckResults(prev => ({ ...prev, resources: { status: resourceStatus, message: resourceMessage }}));
+
+        // Check 3: Workflow & Mappings
         setCheckResults(prev => ({ ...prev, workflow: { status: 'running', message: 'Validating workflow & mappings...' }}));
         try {
             validateWorkflowAndMappings(settings);
-            setCheckResults(prev => ({ ...prev, workflow: { status: 'success', message: 'Workflow and mappings are consistent.' }}));
+            setCheckResults(prev => ({ ...prev, workflow: { status: 'success', message: 'Workflow and mappings are consistent and valid.' }}));
         } catch (e) {
             const errorMsg = e instanceof Error ? e.message : 'Unknown error';
             setCheckResults(prev => ({ ...prev, workflow: { status: 'error', message: errorMsg }}));
@@ -68,12 +77,10 @@ const PreflightCheck: React.FC<PreflightCheckProps> = ({ settings }) => {
         setIsChecking(false);
     }, [settings]);
 
-    // Fix: Explicitly type `r` as `CheckResult` to fix type inference issue.
-    const overallStatus = Object.values(checkResults).every((r: CheckResult) => r.status === 'success')
-        ? 'success'
-        : Object.values(checkResults).some((r: CheckResult) => r.status === 'error')
-        ? 'error'
-        : 'idle';
+    const isHardError = checkResults.connection.status === 'error' || checkResults.workflow.status === 'error';
+    const isSuccess = checkResults.connection.status === 'success' && checkResults.workflow.status === 'success';
+
+    const overallStatus = isSuccess ? 'success' : isHardError ? 'error' : 'idle';
 
     return (
         <div className="space-y-4 p-4 bg-gray-900/50 rounded-lg ring-1 ring-gray-700/50">
@@ -97,19 +104,22 @@ const PreflightCheck: React.FC<PreflightCheckProps> = ({ settings }) => {
                 <div className="mt-4 space-y-2 text-sm">
                     {Object.entries({
                         'Server Connection': checkResults.connection,
+                        'System Resources': checkResults.resources,
                         'Workflow & Mapping Consistency': checkResults.workflow,
                     }).map(([label, result]) => (
-                        <div key={label} className="p-2 bg-gray-800/50 rounded-md">
-                           <div className="flex items-start gap-2">
-                                <StatusIndicator status={result.status} />
-                                <div className="flex-1">
-                                    <p className="font-semibold text-gray-200">{label}</p>
-                                    <p className={`text-xs whitespace-pre-wrap ${result.status === 'error' ? 'text-red-300' : 'text-gray-400'}`}>
-                                        {result.message}
-                                    </p>
+                         result.status !== 'idle' && (
+                            <div key={label} className="p-2 bg-gray-800/50 rounded-md">
+                               <div className="flex items-start gap-2">
+                                    <StatusIndicator status={result.status} />
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-gray-200">{label}</p>
+                                        <p className={`text-xs whitespace-pre-wrap ${result.status === 'error' ? 'text-red-300' : 'text-gray-400'}`}>
+                                            {result.message}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )
                     ))}
                     {overallStatus === 'success' && (
                         <p className="text-sm font-bold text-green-400 text-center py-2">
@@ -118,7 +128,7 @@ const PreflightCheck: React.FC<PreflightCheckProps> = ({ settings }) => {
                     )}
                      {overallStatus === 'error' && (
                         <p className="text-sm font-bold text-red-400 text-center py-2">
-                           Please resolve the issues above before generating.
+                           Please resolve the critical issues (red) before generating.
                         </p>
                     )}
                 </div>

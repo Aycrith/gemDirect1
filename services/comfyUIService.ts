@@ -74,6 +74,47 @@ export const checkServerConnection = async (url: string): Promise<void> => {
 };
 
 /**
+ * Checks the ComfyUI server's system resources, like GPU VRAM.
+ * @param url The server URL to check.
+ * @returns A promise that resolves to a status message string.
+ */
+export const checkSystemResources = async (url: string): Promise<string> => {
+    if (!url) {
+        return "Server address is not configured.";
+    }
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const response = await fetch(`${url}/system_stats`, { signal: controller.signal, mode: 'cors' });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+            return `Could not retrieve system stats (status: ${response.status}).`;
+        }
+        const stats = await response.json();
+        const gpuDevice = stats.devices?.find((d: any) => ['cuda', 'dml', 'mps', 'xpu', 'rocm'].includes(d.type.toLowerCase()));
+
+        if (gpuDevice) {
+            const vramTotalGB = gpuDevice.vram_total / (1024 ** 3);
+            const vramFreeGB = gpuDevice.vram_free / (1024 ** 3);
+            const VRAM_WARNING_THRESHOLD_GB = 2.0;
+
+            let message = `GPU: ${gpuDevice.name} | Total VRAM: ${vramTotalGB.toFixed(1)} GB | Free VRAM: ${vramFreeGB.toFixed(1)} GB.`;
+            if (vramFreeGB < VRAM_WARNING_THRESHOLD_GB) {
+                message += `\nWarning: Low VRAM detected. Generations requiring >${VRAM_WARNING_THRESHOLD_GB.toFixed(1)}GB may fail.`;
+            }
+            return message;
+        } else {
+            return "Info: No dedicated GPU detected. Generation will run on CPU and may be very slow.";
+        }
+    } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+             return "Failed to check system resources: Connection timed out.";
+        }
+        return "Failed to check system resources. Is the server running?";
+    }
+};
+
+/**
  * Validates the synced workflow and the consistency of the data mappings.
  * @param settings The current local generation settings.
  * @returns A promise that resolves if validation passes, and rejects with an array of specific error messages otherwise.
@@ -96,6 +137,16 @@ export const validateWorkflowAndMappings = (settings: LocalGenerationSettings): 
     }
 
     const mappingErrors: string[] = [];
+
+    // Check if essential data types are mapped
+    const mappedDataTypes = new Set(Object.values(settings.mapping));
+    if (!mappedDataTypes.has('human_readable_prompt') && !mappedDataTypes.has('full_timeline_json')) {
+        mappingErrors.push("Workflow is missing a mapping for the main text prompt (either Human-Readable or JSON).");
+    }
+    if (!mappedDataTypes.has('keyframe_image')) {
+        mappingErrors.push("Workflow is missing a mapping for the keyframe image input.");
+    }
+    
     for (const [key, dataType] of Object.entries(settings.mapping)) {
         if (dataType === 'none') continue;
 
