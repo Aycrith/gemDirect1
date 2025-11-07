@@ -17,9 +17,20 @@ interface StoryBibleEditorProps {
     onApiLog: ApiLogCallback;
 }
 
-const EditableField: React.FC<{ label: string; value: string; onChange: (value: string) => void; rows?: number }> = ({ label, value, onChange, rows = 3 }) => (
+const TabButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
+    <button
+        onClick={onClick}
+        className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${active ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'}`}
+    >
+        {children}
+    </button>
+);
+
+
+const EditableField: React.FC<{ label: string; description: string; value: string; onChange: (value: string) => void; rows?: number }> = ({ label, description, value, onChange, rows = 3 }) => (
     <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">{label}</label>
+        <label className="block text-sm font-medium text-gray-300">{label}</label>
+        <p className="text-xs text-gray-400 mt-1 mb-2">{description}</p>
         <textarea
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -32,6 +43,9 @@ const EditableField: React.FC<{ label: string; value: string; onChange: (value: 
 const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdate, onGenerateScenes, isLoading, onApiStateChange, onApiLog }) => {
     const [editableBible, setEditableBible] = useState(storyBible);
     const [isRefining, setIsRefining] = useState(false);
+    const [charTab, setCharTab] = useState<'edit' | 'preview'>('edit');
+    const [plotTab, setPlotTab] = useState<'edit' | 'preview'>('edit');
+
 
     const handleFieldChange = (field: keyof StoryBible, value: string) => {
         setEditableBible(prev => ({ ...prev, [field]: value }));
@@ -70,25 +84,71 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                 <p className="text-gray-400 mt-2">This is the narrative foundation of your project. Refine it here before generating scenes.</p>
             </div>
 
-            <div className="bg-gray-800/50 backdrop-blur-lg p-8 rounded-xl ring-1 ring-white/10 space-y-6">
-                <EditableField label="Logline" value={editableBible.logline} onChange={(v) => handleFieldChange('logline', v)} rows={2} />
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <EditableField label="Characters" value={editableBible.characters} onChange={(v) => handleFieldChange('characters', v)} rows={8} />
-                    </div>
-                    <div className="prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 bg-gray-900/50 p-4 rounded-md border border-gray-700/50">
-                        <div dangerouslySetInnerHTML={createMarkup(editableBible.characters)} />
-                    </div>
-                </div>
-
-                <EditableField label="Setting" value={editableBible.setting} onChange={(v) => handleFieldChange('setting', v)} rows={4} />
+            <div className="glass-card p-8 rounded-xl space-y-6">
+                <EditableField 
+                    label="Logline" 
+                    description="A single, powerful sentence that captures your entire story. This is your north star."
+                    value={editableBible.logline} 
+                    onChange={(v) => handleFieldChange('logline', v)} 
+                    rows={2} 
+                />
                 
                 <div>
-                    <EditableField label="Plot Outline (The Hero's Journey)" value={editableBible.plotOutline} onChange={(v) => handleFieldChange('plotOutline', v)} rows={10} />
-                    <div className="mt-4 prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 bg-gray-900/50 p-4 rounded-md border border-gray-700/50 max-h-80 overflow-y-auto">
-                        <div dangerouslySetInnerHTML={createMarkup(editableBible.plotOutline)} />
+                    <div className="flex justify-between items-center mb-2">
+                        <div>
+                             <label className="block text-sm font-medium text-gray-300">Characters</label>
+                             <p className="text-xs text-gray-400 mt-1">Introduce your key players. Give them a compelling hook.</p>
+                        </div>
+                        <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
+                            <TabButton active={charTab === 'edit'} onClick={() => setCharTab('edit')}>Edit</TabButton>
+                            <TabButton active={charTab === 'preview'} onClick={() => setCharTab('preview')}>Preview</TabButton>
+                        </div>
                     </div>
+                    {charTab === 'edit' ? (
+                        <textarea
+                            value={editableBible.characters}
+                            onChange={(e) => handleFieldChange('characters', e.target.value)}
+                            rows={8}
+                            className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-200 p-3"
+                        />
+                    ) : (
+                         <div className="prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 bg-gray-900/50 p-4 rounded-md border border-gray-700/50 min-h-[210px]">
+                            <div dangerouslySetInnerHTML={createMarkup(editableBible.characters)} />
+                        </div>
+                    )}
+                </div>
+
+                <EditableField 
+                    label="Setting" 
+                    description="Describe the world, time, and atmosphere. What does it feel like to be there?"
+                    value={editableBible.setting} 
+                    onChange={(v) => handleFieldChange('setting', v)} 
+                    rows={4} 
+                />
+                
+                <div>
+                    <div className="flex justify-between items-center mb-2">
+                         <div>
+                            <label className="block text-sm font-medium text-gray-300">Plot Outline (The Hero's Journey)</label>
+                            <p className="text-xs text-gray-400 mt-1">Structure your narrative. Using a classic structure like the Hero's Journey creates a resonant story.</p>
+                        </div>
+                        <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
+                           <TabButton active={plotTab === 'edit'} onClick={() => setPlotTab('edit')}>Edit</TabButton>
+                           <TabButton active={plotTab === 'preview'} onClick={() => setPlotTab('preview')}>Preview</TabButton>
+                        </div>
+                    </div>
+                     {plotTab === 'edit' ? (
+                        <textarea
+                            value={editableBible.plotOutline}
+                            onChange={(e) => handleFieldChange('plotOutline', e.target.value)}
+                            rows={10}
+                            className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-200 p-3"
+                        />
+                    ) : (
+                        <div className="mt-4 prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 bg-gray-900/50 p-4 rounded-md border border-gray-700/50 min-h-[260px] max-h-80 overflow-y-auto">
+                            <div dangerouslySetInnerHTML={createMarkup(editableBible.plotOutline)} />
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6 border-t border-gray-700/50">

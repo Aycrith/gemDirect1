@@ -20,6 +20,7 @@ import SettingsIcon from './components/icons/SettingsIcon';
 import LocalGenerationSettingsModal from './components/LocalGenerationSettingsModal';
 import ContinuityDirector from './components/ContinuityDirector';
 import ContinuityModal from './components/ContinuityModal';
+import SparklesIcon from './components/icons/SparklesIcon';
 
 const AppContent: React.FC = () => {
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('idea');
@@ -189,14 +190,26 @@ const AppContent: React.FC = () => {
     const renderCurrentStage = () => {
         switch (workflowStage) {
             case 'idea':
-                return <StoryIdeaForm onSubmit={handleGenerateStoryBible} isLoading={isLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
+                return (
+                    <>
+                        <div className="text-center py-16 sm:py-20 fade-in">
+                            <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">
+                                Cinematic Story Generator
+                            </h1>
+                            <p className="mt-4 max-w-2xl mx-auto text-lg text-gray-300">
+                                Transform your ideas into fully-realized cinematic stories, from high-level plot to shot-by-shot details, all with the power of AI.
+                            </p>
+                        </div>
+                        <StoryIdeaForm onSubmit={handleGenerateStoryBible} isLoading={isLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />
+                    </>
+                )
             case 'bible':
                 return storyBible && <StoryBibleEditor storyBible={storyBible} onUpdate={handleUpdateStoryBible} onGenerateScenes={() => setWorkflowStage('vision')} isLoading={isLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
             case 'vision':
                 return storyBible && <DirectorsVisionForm onSubmit={handleGenerateScenes} isLoading={isLoading} storyBible={storyBible} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
             case 'director':
                 return (
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 px-4 sm:px-6 lg:px-8">
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         <div className="lg:col-span-1">
                             <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} />
                         </div>
@@ -236,21 +249,26 @@ const AppContent: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
-            <header className="p-4 flex justify-between items-center sticky top-0 bg-gray-900/80 backdrop-blur-md z-30 border-b border-gray-800">
-                <h1 className="text-xl font-bold text-white">Cinematic Story Generator</h1>
+            <header className="p-4 flex justify-between items-center sticky top-0 bg-gray-900/80 backdrop-blur-md z-30 border-b border-indigo-500/20">
+                <div className="flex items-center gap-3">
+                    <SparklesIcon className="w-7 h-7 text-indigo-400" />
+                    <h1 className="text-xl font-bold text-white">Cinematic Story Generator</h1>
+                </div>
                 <div>
-                     <button onClick={() => setIsUsageDashboardOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2">
+                     <button onClick={() => setIsUsageDashboardOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Open usage dashboard">
                         <BarChartIcon className="w-6 h-6 text-gray-400" />
                     </button>
-                    <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors">
+                    <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" aria-label="Open settings">
                         <SettingsIcon className="w-6 h-6 text-gray-400" />
                     </button>
                 </div>
             </header>
             
-            <main className="py-12">
-                <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
-                {renderCurrentStage()}
+            <main className="py-8 sm:py-12">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
+                    {renderCurrentStage()}
+                </div>
             </main>
 
             <Toast toasts={toasts} removeToast={removeToast} />

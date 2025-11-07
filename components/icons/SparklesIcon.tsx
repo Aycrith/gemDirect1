@@ -14,7 +14,15 @@ const SparklesIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     strokeLinejoin="round"
     {...props}
   >
-    <path d="M9.93 13.5A7.14 7.14 0 0 1 2.86 6.43m18.28 0a7.14 7.14 0 0 1-7.07 7.07M12 2v4m0 14v4M4.93 4.93l2.83 2.83m11.31 11.31l-2.83-2.83m-14.14 0l2.83-2.83m11.31-11.31l-2.83 2.83" />
+    <path d="M12 3L14.34 8.66L20 11L14.34 13.34L12 19L9.66 13.34L4 11L9.66 8.66L12 3Z" />
+    <path d="M5 3L6 5" />
+    <path d="M19 21L18 19" />
+    <path d="M3 19L5 18" />
+    <path d="M21 5L19 6" />
+    <path d="M9 3L10 5" />
+    <path d="M15 21L14 19" />
+    <path d="M3 9L5 10" />
+    <path d="M21 15L19 14" />
   </svg>
 );
 

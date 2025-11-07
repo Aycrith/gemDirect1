@@ -52,9 +52,9 @@ const SuggestionModal: React.FC<{
                     </h3>
 
                     {result.thematic_concept && (
-                        <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-700/50 rounded-lg text-center">
+                        <div className="mb-4 p-4 bg-yellow-900/30 border border-yellow-700/50 rounded-lg text-center">
                             <h4 className="text-sm font-semibold text-yellow-400 uppercase tracking-wider">Thematic Concept</h4>
-                            <p className="text-xl font-bold text-white mt-1">"{result.thematic_concept}"</p>
+                            <p className="text-2xl font-bold text-white mt-1 italic">"{result.thematic_concept}"</p>
                         </div>
                     )}
 
@@ -127,20 +127,7 @@ const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, re
 
     return (
         <div className="my-6">
-            <style>
-            {`
-                @keyframes animated-border-glow {
-                    0% { border-color: rgba(251, 191, 36, 0.4); }
-                    50% { border-color: rgba(249, 115, 22, 0.6); }
-                    100% { border-color: rgba(251, 191, 36, 0.4); }
-                }
-                .animated-border {
-                    animation: animated-border-glow 4s ease-in-out infinite;
-                }
-            `}
-            </style>
-            <div className="relative bg-gray-800/50 backdrop-blur-sm border rounded-lg p-6 shadow-xl shadow-yellow-500/10 overflow-hidden animated-border">
-                
+            <div className="relative bg-gray-800/50 backdrop-blur-sm border rounded-lg p-6 shadow-xl shadow-yellow-500/10 overflow-hidden animated-border-glow">
                  <div className="relative">
                     <div className="mb-4 text-center sm:text-left">
                         <h2 className="flex items-center justify-center sm:justify-start text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-400">

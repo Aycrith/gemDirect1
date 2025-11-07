@@ -8,6 +8,7 @@ import PlusIcon from './icons/PlusIcon';
 import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import { getCoDirectorSuggestions, getPrunedContextForCoDirector, batchProcessShotEnhancements, getPrunedContextForShotGeneration, generateInitialShotsForScene } from '../services/geminiService';
+import TimelineIcon from './icons/TimelineIcon';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -30,7 +31,7 @@ const TimelineItem: React.FC<{
     const [isControlsVisible, setIsControlsVisible] = useState(false);
 
     return (
-        <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/80">
+        <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/80 transition-shadow hover:shadow-lg hover:shadow-indigo-500/10">
             <div className="flex justify-between items-start gap-4">
                 <div className="flex-grow">
                     <label className="block text-sm font-bold text-gray-300 mb-2">Shot {index + 1}</label>
@@ -56,7 +57,7 @@ const TimelineItem: React.FC<{
                 </div>
             </div>
             {isControlsVisible && (
-                <div className="mt-4 pt-4 border-t border-gray-700/50">
+                <div className="mt-4 pt-4 border-t border-gray-700/50 fade-in">
                     <CreativeControls value={enhancers} onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)} />
                 </div>
             )}
@@ -188,9 +189,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({ scene, onUpdateScene, d
 
     return (
         <div className="space-y-6">
-            <header>
+            <header className="bg-gray-800/30 p-4 rounded-lg border border-gray-700/50">
                 <h2 className="text-2xl font-bold text-white">{scene.title}</h2>
                 <p className="text-gray-400 mt-1">{scene.summary}</p>
+                 <p className="text-xs text-gray-500 mt-3 italic">Construct your scene shot-by-shot. Use the creative controls for detail and the Co-Director for AI-powered ideas.</p>
             </header>
 
             <div className="space-y-4">
@@ -215,10 +217,12 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({ scene, onUpdateScene, d
                         </React.Fragment>
                     ))
                 ) : (
-                    <div className="text-center py-12 bg-gray-800/30 rounded-lg border-2 border-dashed border-gray-700">
-                        <p className="text-gray-400">This scene has no shots yet.</p>
-                        <button onClick={handleGenerateInitialShots} className="mt-4 inline-flex items-center justify-center px-5 py-2.5 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 disabled:bg-gray-500">
-                           <SparklesIcon className="mr-2 h-5 w-5" /> Generate Initial Shots with AI
+                    <div className="text-center py-16 bg-gray-800/30 rounded-lg border-2 border-dashed border-gray-700 flex flex-col items-center justify-center">
+                        <TimelineIcon className="w-12 h-12 text-gray-600 mb-4" />
+                        <h3 className="text-lg font-semibold text-gray-300">This scene is an empty canvas.</h3>
+                        <p className="text-gray-400 mt-2 max-w-sm">Let's bring it to life. Generate an initial shot list with AI to get started.</p>
+                        <button onClick={handleGenerateInitialShots} className="mt-6 inline-flex items-center justify-center px-6 py-3 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 disabled:bg-gray-500 transform hover:scale-105">
+                           <SparklesIcon className="mr-2 h-5 w-5" /> Generate Initial Shots
                         </button>
                     </div>
                 )}

@@ -10,9 +10,9 @@ const toastIcons = {
 }
 
 const toastStyles = {
-    success: 'bg-green-800/50 border-green-700 text-green-200',
-    error: 'bg-red-800/50 border-red-700 text-red-200',
-    info: 'bg-blue-800/50 border-blue-700 text-blue-200',
+    success: 'bg-green-800/40 border-green-700/80 text-green-200',
+    error: 'bg-red-800/40 border-red-700/80 text-red-200',
+    info: 'bg-blue-800/40 border-blue-700/80 text-blue-200',
 }
 
 
@@ -22,7 +22,7 @@ const Toast: React.FC<{ toasts: ToastMessage[]; removeToast: (id: number) => voi
             {toasts.map(toast => (
                 <div
                     key={toast.id}
-                    className={`flex items-center gap-3 p-3 rounded-lg shadow-lg border backdrop-blur-sm animate-fade-in-right ${toastStyles[toast.type]}`}
+                    className={`flex items-center gap-3 p-3 rounded-lg shadow-lg border backdrop-blur-md animate-fade-in-right ${toastStyles[toast.type]}`}
                 >
                     {toastIcons[toast.type]}
                     <p className="text-sm font-medium flex-1">{toast.message}</p>

@@ -41,6 +41,8 @@ export interface StoryBible {
     plotOutline: string;
 }
 
+export type WorkflowStage = 'idea' | 'bible' | 'vision' | 'director' | 'continuity';
+
 export type ToastType = 'success' | 'error' | 'info';
 
 export interface ToastMessage {
