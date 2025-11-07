@@ -449,7 +449,7 @@ export const refineStoryBibleSection = async (
     if (section === 'characters') {
         instruction = "You are a master storyteller. Refine the following character descriptions to be more vivid and compelling. **Crucially, deepen their motivations, clarify their core desires, and introduce an internal or external conflict that drives their actions.** Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
     } else { // plotOutline
-        instruction = "You are a master screenwriter. Refine the following plot outline, ensuring it adheres strongly to the 3-act structure and The Hero's Journey. Make the plot points more dramatic and the pacing more effective. **Where appropriate, suggest a compelling plot twist or a moment of foreshadowing that enhances the narrative.** Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
+        instruction = "You are a master screenwriter. Refine the following plot outline to enhance its dramatic structure, pacing, and emotional impact. Strengthen the turning points and clarify the stakes, respecting the underlying narrative framework of the original text. **Where appropriate, suggest a compelling plot twist or a moment of foreshadowing that elevates the story.** Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
     }
 
     const prompt = `${instruction}
