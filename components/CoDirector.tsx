@@ -3,8 +3,6 @@ import { CoDirectorResult, Suggestion } from '../types';
 import LightbulbIcon from './icons/LightbulbIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import { marked } from 'marked';
-import { ApiLogCallback } from '../services/geminiService';
-
 
 interface CoDirectorProps {
   onGetSuggestions: (objective: string) => Promise<void>;
@@ -13,7 +11,6 @@ interface CoDirectorProps {
   onApplySuggestion: (suggestion: Suggestion) => void;
   onClose: () => void;
   onGetInspiration: () => Promise<string[] | undefined>;
-  onApiLog: ApiLogCallback;
 }
 
 const SuggestionModal: React.FC<{

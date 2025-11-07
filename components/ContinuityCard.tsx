@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
@@ -11,6 +12,7 @@ import { marked } from 'marked';
 import SparklesIcon from './icons/SparklesIcon';
 import FilmIcon from './icons/FilmIcon';
 import ImageIcon from './icons/ImageIcon';
+import RefreshCwIcon from './icons/RefreshCwIcon';
 
 interface ContinuityCardProps {
   scene: Scene;
@@ -111,6 +113,14 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
       addToast(errorMsg, 'error');
     }
   };
+  
+  const handleReset = () => {
+    if (data.videoSrc) {
+        URL.revokeObjectURL(data.videoSrc);
+    }
+    setContinuityData(() => ({ status: 'idle' })); // Reset to initial state
+  };
+
 
   const createMarkup = (markdown: string) => {
     const rawMarkup = marked.parse(markdown);
@@ -136,13 +146,23 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                     </div>
                 )}
                 {data.videoSrc ? (
-                    <VideoPlayer src={data.videoSrc} />
+                    <div className="space-y-4">
+                        <VideoPlayer src={data.videoSrc} />
+                         <button onClick={handleReset} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-yellow-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
+                            <RefreshCwIcon className="w-4 h-4" /> Reset Analysis
+                        </button>
+                    </div>
                 ) : isLoading ? (
                     <AnalysisLoadingIndicator />
                 ) : (
                     <FileUpload onFileSelect={handleAnalysis} />
                 )}
-                {data.error && <p className="text-center text-sm text-red-400 mt-4">{data.error}</p>}
+                {data.error && 
+                    <div className="text-center mt-4">
+                        <p className="text-sm text-red-400">{data.error}</p>
+                         <button onClick={handleReset} className="mt-2 text-sm font-semibold text-yellow-400 hover:underline">Try Again</button>
+                    </div>
+                }
             </div>
 
             {/* Right Column: Feedback */}

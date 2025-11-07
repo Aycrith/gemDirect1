@@ -1,8 +1,7 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
-import { Scene, StoryBible, ToastMessage, WorkflowStage, SceneContinuityData, LocalGenerationSettings, Suggestion, TimelineData, Shot, LocalGenerationStatus } from './types';
-import * as db from './utils/database';
-import { generateSceneList, generateStoryBible, updateSceneSummaryWithRefinements, generateNextSceneFromContinuity, generateKeyframeForScene } from './services/geminiService';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, TimelineData, Shot } from './types';
+import { useProjectData, usePersistentState } from './utils/hooks';
+import { updateSceneSummaryWithRefinements, generateNextSceneFromContinuity } from './services/geminiService';
 import { ApiStatusProvider, useApiStatus } from './contexts/ApiStatusContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
 
@@ -23,25 +22,26 @@ import ContinuityModal from './components/ContinuityModal';
 import SparklesIcon from './components/icons/SparklesIcon';
 
 const AppContent: React.FC = () => {
-    const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('idea');
-    const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
-    const [directorsVision, setDirectorsVision] = useState<string>('');
-    const [scenes, setScenes] = useState<Scene[]>([]);
+    const { 
+        workflowStage, setWorkflowStage, storyBible, setStoryBible, 
+        directorsVision, setDirectorsVision, scenes, setScenes,
+        handleGenerateStoryBible, handleGenerateScenes, isLoading: isProjectLoading 
+    } = useProjectData();
+
     const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [isUsageDashboardOpen, setIsUsageDashboardOpen] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-    const [localGenSettings, setLocalGenSettings] = useState<LocalGenerationSettings>({ comfyUIUrl: '', comfyUIClientId: '', workflowJson: '', mapping: {} });
-    const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({});
-    const [generatedShotImages, setGeneratedShotImages] = useState<Record<string, string>>({});
-    const [localGenStatus, setLocalGenStatus] = useState<Record<string, LocalGenerationStatus>>({});
-    const [continuityData, setContinuityData] = useState<Record<string, SceneContinuityData>>({});
     const [refinedSceneIds, setRefinedSceneIds] = useState(new Set<string>());
     const [continuityModal, setContinuityModal] = useState<{ sceneId: string, lastFrame: string } | null>(null);
     const [isExtending, setIsExtending] = useState(false);
 
-
+    const [localGenSettings, setLocalGenSettings] = usePersistentState('localGenSettings', { comfyUIUrl: '', comfyUIClientId: '', workflowJson: '', mapping: {} });
+    const [generatedImages, setGeneratedImages] = usePersistentState('generatedImages', {});
+    const [generatedShotImages, setGeneratedShotImages] = usePersistentState('generatedShotImages', {});
+    const [continuityData, setContinuityData] = usePersistentState('continuityData', {});
+    const [localGenStatus, setLocalGenStatus] = usePersistentState('localGenStatus', {});
+    
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
 
@@ -57,115 +57,14 @@ const AppContent: React.FC = () => {
         setToasts(prev => prev.filter(t => t.id !== id));
     }, []);
 
-    // Load data from IndexedDB on initial mount
+    // Set active scene when scenes are loaded/updated
     useEffect(() => {
-        const loadData = async () => {
-            setIsLoading(true);
-            const bible = await db.getStoryBible();
-            const vision = await db.getData('directorsVision');
-            const sceneList = await db.getAllScenes();
-            const settings = await db.getData('localGenSettings');
-            const images = await db.getData('generatedImages');
-            const shotImages = await db.getData('generatedShotImages');
-            const continuity = await db.getData('continuityData');
-            const genStatus = await db.getData('localGenStatus');
-
-            if (bible) {
-                setStoryBible(bible);
-                if (vision) {
-                    setDirectorsVision(vision);
-                    if (sceneList.length > 0) {
-                        setScenes(sceneList);
-                        setActiveSceneId(sceneList[0].id);
-                        setWorkflowStage('director');
-                    } else {
-                        setWorkflowStage('vision');
-                    }
-                } else {
-                    setWorkflowStage('bible');
-                }
-            } else {
-                setWorkflowStage('idea');
-            }
-            if(settings) setLocalGenSettings(settings);
-            if(images) setGeneratedImages(images);
-            if(shotImages) setGeneratedShotImages(shotImages);
-            if(continuity) setContinuityData(continuity);
-            if(genStatus) setLocalGenStatus(genStatus);
-
-
-            setIsLoading(false);
-        };
-        loadData();
-    }, []);
-
-    const handleGenerateStoryBible = async (idea: string) => {
-        setIsLoading(true);
-        try {
-            const bible = await generateStoryBible(idea, logApiCall, updateApiStatus);
-            setStoryBible(bible);
-            await db.saveStoryBible(bible);
-            setWorkflowStage('bible');
-            addToast('Story Bible generated successfully!', 'success');
-        } catch (e) {
-            console.error(e);
-            addToast(e instanceof Error ? e.message : 'Failed to generate Story Bible.', 'error');
-        } finally {
-            setIsLoading(false);
+        if (scenes.length > 0 && !scenes.find(s => s.id === activeSceneId)) {
+            setActiveSceneId(scenes[0].id);
+        } else if (scenes.length === 0) {
+            setActiveSceneId(null);
         }
-    };
-
-    const handleUpdateStoryBible = async (bible: StoryBible) => {
-        setStoryBible(bible);
-        await db.saveStoryBible(bible);
-        addToast('Story Bible updated.', 'info');
-    };
-
-    const handleGenerateScenes = async (vision: string) => {
-        if (!storyBible) return;
-        setIsLoading(true);
-        setDirectorsVision(vision);
-        await db.saveData('directorsVision', vision);
-        try {
-            const sceneList = await generateSceneList(storyBible.plotOutline, vision, logApiCall, updateApiStatus);
-            const newScenes: Scene[] = sceneList.map(s => ({
-                id: `scene_${Date.now()}_${Math.random()}`,
-                title: s.title,
-                summary: s.summary,
-                timeline: { shots: [], shotEnhancers: {}, transitions: [], negativePrompt: '' },
-            }));
-            setScenes(newScenes);
-            await db.saveScenes(newScenes);
-            if (newScenes.length > 0) {
-                setActiveSceneId(newScenes[0].id);
-            }
-            addToast(`${newScenes.length} scenes generated! Now generating keyframe images...`, 'info');
-
-            // Post-generation: Create keyframe images for each scene
-            const imagePromises = newScenes.map(scene => {
-                const prompt = `A cinematic keyframe for a scene about: "${scene.summary}". Style: ${vision}`;
-                return generateKeyframeForScene(prompt, logApiCall, updateApiStatus).then(image => ({ sceneId: scene.id, image }));
-            });
-
-            const results = await Promise.all(imagePromises);
-            const newImages = results.reduce((acc, result) => {
-                acc[result.sceneId] = result.image;
-                return acc;
-            }, {} as Record<string, string>);
-
-            setGeneratedImages(prev => ({...prev, ...newImages}));
-            await db.saveData('generatedImages', {...generatedImages, ...newImages});
-
-            setWorkflowStage('director');
-            addToast('Scene keyframes generated successfully!', 'success');
-
-        } catch (e) {
-            console.error(e);
-            addToast(e instanceof Error ? e.message : 'Failed to generate scenes.', 'error');
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    }, [scenes, activeSceneId]);
 
     const handleStageClick = (stage: WorkflowStage) => {
         if (stage === 'director' && (!storyBible || !directorsVision || scenes.length === 0)) {
@@ -239,7 +138,6 @@ const AppContent: React.FC = () => {
         }
         
         setScenes(updatedScenes);
-        db.saveScenes(updatedScenes);
     
         addToast("Suggestion applied successfully!", 'success');
         if (summaryNeedsUpdate) {
@@ -253,12 +151,10 @@ const AppContent: React.FC = () => {
             addToast("Scene not found for summary update.", 'error');
             return false;
         }
-        setIsLoading(true);
         try {
             const newSummary = await updateSceneSummaryWithRefinements(scene.summary, scene.timeline, logApiCall, updateApiStatus);
             const updatedScenes = scenes.map(s => s.id === sceneId ? { ...s, summary: newSummary } : s);
             setScenes(updatedScenes);
-            await db.saveScenes(updatedScenes);
             setRefinedSceneIds(prev => {
                 const newSet = new Set(prev);
                 newSet.delete(sceneId);
@@ -269,8 +165,6 @@ const AppContent: React.FC = () => {
         } catch(e) {
             addToast(e instanceof Error ? e.message : 'Failed to update scene summary.', 'error');
             return false;
-        } finally {
-            setIsLoading(false);
         }
     };
     
@@ -293,13 +187,13 @@ const AppContent: React.FC = () => {
                                 Transform your ideas into fully-realized cinematic stories, from high-level plot to shot-by-shot details, all with the power of AI.
                             </p>
                         </div>
-                        <StoryIdeaForm onSubmit={handleGenerateStoryBible} isLoading={isLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />
+                        <StoryIdeaForm onSubmit={(idea) => handleGenerateStoryBible(idea, addToast)} isLoading={isProjectLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />
                     </>
                 )
             case 'bible':
-                return storyBible && <StoryBibleEditor storyBible={storyBible} onUpdate={handleUpdateStoryBible} onGenerateScenes={() => setWorkflowStage('vision')} isLoading={isLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
+                return storyBible && <StoryBibleEditor storyBible={storyBible} onUpdate={setStoryBible} onGenerateScenes={() => setWorkflowStage('vision')} isLoading={isProjectLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
             case 'vision':
-                return storyBible && <DirectorsVisionForm onSubmit={handleGenerateScenes} isLoading={isLoading} storyBible={storyBible} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
+                return storyBible && <DirectorsVisionForm onSubmit={(vision) => handleGenerateScenes(vision, addToast, setGeneratedImages)} isLoading={isProjectLoading} storyBible={storyBible} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
             case 'director':
                 return (
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -313,7 +207,6 @@ const AppContent: React.FC = () => {
                                 onUpdateScene={(updatedScene) => {
                                     const newScenes = scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
                                     setScenes(newScenes);
-                                    db.saveScenes(newScenes);
                                 }} 
                                 directorsVision={directorsVision} 
                                 storyBible={storyBible!} 
@@ -323,18 +216,12 @@ const AppContent: React.FC = () => {
                                 onApplySuggestion={handleApplyTimelineSuggestion}
                                 generatedImages={generatedImages}
                                 generatedShotImages={generatedShotImages}
-                                setGeneratedShotImages={(updater) => {
-                                    const newImages = typeof updater === 'function' ? updater(generatedShotImages) : updater;
-                                    setGeneratedShotImages(newImages);
-                                    db.saveData('generatedShotImages', newImages);
-                                }}
+                                setGeneratedShotImages={setGeneratedShotImages}
                                 localGenSettings={localGenSettings}
                                 localGenStatus={localGenStatus}
-                                setLocalGenStatus={(updater) => {
-                                    const newStatus = typeof updater === 'function' ? updater(localGenStatus) : updater;
-                                    setLocalGenStatus(newStatus);
-                                    db.saveData('localGenStatus', newStatus);
-                                }}
+                                setLocalGenStatus={setLocalGenStatus}
+                                isRefined={refinedSceneIds.has(activeScene.id)}
+                                onUpdateSceneSummary={handleUpdateSceneSummary}
                             /> : <p>Select a scene</p>}
                         </div>
                     </div>
@@ -360,7 +247,7 @@ const AppContent: React.FC = () => {
         }
     };
     
-    if (isLoading && !storyBible) {
+    if (isProjectLoading && workflowStage === 'idea') {
         return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading project...</div>;
     }
 
@@ -397,7 +284,6 @@ const AppContent: React.FC = () => {
                 settings={localGenSettings}
                 onSave={(newSettings) => {
                     setLocalGenSettings(newSettings);
-                    db.saveData('localGenSettings', newSettings);
                     addToast('Settings saved!', 'success');
                 }}
             />
@@ -434,7 +320,6 @@ const AppContent: React.FC = () => {
                             newScenes.splice(currentSceneIndex + 1, 0, newScene);
                             
                             setScenes(newScenes);
-                            await db.saveScenes(newScenes);
                     
                             addToast(`New scene "${newScene.title}" added to timeline!`, 'success');
                             setContinuityModal(null);

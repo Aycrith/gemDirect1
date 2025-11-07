@@ -11,11 +11,12 @@ import SparklesIcon from './icons/SparklesIcon';
 import ImageIcon from './icons/ImageIcon';
 // FIX: Import 'getCoDirectorSuggestions' and 'batchProcessShotEnhancements' from geminiService.
 import { generateInitialShotsForScene, generateImageForShot, getCoDirectorSuggestions, batchProcessShotEnhancements } from '../services/geminiService';
-import { generateVideoRequestPayloads } from '../services/videoGenerationService';
-import { queueComfyUIPrompt } from '../services/videoGenerationService';
+import { generateVideoRequestPayloads } from '../services/payloadService';
+import { queueComfyUIPrompt, trackPromptExecution } from '../services/comfyUIService';
 import FinalPromptModal from './FinalPromptModal';
 import LocalGenerationStatusComponent from './LocalGenerationStatus';
 import TimelineIcon from './icons/TimelineIcon';
+import RefreshCwIcon from './icons/RefreshCwIcon';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -32,6 +33,8 @@ interface TimelineEditorProps {
     localGenSettings: LocalGenerationSettings;
     localGenStatus: Record<string, LocalGenerationStatus>;
     setLocalGenStatus: React.Dispatch<React.SetStateAction<Record<string, LocalGenerationStatus>>>;
+    isRefined: boolean;
+    onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
 }
 
 const TimelineItem: React.FC<{
@@ -106,7 +109,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     setGeneratedShotImages,
     localGenSettings,
     localGenStatus,
-    setLocalGenStatus
+    setLocalGenStatus,
+    isRefined,
+    onUpdateSceneSummary
 }) => {
     const [timeline, setTimeline] = useState<TimelineData>(scene.timeline);
     const [coDirectorResult, setCoDirectorResult] = useState<any | null>(null);
@@ -114,6 +119,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
     const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string } | null>(null);
     const [isGeneratingShotImage, setIsGeneratingShotImage] = useState<Record<string, boolean>>({});
+    const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
+
 
     const sceneKeyframe = generatedImages[scene.id];
     
@@ -255,30 +262,61 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             onApiStateChange('error', 'Please generate a scene keyframe before local generation.');
             return;
         }
-        setLocalGenStatus(prev => ({ ...prev, [scene.id]: { status: 'queued', message: 'Preparing to queue prompt...', progress: 0 }}));
+
+        // Scoped status updater for this specific scene
+        const updateStatus = (update: Partial<LocalGenerationStatus>) => {
+            setLocalGenStatus(prev => ({
+                ...prev,
+                [scene.id]: { ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }), ...update }
+            }));
+        };
+
+        updateStatus({ status: 'queued', message: 'Preparing to queue prompt...', progress: 0 });
+        
         try {
             const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary);
             const response = await queueComfyUIPrompt(localGenSettings, payloads, sceneKeyframe);
-            setLocalGenStatus(prev => ({ ...prev, [scene.id]: { status: 'queued', message: `Prompt queued successfully! (ID: ${response.prompt_id})`, progress: 0 }}));
+            
+            if (response.prompt_id) {
+                updateStatus({ message: `Prompt queued! (ID: ${response.prompt_id})` });
+                // Start tracking progress via WebSocket
+                trackPromptExecution(localGenSettings, response.prompt_id, updateStatus);
+            } else {
+                 updateStatus({ status: 'error', message: 'Queueing failed: No prompt ID received.' });
+            }
         } catch (error) {
              const message = error instanceof Error ? error.message : "An unknown error occurred.";
-             setLocalGenStatus(prev => ({ ...prev, [scene.id]: { status: 'error', message, progress: 0 }}));
+             updateStatus({ status: 'error', message });
         }
     };
-
+    
+    const handleUpdateSummaryClick = async () => {
+        setIsSummaryUpdating(true);
+        await onUpdateSceneSummary(scene.id);
+        setIsSummaryUpdating(false);
+    };
 
     return (
         <div className="space-y-6">
-            <header className="bg-gray-800/30 p-4 rounded-lg border border-gray-700/50 flex gap-6">
+            <header className="bg-gray-800/30 p-4 rounded-lg border border-gray-700/50 flex flex-col sm:flex-row gap-6">
                 {sceneKeyframe && (
-                    <div className="w-1/3 flex-shrink-0">
+                    <div className="sm:w-1/3 flex-shrink-0">
                         <img src={`data:image/jpeg;base64,${sceneKeyframe}`} alt={`Keyframe for ${scene.title}`} className="rounded-md aspect-video object-cover" />
                     </div>
                 )}
                 <div className="flex-grow">
                     <h2 className="text-2xl font-bold text-white">{scene.title}</h2>
                     <p className="text-gray-400 mt-1">{scene.summary}</p>
-                    <p className="text-xs text-gray-500 mt-3 italic">Construct your scene shot-by-shot. Use the creative controls for detail and the Co-Director for AI-powered ideas.</p>
+                    {isRefined && (
+                         <button 
+                            onClick={handleUpdateSummaryClick} 
+                            disabled={isSummaryUpdating}
+                            className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-yellow-600 text-white hover:bg-yellow-700 disabled:bg-gray-500"
+                        >
+                            {isSummaryUpdating ? <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <RefreshCwIcon className="w-4 h-4"/>}
+                            Update Summary
+                        </button>
+                    )}
                 </div>
             </header>
 
@@ -340,7 +378,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 onApplySuggestion={(suggestion) => onApplySuggestion(suggestion, scene.id)}
                 onClose={() => setCoDirectorResult(null)}
                 onGetInspiration={() => Promise.resolve([])}
-                onApiLog={onApiLog}
             />
             
             <div className="space-y-6 pt-6 border-t border-gray-700/50">
