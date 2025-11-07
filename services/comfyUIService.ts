@@ -1,4 +1,4 @@
-import { LocalGenerationSettings, LocalGenerationStatus, WorkflowInput, WorkflowMapping } from '../types';
+import { LocalGenerationSettings, LocalGenerationStatus } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 
 // A list of common URLs to try for auto-discovery.
