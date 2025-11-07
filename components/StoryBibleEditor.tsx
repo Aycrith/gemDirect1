@@ -27,7 +27,7 @@ const EditableSection: React.FC<{
     }
 
     return (
-        <div className="bg-gray-800/50 p-4 rounded-md border border-gray-700">
+        <div className="bg-gray-800/50 p-4 rounded-lg ring-1 ring-gray-700/50">
             <div className="flex justify-between items-center mb-2">
                  <label className="block text-sm font-bold text-indigo-400">{title}</label>
             </div>
@@ -35,7 +35,7 @@ const EditableSection: React.FC<{
                 value={content}
                 onChange={(e) => onChange(e.target.value)}
                 rows={getTextAreaHeight(content, rows)}
-                className="w-full bg-gray-900/50 p-2 border border-gray-600 rounded-md focus:ring-1 focus:ring-indigo-500 text-sm text-gray-300 leading-relaxed"
+                className="w-full bg-gray-900/50 p-3 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-300 leading-relaxed transition-colors"
             />
         </div>
     );
@@ -65,8 +65,8 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, setStor
 
     return (
         <div className="max-w-4xl mx-auto">
-            <header className="mb-8">
-                <h2 className="flex items-center text-3xl font-bold text-gray-200 mb-2">
+            <header className="mb-8 text-center">
+                <h2 className="flex items-center justify-center text-3xl font-bold text-gray-100 mb-2">
                     <BookOpenIcon className="w-8 h-8 mr-3 text-indigo-400" />
                     Your Story Bible
                 </h2>

@@ -48,14 +48,14 @@ const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
 
   return (
     <div 
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 flex items-center justify-center p-4 fade-in"
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center p-4 fade-in"
         onClick={onClose}
         role="dialog"
         aria-modal="true"
         aria-labelledby="usage-dashboard-title"
     >
         <div 
-            className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" 
+            className="bg-gray-800/90 border border-gray-700 rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" 
             onClick={(e) => e.stopPropagation()}
         >
             <header className="flex justify-between items-center p-4 border-b border-gray-700">
@@ -66,25 +66,25 @@ const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                 <button onClick={onClose} className="text-gray-400 hover:text-white">&times;</button>
             </header>
             
-            <div className="p-4 overflow-y-auto">
+            <div className="p-6 overflow-y-auto">
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                    <div className="bg-gray-900/50 p-4 rounded-lg text-center">
-                        <p className="text-xs text-gray-400 uppercase">Total Requests</p>
+                    <div className="bg-gray-900/50 p-4 rounded-lg text-center ring-1 ring-gray-700">
+                        <p className="text-xs text-gray-400 uppercase tracking-wider">Total Requests</p>
                         <p className="text-2xl font-bold text-white">{totalRequests}</p>
                     </div>
-                     <div className="bg-gray-900/50 p-4 rounded-lg text-center">
-                        <p className="text-xs text-gray-400 uppercase">Total Tokens</p>
+                     <div className="bg-gray-900/50 p-4 rounded-lg text-center ring-1 ring-gray-700">
+                        <p className="text-xs text-gray-400 uppercase tracking-wider">Total Tokens</p>
                         <p className="text-2xl font-bold text-white">{totalTokens.toLocaleString()}</p>
                     </div>
-                     <div className="bg-gray-900/50 p-4 rounded-lg text-center">
-                        <p className="text-xs text-gray-400 uppercase">Est. Session Cost</p>
+                     <div className="bg-gray-900/50 p-4 rounded-lg text-center ring-1 ring-gray-700">
+                        <p className="text-xs text-gray-400 uppercase tracking-wider">Est. Session Cost</p>
                         <p className="text-2xl font-bold text-white">${estimatedCost.toFixed(4)}</p>
                     </div>
                 </div>
 
                 {/* Rate Limit Analysis */}
-                <div className="bg-gray-900/50 p-4 rounded-lg mb-6">
+                <div className="bg-gray-900/50 p-4 rounded-lg mb-6 ring-1 ring-gray-700">
                      <h4 className="text-md font-semibold text-gray-200 mb-3">Rate Limit Analysis (Requests Per Minute)</h4>
                      <div className="space-y-4">
                         <RateLimitMeter model="gemini-2.5-flash" logs={logs} />
@@ -96,7 +96,7 @@ const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                 {/* API Call Log */}
                 <div>
                      <h4 className="text-md font-semibold text-gray-200 mb-3">API Call Log</h4>
-                     <div className="max-h-80 overflow-y-auto bg-gray-900/50 rounded-lg border border-gray-700">
+                     <div className="max-h-80 overflow-y-auto bg-gray-900/50 rounded-lg ring-1 ring-gray-700">
                         <table className="w-full text-sm text-left text-gray-300">
                             <thead className="text-xs text-gray-400 uppercase bg-gray-700/50 sticky top-0">
                                 <tr>
@@ -129,7 +129,7 @@ const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                 </div>
             </div>
 
-            <footer className="p-4 border-t border-gray-700 mt-auto flex justify-between items-center">
+            <footer className="p-4 border-t border-gray-700 mt-auto flex justify-between items-center bg-gray-900/50 rounded-b-lg">
                 <p className="text-xs text-gray-500">Costs are estimates for educational purposes.</p>
                 <button 
                     onClick={clearUsage}

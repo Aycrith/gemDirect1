@@ -626,25 +626,27 @@ const AppContent: React.FC = () => {
     }
 
     return (
-        <div className="p-4 sm:p-8 max-w-screen-2xl mx-auto">
+        <div className="p-6 sm:p-10 pt-28 max-w-screen-2xl mx-auto">
             <Toast toasts={toasts} removeToast={removeToast} />
-            <div className="flex justify-between items-start mb-8">
-                 <h1 className="text-3xl sm:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">Cinematic Story Generator</h1>
-                 <div className="flex items-center gap-2">
-                    <button onClick={handleSaveProject} disabled={isLoading} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700 disabled:opacity-50">
-                        <SaveIcon className="w-4 h-4" /> Save
-                    </button>
-                    <button onClick={() => setIsUsageDashboardOpen(true)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700">
-                        <BarChartIcon className="w-4 h-4" /> Usage
-                    </button>
-                    <button onClick={() => setIsSettingsModalOpen(true)} title="Local Generation Settings" className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700">
-                        <SettingsIcon className="w-4 h-4" /> Settings
-                    </button>
-                    <button onClick={handleClearProject} disabled={isLoading} title="Clear Project & Start New" className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-md border transition-colors bg-red-800/50 border-red-700 text-red-300 hover:bg-red-800 disabled:opacity-50">
-                        <TrashIcon className="w-4 h-4" /> Clear
-                    </button>
-                 </div>
-            </div>
+            <header className="fixed top-0 left-0 right-0 z-30 bg-gray-900/50 backdrop-blur-lg border-b border-gray-700/50">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 max-w-screen-2xl mx-auto gap-4">
+                    <h1 className="text-3xl sm:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-fuchsia-500">Cinematic Story Generator</h1>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <button onClick={handleSaveProject} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg border transition-colors bg-gray-800/50 border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-indigo-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900">
+                            <SaveIcon className="w-4 h-4" /> Save
+                        </button>
+                        <button onClick={() => setIsUsageDashboardOpen(true)} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg border transition-colors bg-gray-800/50 border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-indigo-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900">
+                            <BarChartIcon className="w-4 h-4" /> Usage
+                        </button>
+                        <button onClick={() => setIsSettingsModalOpen(true)} title="Local Generation Settings" className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg border transition-colors bg-gray-800/50 border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-indigo-500 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900">
+                            <SettingsIcon className="w-4 h-4" /> Settings
+                        </button>
+                        <button onClick={handleClearProject} disabled={isLoading} title="Clear Project & Start New" className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg border transition-colors bg-red-900/40 border-red-800/80 text-red-300 hover:bg-red-800/80 hover:border-red-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-gray-900">
+                            <TrashIcon className="w-4 h-4" /> Clear
+                        </button>
+                    </div>
+                </div>
+            </header>
 
             <WorkflowTracker currentStage={workflowStage} onStageClick={setWorkflowStage} />
 

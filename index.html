@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cinematic Story Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="importmap">
 {
@@ -18,10 +21,32 @@
 }
 </script>
 <style>
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: #0A0F1A; /* A deep navy blue */
+    background-image: 
+      radial-gradient(circle at top, rgba(31, 41, 55, 0.6) 0%, transparent 40%),
+      url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%231f2937' fill-opacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    background-attachment: fixed;
+  }
+  
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #111827; /* gray-900 */
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #374151; /* gray-700 */
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4b5563; /* gray-600 */
+  }
+
   .fade-in {
-    animation: fadeInAnimation ease 0.5s;
-    animation-iteration-count: 1;
-    animation-fill-mode: forwards;
+    animation: fadeInAnimation 0.5s ease-out forwards;
   }
   @keyframes fadeInAnimation {
     0% {
@@ -35,7 +60,7 @@
   }
 
   .animate-fade-in-right {
-    animation: fadeInRight 0.3s ease-out forwards;
+    animation: fadeInRight 0.4s ease-out forwards;
   }
 
   @keyframes fadeInRight {
@@ -50,7 +75,7 @@
   }
 </style>
 </head>
-  <body class="bg-gray-900 text-gray-100 antialiased">
+  <body class="text-gray-200 antialiased">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

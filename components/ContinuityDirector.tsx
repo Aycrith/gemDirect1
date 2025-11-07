@@ -84,16 +84,16 @@ CONTEXT FROM ADJACENT SCENES:
 
   return (
     <div className="max-w-7xl mx-auto">
-      <header className="text-center mb-10">
-        <h2 className="flex items-center justify-center text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-300 to-cyan-400">
+      <header className="text-center mb-12">
+        <h2 className="flex items-center justify-center text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-green-300 to-cyan-400">
           <ClipboardCheckIcon className="w-10 h-10 mr-4 text-green-300" />
           Continuity Director
         </h2>
-        <p className="mt-3 text-lg text-gray-400 max-w-3xl mx-auto">
+        <p className="mt-4 text-lg text-gray-400 max-w-3xl mx-auto">
           Upload your generated videos for each scene. The AI will analyze them, score them against your creative intent, and provide feedback to refine your story.
         </p>
       </header>
-      <div className="space-y-8">
+      <div className="space-y-12">
         {scenes.map((scene, index) => (
           <ContinuityCard
             key={scene.id}

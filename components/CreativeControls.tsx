@@ -20,7 +20,7 @@ const ControlButton: React.FC<{ label: string; selected: boolean; onClick: () =>
     <Tooltip text={description}>
         <button
             onClick={onClick}
-            className={`px-3 py-1.5 text-sm font-medium rounded-full border transition-all duration-200 ${selected ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-700 hover:border-gray-500'}`}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 ease-out transform hover:scale-105 ${selected ? 'bg-indigo-500 border-indigo-400 text-white shadow-md shadow-indigo-500/20' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-gray-500'}`}
         >
             {label}
         </button>
@@ -30,8 +30,8 @@ const ControlButton: React.FC<{ label: string; selected: boolean; onClick: () =>
 const ControlSection: React.FC<{ title: string; icon: React.ReactNode; options: string[]; selected: string[]; onToggle: (option: string) => void; categoryId: keyof typeof CINEMATIC_TERMS; }> = 
 React.memo(({ title, icon, options, selected, onToggle, categoryId }) => {
     return (
-    <div>
-        <label className="flex items-center text-sm font-medium text-gray-300 mb-3">
+    <div className="bg-gray-900/30 p-3 rounded-lg ring-1 ring-gray-700/50">
+        <label className="flex items-center text-sm font-semibold text-gray-200 mb-3">
             {icon}
             {title}
         </label>
@@ -78,7 +78,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
     }, [value, onChange]);
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 p-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-1">
             <ControlSection 
                 title="Framing & Angle"
                 icon={<FramingIcon className="w-5 h-5 mr-2 text-indigo-400" />}

@@ -13,6 +13,9 @@ interface Props {
 }
 
 const parseWorkflowForInputs = (workflowJson: string): WorkflowInput[] => {
+    if (!workflowJson || workflowJson.trim() === '') {
+        return [];
+    }
     try {
         const workflow = JSON.parse(workflowJson);
         const inputs: WorkflowInput[] = [];
@@ -196,16 +199,23 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     const renderConnectionStatus = () => {
         const baseClass = "w-2.5 h-2.5 rounded-full";
         switch (connectionStatus) {
-            case 'checking': return <div className={`${baseClass} bg-yellow-500 animate-pulse`} />;
-            case 'ok': return <div className={`${baseClass} bg-green-500`} />;
-            case 'error': return <div className={`${baseClass} bg-red-500`} />;
-            default: return <div className={`${baseClass} bg-gray-500`} />;
+            case 'checking': return { indicator: <div className={`${baseClass} bg-yellow-500 animate-pulse`} />, text: "Checking..." };
+            case 'ok': return { indicator: <div className={`${baseClass} bg-green-500`} />, text: "Connected" };
+            case 'error': return { indicator: <div className={`${baseClass} bg-red-500`} />, text: "Error" };
+            default: return { indicator: <div className={`${baseClass} bg-gray-500`} />, text: "Idle" };
         }
+    };
+    
+    const syncButtonStyles = {
+        idle: 'bg-indigo-600/80 border-indigo-500 text-white hover:bg-indigo-600',
+        syncing: 'bg-gray-600 border-gray-500 text-white cursor-wait',
+        success: 'bg-green-600/80 border-green-500 text-white hover:bg-green-600',
+        error: 'bg-red-600/80 border-red-500 text-white hover:bg-red-600',
     };
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 flex items-center justify-center p-4 fade-in" onClick={onClose}>
-            <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center p-4 fade-in" onClick={onClose}>
+            <div className="bg-gray-800/90 border border-gray-700 rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
                 <header className="flex justify-between items-center p-4 border-b border-gray-700">
                     <h3 className="flex items-center text-lg font-bold text-indigo-400">
                         <ServerIcon className="w-5 h-5 mr-2" />
@@ -227,12 +237,9 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                                 className="flex-grow bg-gray-900 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-2"
                             />
                             <div className="flex items-center gap-2 p-2 bg-gray-900 border border-gray-600 rounded-md">
-                                {renderConnectionStatus()}
+                                {renderConnectionStatus().indicator}
                                 <span className="text-xs text-gray-400">
-                                    {connectionStatus === 'checking' && 'Checking...'}
-                                    {connectionStatus === 'ok' && 'Connected'}
-                                    {connectionStatus === 'error' && 'Error'}
-                                    {connectionStatus === 'idle' && 'Idle'}
+                                    {renderConnectionStatus().text}
                                 </span>
                             </div>
                         </div>
@@ -247,7 +254,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                     
                      <div>
                         <label className="font-medium text-gray-200 block text-sm mb-1">ComfyUI Workflow</label>
-                         <button onClick={handleSyncWorkflow} disabled={syncStatus === 'syncing' || !comfyUIUrl || connectionStatus !== 'ok'} className="w-full px-4 py-2 text-sm font-semibold rounded-md border transition-colors bg-indigo-600/80 border-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                         <button onClick={handleSyncWorkflow} disabled={syncStatus === 'syncing' || !comfyUIUrl || connectionStatus !== 'ok'} className={`w-full px-4 py-2 text-sm font-semibold rounded-md border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${syncButtonStyles[syncStatus]}`}>
                             {syncStatus === 'syncing' && 'Syncing...'}
                             {syncStatus === 'success' && 'Workflow Synced ✓ (Click to Re-Sync)'}
                             {syncStatus === 'error' && 'Sync Failed! (Click to Retry)'}
@@ -271,11 +278,11 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                         <div>
                             <h4 className="text-md font-semibold text-gray-200 mb-3">Workflow Input Mapping</h4>
                             <p className="text-xs text-gray-400 mb-3">Connect your story data to the available inputs detected in your workflow.</p>
-                            <div className="space-y-3 p-3 bg-gray-900/50 rounded-lg border border-gray-700 max-h-60 overflow-y-auto">
-                               {parsedInputs.map(input => {
+                            <div className="space-y-1 p-1 bg-gray-900/50 rounded-lg border border-gray-700 max-h-60 overflow-y-auto">
+                               {parsedInputs.map((input, index) => {
                                     const key = getMappingKey(input);
                                     return (
-                                     <div key={key} className="grid grid-cols-2 gap-4 items-center">
+                                     <div key={key} className={`grid grid-cols-2 gap-4 items-center p-2 rounded-md ${index % 2 === 0 ? 'bg-black/10' : 'bg-transparent'}`}>
                                         <div className="text-sm flex items-center gap-2">
                                             {getInputIcon(input.inputType)}
                                             <div>
@@ -302,7 +309,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
 
                 </div>
 
-                <footer className="p-4 border-t border-gray-700 mt-auto flex justify-end items-center gap-4">
+                <footer className="p-4 border-t border-gray-700 mt-auto flex justify-end items-center gap-4 bg-gray-900/50 rounded-b-lg">
                      <button onClick={onClose} className="px-4 py-2 text-sm font-semibold rounded-md bg-gray-600 text-white hover:bg-gray-700 transition-colors">
                         Cancel
                     </button>

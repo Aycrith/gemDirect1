@@ -23,7 +23,7 @@ const NegativePromptSuggestions: React.FC<NegativePromptSuggestionsProps> = ({ s
             <textarea
                 id="negative-prompt"
                 rows={2}
-                className="block w-full bg-gray-800 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3"
+                className="block w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3"
                 placeholder={"e.g., Ridley Scott aesthetic, dynamic camera physics, AVOID shaky camera..."}
                 value={negativePrompt}
                 onChange={(e) => setNegativePrompt(e.target.value)}
@@ -37,7 +37,7 @@ const NegativePromptSuggestions: React.FC<NegativePromptSuggestionsProps> = ({ s
                             <button
                                 key={index}
                                 onClick={() => handleAddSuggestion(suggestion)}
-                                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full border transition-all duration-200 bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-700 hover:border-gray-500"
+                                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full border transition-all duration-200 bg-gray-700/80 border-gray-600 text-gray-300 hover:bg-gray-700 hover:border-gray-500"
                             >
                                 <PlusIcon className="w-3 h-3" />
                                 {suggestion}

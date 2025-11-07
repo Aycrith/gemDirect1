@@ -28,38 +28,49 @@ interface ContinuityCardProps {
 
 const ScoreCircle: React.FC<{ label: string; score: number }> = ({ label, score }) => {
   const percentage = score * 10;
-  const circumference = 2 * Math.PI * 20; // 2 * pi * r
+  const circumference = 2 * Math.PI * 27.5; // 2 * pi * r
   const offset = circumference - (percentage / 100) * circumference;
   
   let colorClass = 'text-green-400';
-  if (score < 7) colorClass = 'text-yellow-400';
-  if (score < 4) colorClass = 'text-red-400';
+  let shadowColor = 'shadow-green-500/50';
+  if (score < 7) { colorClass = 'text-yellow-400'; shadowColor = 'shadow-yellow-500/50'; }
+  if (score < 4) { colorClass = 'text-red-400'; shadowColor = 'shadow-red-500/50'; }
 
   return (
     <div className="flex flex-col items-center text-center">
-      <div className="relative w-24 h-24">
-        <svg className="w-full h-full" viewBox="0 0 44 44">
-          <circle className="text-gray-700" strokeWidth="4" stroke="currentColor" fill="transparent" r="20" cx="22" cy="22" />
+      <div className="relative w-28 h-28">
+         <svg className="w-full h-full" viewBox="0 0 60 60">
+            <defs>
+                <filter id={`glow-${label.replace(/\s+/g, '-')}`}>
+                    <feDropShadow dx="0" dy="0" stdDeviation="1.5" floodColor={colorClass.includes('green') ? '#34d399' : colorClass.includes('yellow') ? '#fbbf24' : '#f87171'} />
+                </filter>
+            </defs>
+          <circle className="text-gray-700/50" strokeWidth="5" stroke="currentColor" fill="transparent" r="27.5" cx="30" cy="30" />
           <circle
             className={colorClass}
-            strokeWidth="4"
+            strokeWidth="5"
             strokeDasharray={circumference}
             strokeDashoffset={offset}
             strokeLinecap="round"
             stroke="currentColor"
             fill="transparent"
-            r="20"
-            cx="22"
-            cy="22"
-            style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }}
+            r="27.5"
+            cx="30"
+            cy="30"
+            style={{ 
+                transform: 'rotate(-90deg)', 
+                transformOrigin: 'center', 
+                transition: 'stroke-dashoffset 0.5s ease-out',
+                filter: `url(#glow-${label.replace(/\s+/g, '-')})`
+            }}
           />
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className={`text-2xl font-bold ${colorClass}`}>{score}</span>
-          <span className={`text-sm ${colorClass}`}>/10</span>
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-900/20 rounded-full">
+          <span className={`text-3xl font-bold ${colorClass}`}>{score}</span>
+          <span className={`text-sm font-semibold opacity-70 mt-1 ${colorClass}`}>/10</span>
         </div>
       </div>
-      <span className="text-xs font-semibold text-gray-400 mt-2">{label}</span>
+      <span className="text-xs font-semibold text-gray-400 mt-2 max-w-[80px]">{label}</span>
     </div>
   );
 };
@@ -113,7 +124,7 @@ const ResultDisplay: React.FC<{
                             <button
                                 onClick={() => handleApply(suggestion, index)}
                                 disabled={status !== 'idle'}
-                                className="w-full sm:w-auto flex-shrink-0 inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-md transition-colors bg-yellow-600 text-white hover:bg-yellow-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                className="w-full sm:w-auto flex-shrink-0 inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-md transition-colors bg-yellow-600 text-white hover:bg-yellow-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
                             >
                                 {status === 'applied' ? 'Applied ✓' : 'Apply Refinement'}
                             </button>
@@ -241,24 +252,24 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   }
 
   return (
-    <div className="bg-gray-800/50 border border-gray-700 rounded-lg shadow-lg">
-        <header className="p-4 bg-gray-900/30 border-b border-gray-700 rounded-t-lg">
-            <h3 className="font-bold text-xl text-white">
+    <div className="bg-gray-900/40 ring-1 ring-gray-700/80 rounded-xl shadow-lg">
+        <header className="p-5 border-b border-gray-700/80 rounded-t-xl bg-gray-800/30">
+            <h3 className="font-extrabold text-2xl text-white">
                 <span className="text-indigo-400">Scene {sceneNumber}:</span> {scene.title}
             </h3>
             <p className="text-sm text-gray-400 mt-1">{scene.summary}</p>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-gray-700">
+        <div className="grid grid-cols-1 lg:grid-cols-2">
             {/* Left Column: Intent */}
-            <div className="bg-gray-800 p-4 space-y-4">
-                <h4 className="font-semibold text-gray-300">Creative Intent</h4>
+            <div className="p-5 space-y-4 border-r-0 lg:border-r border-gray-700/80">
+                <h4 className="font-semibold text-gray-200 text-lg">Creative Intent</h4>
                 <div>
-                    <p className="text-xs text-gray-500 mb-2">Last known keyframe for this scene</p>
+                    <p className="text-xs text-gray-400 mb-2 uppercase tracking-wider font-semibold">Scene Keyframe</p>
                     {generatedImage ? (
-                        <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover" />
+                        <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover ring-1 ring-gray-700" />
                     ) : (
-                        <div className="aspect-video bg-gray-900/50 flex items-center justify-center rounded-lg">
+                        <div className="aspect-video bg-gray-800/50 flex items-center justify-center rounded-lg">
                             <p className="text-xs text-gray-500">No keyframe generated</p>
                         </div>
                     )}
@@ -266,8 +277,8 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
             </div>
 
             {/* Right Column: Result */}
-            <div className="bg-gray-800 p-4 flex flex-col">
-                 <h4 className="font-semibold text-gray-300 mb-4">Actual Output & Analysis</h4>
+            <div className="bg-gray-800/20 p-5 flex flex-col rounded-b-xl lg:rounded-r-xl lg:rounded-bl-none">
+                 <h4 className="font-semibold text-gray-200 text-lg mb-4">Actual Output &amp; Analysis</h4>
                  {data.videoSrc && (
                      <div className="mb-4">
                         <VideoPlayer src={data.videoSrc} />

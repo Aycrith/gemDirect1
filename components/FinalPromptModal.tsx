@@ -25,14 +25,14 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, pa
 
     return (
         <div 
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 flex items-center justify-center p-4 fade-in"
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center p-4 fade-in"
             onClick={onClose}
             role="dialog"
             aria-modal="true"
             aria-labelledby="prompt-dialog-title"
         >
             <div 
-                className="bg-gray-800 border border-gray-700 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" 
+                className="bg-gray-800/90 border border-gray-700 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" 
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="p-6 flex-grow overflow-y-auto">
@@ -71,7 +71,7 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, pa
                             <p className="text-sm text-gray-400 mb-4">
                                 Use this JSON payload with a local model runner like LM Studio or a custom workflow in ComfyUI.
                             </p>
-                            <div className="bg-gray-900/70 rounded-md border border-gray-600 max-h-96 overflow-y-auto">
+                            <div className="bg-gray-900/70 rounded-md border border-gray-700 max-h-96 overflow-y-auto">
                                <pre className="text-xs text-gray-300 p-4 whitespace-pre-wrap break-all">
                                    <code>{payloads?.json}</code>
                                </pre>
@@ -82,7 +82,7 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, pa
                             <p className="text-sm text-gray-400 mb-4">
                                 Use this human-readable prompt for direct input into generative models or for your own reference.
                             </p>
-                            <div className="bg-gray-900/70 rounded-md border border-gray-600 max-h-96 overflow-y-auto">
+                            <div className="bg-gray-900/70 rounded-md border border-gray-700 max-h-96 overflow-y-auto">
                                <div className="text-sm text-gray-300 p-4 whitespace-pre-wrap break-words leading-relaxed">
                                    {payloads?.text}
                                </div>
@@ -91,7 +91,7 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, pa
                     )}
                 </div>
 
-                <div className="flex flex-col sm:flex-row justify-end items-center gap-4 p-4 bg-gray-800/50 border-t border-gray-700 rounded-b-lg mt-auto">
+                <div className="flex flex-col sm:flex-row justify-end items-center gap-4 p-4 bg-gray-900/50 border-t border-gray-700 rounded-b-lg mt-auto">
                     <button 
                         type="button" 
                         onClick={handleCopy}

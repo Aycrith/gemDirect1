@@ -90,59 +90,56 @@ const ShotCard: React.FC<{
     const isPreviewLoading = preview?.isLoading ?? false;
 
     return (
-        <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg fade-in">
-            <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-                <h4 className="font-bold text-gray-200">Shot {index + 1}</h4>
-                <div className="flex items-center gap-2">
-                     <button onClick={() => onAddShotAfter(shot.id)} className="p-1 text-gray-400 hover:text-white transition-colors" title="Add shot after">
-                        <PlusIcon className="w-5 h-5" />
-                    </button>
+        <div className="bg-gray-900/40 ring-1 ring-gray-700/80 rounded-lg fade-in overflow-hidden">
+            <div className="p-4 bg-gray-800/30 border-b border-gray-700/80 flex justify-between items-center">
+                <h4 className="font-bold text-lg text-gray-100">Shot {index + 1}</h4>
+                <div className="flex items-center gap-1">
+                     <Tooltip text="Add shot after">
+                       <button onClick={() => onAddShotAfter(shot.id)} className="p-2 rounded-full text-gray-400 hover:bg-gray-700 hover:text-white transition-colors">
+                          <PlusIcon className="w-4 h-4" />
+                      </button>
+                     </Tooltip>
                     {totalShots > 1 && (
-                        <button onClick={() => onDeleteShot(shot.id)} className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="Delete shot">
-                            <TrashIcon className="w-5 h-5" />
+                      <Tooltip text="Delete shot">
+                        <button onClick={() => onDeleteShot(shot.id)} className="p-2 rounded-full text-gray-400 hover:bg-red-800/50 hover:text-red-400 transition-colors">
+                            <TrashIcon className="w-4 h-4" />
                         </button>
+                      </Tooltip>
                     )}
                 </div>
             </div>
-            <div className="p-4 space-y-4">
-                {preview?.image && !isPreviewLoading && (
-                     <div className="rounded-lg overflow-hidden border border-gray-600">
-                        <img src={`data:image/jpeg;base64,${preview.image}`} alt={`Preview for shot ${index + 1}`} className="w-full aspect-video object-cover"/>
-                    </div>
-                )}
-                {isPreviewLoading && (
-                    <div className="aspect-video bg-gray-900/50 flex items-center justify-center rounded-lg animate-pulse">
-                        <p className="text-sm text-gray-400">Generating preview...</p>
-                    </div>
-                )}
-                <div>
-                    <div className="flex items-start gap-2">
-                        <textarea
-                            value={shot.description}
-                            onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
-                            rows={3}
-                            className="flex-grow w-full bg-gray-900/50 p-2 border border-gray-600 rounded-md focus:ring-1 focus:ring-indigo-500 text-sm text-gray-300"
-                            placeholder="Describe the action in this shot..."
-                        />
-                         <div className="flex flex-col">
-                            <SuggestionButton 
-                                onClick={() => onRefineDescription(shot)}
-                                isLoading={isProcessingSuggestion}
-                                tooltip="Refine Description with AI"
-                            />
-                            <SuggestionButton 
-                                onClick={() => onGeneratePreview(shot.id)}
-                                isLoading={isPreviewLoading}
-                                tooltip="Generate Preview Image"
-                                icon={<ImageIcon className="w-4 h-4" />}
-                            />
+            <div className="grid grid-cols-1 md:grid-cols-3">
+                <div className="md:col-span-1 p-4 space-y-3">
+                    {(preview?.image && !isPreviewLoading) && (
+                         <div className="rounded-lg overflow-hidden ring-1 ring-gray-600">
+                            <img src={`data:image/jpeg;base64,${preview.image}`} alt={`Preview for shot ${index + 1}`} className="w-full aspect-video object-cover"/>
                         </div>
+                    )}
+                    {isPreviewLoading && (
+                        <div className="aspect-video bg-gray-800 flex items-center justify-center rounded-lg animate-pulse">
+                            <p className="text-sm text-gray-400">Generating preview...</p>
+                        </div>
+                    )}
+                    <textarea
+                        value={shot.description}
+                        onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
+                        rows={5}
+                        className="w-full bg-gray-800/70 p-2.5 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-200"
+                        placeholder="Describe the action in this shot..."
+                    />
+                     <div className="flex items-center gap-2">
+                        <button onClick={() => onRefineDescription(shot)} disabled={isProcessingSuggestion} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold rounded-md bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors">
+                           <SparklesIcon className="w-4 h-4"/> Refine
+                        </button>
+                        <button onClick={() => onGeneratePreview(shot.id)} disabled={isPreviewLoading} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold rounded-md bg-cyan-600/80 text-white hover:bg-cyan-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors">
+                           <ImageIcon className="w-4 h-4"/> Preview
+                        </button>
                     </div>
                 </div>
                 
-                <div className="border-t border-gray-700 pt-4">
+                <div className="md:col-span-2 p-4 bg-black/10">
                     <div className="flex justify-between items-center mb-2">
-                        <p className="text-sm font-semibold text-gray-300">Creative Enhancers (Directing Controls)</p>
+                        <p className="text-sm font-semibold text-gray-300">Creative Enhancers</p>
                         <SuggestionButton 
                             onClick={() => onSuggestEnhancers(shot)}
                             isLoading={isProcessingSuggestion}
@@ -374,14 +371,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     };
 
     return (
-        <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-lg p-6">
-            <h2 className="flex items-center text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500 mb-2">
+        <div className="bg-gray-900/30 backdrop-blur-sm ring-1 ring-gray-700/50 rounded-lg p-6">
+            <h2 className="flex items-center text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500 mb-2">
                 <TimelineIcon className="w-8 h-8 mr-3 text-purple-400" />
                 Director's Console
             </h2>
-            <p className="text-sm text-gray-400 mb-6">Now directing: <span className="font-bold text-gray-200">{scene.title}</span></p>
+            <p className="text-sm text-gray-400 mb-6">Now directing: <span className="font-bold text-gray-100">{scene.title}</span></p>
 
-            <div className="bg-gray-900/30 p-3 rounded-md border border-gray-700 mb-6">
+            <div className="bg-gray-800/50 p-3 rounded-lg ring-1 ring-gray-700 mb-6">
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                     <p className="text-sm font-semibold text-gray-300">AI Bulk Actions:</p>
                     <button onClick={handleRefineAllDescriptions} disabled={isProcessingSuggestions || shots.length === 0} className="text-xs font-semibold px-3 py-1.5 rounded-full bg-yellow-600/80 text-white hover:bg-yellow-600 disabled:bg-gray-600 disabled:cursor-wait transition-colors flex items-center gap-2">
@@ -415,7 +412,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 onAddShotAfter={handleAddShotAfter} 
                                 onRefineDescription={handleRefineDescription} 
                                 onSuggestEnhancers={handleSuggestEnhancers} 
-                                onGeneratePreview={onGenerateShotPreview}
+                                onGeneratePreview={onGenerateShotPreview} 
                                 suggestionState={suggestionState} 
                             />
                             {index < shots.length - 1 && (
@@ -437,66 +434,76 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 </div>
             </div>
 
-            <div className="mt-8 pt-6 border-t border-gray-700 space-y-8">
-                <NegativePromptSuggestions suggestions={['shaky camera', 'blurry', 'low quality', 'watermark', 'text']} negativePrompt={negativePrompt} setNegativePrompt={setNegativePrompt} />
-                <GenerationControls 
-                    mitigateViolence={mitigateViolence} 
-                    setMitigateViolence={setMitigateViolence} 
-                    enhanceRealism={enhanceRealism} 
-                    setEnhanceRealism={setEnhanceRealism}
-                />
-            </div>
+            <div className="mt-8 pt-8 border-t-2 border-dashed border-gray-700">
+                <div className="bg-gray-800/40 p-6 rounded-lg ring-1 ring-gray-700/50">
+                    <div className="max-w-3xl mx-auto text-center">
+                        <h3 className="text-2xl font-bold text-gray-100">Finalize & Generate</h3>
+                        <p className="text-gray-400 mt-2 mb-8">Configure final output settings and generate your scene's keyframe or full video.</p>
+                    </div>
 
-            <div className="mt-8 pt-6 border-t border-gray-700">
-                {/* FIX: Using the renamed component to resolve the name collision and type usage error. */}
-                <LocalGenerationStatusComponent status={localGenerationStatus} onClear={onClearLocalGeneration} />
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                        <div className="space-y-6 bg-gray-900/30 p-5 rounded-lg ring-1 ring-gray-700">
+                            <NegativePromptSuggestions suggestions={['shaky camera', 'blurry', 'low quality', 'watermark', 'text']} negativePrompt={negativePrompt} setNegativePrompt={setNegativePrompt} />
+                            <GenerationControls 
+                                mitigateViolence={mitigateViolence} 
+                                setMitigateViolence={setMitigateViolence} 
+                                enhanceRealism={enhanceRealism} 
+                                setEnhanceRealism={setEnhanceRealism}
+                            />
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <LocalGenerationStatusComponent status={localGenerationStatus} onClear={onClearLocalGeneration} />
 
-                {generatedImage && !isGeneratingLocally && (
-                    <div className="mb-6 fade-in">
-                        <h3 className="text-xl font-bold text-green-400 mb-4 text-center">Generated Scene Keyframe</h3>
-                        <div className="max-w-lg mx-auto bg-black rounded-lg overflow-hidden shadow-2xl shadow-green-500/20 border border-gray-700">
-                            <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="w-full aspect-video object-cover" />
+                            {generatedImage && !isGeneratingLocally && (
+                                <div className="fade-in">
+                                    <h3 className="text-lg font-bold text-green-400 mb-3 text-center">Generated Scene Keyframe</h3>
+                                    <div className="max-w-md mx-auto bg-black rounded-lg overflow-hidden shadow-2xl shadow-green-500/20 ring-1 ring-gray-600">
+                                        <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="w-full aspect-video object-cover" />
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {!isGeneratingLocally && <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+                                {generatedImage ? (
+                                    <Tooltip text={getLocalGenerationTooltip()}>
+                                    <button
+                                        onClick={handleQueueLocalGeneration}
+                                        disabled={!isWorkflowConfigured || !generatedImage}
+                                        className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105"
+                                    >
+                                        <ServerIcon className="mr-3 h-6 w-6" />
+                                        Generate Video (Local)
+                                    </button>
+                                    </Tooltip>
+                                ) : (
+                                    <button
+                                        onClick={() => onGenerateKeyframe(scene.id, buildTimelineData())}
+                                        className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-green-600 to-cyan-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-green-700 hover:to-cyan-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
+                                    >
+                                        <FilmIcon className="mr-3 h-6 w-6" />
+                                        Generate Scene Keyframe
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => onExportPrompts(scene.id, buildTimelineData())}
+                                    className="w-full sm:w-auto px-6 py-2 text-sm font-semibold rounded-full transition-all duration-300 ease-in-out bg-gray-700/80 text-gray-200 hover:bg-gray-700 border border-gray-600"
+                                >
+                                    Export Prompts
+                                </button>
+                            </div>}
                         </div>
                     </div>
-                )}
-                
-                {!isGeneratingLocally && <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                     {generatedImage ? (
-                        <Tooltip text={getLocalGenerationTooltip()}>
-                        <button
-                            onClick={handleQueueLocalGeneration}
-                            disabled={!isWorkflowConfigured || !generatedImage}
-                            className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
-                        >
-                            <ServerIcon className="mr-3 h-6 w-6" />
-                            Generate Video (Local)
-                        </button>
-                        </Tooltip>
-                     ) : (
-                        <button
-                            onClick={() => onGenerateKeyframe(scene.id, buildTimelineData())}
-                            className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-green-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
-                        >
-                            <FilmIcon className="mr-3 h-6 w-6" />
-                            Generate Scene Keyframe
-                        </button>
-                     )}
-                     <button
-                        onClick={() => onExportPrompts(scene.id, buildTimelineData())}
-                        className="w-full sm:w-auto px-6 py-2 text-sm font-semibold rounded-full transition-all duration-300 ease-in-out bg-gray-700/80 text-gray-200 hover:bg-gray-700 border border-gray-600"
-                    >
-                        Export Prompts
-                    </button>
-                </div>}
+                </div>
 
-                <div className="mt-8 text-center">
+                <div className="mt-12 text-center">
                     {nextScene ? (
                         <button onClick={onGoToNextScene} className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transform hover:scale-105">
                            Continue to: {nextScene.title}
                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                         </button>
                     ) : (
-                        <div className="mt-6 p-4 text-center bg-green-900/50 border border-green-800 rounded-lg fade-in space-y-3">
+                        <div className="mt-6 p-4 text-center bg-green-900/50 ring-1 ring-green-800 rounded-lg fade-in space-y-3">
                             <h4 className="font-semibold text-green-300">Final Scene Complete!</h4>
                             <p className="text-sm text-gray-400">You've reached the end of your story's creative direction.</p>
                             {onProceedToReview && (
