@@ -102,12 +102,12 @@ export const getPrunedContextForShotGeneration = async (
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
-    const prompt = `You are a script supervisor. Your job is to create a concise "Creative Brief" for an AI Cinematographer. Distill the following information into a single, focused paragraph (under 150 words).
+    const prompt = `You are a script supervisor. Your job is to create a concise "Cinematographer's Brief" for an AI Director of Photography. Distill the following information into a single, focused paragraph (under 150 words) that will guide the creation of a shot list.
 
     **CRITICAL INFORMATION TO INCLUDE:**
-    1.  **Scene's Core Purpose:** What is the main point of this scene in the story's overall journey (e.g., "The hero's lowest point," "Meeting the mentor").
+    1.  **Scene's Core Purpose:** What is the main point of this scene in the story's journey (e.g., "The hero's lowest point," "Meeting the mentor").
     2.  **Key Visuals & Mood:** What are the most important elements of the Director's Vision that apply here? (e.g., "gritty neo-noir lighting," "Ghibli-style nature").
-    3.  **Emotional Arc:** What is the emotional shift that should happen from the beginning to the end of the scene?
+    3.  **Emotional Arc:** What is the emotional shift that must occur from the scene's beginning to its end?
 
     **SOURCE MATERIAL:**
     - Story Logline: ${storyBible.logline}
@@ -115,7 +115,7 @@ export const getPrunedContextForShotGeneration = async (
     - Scene Summary: ${sceneSummary}
     - Director's Vision: ${directorsVision}
 
-    **Your Output:** A single paragraph creative brief.`;
+    **Your Output:** A single paragraph Cinematographer's Brief.`;
     return getPrunedContext(prompt, 'prune context for shot generation', logApiCall, onStateChange);
 };
 
@@ -205,17 +205,17 @@ export const generateStoryBible = async (idea: string, logApiCall: ApiLogCallbac
 
 export const generateSceneList = async (plotOutline: string, directorsVision: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<Array<{ title: string; summary: string }>> => {
     const context = 'generate scene list';
-    const prompt = `You are an expert film director with a strong understanding of narrative pacing. Your task is to break down the following plot outline into a series of distinct, actionable scenes, keeping the overall cinematic vision in mind.
+    const prompt = `You are an expert film editor and screenwriter, tasked with breaking a story outline into a series of powerful, cinematic scenes. A new scene should be created for any significant shift in **location, time, or character objective/conflict**. Each scene must serve a clear purpose.
 
-    **Plot Outline (Structured on The Hero's Journey):**
+    **Plot Outline (Based on The Hero's Journey):**
     ${plotOutline}
 
-    **Director's Vision / Cinematic Style:**
+    **Director's Vision (Aesthetic & Tonal Guide):**
     "${directorsVision}"
 
-    Based on the above context, generate a JSON array of scenes. For each scene, consider its function within the broader narrative structure. Each scene object should have:
-    1.  **title**: A short, evocative title for the scene that aligns with the Director's Vision.
-    2.  **summary**: A one-sentence description of what happens in this scene and its primary narrative purpose (e.g., "The hero meets their mentor and receives a crucial tool," or "The hero faces their first major test, revealing their core weakness.").`;
+    Based on the above, generate a JSON array of scene objects. Each object must contain:
+    1.  **title**: A short, evocative title that captures the scene's essence and aligns with the Director's Vision.
+    2.  **summary**: A concise, one-sentence description that explicitly states **(a) the key action** and **(b) the scene's core narrative purpose or emotional goal** (e.g., "The hero confronts the gatekeeper, establishing the stakes of the journey," or "A quiet moment of reflection reveals the hero's inner doubt.").`;
 
     const responseSchema = {
         type: Type.ARRAY,
@@ -267,16 +267,16 @@ export const generateAndDetailInitialShots = async (
     onStateChange?: ApiStateChangeCallback
 ): Promise<DetailedShotResult[]> => {
     const context = 'generate and detail initial shots';
-    const prompt = `You are a visionary cinematographer. Based on the following Creative Brief, generate a complete initial shot list for the scene, including both descriptions and specific creative enhancers for each shot.
+    const prompt = `You are an AI Director of Photography (DOP). Your task is to interpret a Cinematographer's Brief and create a compelling, initial shot list for a scene. The shots must flow together logically to build narrative and emotional momentum.
 
-    **Creative Brief:**
+    **Cinematographer's Brief:**
     "${prunedContext}"
 
     **Your Task:**
     Generate a JSON object with a single key: "shots".
-    The value should be an array of 3-4 objects. Each object represents a single cinematic shot and must contain:
-    1.  "description": (string) A vivid, actionable, and cinematic description of the shot.
-    2.  "suggested_enhancers": (object) A JSON object of creative enhancers (like framing, movement, lighting) that perfectly match the shot's description and the overall brief. Be creative and specific.`;
+    The value should be an array of 3-4 shot objects. For each shot, provide:
+    1.  "description": (string) A vivid, actionable description written as a clear instruction for a camera operator. It must be cinematic and concise.
+    2.  "suggested_enhancers": (object) A JSON object of specific, synergistic creative enhancers (framing, movement, lighting, etc.) that bring the shot to life and align perfectly with the brief. Ensure the enhancers for each shot contribute to the scene's overall emotional arc.`;
     
     const detailedShotsSchema = {
         type: Type.OBJECT,
@@ -532,7 +532,7 @@ const suggestedChangesSchema = {
 
 export const getCoDirectorSuggestions = async (prunedContext: string, timelineSummary: string, objective: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<CoDirectorResult> => {
     const context = 'get Co-Director suggestions';
-    const prompt = `You are an AI Co-Director. Your task is to analyze the provided scene context and a summary of its timeline, then suggest specific, creative changes to achieve the user's stated objective. You must be bold and imaginative, but your suggestions must respect the established narrative and aesthetic.
+    const prompt = `You are an AI Co-Director with a deep understanding of narrative, cinematography, and editing. Your task is to analyze a scene and suggest specific, creative changes to achieve a user's stated objective. Be bold and imaginative, but your suggestions must respect the established creative boundaries.
 
     **Co-Director's Brief (Key Context):**
     ${prunedContext}
@@ -544,14 +544,14 @@ export const getCoDirectorSuggestions = async (prunedContext: string, timelineSu
     ${timelineSummary}
 
     **Your Task:**
-    Return a single JSON object with the following structure. **Crucially, ensure the output is a single, valid JSON object and nothing else. All string values, especially multi-line markdown in 'reasoning' or any 'description' fields, must have properly escaped characters (like \\" for double quotes and \\n for newlines).**
-    1.  **thematic_concept**: A short, evocative phrase (3-5 words) that encapsulates your new creative direction for the scene. (e.g., "Echoes of a Fading Memory", "The Walls Close In", "A Dance of Shadows").
-    2.  **reasoning**: A markdown-formatted paragraph explaining how your suggestions will achieve the user's objective and align with the thematic concept.
-    3.  **suggested_changes**: A JSON array of 2-4 specific, actionable suggestions. Each suggestion object must have:
+    Return a single, valid JSON object.
+    1.  **thematic_concept**: A short, evocative phrase (3-5 words) that encapsulates your new creative direction for the scene (e.g., "Echoes of a Fading Memory", "The Walls Close In").
+    2.  **reasoning**: A markdown-formatted paragraph. For each suggestion you make, you must explicitly state **why** it helps achieve the user's objective. Explain your creative choices clearly.
+    3.  **suggested_changes**: A JSON array of 2-4 diverse, actionable suggestions. Aim for variety: suggest changes to cinematography, add a new story beat, or alter the pacing. Each suggestion object must have:
         *   **type**: (string) One of 'UPDATE_SHOT', 'ADD_SHOT_AFTER', or 'UPDATE_TRANSITION'.
-        *   **shot_id** or **after_shot_id** or **transition_index**: (string or number) The identifier for where the change should occur. Use 'shot_id' for 'UPDATE_SHOT', 'after_shot_id' for 'ADD_SHOT_AFTER', 'transition_index' for 'UPDATE_TRANSITION'.
-        *   **payload**: (object) The data for the change. For 'UPDATE_SHOT', this can include a new 'description' and/or 'enhancers'. For 'ADD_SHOT_AFTER', it should be a full shot object. For 'UPDATE_TRANSITION', it should include a 'type' like 'Dissolve'.
-        *   **description**: (string) A user-friendly description of the change you are proposing.
+        *   **shot_id** or **after_shot_id** or **transition_index**: The identifier for where the change should occur.
+        *   **payload**: (object) The data for the change.
+        *   **description**: (string) A user-friendly summary of your proposed change.
     `;
     
     const responseSchema = {
@@ -609,19 +609,19 @@ export const batchProcessShotEnhancements = async (
     onStateChange?: ApiStateChangeCallback
 ): Promise<BatchShotResult[]> => {
     const context = 'batch process shots';
-    const prompt = `You are an AI Cinematographer's assistant. You will receive a batch of tasks for different shots within the same scene. For each task, perform the requested actions based on the provided creative context.
+    const prompt = `You are an AI Cinematographer's assistant. Your task is to process a batch of shots from a single scene, ensuring your suggestions create a cohesive and dynamic sequence.
 
-    **Cinematographer's Brief:**
+    **Cinematographer's Brief (Guiding Principles for the whole scene):**
     ${prunedContext}
 
     **Tasks (JSON Array):**
     ${JSON.stringify(tasks, null, 2)}
 
     **Your Task:**
-    Process all tasks and return a JSON array of results. Each result object in the array must correspond to a task and contain:
-    1.  **shot_id**: (string) The ID of the shot that was processed.
-    2.  **refined_description**: (string, optional) If 'REFINE_DESCRIPTION' was requested, provide a more vivid, cinematic, and detailed description for the shot.
-    3.  **suggested_enhancers**: (object, optional) If 'SUGGEST_ENHANCERS' was requested, provide a JSON object with suggested creative enhancers (like 'framing', 'movement', 'lighting', 'vfx', etc.) that align with the shot's description and the overall vision. Be creative and specific.
+    Process all tasks and return a JSON array of results. For each result:
+    1.  **shot_id**: The ID of the processed shot.
+    2.  **refined_description**: (optional) If requested, provide a more vivid and cinematic description.
+    3.  **suggested_enhancers**: (optional) If requested, provide creative enhancers. **CRITICAL:** Ensure variety across the shots. Avoid repeating the same suggestions (e.g., don't suggest 'Close-Up' for every shot). The enhancers should show progression and work together to tell the scene's story.
     `;
     
     const responseSchema = {
@@ -657,8 +657,22 @@ export const batchProcessShotEnhancements = async (
 
 // --- Image and Video Analysis ---
 
-export const generateKeyframeForScene = async (prompt: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
+export const generateKeyframeForScene = async (vision: string, sceneSummary: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const context = 'generate scene keyframe';
+    const prompt = `masterpiece, 8k, photorealistic, cinematic lighting, 16:9 aspect ratio.
+
+Generate a single, cinematic, high-quality keyframe image that encapsulates the essence of an entire scene. This image must be a powerful, evocative representation of the scene's most crucial moment or overall mood, strictly adhering to the specified Director's Vision.
+
+**Director's Vision (Cinematic Style Bible):**
+"${vision}"
+
+**Scene to Visualize:**
+"${sceneSummary}"
+
+**NEGATIVE PROMPT:**
+text, watermarks, logos, blurry, ugly, tiling, poorly drawn hands, poorly drawn faces, out of frame, extra limbs, disfigured, deformed, body out of frame, bad anatomy, signature, username, error, jpeg artifacts, low resolution, censorship, amateur, boring, static, centered composition.
+`;
+
     const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: imageModel,
@@ -699,21 +713,26 @@ export const generateImageForShot = async (
 ): Promise<string> => {
     const context = 'generate shot preview';
 
-    const prompt = `Generate a single, cinematic, photorealistic, high-quality keyframe image for a specific shot. The image must perfectly capture the shot's description and strictly adhere to the director's vision.
+    const prompt = `An award-winning cinematic photograph, masterpiece, 8k, photorealistic, 16:9 aspect ratio.
 
-**Overall Scene Summary:**
+Generate a single keyframe image for a specific shot. The image must perfectly capture the shot's detailed description and creative enhancers, while strictly adhering to the project's overall Style Bible (Director's Vision).
+
+**Style Bible (Director's Vision):**
+This is the absolute rule for the image's aesthetic.
+---
+${directorsVision}
+---
+
+**Overall Scene Context:**
 ${sceneSummary}
 
-**Director's Vision (Cinematic Style Bible):**
-${directorsVision}
-
 ---
-**SPECIFIC SHOT DETAILS**
+**SPECIFIC SHOT DETAILS TO RENDER**
 
 **Description:**
 ${shot.description}
 
-**Creative Enhancers for this Shot:**
+**Creative Enhancers:**
 - Framing: ${enhancers.framing?.join(', ') || 'N/A'}
 - Camera Movement: ${enhancers.movement?.join(', ') || 'N/A'}
 - Lens & Focus: ${enhancers.lens?.join(', ') || 'N/A'}
@@ -722,11 +741,8 @@ ${shot.description}
 - Visual Style & VFX: ${enhancers.vfx?.join(', ') || 'N/A'}
 
 ---
-**TASK:**
-Create the image based on the **SPECIFIC SHOT DETAILS**. The overall style must match the **Director's Vision**.
-
 **NEGATIVE PROMPT:**
-Avoid static, boring, or centered compositions. Do not include text, watermarks, or logos. Ensure characters look natural and anatomically correct.
+text, watermark, logo, signature, username, error, blurry, jpeg artifacts, low resolution, censorship, ugly, tiling, poorly drawn hands, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, bad anatomy, amateur, boring, static composition.
 `;
 
     const apiCall = async () => {
@@ -818,7 +834,7 @@ export const getPrunedContextForContinuity = async (
 
 export const scoreContinuity = async (prunedContext: string, scene: Scene, videoAnalysis: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<ContinuityResult> => {
     const context = 'score continuity';
-    const prompt = `You are an expert film critic and continuity supervisor. Your task is to analyze a generated video's summary and score its alignment with the original creative intent. Then, you must provide structured, actionable suggestions to fix any deviations.
+    const prompt = `You are an expert film critic and continuity supervisor with an extremely critical eye. Your task is to analyze a generated video's summary and score its alignment with the original creative intent. You must be strict and provide structured, actionable suggestions to fix any deviations, prioritizing fixes that address the root cause.
 
     **Continuity Brief (The Intention):**
     ${prunedContext}
@@ -829,18 +845,18 @@ export const scoreContinuity = async (prunedContext: string, scene: Scene, video
     **AI's Analysis of the Generated Video (The Result):**
     ${videoAnalysis}
     
-    **Critical Analysis:** Go beyond surface-level mismatches. Your primary value is in identifying *why* the generated video failed. Does it indicate a flaw in the original shot description, a clash between the director's vision and the scene's content, or a misunderstanding of the narrative's core purpose? Your suggestions should aim to fix the root cause.
+    **Critical Analysis:** Before providing suggestions, consider *why* the generated video failed. Does it indicate a flaw in the original shot description? A clash between the director's vision and the scene's content? A misunderstanding of the narrative's core purpose? Your suggestions must aim to fix the root cause, not just the symptom.
 
     **Your Task:**
-    Provide a detailed critique as a JSON object. Your analysis must be strict and constructive.
-    1.  **scores**: A JSON object with three scores, each from 1-10 (integer):
+    Provide a detailed critique as a JSON object.
+    1.  **scores**: A JSON object with three scores, each from 1-10 (integer). Be strict.
         *   **narrative_coherence**: How well does the video's action match the scene's plot purpose?
         *   **aesthetic_alignment**: How well does the video's visual style match the Director's Vision?
-        *   **thematic_resonance**: How well does the video capture the intended mood and emotional core of the scene?
-    2.  **overall_feedback**: A markdown-formatted paragraph summarizing your assessment. What worked well, and what were the biggest deviations from the plan?
-    3.  **suggested_changes**: A JSON array of specific, actionable suggestions.
-        *   **Timeline Fixes:** First, suggest changes to the timeline to fix the current scene (using 'UPDATE_SHOT', 'ADD_SHOT_AFTER', etc.).
-        *   **Holistic Review:** **Crucially, consider if the video's issues reveal a deeper problem.** Does the aesthetic clash with the Director's Vision? Does a character's action contradict their description in the Story Bible? If so, suggest high-level changes to those core documents using the **'UPDATE_STORY_BIBLE'** or **'UPDATE_DIRECTORS_VISION'** types. If a change here logically affects another scene, use **'FLAG_SCENE_FOR_REVIEW'** to flag it.
+        *   **thematic_resonance**: How well does the video capture the intended mood and emotional core?
+    2.  **overall_feedback**: A markdown-formatted paragraph summarizing your assessment. What worked, and what were the biggest deviations?
+    3.  **suggested_changes**: A JSON array of specific, actionable suggestions. **Prioritize high-level, root-cause fixes.**
+        *   **Project-Level Fixes:** If the issue is fundamental, first suggest changes to core documents using **'UPDATE_STORY_BIBLE'** or **'UPDATE_DIRECTORS_VISION'**. If this change affects other scenes, use **'FLAG_SCENE_FOR_REVIEW'**.
+        *   **Timeline Fixes:** Then, suggest changes to the current scene's timeline to fix specific issues (using 'UPDATE_SHOT', 'ADD_SHOT_AFTER', etc.).
     `;
     
     const responseSchema = {

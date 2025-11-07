@@ -144,20 +144,7 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                     const taskMessage = `Generating keyframe for scene: "${scene.title}"`;
                     setGenerationProgress(prev => ({ ...prev, current: i + 1, task: taskMessage }));
                     
-                    const prompt = `Generate a single, cinematic, photorealistic, high-quality keyframe image that encapsulates the essence of an entire scene.
-
-**Director's Vision (Cinematic Style Bible):**
-"${vision}"
-
-**Scene to Visualize:**
-"${scene.summary}"
-
-**TASK:**
-Create one powerful, evocative image that represents the most crucial moment or overall mood of this scene, strictly adhering to the specified Director's Vision.
-
-**NEGATIVE PROMPT:**
-Avoid generic or boring compositions. Do not include text, watermarks, or logos. Focus on dynamic lighting and a strong sense of atmosphere.`;
-                    const image = await generateKeyframeForScene(prompt, logApiCall, updateApiStatus);
+                    const image = await generateKeyframeForScene(vision, scene.summary, logApiCall, updateApiStatus);
                     
                     setGeneratedImages(prev => ({ ...prev, [scene.id]: image }));
                     successes++;
