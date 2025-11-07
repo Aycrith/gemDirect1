@@ -43,11 +43,17 @@ const ContinuityModal: React.FC<ContinuityModalProps> = ({ isOpen, onClose, onSu
                         <div className="flex flex-col md:flex-row gap-4">
                             <div className="md:w-1/3">
                                 <p className="text-sm font-semibold text-gray-300 mb-2">Last Scene Frame</p>
-                                <img 
-                                    src={`data:image/jpeg;base64,${lastFrame}`} 
-                                    alt="Last frame of previous scene" 
-                                    className="rounded-lg w-full aspect-video object-cover border border-gray-600"
-                                />
+                                {lastFrame ? (
+                                    <img 
+                                        src={`data:image/jpeg;base64,${lastFrame}`} 
+                                        alt="Last frame of previous scene" 
+                                        className="rounded-lg w-full aspect-video object-cover border border-gray-600"
+                                    />
+                                ) : (
+                                    <div className="rounded-lg w-full aspect-video bg-gray-900 flex items-center justify-center border border-gray-600">
+                                        <p className="text-xs text-gray-500">No Frame</p>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="md:w-2/3 flex flex-col">

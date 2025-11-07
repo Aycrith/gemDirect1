@@ -719,6 +719,65 @@ export const scoreContinuity = async (prunedContext: string, scene: Scene, video
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
+export const generateNextSceneFromContinuity = async (
+    storyBible: StoryBible,
+    directorsVision: string,
+    lastSceneSummary: string,
+    userDirection: string,
+    lastFrame: string, // base64 string
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<{ title: string; summary: string }> => {
+    const context = 'generate next scene from continuity';
+    
+    const textPart = {
+        text: `You are an expert screenwriter continuing a story. Based on the project's Story Bible, the Director's Vision, the summary of the last scene, and the user's direction for what happens next, create a compelling title and a concise one-sentence summary for the *next* scene. The new scene must logically and visually follow from the provided final frame of the previous scene.
+
+        **SOURCE MATERIAL:**
+        - Story Logline: ${storyBible.logline}
+        - Director's Vision: ${directorsVision}
+        - Previous Scene Summary: "${lastSceneSummary}"
+        - User's Direction for Next Scene: "${userDirection}"
+
+        **Your Task:**
+        Return a single JSON object with two keys:
+        1.  "title": A short, evocative title for the new scene.
+        2.  "summary": A one-sentence description of the new scene's main action and purpose.`
+    };
+
+    const imagePart = {
+        inlineData: {
+            mimeType: 'image/jpeg',
+            data: lastFrame
+        }
+    };
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            title: { type: Type.STRING },
+            summary: { type: Type.STRING }
+        },
+        required: ['title', 'summary']
+    };
+
+    const apiCall = async () => {
+        const response = await ai.models.generateContent({
+            model: model, // gemini-2.5-flash
+            contents: { parts: [textPart, imagePart] },
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema, temperature: 0.6 }
+        });
+        const text = response.text;
+        if (!text) throw new Error("The model returned an empty response for next scene generation.");
+        
+        const result = JSON.parse(text.trim());
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
+    };
+
+    return withRetry(apiCall, context, model, logApiCall, onStateChange);
+};
+
 // --- AI Self-Improvement ---
 
 export const applyRefinement = async (

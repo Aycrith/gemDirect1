@@ -6,6 +6,7 @@ import FileUpload from './FileUpload';
 import VideoPlayer from './VideoPlayer';
 import { marked } from 'marked';
 import SparklesIcon from './icons/SparklesIcon';
+import FilmIcon from './icons/FilmIcon';
 
 interface ContinuityCardProps {
   scene: Scene;
@@ -22,6 +23,7 @@ interface ContinuityCardProps {
   onApplyTimelineSuggestion: (suggestion: Suggestion, sceneId: string) => void;
   isRefined: boolean;
   onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
+  onExtendTimeline: (sceneId: string, lastFrame: string) => void;
 }
 
 const ScoreCircle: React.FC<{ label: string; score: number }> = ({ label, score }) => {
@@ -68,7 +70,8 @@ const ResultDisplay: React.FC<{
     isRefined: boolean;
     onApplyTimelineSuggestion: (suggestion: Suggestion, sceneId: string) => void;
     onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
-}> = ({ result, sceneId, isRefined, onApplyTimelineSuggestion, onUpdateSceneSummary }) => {
+    onExtendTimeline: () => void;
+}> = ({ result, sceneId, isRefined, onApplyTimelineSuggestion, onUpdateSceneSummary, onExtendTimeline }) => {
     const [applyingStatus, setApplyingStatus] = useState<Record<number, 'idle' | 'loading' | 'applied'>>({});
     const [isUpdatingSummary, setIsUpdatingSummary] = useState(false);
 
@@ -84,7 +87,7 @@ const ResultDisplay: React.FC<{
     }
 
     const createMarkup = (markdown: string) => {
-        const rawMarkup = marked(markdown);
+        const rawMarkup = marked(markdown, { breaks: true });
         return { __html: rawMarkup };
     };
 
@@ -142,6 +145,15 @@ const ResultDisplay: React.FC<{
                     </button>
                  </div>
             )}
+             <div className="mt-4 pt-4 border-t border-gray-700 text-center">
+                <button
+                    onClick={onExtendTimeline}
+                    className="inline-flex items-center justify-center px-6 py-3 bg-green-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 transform hover:scale-105"
+                >
+                    <FilmIcon className="mr-3 h-5 w-5" />
+                    Extend Timeline
+                </button>
+             </div>
         </div>
     );
 };
@@ -161,16 +173,19 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   onApiLog,
   onApplyTimelineSuggestion,
   isRefined,
-  onUpdateSceneSummary
+  onUpdateSceneSummary,
+  onExtendTimeline,
 }) => {
 
   const handleFileSelect = useCallback(async (file: File) => {
-    setContinuityData({ videoFile: file, videoSrc: URL.createObjectURL(file), status: 'analyzing', error: undefined });
+    setContinuityData({ videoFile: file, videoSrc: URL.createObjectURL(file), status: 'analyzing', error: undefined, frames: [] });
 
     try {
         const frames = await extractFramesFromVideo(file);
         if (frames.length === 0) throw new Error("Could not extract frames from video.");
         
+        setContinuityData(prev => ({ ...prev!, frames: frames }));
+
         const analysis = await analyzeVideoFrames(frames, onApiLog, onApiStateChange);
         setContinuityData(prev => ({ ...prev!, videoAnalysis: analysis, status: 'scoring' }));
 
@@ -187,6 +202,14 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
     }
   }, [scene, sceneNumber, storyBible, narrativeContext, directorsVision, setContinuityData, addToast, onApiStateChange, onApiLog]);
 
+  const handleExtend = () => {
+    if (data.frames && data.frames.length > 0) {
+        onExtendTimeline(scene.id, data.frames[data.frames.length - 1]);
+    } else {
+        addToast("Cannot extend: no frames available from the last video.", "error");
+    }
+  }
+
   const renderStatus = () => {
       if (data.status === 'idle') {
           return <FileUpload onFileSelect={handleFileSelect} />;
@@ -198,7 +221,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
           return <div className="text-center p-8"><p className="text-gray-400 animate-pulse">AI is scoring cinematic continuity...</p></div>;
       }
       if (data.status === 'error') {
-          return <div className="text-center p-8"><p className="text-red-400">{data.error}</p></div>
+          return <div className="text-center p-8"><p className="text-red-400">{data.error}</p> <button onClick={() => setContinuityData({ status: 'idle' })} className="mt-2 text-sm text-indigo-400 hover:underline">Try again</button></div>
       }
       if (data.status === 'complete' && data.continuityResult) {
           return <ResultDisplay 
@@ -207,6 +230,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                     onApplyTimelineSuggestion={onApplyTimelineSuggestion}
                     isRefined={isRefined}
                     onUpdateSceneSummary={onUpdateSceneSummary}
+                    onExtendTimeline={handleExtend}
                 />;
       }
       return null;

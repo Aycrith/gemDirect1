@@ -7,7 +7,7 @@ import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import ContinuityDirector from './components/ContinuityDirector';
 import FinalPromptModal from './components/FinalPromptModal';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateKeyframeForScene, applyRefinement, updateSceneSummaryWithRefinements } from './services/geminiService';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateKeyframeForScene, applyRefinement, updateSceneSummaryWithRefinements, generateNextSceneFromContinuity } from './services/geminiService';
 import { generateVideoRequestPayloads } from './services/videoGenerationService';
 import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData } from './types';
 import Toast from './components/Toast';
@@ -21,6 +21,7 @@ import UsageDashboard from './components/UsageDashboard';
 import BarChartIcon from './components/icons/BarChartIcon';
 import TrashIcon from './components/icons/TrashIcon';
 import { Type } from "@google/genai";
+import ContinuityModal from './components/ContinuityModal';
 
 const emptyTimeline: TimelineData = {
     shots: [],
@@ -62,6 +63,7 @@ const AppContent: React.FC = () => {
     const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [finalPrompt, setFinalPrompt] = useState<{ json: string; text: string; } | null>(null);
+    const [continuityModalState, setContinuityModalState] = useState<{ sceneId: string; lastFrame: string } | null>(null);
 
     const removeToast = useCallback((id: number) => {
         setToasts(prev => prev.filter(toast => toast.id !== id));
@@ -446,6 +448,64 @@ const AppContent: React.FC = () => {
         }
     }, [scenes, handleApiLog, handleApiStateChange, addToast]);
     
+    const handleExtendTimelineRequest = (sceneId: string, lastFrame: string) => {
+        setContinuityModalState({ sceneId, lastFrame });
+    };
+
+    const handleExtendTimelineSubmit = async (direction: string) => {
+        if (!continuityModalState || !storyBible || !directorsVision) {
+            addToast("Cannot generate next scene: missing context.", "error");
+            return;
+        }
+        
+        const { sceneId, lastFrame } = continuityModalState;
+        const lastScene = scenes.find(s => s.id === sceneId);
+        if (!lastScene) {
+            addToast("Cannot find the source scene.", "error");
+            return;
+        }
+    
+        setIsLoading(true);
+        setLoadingMessage('Generating next scene with AI...');
+        setContinuityModalState(null); 
+    
+        try {
+            const { title, summary } = await generateNextSceneFromContinuity(
+                storyBible,
+                directorsVision,
+                lastScene.summary,
+                direction,
+                lastFrame,
+                handleApiLog,
+                handleApiStateChange
+            );
+    
+            const newScene: Scene = {
+                id: `scene_${Date.now()}`,
+                title,
+                summary,
+                timeline: emptyTimeline
+            };
+    
+            const lastSceneIndex = scenes.findIndex(s => s.id === sceneId);
+            const newScenes = [...scenes];
+            newScenes.splice(lastSceneIndex + 1, 0, newScene);
+            
+            setScenes(newScenes);
+            setActiveSceneId(newScene.id);
+            setWorkflowStage('director'); // Go back to director view for the new scene
+            addToast(`New scene "${title}" generated!`, 'success');
+    
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(`Failed to generate next scene: ${errorMessage}`, 'error');
+        } finally {
+            setIsLoading(false);
+            setLoadingMessage('');
+        }
+    };
+
+
     const getNextScene = () => {
         if (!activeSceneId) return null;
         const currentIndex = scenes.findIndex(s => s.id === activeSceneId);
@@ -526,6 +586,7 @@ const AppContent: React.FC = () => {
                             onApplyTimelineSuggestion={handleApplyTimelineSuggestion}
                             refinedSceneIds={refinedSceneIds}
                             onUpdateSceneSummary={handleUpdateSceneSummary}
+                            onExtendTimeline={handleExtendTimelineRequest}
                         />;
             default:
                 return <p>Welcome to the Cinematic Story Generator!</p>;
@@ -561,6 +622,13 @@ const AppContent: React.FC = () => {
             <ApiStatusIndicator />
             <UsageDashboard isOpen={isUsageDashboardOpen} onClose={() => setIsUsageDashboardOpen(false)} />
             <FinalPromptModal isOpen={!!finalPrompt} onClose={() => setFinalPrompt(null)} payloads={finalPrompt} />
+            <ContinuityModal 
+                isOpen={!!continuityModalState}
+                onClose={() => setContinuityModalState(null)}
+                onSubmit={handleExtendTimelineSubmit}
+                lastFrame={continuityModalState?.lastFrame || ''}
+                isLoading={isLoading}
+            />
         </div>
     );
 };

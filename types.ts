@@ -90,6 +90,7 @@ export interface SceneContinuityData {
   error?: string;
   videoAnalysis?: string;
   continuityResult?: ContinuityResult;
+  frames?: string[];
 }
 
 export interface BatchShotTask {

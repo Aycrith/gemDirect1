@@ -17,6 +17,7 @@ interface ContinuityDirectorProps {
   onApplyTimelineSuggestion: (suggestion: Suggestion, sceneId: string) => void;
   refinedSceneIds: Set<string>;
   onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
+  onExtendTimeline: (sceneId: string, lastFrame: string) => void;
 }
 
 const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
@@ -32,6 +33,7 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
   onApplyTimelineSuggestion,
   refinedSceneIds,
   onUpdateSceneSummary,
+  onExtendTimeline,
 }) => {
   const getNarrativeContext = useCallback((sceneId: string): string => {
       if (!storyBible || !scenes.length) return '';
@@ -114,6 +116,7 @@ CONTEXT FROM ADJACENT SCENES:
             onApplyTimelineSuggestion={onApplyTimelineSuggestion}
             isRefined={refinedSceneIds.has(scene.id)}
             onUpdateSceneSummary={onUpdateSceneSummary}
+            onExtendTimeline={onExtendTimeline}
           />
         ))}
       </div>
