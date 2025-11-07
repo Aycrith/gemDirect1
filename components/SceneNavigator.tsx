@@ -23,7 +23,11 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                     {scenes.map((scene, index) => {
                         const needsReview = scenesToReview.has(scene.id);
                         return (
-                            <li key={scene.id}>
+                            <li 
+                                key={scene.id} 
+                                className="animate-fade-in-right" 
+                                style={{ animationDelay: `${index * 50}ms` }}
+                            >
                                 <button
                                     onClick={() => onSelectScene(scene.id)}
                                     className={`relative w-full text-left p-3 rounded-md transition-all duration-200 text-sm ring-1 flex items-start gap-3 ${

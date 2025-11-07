@@ -39,26 +39,18 @@
     right: 0;
     bottom: 0;
     pointer-events: none;
+    /* Define CSS variables with default fallback for the interactive gradient */
+    --mouse-x: 50%;
+    --mouse-y: 50%;
     background: 
-      radial-gradient(ellipse at 10% 20%, rgba(99, 102, 241, 0.1) 0%, transparent 45%),
-      radial-gradient(ellipse at 90% 80%, rgba(217, 70, 239, 0.1) 0%, transparent 45%);
-    animation: aurora 15s infinite alternate ease-in-out;
+      /* Static gradients for ambient color */
+      radial-gradient(circle at 15% 25%, rgba(99, 102, 241, 0.1) 0%, transparent 40%),
+      radial-gradient(circle at 85% 75%, rgba(217, 70, 239, 0.1) 0%, transparent 40%),
+      /* Interactive gradient that follows the mouse */
+      radial-gradient(circle at var(--mouse-x) var(--mouse-y), rgba(167, 139, 250, 0.15) 0%, transparent 30%);
     z-index: -1;
-  }
-
-  @keyframes aurora {
-    0% {
-      transform: translate(-5vw, -5vh) scale(1);
-      opacity: 0.7;
-    }
-    50% {
-      transform: translate(5vw, 5vh) scale(1.1);
-      opacity: 1;
-    }
-    100% {
-      transform: translate(-5vw, -5vh) scale(1);
-      opacity: 0.7;
-    }
+    /* Smooth transition for the interactive gradient's movement */
+    transition: background 400ms ease-out;
   }
 
   /* Custom Scrollbar */
@@ -84,6 +76,31 @@
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
+  
+  /* Interactive Spotlight Effect */
+  .interactive-spotlight {
+      position: relative;
+      overflow: hidden; /* Important to contain the pseudo-element */
+  }
+
+  .interactive-spotlight::before {
+      content: '';
+      position: absolute;
+      left: var(--mouse-x-local, 50%);
+      top: var(--mouse-y-local, 50%);
+      width: 300px; /* Size of the spotlight */
+      height: 300px;
+      background: radial-gradient(circle, rgba(196, 181, 253, 0.1) 0%, transparent 70%);
+      transform: translate(-50%, -50%);
+      opacity: 0;
+      transition: opacity 0.3s ease-out;
+      pointer-events: none; /* Make sure it doesn't block interactions */
+  }
+
+  .interactive-spotlight:hover::before {
+      opacity: 1;
+  }
+
 
   /* Animations */
   .fade-in {
@@ -101,7 +118,8 @@
   }
 
   .animate-fade-in-right {
-    animation: fadeInRight 0.4s ease-out forwards;
+    opacity: 0; /* Start hidden */
+    animation: fadeInRight 0.5s ease-out forwards;
   }
 
   @keyframes fadeInRight {
@@ -127,6 +145,21 @@
       box-shadow: 0 0 15px rgba(167, 139, 250, 0.5), 0 0 25px rgba(167, 139, 250, 0.4);
     }
   }
+  
+  .animate-breathing-glow {
+    animation: breathing-glow 3s infinite ease-in-out;
+  }
+
+  @keyframes breathing-glow {
+    0%, 100% {
+      box-shadow: 0 0 10px rgba(167, 139, 250, 0.3), 0 0 20px rgba(167, 139, 250, 0.2);
+      border-color: rgba(167, 139, 250, 0.7);
+    }
+    50% {
+      box-shadow: 0 0 20px rgba(167, 139, 250, 0.6), 0 0 40px rgba(167, 139, 250, 0.4);
+      border-color: rgba(196, 181, 253, 1);
+    }
+  }
 
   .animated-border-glow {
       animation: animated-border-glow-kf 4s ease-in-out infinite;
@@ -135,6 +168,17 @@
       0% { border-color: rgba(251, 191, 36, 0.4); }
       50% { border-color: rgba(249, 115, 22, 0.6); }
       100% { border-color: rgba(251, 191, 36, 0.4); }
+  }
+
+  /* Thematic Loader Animations */
+  @keyframes clap-top {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(-8deg); }
+  }
+
+  @keyframes clap-bottom {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(3deg); }
   }
 </style>
 </head>

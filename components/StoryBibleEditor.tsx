@@ -7,6 +7,7 @@ import SparklesIcon from './icons/SparklesIcon';
 import SaveIcon from './icons/SaveIcon';
 import ClapperboardIcon from './icons/ClapperboardIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
+import { useInteractiveSpotlight } from '../utils/hooks';
 
 interface StoryBibleEditorProps {
     storyBible: StoryBible;
@@ -44,6 +45,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
     const [editableBible, setEditableBible] = useState(storyBible);
     const [charTab, setCharTab] = useState<'edit' | 'preview'>('edit');
     const [plotTab, setPlotTab] = useState<'edit' | 'preview'>('edit');
+    const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
 
     const [previewContent, setPreviewContent] = useState({ characters: '', plotOutline: '' });
     const [isPreviewLoading, setIsPreviewLoading] = useState({ characters: false, plotOutline: false });
@@ -137,7 +139,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                 <p className="text-gray-400 mt-2">This is the narrative foundation of your project. Refine it here before generating scenes.</p>
             </div>
 
-            <div className="glass-card p-8 rounded-xl space-y-6">
+            <div ref={spotlightRef} className="glass-card p-8 rounded-xl space-y-6 interactive-spotlight">
                 <EditableField 
                     label="Logline" 
                     description="A single, powerful sentence that captures your entire story. This is your north star."
@@ -213,7 +215,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                         <button
                             onClick={onGenerateScenes}
                             disabled={isLoading || hasChanges}
-                            className="inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105"
+                            className="inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
                         >
                             <ClapperboardIcon className="mr-2 h-5 w-5" />
                             Set Vision & Generate Scenes

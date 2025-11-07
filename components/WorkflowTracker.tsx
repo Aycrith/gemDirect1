@@ -78,7 +78,7 @@ const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ currentStage, onStage
                                     onClick={() => isClickable && onStageClick(stageId)}
                                     disabled={!isClickable}
                                     className={`relative flex items-center justify-center w-16 h-16 rounded-full border-2 transition-all duration-300 group ${
-                                        isCurrent ? 'bg-indigo-600 border-indigo-400 shadow-lg shadow-indigo-500/50' : 
+                                        isCurrent ? 'bg-indigo-600 border-indigo-400 animate-breathing-glow' : 
                                         isCompleted ? 'bg-indigo-500 border-indigo-500' : 
                                         'bg-gray-800 border-gray-700'
                                     } ${isClickable ? 'cursor-pointer hover:border-indigo-500' : 'disabled:cursor-not-allowed'}`}
@@ -86,7 +86,6 @@ const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ currentStage, onStage
                                     <div className={`${isCurrent ? 'animate-pop-in' : ''} ${isCompleted && !isCurrent ? 'text-white' : 'text-gray-300'}`}>
                                         {isCompleted && !isCurrent ? <CheckCircleIcon className="w-8 h-8" /> : stage.icon}
                                     </div>
-                                    {isCurrent && <span className="absolute -inset-1.5 border-2 border-indigo-500 rounded-full animate-pulse"></span>}
                                 </button>
                                 <p className={`mt-3 text-sm font-semibold tracking-wide transition-colors duration-300 ${
                                     isCurrent ? 'text-indigo-300' : isCompleted ? 'text-gray-200' : 'text-gray-500'

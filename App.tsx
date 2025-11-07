@@ -46,6 +46,21 @@ const AppContent: React.FC = () => {
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
 
+    // Effect for the interactive background gradient
+    useEffect(() => {
+        const handleMouseMove = (event: MouseEvent) => {
+            const { clientX, clientY } = event;
+            document.documentElement.style.setProperty('--mouse-x', `${clientX}px`);
+            document.documentElement.style.setProperty('--mouse-y', `${clientY}px`);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+        };
+    }, []);
+
     const addToast = useCallback((message: string, type: ToastMessage['type']) => {
         const id = Date.now();
         setToasts(prev => [...prev, { id, message, type }]);

@@ -3,6 +3,8 @@ import PaintBrushIcon from './icons/PaintBrushIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import { suggestDirectorsVisions, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import { StoryBible } from '../types';
+import { useInteractiveSpotlight } from '../utils/hooks';
+import ThematicLoader from './ThematicLoader';
 
 interface DirectorsVisionFormProps {
     onSubmit: (vision: string) => void;
@@ -16,6 +18,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
     const [vision, setVision] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
+    const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -38,7 +41,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
     }, [storyBible, onApiStateChange, onApiLog]);
 
     return (
-        <div className="max-w-3xl mx-auto text-center glass-card p-8 rounded-xl shadow-2xl shadow-black/30">
+        <div ref={spotlightRef} className="max-w-3xl mx-auto text-center glass-card p-8 rounded-xl shadow-2xl shadow-black/30 interactive-spotlight">
             <h2 className="text-3xl font-bold text-gray-100 mb-4">Define Your Director's Vision</h2>
             <p className="text-gray-400 mb-8">
                 Describe the overall cinematic style, mood, and aesthetic. This is your creative guardrail, influencing everything from camera work to color grading. Think about film styles, animation aesthetics, or famous directors.
@@ -55,16 +58,10 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
                 <button
                     type="submit"
                     disabled={isLoading || !vision.trim()}
-                    className="mt-6 inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-green-600 to-cyan-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-green-700 hover:to-cyan-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105"
+                    className="mt-6 inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-green-600 to-cyan-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-green-700 hover:to-cyan-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
                 >
                     {isLoading ? (
-                        <>
-                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Generating...
-                        </>
+                        <ThematicLoader text="Generating..." />
                     ) : (
                         <>
                             <PaintBrushIcon className="mr-2 h-5 w-5" />

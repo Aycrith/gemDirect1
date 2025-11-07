@@ -20,6 +20,7 @@ import RefreshCwIcon from './icons/RefreshCwIcon';
 import Tooltip from './Tooltip';
 import SaveIcon from './icons/SaveIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
+import { useInteractiveSpotlight } from '../utils/hooks';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -52,9 +53,10 @@ const TimelineItem: React.FC<{
     onGenerateImage: (shotId: string) => void;
 }> = ({ shot, index, enhancers, imageUrl, isGeneratingImage, onDescriptionChange, onEnhancersChange, onDeleteShot, onGenerateImage }) => {
     const [isControlsVisible, setIsControlsVisible] = useState(false);
+    const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
 
     return (
-        <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/80 transition-shadow hover:shadow-lg hover:shadow-indigo-500/10 flex gap-4">
+        <div ref={spotlightRef} className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/80 transition-shadow hover:shadow-lg hover:shadow-indigo-500/10 flex gap-4 interactive-spotlight">
             {imageUrl && (
                 <div className="w-1/4 flex-shrink-0">
                     <img src={`data:image/jpeg;base64,${imageUrl}`} alt={`Preview for shot ${index + 1}`} className="rounded-md aspect-video object-cover" />

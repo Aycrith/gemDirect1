@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as db from './database';
 import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot } from '../types';
 import { useApiStatus } from '../contexts/ApiStatusContext';
@@ -264,4 +264,33 @@ export function useProjectData() {
         handleGenerateScenes,
         applySuggestions,
     };
+}
+
+/**
+ * A custom hook to apply an interactive spotlight effect to an element.
+ * @returns A ref to be attached to the target HTML element.
+ */
+export function useInteractiveSpotlight<T extends HTMLElement>() {
+    const ref = useRef<T>(null);
+
+    useEffect(() => {
+        const element = ref.current;
+        if (!element) return;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const rect = element.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            element.style.setProperty('--mouse-x-local', `${x}px`);
+            element.style.setProperty('--mouse-y-local', `${y}px`);
+        };
+
+        element.addEventListener('mousemove', handleMouseMove);
+
+        return () => {
+            element.removeEventListener('mousemove', handleMouseMove);
+        };
+    }, []);
+
+    return ref;
 }
