@@ -1,7 +1,9 @@
+
 import React, { useCallback } from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
 import ContinuityCard from './ContinuityCard';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
+import GuideCard from './GuideCard';
 import { ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 
 interface ContinuityDirectorProps {
@@ -93,6 +95,16 @@ CONTEXT FROM ADJACENT SCENES:
           Upload your generated videos for each scene. The AI will analyze them, score them against your creative intent, and provide feedback to refine your story.
         </p>
       </header>
+
+      <GuideCard title="Completing the Creative Loop">
+          <p>
+              This is where your story comes full circle. Generate videos for your scenes using the prompts from the <strong>Direct Scenes</strong> stage (using the "Export" or "Generate Locally" options).
+          </p>
+            <p className="mt-2">
+              Upload them here to get AI feedback on how well they match your vision. Applying the suggestions can refine your original Story Bible, Director's Vision, or scene timelines, creating a powerful feedback loop to improve your story from the ground up.
+          </p>
+      </GuideCard>
+
       <div className="space-y-12">
         {scenes.map((scene, index) => (
           <ContinuityCard

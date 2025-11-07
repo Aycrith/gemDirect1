@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
@@ -198,6 +199,9 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                                         </div>
                                     ))}
                                 </div>
+                                <p className="text-xs text-yellow-500/80 mt-2 italic">
+                                    Applying these suggestions may alter core documents like the Story Bible and flag other scenes for review.
+                                </p>
                             </div>
                         )}
 

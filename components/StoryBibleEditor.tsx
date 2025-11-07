@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import { StoryBible } from '../types';
 import { marked } from 'marked';
@@ -8,6 +9,7 @@ import SaveIcon from './icons/SaveIcon';
 import ClapperboardIcon from './icons/ClapperboardIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
 import { useInteractiveSpotlight } from '../utils/hooks';
+import GuideCard from './GuideCard';
 
 interface StoryBibleEditorProps {
     storyBible: StoryBible;
@@ -28,18 +30,33 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
 );
 
 
-const EditableField: React.FC<{ label: string; description: string; value: string; onChange: (value: string) => void; rows?: number }> = ({ label, description, value, onChange, rows = 3 }) => (
-    <div>
-        <label className="block text-sm font-medium text-gray-300">{label}</label>
-        <p className="text-xs text-gray-400 mt-1 mb-2">{description}</p>
-        <textarea
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            rows={rows}
-            className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-indigo-500/30 shadow-black/30 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
-        />
-    </div>
-);
+const EditableField: React.FC<{ label: string; description: string; value: string; onChange: (value: string) => void; rows?: number }> = ({ label, description, value, onChange, rows = 3 }) => {
+    
+    const getPlaceholder = () => {
+        switch (label) {
+            case 'Logline':
+                return "e.g., A retired detective is pulled back for one last case that threatens to unravel his past.";
+            case 'Setting':
+                return "e.g., A rain-slicked, neon-lit metropolis in the year 2049, where technology and decay coexist.";
+            default:
+                return `Describe the ${label.toLowerCase()} here...`;
+        }
+    };
+    
+    return (
+        <div>
+            <label className="block text-sm font-medium text-gray-300">{label}</label>
+            <p className="text-xs text-gray-400 mt-1 mb-2">{description}</p>
+            <textarea
+                value={value}
+                placeholder={getPlaceholder()}
+                onChange={(e) => onChange(e.target.value)}
+                rows={rows}
+                className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-indigo-500/30 shadow-black/30 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+            />
+        </div>
+    );
+};
 
 const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdate, onGenerateScenes, isLoading, onApiStateChange, onApiLog }) => {
     const [editableBible, setEditableBible] = useState(storyBible);
@@ -139,6 +156,14 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                 <p className="text-gray-400 mt-2">This is the narrative foundation of your project. Refine it here before generating scenes.</p>
             </div>
 
+            <GuideCard title="What is a Story Bible?">
+                <p>
+                    The Story Bible is the single source of truth for your entire project. Every creative decision flows from here. 
+                    Take your time to refine each section. A strong foundation here leads to a much more coherent and compelling final story.
+                    Use the <strong className="text-indigo-300">Refine with AI</strong> feature to enhance the AI's initial draft.
+                </p>
+            </GuideCard>
+
             <div ref={spotlightRef} className="glass-card p-8 rounded-xl space-y-6 interactive-spotlight">
                 <EditableField 
                     label="Logline" 
@@ -166,6 +191,8 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                             value={editableBible.characters}
                             onChange={(e) => handleFieldChange('characters', e.target.value)}
                             rows={8}
+                            placeholder="e.g., * **Protagonist:** A grizzled detective haunted by a past failure.
+* **Antagonist:** A cunning art thief who leaves behind cryptic clues."
                             className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-200 p-3"
                         />
                     ) : renderPreviewPane('characters')}
@@ -197,6 +224,9 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                             value={editableBible.plotOutline}
                             onChange={(e) => handleFieldChange('plotOutline', e.target.value)}
                             rows={10}
+                            placeholder="e.g., * **Act I:** The detective discovers the first crime, reluctantly takes the case...
+* **Act II:** A cat-and-mouse game ensues across the city...
+* **Act III:** The final confrontation in a museum reveals a shocking truth."
                             className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-200 p-3"
                         />
                     ) : renderPreviewPane('plotOutline')}

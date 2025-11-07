@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationSettings, LocalGenerationStatus, SceneContinuityData } from './types';
 import { useProjectData, usePersistentState } from './utils/hooks';
@@ -24,6 +25,7 @@ import SparklesIcon from './components/icons/SparklesIcon';
 import SaveIcon from './components/icons/SaveIcon';
 import UploadCloudIcon from './components/icons/UploadCloudIcon';
 import ProgressBar from './components/ProgressBar';
+import WelcomeGuideModal from './components/WelcomeGuideModal';
 
 const AppContent: React.FC = () => {
     const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0, task: '' });
@@ -41,6 +43,7 @@ const AppContent: React.FC = () => {
     const [refinedSceneIds, setRefinedSceneIds] = useState(new Set<string>());
     const [continuityModal, setContinuityModal] = useState<{ sceneId: string, lastFrame: string } | null>(null);
     const [isExtending, setIsExtending] = useState(false);
+    const [hasSeenWelcome, setHasSeenWelcome] = usePersistentState('hasSeenWelcome', false);
 
     const [localGenSettings, setLocalGenSettings] = usePersistentState<LocalGenerationSettings>('localGenSettings', { comfyUIUrl: '', comfyUIClientId: '', workflowJson: '', mapping: {} });
     const [generatedImages, setGeneratedImages] = usePersistentState<Record<string, string>>('generatedImages', {});
@@ -51,6 +54,8 @@ const AppContent: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
+
+    const shouldShowWelcome = !hasSeenWelcome && !storyBible;
 
     // Effect for the interactive background gradient
     useEffect(() => {
@@ -172,6 +177,7 @@ const AppContent: React.FC = () => {
                 setLocalGenSettings(data.localGenSettings || { comfyUIUrl: '', comfyUIClientId: '', workflowJson: '', mapping: {} });
                 setLocalGenStatus(data.localGenStatus || {});
                 setScenesToReview(new Set(data.scenesToReview || []));
+                setHasSeenWelcome(true); // Assume user loading a project has seen the welcome screen
 
                 // Determine workflow stage from loaded data
                 if (data.storyBible) {
@@ -371,6 +377,11 @@ const AppContent: React.FC = () => {
                     }}
                     lastFrame={continuityModal.lastFrame}
                     isLoading={isExtending}
+                />
+            )}
+            {shouldShowWelcome && (
+                <WelcomeGuideModal 
+                    onClose={() => setHasSeenWelcome(true)}
                 />
             )}
         </div>

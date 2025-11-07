@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from 'react';
+
+import React, { useState, useCallback, useEffect } from 'react';
 import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
@@ -18,6 +19,9 @@ import Tooltip from './Tooltip';
 import SaveIcon from './icons/SaveIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import { useInteractiveSpotlight } from '../utils/hooks';
+import GuidedAction from './GuidedAction';
+import GuideCard from './GuideCard';
+import CompassIcon from './icons/CompassIcon';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -122,11 +126,18 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string; structured: any[] } | null>(null);
     const [isGeneratingShotImage, setIsGeneratingShotImage] = useState<Record<string, boolean>>({});
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
-    const [isSaved, setIsSaved] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [hasChanges, setHasChanges] = useState(false);
 
 
     const sceneKeyframe = generatedImages[scene.id];
     
+    useEffect(() => {
+        // When the scene prop changes, reset the timeline state
+        setTimeline(scene.timeline);
+        setHasChanges(false);
+    }, [scene]);
+
     const getNarrativeContext = useCallback((sceneId: string): string => {
         const sceneIndex = scenes.findIndex(s => s.id === sceneId);
         if (sceneIndex === -1) return "No context found.";
@@ -143,12 +154,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
     const updateTimeline = (newTimeline: Partial<TimelineData>) => {
         setTimeline(prev => ({ ...prev, ...newTimeline }));
+        setHasChanges(true);
     };
 
     const handleSaveChanges = () => {
+        setIsSaving(true);
         onUpdateScene({ ...scene, timeline });
-        setIsSaved(true);
-        setTimeout(() => setIsSaved(false), 2000);
+        setHasChanges(false);
+        setTimeout(() => setIsSaving(false), 1500); // Simulate save time for visual feedback
     };
 
     const handleAddShot = () => {
@@ -347,6 +360,16 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 </div>
             </header>
 
+            {timeline.shots.length === 0 && (
+                <GuidedAction
+                    title="Your Scene is an Empty Canvas"
+                    description="Let's bring it to life. Use the AI to generate an initial, detailed shot list based on your Story Bible and Director's Vision."
+                    buttonText="Generate & Detail Initial Shots"
+                    onClick={handleGenerateAndDetailInitialShots}
+                    icon={<TimelineIcon className="w-12 h-12" />}
+                />
+            )}
+
             <div className="space-y-4">
                 {timeline.shots.length > 0 ? (
                     timeline.shots.map((shot, index) => (
@@ -371,16 +394,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             )}
                         </React.Fragment>
                     ))
-                ) : (
-                    <div className="text-center py-16 bg-gray-800/30 rounded-lg border-2 border-dashed border-gray-700 flex flex-col items-center justify-center">
-                        <TimelineIcon className="w-12 h-12 text-gray-600 mb-4" />
-                        <h3 className="text-lg font-semibold text-gray-300">This scene is an empty canvas.</h3>
-                        <p className="text-gray-400 mt-2 max-w-sm">Let's bring it to life. Generate an initial shot list with AI to get started.</p>
-                        <button onClick={handleGenerateAndDetailInitialShots} className="mt-6 inline-flex items-center justify-center px-6 py-3 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 disabled:bg-gray-500 transform hover:scale-105">
-                           <SparklesIcon className="mr-2 h-5 w-5" /> Generate & Detail Initial Shots
-                        </button>
-                    </div>
-                )}
+                ) : null}
             </div>
 
             <div className="flex justify-center">
@@ -389,27 +403,51 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 </button>
             </div>
             
-             <div className="flex flex-col sm:flex-row justify-center gap-4 mt-4">
-                <button onClick={() => handleBatchProcess(['REFINE_DESCRIPTION'])} className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 disabled:text-gray-500 flex items-center gap-2 justify-center">
-                    <SparklesIcon className="w-4 h-4" /> Refine All Descriptions
-                </button>
-                <button onClick={() => handleBatchProcess(['SUGGEST_ENHANCERS'])} className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 disabled:text-gray-500 flex items-center gap-2 justify-center">
-                    <SparklesIcon className="w-4 h-4" /> Suggest All Enhancers
-                </button>
-            </div>
-
-            <CoDirector
-                onGetSuggestions={handleGetCoDirectorSuggestions}
-                isLoading={isCoDirectorLoading}
-                result={coDirectorResult}
-                onApplySuggestion={(suggestion) => onApplySuggestion(suggestion, scene.id)}
-                onClose={() => setCoDirectorResult(null)}
-                storyBible={storyBible}
-                scene={scene}
-                directorsVision={directorsVision}
-                onApiLog={onApiLog}
-                onApiStateChange={onApiStateChange}
-            />
+            {timeline.shots.length > 0 && (
+                <>
+                    <div className="flex flex-col sm:flex-row justify-center gap-4 mt-4">
+                        <button onClick={() => handleBatchProcess(['REFINE_DESCRIPTION'])} className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 disabled:text-gray-500 flex items-center gap-2 justify-center">
+                            <SparklesIcon className="w-4 h-4" /> Refine All Descriptions
+                        </button>
+                        <button onClick={() => handleBatchProcess(['SUGGEST_ENHANCERS'])} className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 disabled:text-gray-500 flex items-center gap-2 justify-center">
+                            <SparklesIcon className="w-4 h-4" /> Suggest All Enhancers
+                        </button>
+                    </div>
+                    
+                    {!coDirectorResult && timeline.shots.length > 0 && (
+                         <GuidedAction
+                            title="Need a Fresh Perspective?"
+                            description="The AI Co-Director can analyze your current timeline and suggest creative changes to enhance the mood, pacing, and visual storytelling."
+                            buttonText="Consult the AI Co-Director"
+                            onClick={() => {
+                                const element = document.getElementById('co-director-objective');
+                                element?.focus();
+                                element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }}
+                            icon={<CompassIcon className="w-12 h-12" />}
+                        />
+                    )}
+                    
+                    <CoDirector
+                        onGetSuggestions={handleGetCoDirectorSuggestions}
+                        isLoading={isCoDirectorLoading}
+                        result={coDirectorResult}
+                        onApplySuggestion={(suggestion) => {
+                            onApplySuggestion(suggestion, scene.id);
+                            setHasChanges(true); // Applying suggestion is a change
+                        }}
+                        onClose={() => setCoDirectorResult(null)}
+                        storyBible={storyBible}
+                        scene={scene}
+                        directorsVision={directorsVision}
+                        onApiLog={onApiLog}
+                        onApiStateChange={onApiStateChange}
+                    />
+                    {hasChanges && (
+                        <GuidedAction title="You have unsaved changes!" description="Don't lose your creative work. Save the timeline to lock in your edits before moving on." buttonText="Save Timeline" onClick={handleSaveChanges} isLoading={isSaving} icon={<SaveIcon className="w-12 h-12"/>}/>
+                    )}
+                </>
+            )}
             
             <div className="space-y-6 pt-6 border-t border-gray-700/50">
                  <LocalGenerationStatusComponent 
@@ -433,24 +471,31 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     </div>
                      <button
                         onClick={handleSaveChanges}
-                        disabled={isSaved}
+                        disabled={isSaving || !hasChanges}
                         className={`px-8 py-3 text-white font-semibold rounded-full shadow-lg transition-colors w-44 text-center ${
-                            isSaved
+                            isSaving
                             ? 'bg-green-600 cursor-default'
-                            : 'bg-green-600 hover:bg-green-700'
+                            : hasChanges ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 cursor-not-allowed'
                         }`}
                     >
-                        {isSaved ? (
+                        {isSaving ? (
                             <span className="flex items-center justify-center">
                                 <CheckCircleIcon className="w-5 h-5 mr-2" /> Saved
                             </span>
-                        ) : (
+                        ) : hasChanges ? (
                             <span className="flex items-center justify-center">
                                 <SaveIcon className="w-5 h-5 mr-2" /> Save Timeline
+                            </span>
+                        ) : (
+                             <span className="flex items-center justify-center">
+                                <CheckCircleIcon className="w-5 h-5 mr-2" /> All Saved
                             </span>
                         )}
                     </button>
                 </div>
+                 <GuideCard title="Next Step: Local Generation">
+                    <p>Once your timeline is complete and saved, it's time to bring it to life! Use the <strong>Export Prompts</strong> or <strong>Generate Locally</strong> buttons. This will create the necessary data to feed into an external video generation model (like a local ComfyUI instance) to create your cinematic scene.</p>
+                </GuideCard>
             </div>
 
              <FinalPromptModal 
