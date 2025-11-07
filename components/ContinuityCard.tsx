@@ -190,6 +190,9 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                         {projectChanges.length > 0 && (
                             <div>
                                 <h4 className="flex items-center text-lg font-semibold text-yellow-400 mb-4"><BookOpenIcon className="w-5 h-5 mr-2" /> Project-Wide Refinements</h4>
+                                <p className="text-xs text-yellow-500/80 mb-3 p-2 bg-yellow-900/20 rounded-md border border-yellow-800/30">
+                                    These high-level suggestions aim to fix the root cause of continuity issues by updating core documents like your Story Bible. Applying them ensures your entire project remains coherent and may flag other scenes for review.
+                                </p>
                                 <div className="space-y-3 max-h-60 overflow-y-auto pr-2 -mr-2">
                                     {projectChanges.map((s, i) => (
                                         <div key={`proj-${i}`} className="bg-yellow-900/40 border border-yellow-700/50 p-3 rounded-md flex items-center justify-between gap-4">
@@ -198,15 +201,15 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                                         </div>
                                     ))}
                                 </div>
-                                <p className="text-xs text-yellow-500/80 mt-2 italic">
-                                    Applying these suggestions may alter core documents like the Story Bible and flag other scenes for review.
-                                </p>
                             </div>
                         )}
 
                         {timelineChanges.length > 0 && (
                              <div>
                                 <h4 className="flex items-center text-lg font-semibold text-indigo-400 mb-4"><SparklesIcon className="w-5 h-5 mr-2" /> Timeline Refinements</h4>
+                                 <p className="text-xs text-indigo-400/80 mb-3 p-2 bg-indigo-900/20 rounded-md border border-indigo-800/30">
+                                    These suggestions are specific to this scene's timeline. Apply them to improve the pacing, visuals, and storytelling of this individual scene.
+                                </p>
                                 <div className="space-y-3 max-h-60 overflow-y-auto pr-2 -mr-2">
                                     {timelineChanges.map((s, i) => (
                                         <div key={`time-${i}`} className="bg-gray-900/70 p-3 rounded-md flex items-center justify-between gap-4">

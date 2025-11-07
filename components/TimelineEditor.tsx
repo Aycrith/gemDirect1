@@ -369,6 +369,17 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 />
             )}
 
+            {timeline.shots.length > 0 && (
+                 <GuideCard title="Refine Your Timeline">
+                    <p>Your initial shot list is ready. Now you can bring your creative direction to life:</p>
+                    <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
+                        <li>Manually edit shot descriptions and add <strong className="text-indigo-300">Creative Controls</strong> for cinematic flair.</li>
+                        <li>Use the <strong className="text-indigo-300">"Refine All"</strong> buttons for quick, AI-powered improvements across the whole scene.</li>
+                        <li>When you're ready for a fresh perspective, consult the <strong className="text-indigo-300">AI Co-Director</strong> below for bold, creative suggestions.</li>
+                    </ul>
+                </GuideCard>
+            )}
+
             <div className="space-y-4">
                 {timeline.shots.length > 0 ? (
                     timeline.shots.map((shot, index) => (
