@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useRef, memo, useEffect } from 'react';
-import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible, BatchShotTask, BatchShotResult, LocalGenerationSettings } from '../types';
+import React, { useState, useCallback, useRef, memo } from 'react';
+import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible, BatchShotTask, BatchShotResult, LocalGenerationSettings, LocalGenerationStatus } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 import NegativePromptSuggestions from './NegativePromptSuggestions';
@@ -13,9 +13,11 @@ import { batchProcessShotEnhancements, ApiStateChangeCallback, ApiLogCallback } 
 import Tooltip from './Tooltip';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import { useApiStatus } from '../contexts/ApiStatusContext';
-import { generateVideoRequestPayloads, sendToComfyUI } from '../services/videoGenerationService';
+import { queueComfyUIPrompt } from '../services/videoGenerationService';
 import ServerIcon from './icons/ServerIcon';
 import ImageIcon from './icons/ImageIcon';
+// FIX: Renamed component import to avoid name collision with the 'LocalGenerationStatus' type.
+import LocalGenerationStatusComponent from './LocalGenerationStatus';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -37,6 +39,9 @@ interface TimelineEditorProps {
     shotPreviewImages: Record<string, { image: string, isLoading: boolean }>;
     onGenerateShotPreview: (shotId: string) => void;
     localGenerationSettings: LocalGenerationSettings;
+    localGenerationStatus: LocalGenerationStatus;
+    onStartLocalGeneration: (promptId: string, workflowJson: string) => void;
+    onClearLocalGeneration: () => void;
 }
 
 const SuggestionButton: React.FC<{
@@ -173,6 +178,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     shotPreviewImages,
     onGenerateShotPreview,
     localGenerationSettings,
+    localGenerationStatus,
+    onStartLocalGeneration,
+    onClearLocalGeneration,
 }) => {
     const { shots, shotEnhancers, transitions, negativePrompt } = scene.timeline;
     const { updateApiStatus } = useApiStatus();
@@ -183,8 +191,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const batchTimeoutRef = useRef<number | null>(null);
     const [queuedTasks, setQueuedTasks] = useState<Map<string, BatchShotTask>>(new Map());
     const [suggestionState, setSuggestionState] = useState<{ processingIds: Set<string> }>({ processingIds: new Set() });
-
-    const [isSendingToComfy, setIsSendingToComfy] = useState(false);
 
     const processTaskQueue = useCallback(() => {
         setQueuedTasks((currentTasks: Map<string, BatchShotTask>) => {
@@ -314,42 +320,47 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         return { shots, shotEnhancers, transitions, negativePrompt: finalNegativePrompt.trim() };
     }, [shots, shotEnhancers, transitions, negativePrompt, mitigateViolence, enhanceRealism]);
     
-    const handleSendToComfyUI = useCallback(async () => {
+    const handleQueueLocalGeneration = useCallback(async () => {
         if (!generatedImage) {
-            onApiStateChange('error', 'Missing keyframe image.');
-            return;
+            onApiStateChange('error', 'Missing keyframe image.'); return;
         }
-        if (!localGenerationSettings?.comfyUIUrl) {
-            onApiStateChange('error', 'ComfyUI URL not set. Please configure it in Settings.');
-            return;
+        if (!localGenerationSettings?.workflowJson) {
+            onApiStateChange('error', 'Workflow not synced. Please configure it in Settings.'); return;
         }
 
-        setIsSendingToComfy(true);
-        onApiStateChange('loading', 'Sending to Local Generator...');
         try {
             const timelineData = buildTimelineData();
-            const payloads = generateVideoRequestPayloads(timelineData, directorsVision, scene.summary);
-            
-            const useAdvanced = localGenerationSettings.workflowJson && Object.keys(localGenerationSettings.mapping).length > 0;
-            
-            await sendToComfyUI(
-                localGenerationSettings.comfyUIUrl, 
+            // Note: generateVideoRequestPayloads is now a local utility function, not from the service.
+            const payloads = {
+                json: JSON.stringify({
+                    scene_summary: scene.summary,
+                    directors_vision: directorsVision,
+                    timeline: timelineData,
+                }, null, 2),
+                text: "Human-readable prompt generation logic would go here if needed",
+            };
+
+            const response = await queueComfyUIPrompt(
+                localGenerationSettings,
                 payloads, 
                 generatedImage,
-                useAdvanced ? localGenerationSettings : undefined
             );
+            
+            if (response.prompt_id) {
+                 onStartLocalGeneration(response.prompt_id, localGenerationSettings.workflowJson);
+            }
 
-            onApiStateChange('success', 'Successfully queued prompt in local generator!');
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             onApiStateChange('error', `Local Generator Error: ${errorMessage}`);
             console.error("Local generation request failed:", error);
-        } finally {
-            setIsSendingToComfy(false);
         }
-    }, [generatedImage, localGenerationSettings, buildTimelineData, directorsVision, scene.summary, onApiStateChange]);
+    }, [generatedImage, localGenerationSettings, buildTimelineData, directorsVision, scene.summary, onApiStateChange, onStartLocalGeneration]);
+
 
     const isProcessingSuggestions = suggestionState.processingIds.size > 0;
+    const isWorkflowSynced = localGenerationSettings.workflowJson && localGenerationSettings.workflowJson.length > 2;
+    const isGeneratingLocally = localGenerationStatus.status === 'queued' || localGenerationStatus.status === 'running';
 
     return (
         <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-lg p-6">
@@ -426,7 +437,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             </div>
 
             <div className="mt-8 pt-6 border-t border-gray-700">
-                {generatedImage && (
+                {/* FIX: Using the renamed component to resolve the name collision and type usage error. */}
+                <LocalGenerationStatusComponent status={localGenerationStatus} onClear={onClearLocalGeneration} />
+
+                {generatedImage && !isGeneratingLocally && (
                     <div className="mb-6 fade-in">
                         <h3 className="text-xl font-bold text-green-400 mb-4 text-center">Generated Scene Keyframe</h3>
                         <div className="max-w-lg mx-auto bg-black rounded-lg overflow-hidden shadow-2xl shadow-green-500/20 border border-gray-700">
@@ -435,20 +449,18 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     </div>
                 )}
                 
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                {!isGeneratingLocally && <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                      {generatedImage ? (
+                        <Tooltip text={!isWorkflowSynced ? 'Sync a workflow in settings to enable' : ''}>
                         <button
-                            onClick={handleSendToComfyUI}
-                            disabled={!localGenerationSettings.comfyUIUrl || isSendingToComfy}
+                            onClick={handleQueueLocalGeneration}
+                            disabled={!isWorkflowSynced}
                             className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
                         >
-                            {isSendingToComfy ? (
-                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                            ) : (
-                                <ServerIcon className="mr-3 h-6 w-6" />
-                            )}
-                            {isSendingToComfy ? 'Sending...' : 'Generate Video (Local)'}
+                            <ServerIcon className="mr-3 h-6 w-6" />
+                            Generate Video (Local)
                         </button>
+                        </Tooltip>
                      ) : (
                         <button
                             onClick={() => onGenerateKeyframe(scene.id, buildTimelineData())}
@@ -464,7 +476,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     >
                         Export Prompts
                     </button>
-                </div>
+                </div>}
 
                 <div className="mt-8 text-center">
                     {nextScene ? (

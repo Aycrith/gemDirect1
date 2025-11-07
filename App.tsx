@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import StoryIdeaForm from './components/StoryIdeaForm';
 import StoryBibleEditor from './components/StoryBibleEditor';
 import SceneNavigator from './components/SceneNavigator';
@@ -9,7 +9,7 @@ import ContinuityDirector from './components/ContinuityDirector';
 import FinalPromptModal from './components/FinalPromptModal';
 import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateKeyframeForScene, applyRefinement, updateSceneSummaryWithRefinements, generateNextSceneFromContinuity, generateImageForShot } from './services/geminiService';
 import { generateVideoRequestPayloads } from './services/videoGenerationService';
-import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData, LocalGenerationSettings } from './types';
+import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData, LocalGenerationSettings, LocalGenerationStatus } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
 import SaveIcon from './components/icons/SaveIcon';
@@ -33,17 +33,24 @@ const emptyTimeline: TimelineData = {
 
 const defaultLocalGenerationSettings: LocalGenerationSettings = {
     comfyUIUrl: 'http://127.0.0.1:8188',
+    comfyUIClientId: `csg_${Math.random().toString(36).substr(2, 9)}`,
     workflowJson: '',
     mapping: {},
+};
+
+const defaultLocalGenerationStatus: LocalGenerationStatus = {
+    status: 'idle',
+    message: '',
+    progress: 0,
 };
 
 const AppContent: React.FC = () => {
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
     
+    // UI Modals & State
     const [isUsageDashboardOpen, setIsUsageDashboardOpen] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-
 
     const handleApiStateChange: ApiStateChangeCallback = useCallback((status, message) => {
         updateApiStatus(status, message);
@@ -66,6 +73,7 @@ const AppContent: React.FC = () => {
     const [shotPreviewImages, setShotPreviewImages] = useState<Record<string, { image: string, isLoading: boolean }>>({}); // Previews
     const [continuityData, setContinuityData] = useState<Record<string, SceneContinuityData>>({});
     const [refinedSceneIds, setRefinedSceneIds] = useState<Set<string>>(new Set());
+    const [localGenerationStatus, setLocalGenerationStatus] = useState<LocalGenerationStatus>(defaultLocalGenerationStatus);
     
     // UI and Loading State
     const [isLoading, setIsLoading] = useState(true);
@@ -75,6 +83,97 @@ const AppContent: React.FC = () => {
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [finalPrompt, setFinalPrompt] = useState<{ json: string; text: string; } | null>(null);
     const [continuityModalState, setContinuityModalState] = useState<{ sceneId: string; lastFrame: string } | null>(null);
+
+    // ComfyUI WebSocket Communication
+    const websocketRef = useRef<WebSocket | null>(null);
+    const [monitoringPromptId, setMonitoringPromptId] = useState<string | null>(null);
+    const [nodeTitles, setNodeTitles] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        if (!localGenerationSettings.comfyUIUrl || workflowStage !== 'director') return;
+        
+        const url = new URL(localGenerationSettings.comfyUIUrl);
+        const wsUrl = `${url.protocol === 'https:' ? 'wss:' : 'ws:'}//${url.host}/ws?clientId=${localGenerationSettings.comfyUIClientId}`;
+
+        websocketRef.current = new WebSocket(wsUrl);
+
+        websocketRef.current.onopen = () => console.log('WebSocket connection established.');
+        websocketRef.current.onerror = (err) => console.error('WebSocket error:', err);
+        websocketRef.current.onclose = () => console.log('WebSocket connection closed.');
+
+        websocketRef.current.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+
+            if (msg.type === 'status') {
+                const { status } = msg.data;
+                if (status.exec_info.queue_remaining > 0) {
+                     setLocalGenerationStatus({
+                        status: 'queued',
+                        message: `In queue... (Position: ${status.exec_info.queue_remaining})`,
+                        progress: 0,
+                        queue_position: status.exec_info.queue_remaining,
+                    });
+                }
+            } else if (msg.type === 'execution_start' && msg.data.prompt_id === monitoringPromptId) {
+                 setLocalGenerationStatus(prev => ({ ...prev, status: 'running', message: 'Execution started...', progress: 0 }));
+            } else if (msg.type === 'executing' && msg.data.prompt_id === monitoringPromptId) {
+                 const nodeId = msg.data.node;
+                 const title = nodeTitles[nodeId] || `Node ${nodeId}`;
+                 setLocalGenerationStatus(prev => ({...prev, message: `Running: ${title}`, node_title: title, progress: prev.progress < 1 ? 1 : prev.progress }));
+            } else if (msg.type === 'progress' && msg.data.prompt_id === monitoringPromptId) {
+                const { value, max } = msg.data;
+                const progress = Math.round((value / max) * 100);
+                setLocalGenerationStatus(prev => ({ ...prev, progress, message: `Running: ${prev.node_title} (${value}/${max})`}));
+            } else if (msg.type === 'executed' && msg.data.prompt_id === monitoringPromptId) {
+                const { output, node } = msg.data;
+                if (output.images) {
+                    const { filename, subfolder, type } = output.images[0];
+                    const imageUrl = new URL(localGenerationSettings.comfyUIUrl);
+                    const src = `${imageUrl.protocol}//${imageUrl.host}/view?filename=${filename}&subfolder=${subfolder}&type=${type}`;
+                    
+                    fetch(src).then(res => res.blob()).then(blob => {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            const base64 = (reader.result as string).split(',')[1];
+                             setLocalGenerationStatus(prev => ({ ...prev, status: 'complete', message: 'Generation Complete!', progress: 100, final_output: { type: 'image', data: base64, filename }}));
+                        };
+                        reader.readAsDataURL(blob);
+                    });
+                } else {
+                    setLocalGenerationStatus(prev => ({ ...prev, status: 'complete', message: 'Generation Complete!', progress: 100 }));
+                }
+                setMonitoringPromptId(null);
+            } else if (msg.type === 'execution_error' && msg.data.prompt_id === monitoringPromptId) {
+                const { exception_message } = msg.data;
+                setLocalGenerationStatus({ status: 'error', message: `Error: ${exception_message}`, progress: 0 });
+                setMonitoringPromptId(null);
+            }
+        };
+
+        return () => {
+            if (websocketRef.current) {
+                websocketRef.current.close();
+            }
+        };
+    }, [localGenerationSettings, monitoringPromptId, nodeTitles, workflowStage]);
+    
+    const handleStartLocalGeneration = (promptId: string, workflowJson: string) => {
+        try {
+            const workflow = JSON.parse(workflowJson);
+            const titles: Record<string, string> = {};
+            for (const nodeId in workflow) {
+                if (workflow[nodeId]._meta?.title) {
+                    titles[nodeId] = workflow[nodeId]._meta.title;
+                }
+            }
+            setNodeTitles(titles);
+        } catch (e) {
+            console.error("Could not parse node titles from workflow JSON");
+        }
+        setLocalGenerationStatus({ status: 'queued', message: 'Sending to queue...', progress: 0 });
+        setMonitoringPromptId(promptId);
+    };
+
 
     const removeToast = useCallback((id: number) => {
         setToasts(prev => prev.filter(toast => toast.id !== id));
@@ -116,11 +215,7 @@ const AppContent: React.FC = () => {
                 if (bible) {
                     setStoryBible(bible);
                     const loadedScenes = savedScenes || [];
-                    // Data sanitization step to prevent crashes from old/corrupt data
-                    const sanitizedScenes = loadedScenes.map(s => ({
-                        ...s,
-                        timeline: s.timeline || emptyTimeline,
-                    }));
+                    const sanitizedScenes = loadedScenes.map(s => ({ ...s, timeline: s.timeline || emptyTimeline, }));
                     setScenes(sanitizedScenes);
                     setDirectorsVision(vision || '');
                     setGeneratedImages(images || {});
@@ -136,28 +231,18 @@ const AppContent: React.FC = () => {
                     const determinedStageIndex = stageOrder.indexOf(determinedStage);
 
                     let finalStage: WorkflowStage = determinedStage;
-                    if (savedStage && savedStageIndex <= determinedStageIndex) {
-                        finalStage = savedStage;
-                    }
-                    if (savedStage === 'continuity' && determinedStageIndex >= stageOrder.indexOf('director')) {
-                        finalStage = 'continuity';
-                    }
+                    if (savedStage && savedStageIndex <= determinedStageIndex) { finalStage = savedStage; }
+                    if (savedStage === 'continuity' && determinedStageIndex >= stageOrder.indexOf('director')) { finalStage = 'continuity'; }
 
                     setWorkflowStage(finalStage);
+                    if (savedScenes && savedScenes.length > 0) { setActiveSceneId(savedScenes[0].id); }
 
-                    if (savedScenes && savedScenes.length > 0) {
-                        setActiveSceneId(savedScenes[0].id);
-                    }
-
-                } else {
-                    setWorkflowStage('idea');
-                }
+                } else { setWorkflowStage('idea'); }
             } catch (error) {
                 console.error("Failed to load project from database", error);
                 addToast("Could not load saved project.", "error");
             } finally {
-                setIsLoading(false);
-                setLoadingMessage('');
+                setIsLoading(false); setLoadingMessage('');
             }
         };
         loadProject();
@@ -184,9 +269,7 @@ const AppContent: React.FC = () => {
             if (currentActKey === 'act i') end = actStarts['act ii'] !== -1 ? actStarts['act ii'] : actStarts['act iii'];
             if (currentActKey === 'act ii') end = actStarts['act iii'] !== -1 ? actStarts['act iii'] : undefined;
             actText = plotLines.slice(start, end).join('\n');
-        } else {
-            actText = storyBible.plotOutline;
-        }
+        } else { actText = storyBible.plotOutline; }
         const prevSceneSummary = sceneIndex > 0 ? `PREVIOUS SCENE: ${scenes[sceneIndex - 1].summary}` : 'This is the opening scene.';
         const nextSceneSummary = sceneIndex < scenes.length - 1 ? `NEXT SCENE: ${scenes[sceneIndex + 1].summary}` : 'This is the final scene.';
         return `This scene occurs within:\n${actText}\nContext:\n- ${prevSceneSummary}\n- ${nextSceneSummary}`.trim();
@@ -203,9 +286,7 @@ const AppContent: React.FC = () => {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             addToast(`Failed to generate story bible: ${errorMessage}`, 'error');
-        } finally {
-            setIsLoading(false);
-        }
+        } finally { setIsLoading(false); }
     };
     
     const handleDirectorsVisionSubmit = async (vision: string) => {
@@ -225,16 +306,12 @@ const AppContent: React.FC = () => {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             addToast(`Failed to generate scenes: ${errorMessage}`, 'error');
-        } finally {
-            setIsLoading(false);
-        }
+        } finally { setIsLoading(false); }
     };
 
     const generateShotsForScene = useCallback(async (sceneId: string) => {
         const sceneToProcess = scenes.find(s => s.id === sceneId);
-        if (!sceneToProcess || sceneToProcess.timeline.shots.length > 0 || !storyBible || !directorsVision) {
-            return;
-        }
+        if (!sceneToProcess || sceneToProcess.timeline.shots.length > 0 || !storyBible || !directorsVision) return;
     
         setIsLoading(true);
         setLoadingMessage(`Generating initial shots for "${sceneToProcess.title}"...`);
@@ -250,26 +327,15 @@ const AppContent: React.FC = () => {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             addToast(`Failed to generate initial shots: ${errorMessage}`, 'error');
-        } finally {
-            setIsLoading(false);
-        }
+        } finally { setIsLoading(false); }
     }, [scenes, storyBible, directorsVision, handleApiLog, handleApiStateChange, getNarrativeContext, addToast]);
     
-    const handleSceneSelect = (sceneId: string) => {
-        setActiveSceneId(sceneId);
-    };
-
+    const handleSceneSelect = (sceneId: string) => { setActiveSceneId(sceneId); };
     const activeScene = useMemo(() => scenes.find(s => s.id === activeSceneId), [scenes, activeSceneId]);
 
     useEffect(() => {
-        const isReadyForGeneration = activeScene &&
-                                    activeScene.timeline.shots.length === 0 &&
-                                    (workflowStage === 'director' || workflowStage === 'continuity') &&
-                                    storyBible && directorsVision && !isLoading;
-
-        if (isReadyForGeneration) {
-            generateShotsForScene(activeScene.id);
-        }
+        const isReadyForGeneration = activeScene && activeScene.timeline.shots.length === 0 && (workflowStage === 'director' || workflowStage === 'continuity') && storyBible && directorsVision && !isLoading;
+        if (isReadyForGeneration) { generateShotsForScene(activeScene.id); }
     }, [activeScene, workflowStage, isLoading, storyBible, directorsVision, generateShotsForScene]);
 
     const updateActiveSceneTimeline = (timelineUpdater: (prevTimeline: TimelineData) => TimelineData) => {
@@ -281,44 +347,17 @@ const AppContent: React.FC = () => {
         );
     };
 
-    const handleSetShots = (setter: React.SetStateAction<Shot[]>) => {
-        updateActiveSceneTimeline(prev => ({
-            ...prev,
-            shots: typeof setter === 'function' ? setter(prev.shots) : setter
-        }));
-    };
-
-    const handleSetShotEnhancers = (setter: React.SetStateAction<ShotEnhancers>) => {
-        updateActiveSceneTimeline(prev => ({
-            ...prev,
-            shotEnhancers: typeof setter === 'function' ? setter(prev.shotEnhancers) : setter
-        }));
-    };
-
-    const handleSetTransitions = (setter: React.SetStateAction<string[]>) => {
-        updateActiveSceneTimeline(prev => ({
-            ...prev,
-            transitions: typeof setter === 'function' ? setter(prev.transitions) : setter
-        }));
-    };
-
-    const handleSetNegativePrompt = (setter: React.SetStateAction<string>) => {
-        updateActiveSceneTimeline(prev => ({
-            ...prev,
-            negativePrompt: typeof setter === 'function' ? setter(prev.negativePrompt) : setter
-        }));
-    };
+    const handleSetShots = (setter: React.SetStateAction<Shot[]>) => { updateActiveSceneTimeline(prev => ({ ...prev, shots: typeof setter === 'function' ? setter(prev.shots) : setter })); };
+    const handleSetShotEnhancers = (setter: React.SetStateAction<ShotEnhancers>) => { updateActiveSceneTimeline(prev => ({ ...prev, shotEnhancers: typeof setter === 'function' ? setter(prev.shotEnhancers) : setter })); };
+    const handleSetTransitions = (setter: React.SetStateAction<string[]>) => { updateActiveSceneTimeline(prev => ({ ...prev, transitions: typeof setter === 'function' ? setter(prev.transitions) : setter })); };
+    const handleSetNegativePrompt = (setter: React.SetStateAction<string>) => { updateActiveSceneTimeline(prev => ({ ...prev, negativePrompt: typeof setter === 'function' ? setter(prev.negativePrompt) : setter })); };
 
     const handleCoDirectorSubmit = async (objective: string) => {
-        if (!activeSceneId || !storyBible || !directorsVision) {
-            addToast("Cannot get suggestions without an active scene and context.", 'error');
-            return;
-        }
+        if (!activeSceneId || !storyBible || !directorsVision) { addToast("Cannot get suggestions without an active scene and context.", 'error'); return; }
         const activeScene = scenes.find(s => s.id === activeSceneId);
         if (!activeScene) return;
 
-        setIsCoDirectorLoading(true);
-        setCoDirectorResult(null);
+        setIsCoDirectorLoading(true); setCoDirectorResult(null);
         try {
             const prunedContext = await getPrunedContextForCoDirector(storyBible, getNarrativeContext(activeSceneId), activeScene, directorsVision, handleApiLog, handleApiStateChange);
             const result = await getCoDirectorSuggestions(prunedContext, activeScene, objective, handleApiLog, handleApiStateChange);
@@ -326,28 +365,20 @@ const AppContent: React.FC = () => {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             addToast(`Co-Director failed: ${errorMessage}`, 'error');
-        } finally {
-            setIsCoDirectorLoading(false);
-        }
+        } finally { setIsCoDirectorLoading(false); }
     };
     
     const handleApplyTimelineSuggestion = useCallback((suggestion: Suggestion, sceneId: string) => {
         setScenes(prevScenes => {
             return prevScenes.map(scene => {
                 if (scene.id !== sceneId) return scene;
-
                 let newTimeline = { ...scene.timeline };
                 const { type, payload } = suggestion;
 
                 if (type === 'UPDATE_SHOT' && suggestion.shot_id) {
-                    newTimeline.shots = newTimeline.shots.map(shot =>
-                        shot.id === suggestion.shot_id ? { ...shot, ...payload } : shot
-                    );
+                    newTimeline.shots = newTimeline.shots.map(shot => shot.id === suggestion.shot_id ? { ...shot, ...payload } : shot);
                     if (payload.enhancers) {
-                        newTimeline.shotEnhancers = {
-                            ...newTimeline.shotEnhancers,
-                            [suggestion.shot_id]: { ...(newTimeline.shotEnhancers[suggestion.shot_id] || {}), ...payload.enhancers }
-                        };
+                        newTimeline.shotEnhancers = { ...newTimeline.shotEnhancers, [suggestion.shot_id]: { ...(newTimeline.shotEnhancers[suggestion.shot_id] || {}), ...payload.enhancers } };
                     }
                 } else if (type === 'ADD_SHOT_AFTER' && suggestion.after_shot_id && payload.description) {
                     const newShot: Shot = { id: `shot_${Date.now()}`, description: payload.description, title: payload.title };
@@ -355,16 +386,11 @@ const AppContent: React.FC = () => {
                     if (index > -1) {
                         newTimeline.shots.splice(index + 1, 0, newShot);
                         newTimeline.transitions.splice(index, 0, 'Cut');
-                        if (payload.enhancers) {
-                            newTimeline.shotEnhancers[newShot.id] = payload.enhancers;
-                        }
+                        if (payload.enhancers) { newTimeline.shotEnhancers[newShot.id] = payload.enhancers; }
                     }
                 } else if (type === 'UPDATE_TRANSITION' && typeof suggestion.transition_index !== 'undefined' && payload.type) {
-                     if (suggestion.transition_index < newTimeline.transitions.length) {
-                        newTimeline.transitions[suggestion.transition_index] = payload.type;
-                    }
+                     if (suggestion.transition_index < newTimeline.transitions.length) { newTimeline.transitions[suggestion.transition_index] = payload.type; }
                 }
-
                 return { ...scene, timeline: newTimeline };
             });
         });
@@ -373,9 +399,7 @@ const AppContent: React.FC = () => {
     }, [addToast]);
 
     const handleCoDirectorApplySuggestion = useCallback((suggestion: Suggestion) => {
-        if (activeSceneId) {
-            handleApplyTimelineSuggestion(suggestion, activeSceneId);
-        }
+        if (activeSceneId) { handleApplyTimelineSuggestion(suggestion, activeSceneId); }
     }, [activeSceneId, handleApplyTimelineSuggestion]);
     
     const handleGetInspiration = async () => {
@@ -386,8 +410,7 @@ const AppContent: React.FC = () => {
     }
     
     const handleSaveProject = async () => {
-        setIsLoading(true);
-        setLoadingMessage('Saving project...');
+        setIsLoading(true); setLoadingMessage('Saving project...');
         try {
             if (storyBible) await db.saveStoryBible(storyBible);
             await db.saveScenes(scenes);
@@ -400,37 +423,27 @@ const AppContent: React.FC = () => {
         } catch (error) {
             console.error("Failed to save project", error);
             addToast('Failed to save project.', 'error');
-        } finally {
-            setIsLoading(false);
-        }
+        } finally { setIsLoading(false); }
     };
     
      const handleClearProject = async () => {
         if (window.confirm('Are you sure you want to clear all project data and start a new story? This action cannot be undone.')) {
-            setIsLoading(true);
-            setLoadingMessage('Clearing project...');
+            setIsLoading(true); setLoadingMessage('Clearing project...');
             try {
-                await db.clearProjectData();
-                resetProjectState();
+                await db.clearProjectData(); resetProjectState();
                 addToast('Project cleared. Ready for a new story!', 'success');
             } catch (error) {
                 console.error("Failed to clear project data", error);
                 addToast('Failed to clear project.', 'error');
-            } finally {
-                setIsLoading(false);
-            }
+            } finally { setIsLoading(false); }
         }
     };
 
     const handleGenerateKeyframe = async (sceneId: string, timeline: TimelineData) => {
         const activeScene = scenes.find(s => s.id === sceneId);
-        if (!activeScene || !directorsVision) {
-            addToast('Could not generate keyframe: missing scene data or director\'s vision.', 'error');
-            return;
-        }
+        if (!activeScene || !directorsVision) { addToast('Could not generate keyframe: missing scene data or director\'s vision.', 'error'); return; }
         
         const payloads = generateVideoRequestPayloads(timeline, directorsVision, activeScene.summary);
-
         try {
             addToast('Generating scene keyframe...', 'info');
             const base64Image = await generateKeyframeForScene(payloads.text, handleApiLog, handleApiStateChange);
@@ -444,10 +457,7 @@ const AppContent: React.FC = () => {
     
     const handleExportPrompts = (sceneId: string, timeline: TimelineData) => {
         const activeScene = scenes.find(s => s.id === sceneId);
-        if (!activeScene || !directorsVision) {
-            addToast('Could not export prompts: missing scene data or director\'s vision.', 'error');
-            return;
-        }
+        if (!activeScene || !directorsVision) { addToast('Could not export prompts: missing scene data or director\'s vision.', 'error'); return; }
         const payloads = generateVideoRequestPayloads(timeline, directorsVision, activeScene.summary);
         setFinalPrompt(payloads);
     };
@@ -472,11 +482,7 @@ const AppContent: React.FC = () => {
 
     const handleUpdateSceneSummary = useCallback(async (sceneId: string): Promise<boolean> => {
         const sceneToUpdate = scenes.find(s => s.id === sceneId);
-        if (!sceneToUpdate) {
-            addToast("Error: Scene not found.", 'error');
-            return false;
-        }
-
+        if (!sceneToUpdate) { addToast("Error: Scene not found.", 'error'); return false; }
         try {
             const newSummary = await updateSceneSummaryWithRefinements(sceneToUpdate.summary, sceneToUpdate.timeline, handleApiLog, handleApiStateChange);
             setScenes(prevScenes => prevScenes.map(s => s.id === sceneId ? { ...s, summary: newSummary } : s));
@@ -489,70 +495,36 @@ const AppContent: React.FC = () => {
         }
     }, [scenes, handleApiLog, handleApiStateChange, addToast]);
     
-    const handleExtendTimelineRequest = (sceneId: string, lastFrame: string) => {
-        setContinuityModalState({ sceneId, lastFrame });
-    };
+    const handleExtendTimelineRequest = (sceneId: string, lastFrame: string) => { setContinuityModalState({ sceneId, lastFrame }); };
 
     const handleExtendTimelineSubmit = async (direction: string) => {
-        if (!continuityModalState || !storyBible || !directorsVision) {
-            addToast("Cannot generate next scene: missing context.", "error");
-            return;
-        }
+        if (!continuityModalState || !storyBible || !directorsVision) { addToast("Cannot generate next scene: missing context.", "error"); return; }
         
         const { sceneId, lastFrame } = continuityModalState;
         const lastScene = scenes.find(s => s.id === sceneId);
-        if (!lastScene) {
-            addToast("Cannot find the source scene.", "error");
-            return;
-        }
+        if (!lastScene) { addToast("Cannot find the source scene.", "error"); return; }
     
-        setIsLoading(true);
-        setLoadingMessage('Generating next scene with AI...');
-        setContinuityModalState(null); 
+        setIsLoading(true); setLoadingMessage('Generating next scene with AI...'); setContinuityModalState(null); 
     
         try {
-            const { title, summary } = await generateNextSceneFromContinuity(
-                storyBible,
-                directorsVision,
-                lastScene.summary,
-                direction,
-                lastFrame,
-                handleApiLog,
-                handleApiStateChange
-            );
-    
-            const newScene: Scene = {
-                id: `scene_${Date.now()}`,
-                title,
-                summary,
-                timeline: emptyTimeline
-            };
-    
+            const { title, summary } = await generateNextSceneFromContinuity(storyBible, directorsVision, lastScene.summary, direction, lastFrame, handleApiLog, handleApiStateChange);
+            const newScene: Scene = { id: `scene_${Date.now()}`, title, summary, timeline: emptyTimeline };
             const lastSceneIndex = scenes.findIndex(s => s.id === sceneId);
             const newScenes = [...scenes];
             newScenes.splice(lastSceneIndex + 1, 0, newScene);
             
-            setScenes(newScenes);
-            setActiveSceneId(newScene.id);
-            setWorkflowStage('director'); // Go back to director view for the new scene
+            setScenes(newScenes); setActiveSceneId(newScene.id); setWorkflowStage('director');
             addToast(`New scene "${title}" generated!`, 'success');
-    
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             addToast(`Failed to generate next scene: ${errorMessage}`, 'error');
-        } finally {
-            setIsLoading(false);
-            setLoadingMessage('');
-        }
+        } finally { setIsLoading(false); setLoadingMessage(''); }
     };
-
 
     const getNextScene = () => {
         if (!activeSceneId) return null;
         const currentIndex = scenes.findIndex(s => s.id === activeSceneId);
-        if (currentIndex > -1 && currentIndex < scenes.length - 1) {
-            return scenes[currentIndex + 1];
-        }
+        if (currentIndex > -1 && currentIndex < scenes.length - 1) { return scenes[currentIndex + 1]; }
         return null;
     }
 
@@ -609,6 +581,9 @@ const AppContent: React.FC = () => {
                                     shotPreviewImages={shotPreviewImages}
                                     onGenerateShotPreview={handleGenerateShotPreview}
                                     localGenerationSettings={localGenerationSettings}
+                                    localGenerationStatus={localGenerationStatus}
+                                    onStartLocalGeneration={handleStartLocalGeneration}
+                                    onClearLocalGeneration={() => setLocalGenerationStatus(defaultLocalGenerationStatus)}
                                 />
                                 </>
                             )}

@@ -129,6 +129,16 @@ export type WorkflowMapping = Record<string, MappableData>;
 
 export interface LocalGenerationSettings {
     comfyUIUrl: string;
-    workflowJson: string;
+    comfyUIClientId: string;
+    workflowJson: string; // Will store the FETCHED workflow
     mapping: WorkflowMapping;
+}
+
+export interface LocalGenerationStatus {
+    status: 'idle' | 'queued' | 'running' | 'complete' | 'error';
+    message: string;
+    progress: number; // 0-100
+    queue_position?: number;
+    node_title?: string;
+    final_output?: { type: 'image', data: string, filename: string };
 }

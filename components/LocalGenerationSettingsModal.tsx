@@ -14,47 +14,44 @@ const parseWorkflowForInputs = (workflowJson: string): WorkflowInput[] => {
         const workflow = JSON.parse(workflowJson);
         const inputs: WorkflowInput[] = [];
         
-        // ComfyUI API format wraps the workflow in a "prompt" object
         const nodes = workflow.prompt || workflow;
 
         for (const nodeId in nodes) {
             const node = nodes[nodeId];
-            if (node.class_type === 'CLIPTextEncode' && node.inputs?.text !== undefined) {
+            if (!node.inputs) continue;
+            
+            // Specifically identify LoadImage nodes for image mapping
+            if (node.class_type === 'LoadImage' && node.inputs.image !== undefined) {
                  inputs.push({
                     nodeId,
                     nodeType: node.class_type,
                     nodeTitle: node._meta?.title || `Node ${nodeId}`,
-                    inputName: 'text',
-                    inputType: 'STRING',
-                });
-            }
-            // A common custom node for Base64 image input
-            if (node.class_type === 'LoadImageBase64' && node.inputs?.base64 !== undefined) {
-                inputs.push({
-                    nodeId,
-                    nodeType: node.class_type,
-                    nodeTitle: node._meta?.title || `Node ${nodeId}`,
-                    inputName: 'base64',
+                    inputName: 'image',
                     inputType: 'IMAGE',
                 });
             }
-            // Generic detection for any node with a string widget that isn't a filename
-            if (node.inputs) {
-                 for (const inputName in node.inputs) {
-                    const inputVal = node.inputs[inputName];
-                    if (Array.isArray(inputVal) && inputVal.length === 2 && typeof inputVal[1] === 'object' && inputVal[1].input === 'string') {
-                         inputs.push({
-                            nodeId,
-                            nodeType: node.class_type,
-                            nodeTitle: node._meta?.title || `Node ${nodeId}`,
-                            inputName: inputName,
-                            inputType: 'STRING',
-                        });
-                    }
-                 }
+            
+            // Generic detection for any primitive input (not linked from another node)
+            for (const inputName in node.inputs) {
+                const inputVal = node.inputs[inputName];
+                // A linked input is an array like `["node_id", output_index]`
+                const isLinked = Array.isArray(inputVal) && inputVal.length === 2 && typeof inputVal[0] === 'string' && !isNaN(parseInt(inputVal[0], 10));
+
+                if (!isLinked) {
+                    // Avoid adding the 'image' input again if it's already caught
+                    if (node.class_type === 'LoadImage' && inputName === 'image') continue;
+                    
+                    inputs.push({
+                        nodeId,
+                        nodeType: node.class_type,
+                        nodeTitle: node._meta?.title || `Node ${nodeId}`,
+                        inputName: inputName,
+                        inputType: 'STRING', // Treat all other mappable primitives as string-injectable
+                    });
+                }
             }
         }
-        return inputs;
+        return inputs.sort((a, b) => a.nodeTitle!.localeCompare(b.nodeTitle!));
     } catch (e) {
         return [];
     }
@@ -63,39 +60,57 @@ const parseWorkflowForInputs = (workflowJson: string): WorkflowInput[] => {
 
 const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settings, onSave }) => {
     const [comfyUIUrl, setComfyUIUrl] = useState(settings.comfyUIUrl);
+    const [comfyUIClientId] = useState(settings.comfyUIClientId);
     const [workflowJson, setWorkflowJson] = useState(settings.workflowJson);
     const [mapping, setMapping] = useState<WorkflowMapping>(settings.mapping);
     const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+    const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
 
     const parsedInputs = useMemo(() => parseWorkflowForInputs(workflowJson), [workflowJson]);
     
     useEffect(() => {
-        // Reset mapping if workflow changes
-        setMapping({});
-    }, [workflowJson]);
+        // When the modal opens, if a workflow is already loaded, mark it as success
+        if (isOpen && settings.workflowJson) {
+            setSyncStatus('success');
+        } else if (!isOpen) {
+            setSyncStatus('idle');
+        }
+    }, [isOpen, settings.workflowJson]);
     
     const handleSave = () => {
-        onSave({ comfyUIUrl, workflowJson, mapping });
+        onSave({ comfyUIUrl, workflowJson, mapping, comfyUIClientId });
         onClose();
     };
 
     const handleTestConnection = useCallback(async () => {
         setConnectionStatus('testing');
         try {
-            // A simple GET request to the root of the server should suffice to check if it's running.
-            // Using '/object_info' as it's a common, lightweight endpoint.
-            const testUrl = new URL('/object_info', comfyUIUrl.replace('/prompt', ''));
+            const testUrl = new URL(comfyUIUrl);
             const response = await fetch(testUrl.toString(), { method: 'GET', mode: 'cors' });
             if (response.ok) {
                 setConnectionStatus('success');
-            } else {
-                throw new Error(`Server responded with status ${response.status}`);
-            }
+            } else { throw new Error(`Server responded with status ${response.status}`); }
         } catch (error) {
-            setConnectionStatus('error');
-            console.error('Connection test failed:', error);
+            setConnectionStatus('error'); console.error('Connection test failed:', error);
         }
         setTimeout(() => setConnectionStatus('idle'), 3000);
+    }, [comfyUIUrl]);
+
+    const handleSyncWorkflow = useCallback(async () => {
+        setSyncStatus('syncing');
+        setMapping({}); // Clear old mapping
+        try {
+            const url = comfyUIUrl.endsWith('/') ? `${comfyUIUrl}prompt` : `${comfyUIUrl}/prompt`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Server responded with status ${response.status}`);
+            const data = await response.json();
+            setWorkflowJson(JSON.stringify(data.prompt, null, 2));
+            setSyncStatus('success');
+        } catch (error) {
+            setSyncStatus('error');
+            setWorkflowJson('');
+            console.error('Workflow sync failed:', error);
+        }
     }, [comfyUIUrl]);
     
     const handleMappingChange = (key: string, value: MappableData) => {
@@ -105,12 +120,22 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     if (!isOpen) return null;
     
     const getMappingKey = (input: WorkflowInput) => `${input.nodeId}:${input.inputName}`;
-    const dataOptions: {value: MappableData; label: string}[] = [
-        { value: 'none', label: 'Do Not Map' },
-        { value: 'human_readable_prompt', label: 'Human-Readable Prompt' },
-        { value: 'full_timeline_json', label: 'Full Timeline JSON' },
-        { value: 'keyframe_image', label: 'Keyframe Image (Base64)' },
-    ];
+    // FIX: Explicitly typed the arrays to ensure their values are compatible with the `MappableData` type, resolving a TypeScript inference error.
+    const dataOptions = (inputType: string): {value: MappableData; label: string}[] => {
+        const baseOptions: { value: MappableData; label: string }[] = [
+            { value: 'none', label: 'Do Not Map' },
+            { value: 'human_readable_prompt', label: 'Human-Readable Prompt' },
+            { value: 'full_timeline_json', label: 'Full Timeline JSON' },
+        ];
+        if (inputType === 'IMAGE') {
+            const imageOptions: { value: MappableData; label: string }[] = [
+                { value: 'none', label: 'Do Not Map' },
+                { value: 'keyframe_image', label: 'Keyframe Image' },
+            ];
+            return imageOptions;
+        }
+        return baseOptions;
+    };
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 flex items-center justify-center p-4 fade-in" onClick={onClose}>
@@ -125,7 +150,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                 
                 <div className="p-6 space-y-6 overflow-y-auto">
                     <div>
-                        <label htmlFor="comfyui-url" className="font-medium text-gray-200 block text-sm mb-1">Local Server URL</label>
+                        <label htmlFor="comfyui-url" className="font-medium text-gray-200 block text-sm mb-1">ComfyUI Server Address</label>
                         <div className="flex gap-2">
                              <input 
                                 id="comfyui-url"
@@ -145,15 +170,14 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                     </div>
                     
                      <div>
-                        <label htmlFor="workflow-json" className="font-medium text-gray-200 block text-sm mb-1">ComfyUI Workflow (API Format)</label>
-                        <textarea
-                            id="workflow-json"
-                            rows={6}
-                            value={workflowJson}
-                            onChange={(e) => setWorkflowJson(e.target.value)}
-                            className="w-full bg-gray-900 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3 font-mono text-xs"
-                            placeholder="Paste your workflow JSON here (use 'Save API Format' in ComfyUI)..."
-                        />
+                        <label className="font-medium text-gray-200 block text-sm mb-1">ComfyUI Workflow</label>
+                         <button onClick={handleSyncWorkflow} disabled={syncStatus === 'syncing' || !comfyUIUrl} className="w-full px-4 py-2 text-sm font-semibold rounded-md border transition-colors bg-indigo-600/80 border-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-wait">
+                            {syncStatus === 'syncing' && 'Syncing...'}
+                            {syncStatus === 'success' && 'Workflow Synced ✓ (Click to Re-Sync)'}
+                            {syncStatus === 'error' && 'Sync Failed! (Click to Retry)'}
+                            {syncStatus === 'idle' && 'Connect & Sync Active Workflow'}
+                        </button>
+                        <p className="text-xs text-gray-500 mt-2">Load your desired workflow in ComfyUI first, then click this button to fetch it.</p>
                     </div>
                     
                     {parsedInputs.length > 0 && (
@@ -165,15 +189,15 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                                     return (
                                      <div key={key} className="grid grid-cols-2 gap-4 items-center">
                                         <div className="text-sm">
-                                            <p className="font-semibold text-gray-300 truncate" title={`${input.nodeTitle} (${input.nodeType})`}>{input.nodeTitle} ({input.nodeType})</p>
-                                            <p className="text-xs text-gray-500 font-mono" title={`Input: ${input.inputName}`}>Input: {input.inputName}</p>
+                                            <p className="font-semibold text-gray-300 truncate" title={`${input.nodeTitle} (${input.nodeType})`}>{input.nodeTitle}</p>
+                                            <p className="text-xs text-gray-500 font-mono" title={`Input: ${input.inputName} (${input.nodeType})`}>{input.inputName} ({input.nodeType})</p>
                                         </div>
                                         <select 
                                             value={mapping[key] || 'none'} 
                                             onChange={(e) => handleMappingChange(key, e.target.value as MappableData)}
                                             className="bg-gray-800 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-2"
                                         >
-                                            {dataOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                            {dataOptions(input.inputType).map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                                         </select>
                                      </div>
                                 )})}

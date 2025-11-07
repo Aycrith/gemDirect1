@@ -1,4 +1,5 @@
 import { TimelineData, LocalGenerationSettings } from '../types';
+import { base64ToBlob } from '../utils/videoUtils';
 
 /**
  * Generates a structured JSON payload and a human-readable text prompt from timeline data.
@@ -98,100 +99,106 @@ const generateHumanReadablePrompt = (
     return prompt.trim();
 };
 
+
 /**
- * Sends a prompt and an image to a local ComfyUI server.
- * Can operate in a simple mode or an advanced mode with a full workflow.
- * @param url The endpoint URL of the ComfyUI server.
+ * Constructs and sends a generation request to a ComfyUI server based on a synced workflow.
+ * @param settings The local generation settings, including URL, workflow, and mapping.
  * @param payloads The generated JSON and text prompts.
  * @param base64Image The base64-encoded keyframe image.
- * @param settings Optional settings for advanced mode, including workflow JSON and mapping.
+ * @returns The server's response after queueing the prompt.
  */
-export const sendToComfyUI = async (
-    url: string,
+export const queueComfyUIPrompt = async (
+    settings: LocalGenerationSettings,
     payloads: { json: string; text: string },
     base64Image: string,
-    settings?: LocalGenerationSettings
 ): Promise<any> => {
     
-    // --- Advanced Path ---
-    if (settings && settings.workflowJson && settings.mapping && Object.keys(settings.mapping).length > 0) {
-        try {
-            const workflow = JSON.parse(settings.workflowJson);
-            // Deep copy the prompt part of the workflow to avoid modifying any original object
-            const promptPayload = JSON.parse(JSON.stringify(workflow.prompt));
+    if (!settings.workflowJson || Object.keys(settings.mapping).length === 0) {
+        throw new Error("Workflow not synced or no inputs mapped. Please configure in Settings.");
+    }
+    
+    try {
+        const workflow = JSON.parse(settings.workflowJson);
+        // Deep copy the prompt to avoid modifying any original object
+        const promptPayload = JSON.parse(JSON.stringify(workflow));
+        const baseUrl = settings.comfyUIUrl.endsWith('/') ? settings.comfyUIUrl : `${settings.comfyUIUrl}/`;
+        
+        let uploadedImageFilename: string | null = null;
+        
+        // --- Step 1: Handle Image Upload if Mapped ---
+        const imageMappingKey = Object.keys(settings.mapping).find(key => settings.mapping[key] === 'keyframe_image');
+        if (imageMappingKey) {
+            const [nodeId, inputName] = imageMappingKey.split(':');
+            const node = promptPayload[nodeId];
 
-            for (const [key, dataType] of Object.entries(settings.mapping)) {
-                if (dataType === 'none') continue;
-
-                const [nodeId, inputName] = key.split(':');
-                const node = promptPayload[nodeId];
+            if (node && node.class_type === 'LoadImage') {
+                const blob = base64ToBlob(base64Image, 'image/jpeg');
+                const formData = new FormData();
+                formData.append('image', blob, `csg_keyframe_${Date.now()}.jpg`);
+                formData.append('overwrite', 'true');
                 
-                if (node && node.inputs) {
-                    let dataToInject: any = null;
-                    switch (dataType) {
-                        case 'human_readable_prompt':
-                            dataToInject = payloads.text;
-                            break;
-                        case 'full_timeline_json':
-                            dataToInject = payloads.json;
-                            break;
-                        case 'keyframe_image':
-                             // This assumes the user has a custom node that accepts a base64 string.
-                             // Comfy's default `LoadImage` node requires a pre-uploaded filename.
+                const uploadResponse = await fetch(`${baseUrl}upload/image`, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!uploadResponse.ok) throw new Error(`Failed to upload image to ComfyUI. Status: ${uploadResponse.status}`);
+                const uploadResult = await uploadResponse.json();
+                uploadedImageFilename = uploadResult.name;
+            }
+        }
+
+        // --- Step 2: Inject Data into Workflow Based on Mapping ---
+        for (const [key, dataType] of Object.entries(settings.mapping)) {
+            if (dataType === 'none') continue;
+
+            const [nodeId, inputName] = key.split(':');
+            const node = promptPayload[nodeId];
+            
+            if (node && node.inputs) {
+                let dataToInject: any = null;
+                switch (dataType) {
+                    case 'human_readable_prompt':
+                        dataToInject = payloads.text;
+                        break;
+                    case 'full_timeline_json':
+                        dataToInject = payloads.json;
+                        break;
+                    case 'keyframe_image':
+                        if (uploadedImageFilename && node.class_type === 'LoadImage') {
+                             dataToInject = uploadedImageFilename;
+                        } else {
+                            // This handles custom Base64 nodes as a fallback
                             dataToInject = base64Image;
-                            break;
-                    }
-                    if (dataToInject !== null) {
-                        node.inputs[inputName] = dataToInject;
-                    }
+                        }
+                        break;
+                }
+                if (dataToInject !== null) {
+                    node.inputs[inputName] = dataToInject;
                 }
             }
-
-            const body = JSON.stringify({ prompt: promptPayload, client_id: `csg_${Date.now()}` });
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body,
-            });
-
-            if (!response.ok) {
-                let errorMessage = `ComfyUI server responded with status: ${response.status}`;
-                try {
-                    const errorData = await response.json();
-                    errorMessage += ` - ${errorData.error?.message || JSON.stringify(errorData)}`;
-                } catch (e) { /* ignore json parse error */ }
-                throw new Error(errorMessage);
-            }
-            return response.json();
-
-        } catch (error) {
-            console.error("Error processing advanced ComfyUI request:", error);
-            throw new Error(`Failed to process advanced ComfyUI workflow. Check workflow JSON and mapping. Error: ${error instanceof Error ? error.message : String(error)}`);
         }
-    }
+        
+        // --- Step 3: Queue the Prompt ---
+        const body = JSON.stringify({ prompt: promptPayload, client_id: settings.comfyUIClientId });
+        const response = await fetch(`${baseUrl}prompt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+        });
 
-    // --- Simple Path (Fallback) ---
-    const simplePayload = {
-        prompt: payloads.text,
-        image: base64Image,
-    };
-    
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: simplePayload, client_id: `csg_${Date.now()}` }),
-    });
-
-    if (!response.ok) {
-        let errorMessage = `ComfyUI server responded with status: ${response.status}`;
-        try {
-            const errorData = await response.json();
-            errorMessage += ` - ${errorData.error || errorData.message || JSON.stringify(errorData)}`;
-        } catch (e) {
-            errorMessage += ` - ${response.statusText}`;
+        if (!response.ok) {
+            let errorMessage = `ComfyUI server responded with status: ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMessage += ` - ${errorData.error?.message || JSON.stringify(errorData)}`;
+            } catch (e) { /* ignore json parse error */ }
+            throw new Error(errorMessage);
         }
-        throw new Error(errorMessage);
-    }
+        return response.json();
 
-    return response.json();
+    } catch (error) {
+        console.error("Error processing ComfyUI request:", error);
+        throw new Error(`Failed to process ComfyUI workflow. Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
 };
