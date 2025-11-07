@@ -20,7 +20,7 @@ const ControlButton: React.FC<{ label: string; selected: boolean; onClick: () =>
     <Tooltip text={description}>
         <button
             onClick={onClick}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 ease-out transform hover:scale-105 ${selected ? 'bg-indigo-500 border-indigo-400 text-white shadow-md shadow-indigo-500/20' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-gray-500'}`}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 ease-out transform hover:scale-105 ${selected ? 'bg-amber-500 border-amber-400 text-white shadow-md shadow-amber-500/20' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-gray-500'}`}
         >
             {label}
         </button>
@@ -81,7 +81,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-1">
             <ControlSection 
                 title="Framing & Angle"
-                icon={<FramingIcon className="w-5 h-5 mr-2 text-indigo-400" />}
+                icon={<FramingIcon className="w-5 h-5 mr-2 text-amber-400" />}
                 options={FRAMING_OPTIONS}
                 selected={value.framing || []}
                 onToggle={(option) => handleToggle('framing', option)}
@@ -89,7 +89,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
             />
             <ControlSection 
                 title="Camera Movement"
-                icon={<CameraIcon className="w-5 h-5 mr-2 text-indigo-400" />}
+                icon={<CameraIcon className="w-5 h-5 mr-2 text-amber-400" />}
                 options={MOVEMENT_OPTIONS}
                 selected={value.movement || []}
                 onToggle={(option) => handleToggle('movement', option)}
@@ -97,7 +97,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
             />
              <ControlSection 
                 title="Lens & Focus"
-                icon={<LensIcon className="w-5 h-5 mr-2 text-indigo-400" />}
+                icon={<LensIcon className="w-5 h-5 mr-2 text-amber-400" />}
                 options={LENS_OPTIONS}
                 selected={value.lens || []}
                 onToggle={(option) => handleToggle('lens', option)}
@@ -105,7 +105,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
             />
             <ControlSection 
                 title="Editing & Pacing"
-                icon={<DancerIcon className="w-5 h-5 mr-2 text-indigo-400" />}
+                icon={<DancerIcon className="w-5 h-5 mr-2 text-amber-400" />}
                 options={PACING_OPTIONS}
                 selected={value.pacing || []}
                 onToggle={(option) => handleToggle('pacing', option)}
@@ -113,7 +113,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
             />
              <ControlSection 
                 title="Plot & Action"
-                icon={<DramaMaskIcon className="w-5 h-5 mr-2 text-indigo-400" />}
+                icon={<DramaMaskIcon className="w-5 h-5 mr-2 text-amber-400" />}
                 options={PLOT_ENHANCEMENTS_OPTIONS}
                 selected={value.plotEnhancements || []}
                 onToggle={(option) => handlePlotToggle('plotEnhancements', option)}
@@ -121,7 +121,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
             />
             <ControlSection 
                 title="Lighting Style"
-                icon={<LightingIcon className="w-5 h-5 mr-2 text-indigo-400" />}
+                icon={<LightingIcon className="w-5 h-5 mr-2 text-amber-400" />}
                 options={LIGHTING_OPTIONS}
                 selected={value.lighting || []}
                 onToggle={(option) => handleToggle('lighting', option)}
@@ -129,7 +129,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
             />
             <ControlSection 
                 title="Mood & Tone"
-                icon={<PaintBrushIcon className="w-5 h-5 mr-2 text-indigo-400" />}
+                icon={<PaintBrushIcon className="w-5 h-5 mr-2 text-amber-400" />}
                 options={MOOD_OPTIONS}
                 selected={value.mood || []}
                 onToggle={(option) => handleToggle('mood', option)}
@@ -137,7 +137,7 @@ const CreativeControls: React.FC<CreativeControlsProps> = ({ value, onChange }) 
             />
              <ControlSection 
                 title="Visual Style & VFX"
-                icon={<VfxIcon className="w-5 h-5 mr-2 text-indigo-400" />}
+                icon={<VfxIcon className="w-5 h-5 mr-2 text-amber-400" />}
                 options={VFX_OPTIONS}
                 selected={value.vfx || []}
                 onToggle={(option) => handleToggle('vfx', option)}

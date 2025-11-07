@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import BookOpenIcon from './icons/BookOpenIcon';
 import ClapperboardIcon from './icons/ClapperboardIcon';
@@ -31,7 +32,7 @@ const WelcomeGuideModal: React.FC<WelcomeGuideModalProps> = ({ onClose }) => {
                 className="bg-gray-800/90 border border-gray-700 rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" 
             >
                 <div className="p-6 text-center border-b border-gray-700">
-                     <h1 id="welcome-dialog-title" className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">
+                     <h1 id="welcome-dialog-title" className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-yellow-300">
                         Welcome to the Cinematic Story Generator
                     </h1>
                     <p className="mt-2 text-gray-300">Your journey from a single idea to a complete cinematic blueprint starts here.</p>
@@ -40,7 +41,7 @@ const WelcomeGuideModal: React.FC<WelcomeGuideModalProps> = ({ onClose }) => {
                 <div className="p-8 overflow-y-auto space-y-6">
                     {workflowSteps.map((step, index) => (
                          <div key={index} className="flex items-start gap-5">
-                             <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-full bg-gray-700/50 text-indigo-300">
+                             <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-full bg-gray-700/50 text-amber-300">
                                  {step.icon}
                              </div>
                              <div>
@@ -54,7 +55,7 @@ const WelcomeGuideModal: React.FC<WelcomeGuideModalProps> = ({ onClose }) => {
                 <div className="p-6 mt-auto border-t border-gray-700 text-center bg-gray-900/50 rounded-b-lg">
                     <button
                         onClick={onClose}
-                        className="w-full sm:w-auto flex items-center justify-center px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-indigo-700 hover:to-purple-700 transform hover:scale-105"
+                        className="w-full sm:w-auto flex items-center justify-center px-8 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-amber-700 hover:to-orange-700 transform hover:scale-105"
                     >
                         Let's Get Started
                     </button>

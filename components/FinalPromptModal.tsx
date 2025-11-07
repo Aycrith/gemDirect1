@@ -43,7 +43,7 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, pa
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="p-6 flex-grow overflow-y-auto">
-                    <h3 id="prompt-dialog-title" className="flex items-center text-lg font-bold text-indigo-400 mb-4">
+                    <h3 id="prompt-dialog-title" className="flex items-center text-lg font-bold text-amber-400 mb-4">
                         <SparklesIcon className="w-5 h-5 mr-2" />
                         Exported Scene Prompts
                     </h3>
@@ -54,7 +54,7 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, pa
                             role="tab"
                             aria-selected={view === 'text'}
                             className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${
-                                view === 'text' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'
+                                view === 'text' ? 'bg-amber-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'
                             }`}
                         >
                             Visual Shot List
@@ -64,7 +64,7 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, pa
                             role="tab"
                             aria-selected={view === 'json'}
                             className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${
-                                view === 'json' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'
+                                view === 'json' ? 'bg-amber-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'
                             }`}
                         >
                             JSON Payload
@@ -89,7 +89,7 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, pa
                             </p>
                             <div className="bg-gray-900/70 rounded-md border border-gray-700 max-h-[60vh] overflow-y-auto p-4 space-y-6">
                                <div className="p-4 bg-gray-800 rounded-md border border-gray-600">
-                                   <h4 className="font-bold text-indigo-300">Full Scene Prompt</h4>
+                                   <h4 className="font-bold text-amber-300">Full Scene Prompt</h4>
                                    <p className="mt-2 text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{payloads?.text}</p>
                                </div>
                                {payloads?.structured.map(item => (
@@ -103,7 +103,7 @@ const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, pa
                                             </div>
                                         )}
                                         {item.transition && (
-                                            <div className="text-center text-indigo-400 font-mono text-sm my-4">--[{item.transition}]--&gt;</div>
+                                            <div className="text-center text-amber-400 font-mono text-sm my-4">--[{item.transition}]--&gt;</div>
                                         )}
                                     </div>
                                 ))}

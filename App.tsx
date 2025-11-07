@@ -212,7 +212,7 @@ const AppContent: React.FC = () => {
                 return (
                     <>
                         <div className="text-center py-16 sm:py-20 fade-in">
-                            <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400">
+                            <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-500 to-yellow-300">
                                 Cinematic Story Generator
                             </h1>
                             <p className="mt-4 max-w-2xl mx-auto text-lg text-gray-300">
@@ -285,9 +285,9 @@ const AppContent: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
-            <header className="p-4 flex justify-between items-center sticky top-0 bg-gray-900/80 backdrop-blur-md z-30 border-b border-indigo-500/20">
+            <header className="p-4 flex justify-between items-center sticky top-0 bg-gray-900/80 backdrop-blur-md z-30 border-b border-amber-500/20">
                 <div className="flex items-center gap-3">
-                    <SparklesIcon className="w-7 h-7 text-indigo-400" />
+                    <SparklesIcon className="w-7 h-7 text-amber-400" />
                     <h1 className="text-xl font-bold text-white">Cinematic Story Generator</h1>
                 </div>
                 <div>

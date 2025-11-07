@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback } from 'react';
 import { StoryBible } from '../types';
 import { marked } from 'marked';
@@ -23,7 +24,7 @@ interface StoryBibleEditorProps {
 const TabButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
     <button
         onClick={onClick}
-        className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${active ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'}`}
+        className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${active ? 'bg-amber-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'}`}
     >
         {children}
     </button>
@@ -52,7 +53,7 @@ const EditableField: React.FC<{ label: string; description: string; value: strin
                 placeholder={getPlaceholder()}
                 onChange={(e) => onChange(e.target.value)}
                 rows={rows}
-                className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-indigo-500/30 shadow-black/30 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+                className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
             />
         </div>
     );
@@ -124,7 +125,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
         <div className="prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 bg-gray-900/50 p-4 rounded-md border border-gray-700/50 min-h-[210px] relative">
             {isPreviewLoading[section] ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/50">
-                    <svg className="animate-spin h-8 w-8 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <svg className="animate-spin h-8 w-8 text-amber-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     <p className="mt-3 text-sm text-gray-400">AI is refining...</p>
                 </div>
             ) : previewContent[section] ? (
@@ -151,7 +152,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
     return (
         <div className="max-w-4xl mx-auto space-y-8">
             <div className="text-center">
-                <BookOpenIcon className="w-12 h-12 mx-auto text-indigo-400 mb-4" />
+                <BookOpenIcon className="w-12 h-12 mx-auto text-amber-400 mb-4" />
                 <h2 className="text-3xl font-bold text-gray-100">Your Story Bible</h2>
                 <p className="text-gray-400 mt-2">This is the narrative foundation of your project. Refine it here before generating scenes.</p>
             </div>
@@ -160,7 +161,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                 <p>
                     The Story Bible is the single source of truth for your entire project. Every creative decision flows from here. 
                     Take your time to refine each section. A strong foundation here leads to a much more coherent and compelling final story.
-                    Use the <strong className="text-indigo-300">Refine with AI</strong> feature to enhance the AI's initial draft.
+                    Use the <strong className="text-amber-300">Refine with AI</strong> feature to enhance the AI's initial draft.
                 </p>
             </GuideCard>
 
@@ -193,7 +194,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                             rows={8}
                             placeholder="e.g., * **Protagonist:** A grizzled detective haunted by a past failure.
 * **Antagonist:** A cunning art thief who leaves behind cryptic clues."
-                            className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-200 p-3"
+                            className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:ring-amber-500 focus:border-amber-500 text-sm text-gray-200 p-3"
                         />
                     ) : renderPreviewPane('characters')}
                 </div>
@@ -227,7 +228,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                             placeholder="e.g., * **Act I:** The detective discovers the first crime, reluctantly takes the case...
 * **Act II:** A cat-and-mouse game ensues across the city...
 * **Act III:** The final confrontation in a museum reveals a shocking truth."
-                            className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-200 p-3"
+                            className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:ring-amber-500 focus:border-amber-500 text-sm text-gray-200 p-3"
                         />
                     ) : renderPreviewPane('plotOutline')}
                 </div>
@@ -245,7 +246,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                         <button
                             onClick={onGenerateScenes}
                             disabled={isLoading || hasChanges}
-                            className="inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
+                            className="inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-amber-700 hover:to-orange-700 focus:outline-none focus:ring-4 focus:ring-amber-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
                         >
                             <ClapperboardIcon className="mr-2 h-5 w-5" />
                             Set Vision & Generate Scenes

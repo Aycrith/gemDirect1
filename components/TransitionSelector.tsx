@@ -34,11 +34,11 @@ const TransitionSelector: React.FC<TransitionSelectorProps> = ({ value, onChange
             <div className="relative">
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-300 bg-gray-800/60 border border-gray-700 rounded-full hover:bg-gray-700/80 hover:border-gray-600 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-300 bg-gray-800/60 border border-gray-700 rounded-full hover:bg-gray-700/80 hover:border-gray-600 transition-colors"
                 >
                     <TransitionsIcon className="w-4 h-4" />
                     {selectedTransition}
-                    <span className="text-indigo-400">{isOpen ? '▴' : '▾'}</span>
+                    <span className="text-amber-400">{isOpen ? '▴' : '▾'}</span>
                 </button>
                 {isOpen && (
                     <div className="absolute z-20 bottom-full mb-2 w-72 bg-gray-800 border border-gray-700 rounded-md shadow-lg fade-in">
@@ -47,7 +47,7 @@ const TransitionSelector: React.FC<TransitionSelectorProps> = ({ value, onChange
                                 <li key={option}>
                                     <button
                                         onClick={() => handleSelect(option)}
-                                        className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-indigo-600 rounded-md flex items-center justify-between group"
+                                        className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-amber-600 rounded-md flex items-center justify-between group"
                                     >
                                        {option}
                                        <div className="relative">

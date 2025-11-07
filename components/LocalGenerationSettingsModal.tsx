@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { LocalGenerationSettings, WorkflowInput, MappableData, WorkflowMapping } from '../types';
 import { discoverComfyUIServer } from '../services/comfyUIService';
@@ -137,7 +138,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center p-4" onClick={onClose}>
             <div className="bg-gray-800/90 border border-gray-700 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                 <header className="p-4 border-b border-gray-700">
-                    <h3 className="flex items-center text-lg font-bold text-indigo-400">
+                    <h3 className="flex items-center text-lg font-bold text-amber-400">
                         <SettingsIcon className="w-5 h-5 mr-2" />
                         Local Generation Settings
                     </h3>
@@ -148,7 +149,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                         <h4 className="font-semibold text-gray-200 flex items-center"><ServerIcon className="w-5 h-5 mr-2 text-gray-400"/>ComfyUI Server</h4>
 
                         <div className="p-3 bg-gray-800/50 rounded-lg">
-                            <button onClick={handleDiscover} disabled={discoveryStatus === 'searching'} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 disabled:bg-gray-500 transition-colors">
+                            <button onClick={handleDiscover} disabled={discoveryStatus === 'searching'} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 text-white font-semibold rounded-md hover:bg-amber-700 disabled:bg-gray-500 transition-colors">
                                 <SearchIcon className="w-5 h-5" />
                                 {discoveryStatus === 'searching' ? 'Searching...' : 'Automatically Find My ComfyUI Server'}
                             </button>
@@ -175,7 +176,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                     {/* Workflow Sync & Mapping */}
                     <div className="space-y-4 p-4 bg-gray-900/50 rounded-lg ring-1 ring-gray-700/50">
                         <h4 className="font-semibold text-gray-200">Workflow Configuration</h4>
-                        <button onClick={handleSyncWorkflow} disabled={syncStatus === 'syncing'} className="w-full text-center px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 disabled:bg-gray-500">
+                        <button onClick={handleSyncWorkflow} disabled={syncStatus === 'syncing'} className="w-full text-center px-4 py-2 bg-amber-600 text-white font-semibold rounded-md hover:bg-amber-700 disabled:bg-gray-500">
                             {syncStatus === 'syncing' ? 'Syncing...' : 'Sync Workflow from Server'}
                         </button>
                         {syncStatus === 'error' && <p className="text-xs text-red-400">{syncError}</p>}

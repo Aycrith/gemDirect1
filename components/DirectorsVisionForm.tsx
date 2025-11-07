@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback } from 'react';
 import PaintBrushIcon from './icons/PaintBrushIcon';
 import SparklesIcon from './icons/SparklesIcon';
@@ -81,14 +82,14 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
                         value={vision}
                         onChange={(e) => setVision(e.target.value)}
                         rows={4}
-                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-green-500/30 shadow-black/30 focus:ring-2 focus:ring-green-500 focus:border-green-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
                         placeholder="e.g., 'A fast-paced, kinetic style inspired by Edgar Wright...' or 'A lush, hand-painted Ghibli aesthetic with an emphasis on nature...' or 'Spider-Verse-style dynamic comic book visuals.'"
                     />
                     <button
                         type="button"
                         onClick={handleEnhance}
                         disabled={isEnhancing || !vision.trim()}
-                        className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-indigo-600/50 text-indigo-200 hover:bg-indigo-600/80 disabled:bg-gray-600 disabled:text-gray-400"
+                        className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-amber-600/50 text-amber-200 hover:bg-amber-600/80 disabled:bg-gray-600 disabled:text-gray-400"
                     >
                         {isEnhancing ? (
                             <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -101,7 +102,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
                 <button
                     type="submit"
                     disabled={isLoading || !vision.trim()}
-                    className="mt-6 inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-green-600 to-cyan-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-green-700 hover:to-cyan-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
+                    className="mt-6 inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-amber-700 hover:to-orange-700 focus:outline-none focus:ring-4 focus:ring-amber-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
                 >
                     {isLoading ? (
                         <ThematicLoader text="Generating..." />
@@ -136,7 +137,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
                             <button 
                                 key={i} 
                                 onClick={() => setVision(qs)} 
-                                className="text-left text-sm text-indigo-400 hover:text-indigo-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 transform hover:-translate-y-1"
+                                className="text-left text-sm text-amber-400 hover:text-amber-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-amber-500 hover:shadow-lg hover:shadow-amber-500/20 transform hover:-translate-y-1"
                                 style={{ animationDelay: `${i * 100}ms` }}
                             >
                                 {qs}

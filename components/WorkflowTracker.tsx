@@ -19,11 +19,11 @@ const STAGES: { id: WorkflowStage; name: string; icon: React.ReactNode }[] = [
 const FlowingLine: React.FC<{ completed: boolean }> = ({ completed }) => (
     <div className="flex-1 h-1 rounded-full bg-gray-700 relative overflow-hidden mx-2">
         <div
-            className={`absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700 ease-out ${completed ? 'w-full' : 'w-0'}`}
+            className={`absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-700 ease-out ${completed ? 'w-full' : 'w-0'}`}
         />
         {completed && (
             <div
-                className="absolute top-0 left-0 h-full rounded-full w-full bg-gradient-to-r from-transparent via-indigo-300/40 to-transparent animate-flow"
+                className="absolute top-0 left-0 h-full rounded-full w-full bg-gradient-to-r from-transparent via-amber-300/40 to-transparent animate-flow"
                 style={{
                     animation: 'flow 2.5s linear infinite',
                     backgroundSize: '200% 100%'
@@ -78,17 +78,17 @@ const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ currentStage, onStage
                                     onClick={() => isClickable && onStageClick(stageId)}
                                     disabled={!isClickable}
                                     className={`relative flex items-center justify-center w-16 h-16 rounded-full border-2 transition-all duration-300 group ${
-                                        isCurrent ? 'bg-indigo-600 border-indigo-400 animate-breathing-glow' : 
-                                        isCompleted ? 'bg-indigo-500 border-indigo-500' : 
+                                        isCurrent ? 'bg-amber-600 border-amber-400 animate-breathing-glow' : 
+                                        isCompleted ? 'bg-amber-500 border-amber-500' : 
                                         'bg-gray-800 border-gray-700'
-                                    } ${isClickable ? 'cursor-pointer hover:border-indigo-500' : 'disabled:cursor-not-allowed'}`}
+                                    } ${isClickable ? 'cursor-pointer hover:border-amber-500' : 'disabled:cursor-not-allowed'}`}
                                 >
                                     <div className={`${isCurrent ? 'animate-pop-in' : ''} ${isCompleted && !isCurrent ? 'text-white' : 'text-gray-300'}`}>
                                         {isCompleted && !isCurrent ? <CheckCircleIcon className="w-8 h-8" /> : stage.icon}
                                     </div>
                                 </button>
                                 <p className={`mt-3 text-sm font-semibold tracking-wide transition-colors duration-300 ${
-                                    isCurrent ? 'text-indigo-300' : isCompleted ? 'text-gray-200' : 'text-gray-500'
+                                    isCurrent ? 'text-amber-300' : isCompleted ? 'text-gray-200' : 'text-gray-500'
                                 }`}>
                                     {stage.name}
                                 </p>

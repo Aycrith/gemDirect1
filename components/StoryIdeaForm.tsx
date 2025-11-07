@@ -45,7 +45,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
             <p className="text-gray-400 mb-6 text-center">What story do you want to create?</p>
             
             <GuideCard title="What makes a strong story idea?">
-                <p>Your initial idea is the seed for everything that follows. Aim for a concept that includes a <strong className="text-indigo-300">protagonist</strong>, a clear <strong className="text-indigo-300">goal</strong>, and a significant <strong className="text-indigo-300">conflict</strong> or obstacle.</p>
+                <p>Your initial idea is the seed for everything that follows. Aim for a concept that includes a <strong className="text-amber-300">protagonist</strong>, a clear <strong className="text-amber-300">goal</strong>, and a significant <strong className="text-amber-300">conflict</strong> or obstacle.</p>
             </GuideCard>
 
             <form onSubmit={handleSubmit} className="mt-6">
@@ -53,13 +53,13 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                     value={idea}
                     onChange={(e) => setIdea(e.target.value)}
                     rows={4}
-                    className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-indigo-500/30 shadow-black/30 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+                    className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
                     placeholder="e.g., A space explorer finds an ancient artifact that could save humanity, but it's guarded by a sentient AI."
                 />
                 <button
                     type="submit"
                     disabled={isLoading || !idea.trim()}
-                    className="mt-6 w-full sm:w-auto flex items-center justify-center px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-indigo-700 hover:to-purple-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
+                    className="mt-6 w-full sm:w-auto flex items-center justify-center px-8 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-amber-700 hover:to-orange-700 focus:outline-none focus:ring-4 focus:ring-amber-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
                 >
                     {isLoading ? (
                         <ThematicLoader text="Generating..." />
@@ -79,7 +79,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                     className="text-sm font-semibold text-yellow-400 hover:text-yellow-300 disabled:text-gray-500 flex items-center gap-2 mx-auto sm:mx-0"
                 >
                     {isSuggesting ? (
-                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -94,7 +94,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                             <button 
                                 key={i} 
                                 onClick={() => { setIdea(s); setSuggestions([]); }} 
-                                className="text-left text-sm text-indigo-400 hover:text-indigo-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 transform hover:-translate-y-1"
+                                className="text-left text-sm text-amber-400 hover:text-amber-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-amber-500 hover:shadow-lg hover:shadow-amber-500/20 transform hover:-translate-y-1"
                                 style={{ animationDelay: `${i * 100}ms` }}
                             >
                                 {s}

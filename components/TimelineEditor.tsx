@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
 import CreativeControls from './CreativeControls';
@@ -57,7 +58,7 @@ const TimelineItem: React.FC<{
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
 
     return (
-        <div ref={spotlightRef} className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/80 transition-shadow hover:shadow-lg hover:shadow-indigo-500/10 flex gap-4 interactive-spotlight">
+        <div ref={spotlightRef} className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/80 transition-shadow hover:shadow-lg hover:shadow-amber-500/10 flex gap-4 interactive-spotlight">
             {imageUrl && (
                 <div className="w-1/4 flex-shrink-0">
                     <img src={`data:image/jpeg;base64,${imageUrl}`} alt={`Preview for shot ${index + 1}`} className="rounded-md aspect-video object-cover" />
@@ -71,14 +72,14 @@ const TimelineItem: React.FC<{
                             value={shot.description}
                             onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
                             rows={3}
-                            className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-2"
+                            className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-2"
                             placeholder="Describe the shot..."
                         />
                     </div>
                     <div className="flex flex-col items-end gap-2 mt-8">
                         <button
                             onClick={() => setIsControlsVisible(!isControlsVisible)}
-                            className={`p-2 rounded-full transition-colors ${isControlsVisible ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+                            className={`p-2 rounded-full transition-colors ${isControlsVisible ? 'bg-amber-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
                             aria-label="Toggle creative controls"
                         >
                             <SparklesIcon className="w-5 h-5" />
@@ -128,6 +129,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
+    const [isBatchProcessing, setIsBatchProcessing] = useState<false | 'description' | 'enhancers'>(false);
 
 
     const sceneKeyframe = generatedImages[scene.id];
@@ -247,6 +249,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
         if (tasks.length === 0) return;
 
+        setIsBatchProcessing(actions.includes('REFINE_DESCRIPTION') ? 'description' : 'enhancers');
         try {
             const narrativeContext = getNarrativeContext(scene.id);
             const prunedContext = await getPrunedContextForBatchProcessing(narrativeContext, directorsVision, onApiLog, onApiStateChange);
@@ -270,6 +273,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
         } catch (error) {
             console.error("Batch processing failed: ", error);
+        } finally {
+            setIsBatchProcessing(false);
         }
     };
     
@@ -376,9 +381,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                  <GuideCard title="Refine Your Timeline">
                     <p>Your initial shot list is ready. Now you can bring your creative direction to life:</p>
                     <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
-                        <li>Manually edit shot descriptions and add <strong className="text-indigo-300">Creative Controls</strong> for cinematic flair.</li>
-                        <li>Use the <strong className="text-indigo-300">"Refine All"</strong> buttons for quick, AI-powered improvements across the whole scene.</li>
-                        <li>When you're ready for a fresh perspective, consult the <strong className="text-indigo-300">AI Co-Director</strong> below for bold, creative suggestions.</li>
+                        <li>Manually edit shot descriptions and add <strong className="text-amber-300">Creative Controls</strong> for cinematic flair.</li>
+                        <li>Use the <strong className="text-amber-300">"Refine All"</strong> buttons for quick, AI-powered improvements across the whole scene.</li>
+                        <li>When you're ready for a fresh perspective, consult the <strong className="text-amber-300">AI Co-Director</strong> below for bold, creative suggestions.</li>
                     </ul>
                 </GuideCard>
             )}
@@ -411,7 +416,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             </div>
 
             <div className="flex justify-center">
-                <button onClick={handleAddShot} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-300 bg-gray-800/60 border border-gray-700 rounded-full hover:bg-gray-700/80 hover:border-gray-600 transition-colors">
+                <button onClick={handleAddShot} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-300 bg-gray-800/60 border border-gray-700 rounded-full hover:bg-gray-700/80 hover:border-gray-600 transition-colors">
                     <PlusIcon className="w-4 h-4" /> Add Shot
                 </button>
             </div>
@@ -419,11 +424,29 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             {timeline.shots.length > 0 && (
                 <>
                     <div className="flex flex-col sm:flex-row justify-center gap-4 mt-4">
-                        <button onClick={() => handleBatchProcess(['REFINE_DESCRIPTION'])} className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 disabled:text-gray-500 flex items-center gap-2 justify-center">
-                            <SparklesIcon className="w-4 h-4" /> Refine All Descriptions
+                        <button
+                            onClick={() => handleBatchProcess(['REFINE_DESCRIPTION'])}
+                            disabled={isBatchProcessing !== false}
+                            className="text-sm font-semibold text-amber-400 hover:text-amber-300 disabled:text-gray-500 flex items-center gap-2 justify-center"
+                        >
+                            {isBatchProcessing === 'description' ? (
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            ) : (
+                                <SparklesIcon className="w-4 h-4" />
+                            )}
+                            Refine All Descriptions
                         </button>
-                        <button onClick={() => handleBatchProcess(['SUGGEST_ENHANCERS'])} className="text-sm font-semibold text-indigo-400 hover:text-indigo-300 disabled:text-gray-500 flex items-center gap-2 justify-center">
-                            <SparklesIcon className="w-4 h-4" /> Suggest All Enhancers
+                        <button
+                            onClick={() => handleBatchProcess(['SUGGEST_ENHANCERS'])}
+                            disabled={isBatchProcessing !== false}
+                            className="text-sm font-semibold text-amber-400 hover:text-amber-300 disabled:text-gray-500 flex items-center gap-2 justify-center"
+                        >
+                            {isBatchProcessing === 'enhancers' ? (
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            ) : (
+                                <SparklesIcon className="w-4 h-4" />
+                            )}
+                            Suggest All Enhancers
                         </button>
                     </div>
                     
@@ -476,7 +499,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             <button
                                 onClick={handleGenerateLocally}
                                 disabled={!isLocalGenConfigured}
-                                className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
+                                className="px-6 py-3 bg-amber-600 text-white font-semibold rounded-full shadow-lg hover:bg-amber-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
                             >
                                Generate Locally
                             </button>

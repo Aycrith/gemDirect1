@@ -90,8 +90,8 @@ CONTEXT FROM ADJACENT SCENES:
   return (
     <div className="max-w-7xl mx-auto">
       <header className="text-center mb-12">
-        <h2 className="flex items-center justify-center text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-green-300 to-cyan-400">
-          <ClipboardCheckIcon className="w-10 h-10 mr-4 text-green-300" />
+        <h2 className="flex items-center justify-center text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-orange-400">
+          <ClipboardCheckIcon className="w-10 h-10 mr-4 text-amber-300" />
           Continuity Director
         </h2>
         <p className="mt-4 text-lg text-gray-400 max-w-3xl mx-auto">

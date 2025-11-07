@@ -48,7 +48,7 @@ const SuggestionModal: React.FC<{
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="p-6">
-                    <h3 id="suggestion-dialog-title" className="flex items-center text-lg font-bold text-indigo-400 mb-4">
+                    <h3 id="suggestion-dialog-title" className="flex items-center text-lg font-bold text-amber-400 mb-4">
                         <SparklesIcon className="w-5 h-5 mr-2" />
                         AI Co-Director Suggestions
                     </h3>
@@ -71,7 +71,7 @@ const SuggestionModal: React.FC<{
                                 <button
                                     onClick={() => handleApply(suggestion, index)}
                                     disabled={appliedIndices.includes(index)}
-                                    className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-amber-600 text-white hover:bg-amber-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
                                 >
                                     {appliedIndices.includes(index) ? 'Applied ✓' : 'Apply'}
                                 </button>
@@ -207,7 +207,7 @@ const CoDirector: React.FC<CoDirectorProps> = ({
                                     <button 
                                         key={i} 
                                         onClick={() => { setObjective(s); setSuggestions([]); }} 
-                                        className="text-left text-sm text-indigo-400 hover:text-indigo-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-indigo-500 hover:shadow-lg hover:shadow-indigo-500/20 transform hover:-translate-y-1"
+                                        className="text-left text-sm text-amber-400 hover:text-amber-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-amber-500 hover:shadow-lg hover:shadow-amber-500/20 transform hover:-translate-y-1"
                                         style={{ animationDelay: `${i * 100}ms` }}
                                     >
                                         {s}

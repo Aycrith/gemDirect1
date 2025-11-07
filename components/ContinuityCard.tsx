@@ -52,9 +52,9 @@ const ScoreCircle: React.FC<{ score: number; label: string }> = ({ score, label 
 const AnalysisLoadingIndicator: React.FC = () => (
     <div className="flex flex-col items-center justify-center text-center p-8 h-full">
         <div className="relative mb-4">
-            <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-indigo-400"></div>
+            <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-amber-400"></div>
             <div className="absolute inset-0 flex items-center justify-center">
-                <FilmIcon className="w-8 h-8 text-indigo-400" />
+                <FilmIcon className="w-8 h-8 text-amber-400" />
             </div>
         </div>
         <p className="text-lg font-semibold text-gray-200">Analyzing Video...</p>
@@ -149,7 +149,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
             <div className="p-6 bg-gray-800/80 min-h-[400px] flex flex-col justify-center space-y-4">
                 {generatedImage && (
                     <div className="mb-4">
-                        <h4 className="text-sm font-semibold text-gray-300 mb-2 flex items-center"><ImageIcon className="w-4 h-4 mr-2 text-indigo-400" />Scene Keyframe</h4>
+                        <h4 className="text-sm font-semibold text-gray-300 mb-2 flex items-center"><ImageIcon className="w-4 h-4 mr-2 text-amber-400" />Scene Keyframe</h4>
                         <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover border border-gray-600"/>
                     </div>
                 )}
@@ -178,7 +178,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                 {data.continuityResult ? (
                     <div className="space-y-6">
                         <div>
-                            <h4 className="text-lg font-semibold text-indigo-400 mb-4">Continuity Scores</h4>
+                            <h4 className="text-lg font-semibold text-amber-400 mb-4">Continuity Scores</h4>
                             <div className="grid grid-cols-3 gap-4">
                                <ScoreCircle score={data.continuityResult.scores.narrative_coherence} label="Narrative" />
                                <ScoreCircle score={data.continuityResult.scores.aesthetic_alignment} label="Aesthetic" />
@@ -206,15 +206,15 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
 
                         {timelineChanges.length > 0 && (
                              <div>
-                                <h4 className="flex items-center text-lg font-semibold text-indigo-400 mb-4"><SparklesIcon className="w-5 h-5 mr-2" /> Timeline Refinements</h4>
-                                 <p className="text-xs text-indigo-400/80 mb-3 p-2 bg-indigo-900/20 rounded-md border border-indigo-800/30">
+                                <h4 className="flex items-center text-lg font-semibold text-amber-400 mb-4"><SparklesIcon className="w-5 h-5 mr-2" /> Timeline Refinements</h4>
+                                 <p className="text-xs text-amber-400/80 mb-3 p-2 bg-amber-900/20 rounded-md border border-amber-800/30">
                                     These suggestions are specific to this scene's timeline. Apply them to improve the pacing, visuals, and storytelling of this individual scene.
                                  </p>
                                 <div className="space-y-3 max-h-60 overflow-y-auto pr-2 -mr-2">
                                     {timelineChanges.map((s, i) => (
                                         <div key={`time-${i}`} className="bg-gray-900/70 p-3 rounded-md flex items-center justify-between gap-4">
                                             <p className="text-sm text-gray-300 flex-1">{s.description}</p>
-                                            <button onClick={() => onApplySuggestion(s, scene.id)} className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-indigo-600 text-white hover:bg-indigo-700">Apply</button>
+                                            <button onClick={() => onApplySuggestion(s, scene.id)} className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-amber-600 text-white hover:bg-amber-700">Apply</button>
                                         </div>
                                     ))}
                                 </div>
