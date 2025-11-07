@@ -80,11 +80,7 @@ export interface ContinuityResult {
     thematic_resonance: number;
   };
   overall_feedback: string;
-  refinement_directives: Array<{
-    target: 'Story Bible' | 'Director\'s Vision' | `Scene ${number} Timeline`;
-    target_field?: keyof StoryBible | 'description' | 'enhancers';
-    suggestion: string;
-  }>;
+  suggested_changes: Suggestion[];
 }
 
 export interface SceneContinuityData {

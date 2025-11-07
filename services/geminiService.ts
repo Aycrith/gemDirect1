@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog } from "../types";
+import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion } from "../types";
 import { ApiStatus } from "../contexts/ApiStatusContext";
 
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
@@ -418,6 +418,31 @@ const enhancersSchema = {
     },
 };
 
+const suggestedChangesSchema = {
+    type: Type.ARRAY,
+    items: {
+        type: Type.OBJECT,
+        properties: {
+            type: { type: Type.STRING, description: "One of 'UPDATE_SHOT', 'ADD_SHOT_AFTER', or 'UPDATE_TRANSITION'." },
+            shot_id: { type: Type.STRING, description: "Required for 'UPDATE_SHOT'. The ID of the shot to modify." },
+            after_shot_id: { type: Type.STRING, description: "Required for 'ADD_SHOT_AFTER'. The ID of the shot to add a new shot after." },
+            transition_index: { type: Type.INTEGER, description: "Required for 'UPDATE_TRANSITION'. The index of the transition to modify." },
+            payload: {
+                type: Type.OBJECT,
+                description: "The data for the change.",
+                properties: {
+                    description: { type: Type.STRING, description: "The new shot description." },
+                    title: { type: Type.STRING, description: "The title for a new shot." },
+                    type: { type: Type.STRING, description: "The new transition type, e.g., 'Dissolve'." },
+                    enhancers: enhancersSchema
+                }
+            },
+            description: { type: Type.STRING, description: "A human-readable summary of the proposed change." }
+        },
+        required: ['type', 'payload', 'description']
+    }
+};
+
 export const getCoDirectorSuggestions = async (prunedContext: string, scene: Scene, objective: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<CoDirectorResult> => {
     const context = 'get Co-Director suggestions';
     const prompt = `You are an AI Co-Director. Your task is to analyze the provided scene context and timeline, then suggest specific, creative changes to achieve the user's stated objective. You must be bold and imaginative, but your suggestions must respect the established narrative and aesthetic.
@@ -447,29 +472,7 @@ export const getCoDirectorSuggestions = async (prunedContext: string, scene: Sce
         properties: {
             thematic_concept: { type: Type.STRING },
             reasoning: { type: Type.STRING },
-            suggested_changes: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        type: { type: Type.STRING },
-                        shot_id: { type: Type.STRING },
-                        after_shot_id: { type: Type.STRING },
-                        transition_index: { type: Type.INTEGER },
-                        payload: {
-                            type: Type.OBJECT,
-                            properties: {
-                                description: { type: Type.STRING },
-                                title: { type: Type.STRING },
-                                type: { type: Type.STRING },
-                                enhancers: enhancersSchema
-                            }
-                        },
-                        description: { type: Type.STRING }
-                    },
-                    required: ['type', 'payload', 'description']
-                }
-            }
+            suggested_changes: suggestedChangesSchema,
         },
         required: ['thematic_concept', 'reasoning', 'suggested_changes']
     };
@@ -660,24 +663,25 @@ export const getPrunedContextForContinuity = async (
 
 export const scoreContinuity = async (prunedContext: string, scene: Scene, videoAnalysis: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<ContinuityResult> => {
     const context = 'score continuity';
-    const prompt = `You are an expert film critic and continuity supervisor. Your task is to analyze a generated video's summary and score its alignment with the original creative intent.
+    const prompt = `You are an expert film critic and continuity supervisor. Your task is to analyze a generated video's summary and score its alignment with the original creative intent. Then, you must provide structured, actionable suggestions to fix any deviations.
 
     **Continuity Brief (The Intention):**
     ${prunedContext}
+
+    **Original Scene Timeline (The Blueprint):**
+    ${JSON.stringify(scene.timeline, null, 2)}
 
     **AI's Analysis of the Generated Video (The Result):**
     ${videoAnalysis}
 
     **Your Task:**
-    Provide a detailed critique in a JSON object format. Your analysis must be strict and constructive.
+    Provide a detailed critique as a JSON object. Your analysis must be strict and constructive.
     1.  **scores**: A JSON object with three scores, each from 1-10 (integer):
         *   **narrative_coherence**: How well does the video's action match the scene's plot purpose?
         *   **aesthetic_alignment**: How well does the video's visual style match the Director's Vision?
         *   **thematic_resonance**: How well does the video capture the intended mood and emotional core of the scene?
     2.  **overall_feedback**: A markdown-formatted paragraph summarizing your assessment. What worked well, and what were the biggest deviations from the plan?
-    3.  **refinement_directives**: A JSON array of 2-3 specific, actionable suggestions for improvement. Each object should contain:
-        *   **target**: (string) The area to fix, e.g., "Story Bible", "Director's Vision", "Scene ${scene.id} Timeline".
-        *   **suggestion**: (string) A clear instruction, e.g., "Clarify the 'neo-noir' aspect in the vision to emphasize high-contrast lighting," or "Add a new shot to the timeline showing the character's reaction after the explosion."
+    3.  **suggested_changes**: A JSON array of 2-3 specific, actionable suggestions to fix the timeline. **This is crucial.** The suggestions must follow the same structured format as the Co-Director's tool, referencing 'shot_id's from the provided timeline. The goal is to correct the blueprint so a future generation will be more accurate.
     `;
     
     const responseSchema = {
@@ -693,20 +697,9 @@ export const scoreContinuity = async (prunedContext: string, scene: Scene, video
                 required: ['narrative_coherence', 'aesthetic_alignment', 'thematic_resonance'],
             },
             overall_feedback: { type: Type.STRING },
-            refinement_directives: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        target: { type: Type.STRING },
-                        target_field: { type: Type.STRING },
-                        suggestion: { type: Type.STRING },
-                    },
-                    required: ['target', 'suggestion'],
-                },
-            },
+            suggested_changes: suggestedChangesSchema,
         },
-        required: ['scores', 'overall_feedback', 'refinement_directives'],
+        required: ['scores', 'overall_feedback', 'suggested_changes'],
     };
 
     const apiCall = async () => {
@@ -772,3 +765,46 @@ export const applyRefinement = async (
 
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
+
+export const updateSceneSummaryWithRefinements = async (
+    originalSummary: string,
+    refinedTimeline: TimelineData,
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<string> => {
+    const context = 'update scene summary';
+    const prompt = `You are a concise script editor. A scene's detailed shot list has been updated. Your task is to rewrite the scene's high-level, one-sentence summary to reflect these changes.
+
+    **Original One-Sentence Summary:**
+    "${originalSummary}"
+
+    **New, Refined Shot List:**
+    ${refinedTimeline.shots.map((s, i) => `Shot ${i+1}: ${s.description}`).join('\n')}
+
+    **Your Task:**
+    Generate a new, improved one-sentence summary that accurately captures the essence of the refined shot list. Return a single JSON object with the key "new_summary".`;
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            new_summary: { type: Type.STRING, description: "The new, one-sentence scene summary." }
+        },
+        required: ['new_summary']
+    };
+
+    const apiCall = async () => {
+        const response = await ai.models.generateContent({
+            model: proModel,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema, temperature: 0.5 },
+        });
+        const text = response.text;
+        if (!text) throw new Error("The model returned an empty response for updating the scene summary.");
+        
+        const result = JSON.parse(text.trim());
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result: result.new_summary, tokens };
+    };
+    
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
+}

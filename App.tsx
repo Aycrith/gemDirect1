@@ -7,9 +7,9 @@ import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import ContinuityDirector from './components/ContinuityDirector';
 import FinalPromptModal from './components/FinalPromptModal';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateKeyframeForScene, applyRefinement } from './services/geminiService';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateKeyframeForScene, applyRefinement, updateSceneSummaryWithRefinements } from './services/geminiService';
 import { generateVideoRequestPayloads } from './services/videoGenerationService';
-import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData, ContinuityResult } from './types';
+import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
 import SaveIcon from './components/icons/SaveIcon';
@@ -53,6 +53,7 @@ const AppContent: React.FC = () => {
     // Generation State
     const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({}); // Keyframes
     const [continuityData, setContinuityData] = useState<Record<string, SceneContinuityData>>({});
+    const [refinedSceneIds, setRefinedSceneIds] = useState<Set<string>>(new Set());
     
     // UI and Loading State
     const [isLoading, setIsLoading] = useState(true);
@@ -81,6 +82,7 @@ const AppContent: React.FC = () => {
         setContinuityData({});
         setCoDirectorResult(null);
         setFinalPrompt(null);
+        setRefinedSceneIds(new Set());
         setWorkflowStage('idea');
     }, []);
 
@@ -314,11 +316,10 @@ const AppContent: React.FC = () => {
         }
     };
     
-    const handleApplySuggestion = useCallback((suggestion: Suggestion) => {
+    const handleApplyTimelineSuggestion = useCallback((suggestion: Suggestion, sceneId: string) => {
         setScenes(prevScenes => {
-            if (!activeSceneId) return prevScenes;
             return prevScenes.map(scene => {
-                if (scene.id !== activeSceneId) return scene;
+                if (scene.id !== sceneId) return scene;
 
                 let newTimeline = { ...scene.timeline };
                 const { type, payload } = suggestion;
@@ -352,8 +353,15 @@ const AppContent: React.FC = () => {
                 return { ...scene, timeline: newTimeline };
             });
         });
+        setRefinedSceneIds(prev => new Set(prev).add(sceneId));
         addToast('Suggestion applied!', 'success');
-    }, [activeSceneId, addToast]);
+    }, [addToast]);
+
+    const handleCoDirectorApplySuggestion = useCallback((suggestion: Suggestion) => {
+        if (activeSceneId) {
+            handleApplyTimelineSuggestion(suggestion, activeSceneId);
+        }
+    }, [activeSceneId, handleApplyTimelineSuggestion]);
     
     const handleGetInspiration = async () => {
         if (!storyBible || !activeSceneId) return;
@@ -419,42 +427,24 @@ const AppContent: React.FC = () => {
         }
     };
 
-    const handleApplyRefinement = useCallback(async (
-        directive: ContinuityResult['refinement_directives'][0],
-        context: { scene?: Scene }
-    ): Promise<boolean> => {
+    const handleUpdateSceneSummary = useCallback(async (sceneId: string): Promise<boolean> => {
+        const sceneToUpdate = scenes.find(s => s.id === sceneId);
+        if (!sceneToUpdate) {
+            addToast("Error: Scene not found.", 'error');
+            return false;
+        }
+
         try {
-            if (directive.target === 'Story Bible' && storyBible) {
-                const storyBibleSchema = {
-                    type: Type.OBJECT,
-                    properties: {
-                        logline: { type: Type.STRING }, characters: { type: Type.STRING },
-                        setting: { type: Type.STRING }, plotOutline: { type: Type.STRING },
-                    }, required: ['logline', 'characters', 'setting', 'plotOutline'],
-                };
-                const newBible = await applyRefinement(storyBible, directive.suggestion, 'Story Bible', storyBibleSchema, handleApiLog, handleApiStateChange);
-                setStoryBible(newBible);
-                addToast('Story Bible updated with AI refinement!', 'success');
-            } else if (directive.target === "Director's Vision") {
-                const visionSchema = {
-                    type: Type.OBJECT,
-                    properties: { refined_vision: { type: Type.STRING, description: "The refined director's vision text." } },
-                    required: ['refined_vision'],
-                };
-                const newVision = await applyRefinement(directorsVision, directive.suggestion, "Director's Vision", visionSchema, handleApiLog, handleApiStateChange);
-                setDirectorsVision(newVision);
-                addToast("Director's Vision updated with AI refinement!", 'success');
-            } else {
-                addToast(`Applying refinement for "${directive.target}" is not yet implemented.`, 'info');
-                return false;
-            }
+            const newSummary = await updateSceneSummaryWithRefinements(sceneToUpdate.summary, sceneToUpdate.timeline, handleApiLog, handleApiStateChange);
+            setScenes(prevScenes => prevScenes.map(s => s.id === sceneId ? { ...s, summary: newSummary } : s));
+            addToast(`Scene ${sceneToUpdate.title} summary updated!`, 'success');
             return true;
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-            addToast(`Failed to apply refinement: ${errorMessage}`, 'error');
+            addToast(`Failed to update scene summary: ${errorMessage}`, 'error');
             return false;
         }
-    }, [storyBible, directorsVision, handleApiLog, handleApiStateChange, addToast, setStoryBible, setDirectorsVision]);
+    }, [scenes, handleApiLog, handleApiStateChange, addToast]);
     
     const getNextScene = () => {
         if (!activeSceneId) return null;
@@ -490,7 +480,7 @@ const AppContent: React.FC = () => {
                                     onGetSuggestions={handleCoDirectorSubmit}
                                     isLoading={isCoDirectorLoading}
                                     result={coDirectorResult}
-                                    onApplySuggestion={handleApplySuggestion}
+                                    onApplySuggestion={handleCoDirectorApplySuggestion}
                                     onClose={() => setCoDirectorResult(null)}
                                     onGetInspiration={handleGetInspiration}
                                     onApiLog={handleApiLog}
@@ -533,7 +523,9 @@ const AppContent: React.FC = () => {
                             addToast={addToast}
                             onApiStateChange={handleApiStateChange}
                             onApiLog={handleApiLog}
-                            onApplyRefinement={handleApplyRefinement}
+                            onApplyTimelineSuggestion={handleApplyTimelineSuggestion}
+                            refinedSceneIds={refinedSceneIds}
+                            onUpdateSceneSummary={handleUpdateSceneSummary}
                         />;
             default:
                 return <p>Welcome to the Cinematic Story Generator!</p>;

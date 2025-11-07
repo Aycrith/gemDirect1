@@ -1,10 +1,11 @@
 import React, { useCallback, useState } from 'react';
-import { Scene, StoryBible, SceneContinuityData, ToastMessage, ContinuityResult } from '../types';
+import { Scene, StoryBible, SceneContinuityData, ToastMessage, ContinuityResult, Suggestion } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
 import { analyzeVideoFrames, scoreContinuity, getPrunedContextForContinuity, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import FileUpload from './FileUpload';
 import VideoPlayer from './VideoPlayer';
 import { marked } from 'marked';
+import SparklesIcon from './icons/SparklesIcon';
 
 interface ContinuityCardProps {
   scene: Scene;
@@ -18,7 +19,9 @@ interface ContinuityCardProps {
   addToast: (message: string, type: ToastMessage['type']) => void;
   onApiStateChange: ApiStateChangeCallback;
   onApiLog: ApiLogCallback;
-  onApplyRefinement: (directive: ContinuityResult['refinement_directives'][0], context: { scene: Scene }) => Promise<boolean>;
+  onApplyTimelineSuggestion: (suggestion: Suggestion, sceneId: string) => void;
+  isRefined: boolean;
+  onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
 }
 
 const ScoreCircle: React.FC<{ label: string; score: number }> = ({ label, score }) => {
@@ -61,19 +64,24 @@ const ScoreCircle: React.FC<{ label: string; score: number }> = ({ label, score 
 
 const ResultDisplay: React.FC<{ 
     result: ContinuityResult;
-    onApplyRefinement: (directive: ContinuityResult['refinement_directives'][0]) => Promise<boolean>;
-}> = ({ result, onApplyRefinement }) => {
+    sceneId: string;
+    isRefined: boolean;
+    onApplyTimelineSuggestion: (suggestion: Suggestion, sceneId: string) => void;
+    onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
+}> = ({ result, sceneId, isRefined, onApplyTimelineSuggestion, onUpdateSceneSummary }) => {
     const [applyingStatus, setApplyingStatus] = useState<Record<number, 'idle' | 'loading' | 'applied'>>({});
+    const [isUpdatingSummary, setIsUpdatingSummary] = useState(false);
 
-    const handleApply = async (directive: ContinuityResult['refinement_directives'][0], index: number) => {
-        setApplyingStatus(prev => ({ ...prev, [index]: 'loading' }));
-        const success = await onApplyRefinement(directive);
-        if (success) {
-            setApplyingStatus(prev => ({ ...prev, [index]: 'applied' }));
-        } else {
-            setApplyingStatus(prev => ({ ...prev, [index]: 'idle' })); // Reset on failure
-        }
+    const handleApply = (suggestion: Suggestion, index: number) => {
+        setApplyingStatus(prev => ({ ...prev, [index]: 'applied' }));
+        onApplyTimelineSuggestion(suggestion, sceneId);
     };
+
+    const handleUpdateSummary = async () => {
+        setIsUpdatingSummary(true);
+        await onUpdateSceneSummary(sceneId);
+        setIsUpdatingSummary(false);
+    }
 
     const createMarkup = (markdown: string) => {
         const rawMarkup = marked(markdown);
@@ -94,32 +102,46 @@ const ResultDisplay: React.FC<{
             <div>
                 <h4 className="font-semibold text-yellow-400 mb-2">Actionable Refinement Directives</h4>
                  <div className="space-y-3">
-                    {result.refinement_directives.map((dir, index) => {
+                    {result.suggested_changes.map((suggestion, index) => {
                         const status = applyingStatus[index] || 'idle';
                         return (
                         <div key={index} className="bg-gray-900/50 p-3 rounded-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                            <div>
-                                <p className="text-sm text-gray-300">{dir.suggestion}</p>
-                                <p className="text-xs text-yellow-500 mt-1">Target: <span className="font-mono bg-black/30 px-1 rounded">{dir.target} {dir.target_field && `-> ${dir.target_field}`}</span></p>
-                            </div>
+                            <p className="text-sm text-gray-300 flex-grow">{suggestion.description}</p>
                             <button
-                                onClick={() => handleApply(dir, index)}
+                                onClick={() => handleApply(suggestion, index)}
                                 disabled={status !== 'idle'}
                                 className="w-full sm:w-auto flex-shrink-0 inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-md transition-colors bg-yellow-600 text-white hover:bg-yellow-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
                             >
-                                {status === 'loading' && (
-                                    <>
-                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                        Applying...
-                                    </>
-                                )}
-                                {status === 'applied' && 'Applied ✓'}
-                                {status === 'idle' && 'Apply Refinement'}
+                                {status === 'applied' ? 'Applied ✓' : 'Apply Refinement'}
                             </button>
                         </div>
                     )})}
                 </div>
             </div>
+
+            {isRefined && (
+                 <div className="mt-4 pt-4 border-t border-gray-700 text-center bg-indigo-900/30 p-4 rounded-lg">
+                     <h4 className="font-semibold text-indigo-300">Learning & Improvement</h4>
+                     <p className="text-sm text-gray-400 my-2">Incorporate these timeline changes back into the high-level scene summary to improve future AI suggestions.</p>
+                     <button
+                        onClick={handleUpdateSummary}
+                        disabled={isUpdatingSummary}
+                        className="inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-full transition-colors bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-gray-600 disabled:cursor-wait"
+                    >
+                        {isUpdatingSummary ? (
+                            <>
+                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                Updating...
+                            </>
+                        ) : (
+                             <>
+                                <SparklesIcon className="w-4 h-4 mr-2"/>
+                                Update Scene Summary with AI
+                             </>
+                        )}
+                    </button>
+                 </div>
+            )}
         </div>
     );
 };
@@ -137,7 +159,9 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   addToast,
   onApiStateChange,
   onApiLog,
-  onApplyRefinement
+  onApplyTimelineSuggestion,
+  isRefined,
+  onUpdateSceneSummary
 }) => {
 
   const handleFileSelect = useCallback(async (file: File) => {
@@ -162,11 +186,6 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
         addToast(`Analysis failed for Scene ${sceneNumber}: ${error}`, 'error');
     }
   }, [scene, sceneNumber, storyBible, narrativeContext, directorsVision, setContinuityData, addToast, onApiStateChange, onApiLog]);
-  
-  const handleApplyRefinementWrapper = (directive: ContinuityResult['refinement_directives'][0]) => {
-      return onApplyRefinement(directive, { scene });
-  };
-
 
   const renderStatus = () => {
       if (data.status === 'idle') {
@@ -182,7 +201,13 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
           return <div className="text-center p-8"><p className="text-red-400">{data.error}</p></div>
       }
       if (data.status === 'complete' && data.continuityResult) {
-          return <ResultDisplay result={data.continuityResult} onApplyRefinement={handleApplyRefinementWrapper} />;
+          return <ResultDisplay 
+                    result={data.continuityResult} 
+                    sceneId={scene.id}
+                    onApplyTimelineSuggestion={onApplyTimelineSuggestion}
+                    isRefined={isRefined}
+                    onUpdateSceneSummary={onUpdateSceneSummary}
+                />;
       }
       return null;
   }
