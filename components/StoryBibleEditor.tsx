@@ -104,7 +104,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
         if (section === 'characters') setCharTab(tab);
         if (section === 'plotOutline') setPlotTab(tab);
 
-        if (tab === 'preview') {
+        if (tab === 'preview' && ( (section === 'characters' && charTab !== 'preview') || (section === 'plotOutline' && plotTab !== 'preview') )) {
             handleGeneratePreview(section);
         }
     };
@@ -129,10 +129,16 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
             ) : previewContent[section] ? (
                 <>
                     <div dangerouslySetInnerHTML={createMarkup(previewContent[section])} />
-                    <div className="absolute top-2 right-2 not-prose">
+                    <div className="absolute top-2 right-2 not-prose flex gap-2">
+                        <button
+                            onClick={() => section === 'characters' ? setCharTab('edit') : setPlotTab('edit')}
+                            className="px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-gray-600 text-white hover:bg-gray-700"
+                        >
+                            Back to Edit
+                        </button>
                         <button 
                             onClick={() => acceptPreview(section)} 
-                            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-500"
+                            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-green-600 text-white hover:bg-green-700"
                         >
                             <RefreshCwIcon className="w-4 h-4" />
                             Accept & Update
@@ -140,8 +146,8 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                     </div>
                 </>
             ) : (
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <p className="text-gray-500 italic">Click the tab again to re-generate.</p>
+                <div className="absolute inset-0 flex items-center justify-center text-center p-4">
+                    <p className="text-gray-500 italic">Click the "Refine with AI" tab again to re-generate, or go back to edit.</p>
                 </div>
             )}
         </div>
@@ -208,8 +214,8 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                 <div>
                     <div className="flex justify-between items-center mb-2">
                          <div>
-                            <label className="block text-sm font-medium text-gray-300">Plot Outline (The Hero's Journey)</label>
-                            <p className="text-xs text-gray-400 mt-1">Structure your narrative. A classic structure creates a resonant story. Use the AI refiner to add twists and foreshadowing.</p>
+                            <label className="block text-sm font-medium text-gray-300">Plot Outline</label>
+                            <p className="text-xs text-gray-400 mt-1">Structure your narrative. The AI will adapt a classic structure (like The Hero's Journey) to fit your story. Use the AI refiner to add twists and foreshadowing.</p>
                         </div>
                         <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
                            <TabButton active={plotTab === 'edit'} onClick={() => handleTabClick('plotOutline', 'edit')}>Edit</TabButton>

@@ -395,6 +395,38 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible, logApiCall
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
+export const suggestNegativePrompts = async (directorsVision: string, sceneSummary: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
+    const context = 'suggest negative prompts';
+    const prompt = `You are an AI assistant for a prompt engineer. Based on the following creative direction, generate a JSON array of 5-7 useful, common negative prompts for a cinematic image generation task. The prompts should be short phrases.
+
+    **Director's Vision (Style Guide):** "${directorsVision}"
+    **Scene Summary (Content Guide):** "${sceneSummary}"
+
+    Return a JSON array of strings. Do not include a preamble. Focus on terms that would prevent common image generation artifacts or styles that clash with the vision. For example, if the vision is "photorealistic," suggest negative prompts like "cartoon, drawing, anime".
+
+    Example output: ["blurry, low-resolution", "text, watermark, signature", "ugly, deformed", "extra limbs", "bad anatomy"]
+    `;
+    const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
+    
+    const apiCall = async () => {
+        const response = await ai.models.generateContent({
+            model: proModel,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for negative prompt suggestions.");
+        }
+        const result = JSON.parse(text.trim());
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
+    };
+    
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
+};
+
+
 export const refineDirectorsVision = async (
     vision: string,
     storyBible: StoryBible,

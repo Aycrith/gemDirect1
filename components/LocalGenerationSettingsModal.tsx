@@ -177,6 +177,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                         <button onClick={handleSyncWorkflow} disabled={syncStatus === 'syncing'} className="w-full text-center px-4 py-2 bg-amber-600 text-white font-semibold rounded-md hover:bg-amber-700 disabled:bg-gray-500">
                             {syncStatus === 'syncing' ? 'Syncing...' : 'Sync Workflow from Server'}
                         </button>
+                        <p className="text-xs text-gray-500 text-center -mt-2">Note: Syncing will overwrite any existing workflow and reset your data mappings.</p>
                         {syncStatus === 'error' && <p className="text-xs text-red-400">{syncError}</p>}
                         {syncStatus === 'success' && <p className="text-xs text-green-400">Workflow synced successfully! Parsed {workflowInputs.length} potential inputs.</p>}
                         

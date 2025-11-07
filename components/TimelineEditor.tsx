@@ -21,6 +21,7 @@ import { useInteractiveSpotlight } from '../utils/hooks';
 import GuidedAction from './GuidedAction';
 import GuideCard from './GuideCard';
 import CompassIcon from './icons/CompassIcon';
+import NegativePromptSuggestions from './NegativePromptSuggestions';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -127,7 +128,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [coDirectorResult, setCoDirectorResult] = useState<any | null>(null);
     const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
     const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
-    const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string; structured: any[] } | null>(null);
+    const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string; structured: any[]; negativePrompt: string } | null>(null);
     const [isGeneratingShotImage, setIsGeneratingShotImage] = useState<Record<string, boolean>>({});
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
@@ -513,6 +514,16 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 rows={2}
                                 className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-2"
                                 placeholder="e.g., text, watermark, blurry, low-resolution, ugly, tiling..."
+                            />
+                            <NegativePromptSuggestions 
+                                directorsVision={directorsVision} 
+                                sceneSummary={scene.summary} 
+                                onSelect={(suggestion) => {
+                                    const separator = timeline.negativePrompt ? ', ' : '';
+                                    updateTimeline({ negativePrompt: timeline.negativePrompt + separator + suggestion });
+                                }} 
+                                onApiLog={onApiLog} 
+                                onApiStateChange={onApiStateChange} 
                             />
                         </div>
                         <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4 border-t border-gray-800">
