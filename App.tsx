@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Scene, StoryBible, ToastMessage, WorkflowStage, SceneContinuityData, LocalGenerationSettings, Suggestion } from './types';
+import { Scene, StoryBible, ToastMessage, WorkflowStage, SceneContinuityData, LocalGenerationSettings, Suggestion, TimelineData, Shot, LocalGenerationStatus } from './types';
 import * as db from './utils/database';
-import { generateSceneList, generateStoryBible } from './services/geminiService';
+import { generateSceneList, generateStoryBible, updateSceneSummaryWithRefinements, generateNextSceneFromContinuity, generateKeyframeForScene } from './services/geminiService';
 import { ApiStatusProvider, useApiStatus } from './contexts/ApiStatusContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
 
@@ -34,9 +34,12 @@ const AppContent: React.FC = () => {
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [localGenSettings, setLocalGenSettings] = useState<LocalGenerationSettings>({ comfyUIUrl: '', comfyUIClientId: '', workflowJson: '', mapping: {} });
     const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({});
+    const [generatedShotImages, setGeneratedShotImages] = useState<Record<string, string>>({});
+    const [localGenStatus, setLocalGenStatus] = useState<Record<string, LocalGenerationStatus>>({});
     const [continuityData, setContinuityData] = useState<Record<string, SceneContinuityData>>({});
     const [refinedSceneIds, setRefinedSceneIds] = useState(new Set<string>());
     const [continuityModal, setContinuityModal] = useState<{ sceneId: string, lastFrame: string } | null>(null);
+    const [isExtending, setIsExtending] = useState(false);
 
 
     const { updateApiStatus } = useApiStatus();
@@ -63,7 +66,9 @@ const AppContent: React.FC = () => {
             const sceneList = await db.getAllScenes();
             const settings = await db.getData('localGenSettings');
             const images = await db.getData('generatedImages');
+            const shotImages = await db.getData('generatedShotImages');
             const continuity = await db.getData('continuityData');
+            const genStatus = await db.getData('localGenStatus');
 
             if (bible) {
                 setStoryBible(bible);
@@ -84,7 +89,10 @@ const AppContent: React.FC = () => {
             }
             if(settings) setLocalGenSettings(settings);
             if(images) setGeneratedImages(images);
+            if(shotImages) setGeneratedShotImages(shotImages);
             if(continuity) setContinuityData(continuity);
+            if(genStatus) setLocalGenStatus(genStatus);
+
 
             setIsLoading(false);
         };
@@ -131,8 +139,26 @@ const AppContent: React.FC = () => {
             if (newScenes.length > 0) {
                 setActiveSceneId(newScenes[0].id);
             }
+            addToast(`${newScenes.length} scenes generated! Now generating keyframe images...`, 'info');
+
+            // Post-generation: Create keyframe images for each scene
+            const imagePromises = newScenes.map(scene => {
+                const prompt = `A cinematic keyframe for a scene about: "${scene.summary}". Style: ${vision}`;
+                return generateKeyframeForScene(prompt, logApiCall, updateApiStatus).then(image => ({ sceneId: scene.id, image }));
+            });
+
+            const results = await Promise.all(imagePromises);
+            const newImages = results.reduce((acc, result) => {
+                acc[result.sceneId] = result.image;
+                return acc;
+            }, {} as Record<string, string>);
+
+            setGeneratedImages(prev => ({...prev, ...newImages}));
+            await db.saveData('generatedImages', {...generatedImages, ...newImages});
+
             setWorkflowStage('director');
-            addToast(`${newScenes.length} scenes generated!`, 'success');
+            addToast('Scene keyframes generated successfully!', 'success');
+
         } catch (e) {
             console.error(e);
             addToast(e instanceof Error ? e.message : 'Failed to generate scenes.', 'error');
@@ -155,30 +181,97 @@ const AppContent: React.FC = () => {
 
     const handleApplyTimelineSuggestion = (suggestion: Suggestion, sceneId: string) => {
         const sceneIndex = scenes.findIndex(s => s.id === sceneId);
-        if (sceneIndex === -1) return;
-
-        const updatedScenes = [...scenes];
-        const sceneToUpdate = { ...updatedScenes[sceneIndex] };
-        const timeline = { ...sceneToUpdate.timeline };
-        const shots = [...timeline.shots];
-        const shotEnhancers = { ...timeline.shotEnhancers };
-        const transitions = [...timeline.transitions];
+        if (sceneIndex === -1) {
+            addToast(`Could not find scene to apply suggestion.`, 'error');
+            return;
+        }
+    
+        const updatedScenes = JSON.parse(JSON.stringify(scenes)); // Deep copy
+        const sceneToUpdate = updatedScenes[sceneIndex];
+        const timeline: TimelineData = sceneToUpdate.timeline;
         let summaryNeedsUpdate = false;
-
-        // Apply suggestion logic here...
-        // This is a simplified version. A full implementation would be more robust.
-        console.log("Applying suggestion:", suggestion);
-        addToast("Suggestion applied to timeline!", 'success');
-
-        // After applying, mark scene as refined
-        setRefinedSceneIds(prev => new Set(prev).add(sceneId));
+    
+        switch (suggestion.type) {
+            case 'UPDATE_SHOT':
+                if (suggestion.shot_id) {
+                    const shot = timeline.shots.find(s => s.id === suggestion.shot_id);
+                    if (shot) {
+                        if (suggestion.payload.description) {
+                            shot.description = suggestion.payload.description;
+                            summaryNeedsUpdate = true;
+                        }
+                        if (suggestion.payload.enhancers) {
+                            timeline.shotEnhancers[suggestion.shot_id] = {
+                                ...(timeline.shotEnhancers[suggestion.shot_id] || {}),
+                                ...suggestion.payload.enhancers
+                            };
+                        }
+                    }
+                }
+                break;
+            case 'ADD_SHOT_AFTER':
+                if (suggestion.after_shot_id) {
+                    const afterShotIndex = timeline.shots.findIndex(s => s.id === suggestion.after_shot_id);
+                    if (afterShotIndex > -1) {
+                        const newShot: Shot = {
+                            id: `shot_${Date.now()}_${Math.random()}`,
+                            title: suggestion.payload.title,
+                            description: suggestion.payload.description || '',
+                        };
+                        timeline.shots.splice(afterShotIndex + 1, 0, newShot);
+                        timeline.transitions.splice(afterShotIndex, 0, 'Cut');
+                        if (suggestion.payload.enhancers) {
+                            timeline.shotEnhancers[newShot.id] = suggestion.payload.enhancers;
+                        }
+                        summaryNeedsUpdate = true;
+                    }
+                }
+                break;
+            case 'UPDATE_TRANSITION':
+                if (suggestion.transition_index !== undefined && suggestion.payload.type) {
+                    if (timeline.transitions[suggestion.transition_index]) {
+                        timeline.transitions[suggestion.transition_index] = suggestion.payload.type;
+                    }
+                }
+                break;
+            default:
+                console.warn("Unknown suggestion type:", suggestion.type);
+        }
+        
+        setScenes(updatedScenes);
+        db.saveScenes(updatedScenes);
+    
+        addToast("Suggestion applied successfully!", 'success');
+        if (summaryNeedsUpdate) {
+            setRefinedSceneIds(prev => new Set(prev).add(sceneId));
+        }
     };
 
     const handleUpdateSceneSummary = async (sceneId: string): Promise<boolean> => {
-        // This would call the geminiService function and update the scene summary
-        console.log(`Updating summary for scene ${sceneId}`);
-        addToast("Scene summary updated based on refinements.", 'info');
-        return true;
+        const scene = scenes.find(s => s.id === sceneId);
+        if (!scene) {
+            addToast("Scene not found for summary update.", 'error');
+            return false;
+        }
+        setIsLoading(true);
+        try {
+            const newSummary = await updateSceneSummaryWithRefinements(scene.summary, scene.timeline, logApiCall, updateApiStatus);
+            const updatedScenes = scenes.map(s => s.id === sceneId ? { ...s, summary: newSummary } : s);
+            setScenes(updatedScenes);
+            await db.saveScenes(updatedScenes);
+            setRefinedSceneIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(sceneId);
+                return newSet;
+            });
+            addToast("Scene summary updated based on refinements.", 'info');
+            return true;
+        } catch(e) {
+            addToast(e instanceof Error ? e.message : 'Failed to update scene summary.', 'error');
+            return false;
+        } finally {
+            setIsLoading(false);
+        }
     };
     
     const handleExtendTimeline = (sceneId: string, lastFrame: string) => {
@@ -214,11 +307,35 @@ const AppContent: React.FC = () => {
                             <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} />
                         </div>
                         <div className="lg:col-span-3">
-                            {activeScene ? <TimelineEditor key={activeScene.id} scene={activeScene} onUpdateScene={(updatedScene) => {
-                                const newScenes = scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
-                                setScenes(newScenes);
-                                db.saveScenes(newScenes);
-                            }} directorsVision={directorsVision} storyBible={storyBible!} onApiStateChange={updateApiStatus} onApiLog={logApiCall} scenes={scenes} /> : <p>Select a scene</p>}
+                            {activeScene ? <TimelineEditor 
+                                key={activeScene.id} 
+                                scene={activeScene} 
+                                onUpdateScene={(updatedScene) => {
+                                    const newScenes = scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
+                                    setScenes(newScenes);
+                                    db.saveScenes(newScenes);
+                                }} 
+                                directorsVision={directorsVision} 
+                                storyBible={storyBible!} 
+                                onApiStateChange={updateApiStatus} 
+                                onApiLog={logApiCall} 
+                                scenes={scenes}
+                                onApplySuggestion={handleApplyTimelineSuggestion}
+                                generatedImages={generatedImages}
+                                generatedShotImages={generatedShotImages}
+                                setGeneratedShotImages={(updater) => {
+                                    const newImages = typeof updater === 'function' ? updater(generatedShotImages) : updater;
+                                    setGeneratedShotImages(newImages);
+                                    db.saveData('generatedShotImages', newImages);
+                                }}
+                                localGenSettings={localGenSettings}
+                                localGenStatus={localGenStatus}
+                                setLocalGenStatus={(updater) => {
+                                    const newStatus = typeof updater === 'function' ? updater(localGenStatus) : updater;
+                                    setLocalGenStatus(newStatus);
+                                    db.saveData('localGenStatus', newStatus);
+                                }}
+                            /> : <p>Select a scene</p>}
                         </div>
                     </div>
                 );
@@ -289,13 +406,46 @@ const AppContent: React.FC = () => {
                     isOpen={true}
                     onClose={() => setContinuityModal(null)}
                     onSubmit={async (direction) => {
-                        console.log(`Generating next scene after ${continuityModal.sceneId} with direction: ${direction}`);
-                        // Placeholder for API call
-                        addToast('Generating next scene...', 'info');
-                        setContinuityModal(null);
+                        if (!continuityModal) return;
+                        setIsExtending(true);
+                        try {
+                            const lastScene = scenes.find(s => s.id === continuityModal.sceneId);
+                            if (!storyBible || !lastScene) throw new Error("Missing context for scene generation.");
+                            
+                            const newSceneData = await generateNextSceneFromContinuity(
+                                storyBible,
+                                directorsVision,
+                                lastScene.summary,
+                                direction,
+                                continuityModal.lastFrame,
+                                logApiCall,
+                                updateApiStatus
+                            );
+                    
+                            const newScene: Scene = {
+                                id: `scene_${Date.now()}_${Math.random()}`,
+                                title: newSceneData.title,
+                                summary: newSceneData.summary,
+                                timeline: { shots: [], shotEnhancers: {}, transitions: [], negativePrompt: '' },
+                            };
+                            
+                            const currentSceneIndex = scenes.findIndex(s => s.id === continuityModal.sceneId);
+                            const newScenes = [...scenes];
+                            newScenes.splice(currentSceneIndex + 1, 0, newScene);
+                            
+                            setScenes(newScenes);
+                            await db.saveScenes(newScenes);
+                    
+                            addToast(`New scene "${newScene.title}" added to timeline!`, 'success');
+                            setContinuityModal(null);
+                        } catch (e) {
+                            addToast(e instanceof Error ? e.message : 'Failed to generate next scene.', 'error');
+                        } finally {
+                            setIsExtending(false);
+                        }
                     }}
                     lastFrame={continuityModal.lastFrame}
-                    isLoading={false} // Connect this to a loading state
+                    isLoading={isExtending}
                 />
             )}
         </div>

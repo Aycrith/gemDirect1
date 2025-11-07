@@ -1,13 +1,20 @@
 
+
 import React, { useState, useCallback } from 'react';
-import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers } from '../types';
+import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 import CoDirector from './CoDirector';
 import PlusIcon from './icons/PlusIcon';
 import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { getCoDirectorSuggestions, getPrunedContextForCoDirector, batchProcessShotEnhancements, getPrunedContextForShotGeneration, generateInitialShotsForScene } from '../services/geminiService';
+import ImageIcon from './icons/ImageIcon';
+// FIX: Import 'getCoDirectorSuggestions' and 'batchProcessShotEnhancements' from geminiService.
+import { generateInitialShotsForScene, generateImageForShot, getCoDirectorSuggestions, batchProcessShotEnhancements } from '../services/geminiService';
+import { generateVideoRequestPayloads } from '../services/videoGenerationService';
+import { queueComfyUIPrompt } from '../services/videoGenerationService';
+import FinalPromptModal from './FinalPromptModal';
+import LocalGenerationStatusComponent from './LocalGenerationStatus';
 import TimelineIcon from './icons/TimelineIcon';
 
 interface TimelineEditorProps {
@@ -18,57 +25,97 @@ interface TimelineEditorProps {
     onApiStateChange: (status: any, message: string) => void;
     onApiLog: (log: any) => void;
     scenes: Scene[];
+    onApplySuggestion: (suggestion: Suggestion, sceneId: string) => void;
+    generatedImages: Record<string, string>;
+    generatedShotImages: Record<string, string>;
+    setGeneratedShotImages: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+    localGenSettings: LocalGenerationSettings;
+    localGenStatus: Record<string, LocalGenerationStatus>;
+    setLocalGenStatus: React.Dispatch<React.SetStateAction<Record<string, LocalGenerationStatus>>>;
 }
 
 const TimelineItem: React.FC<{
     shot: Shot;
     index: number;
     enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>;
+    imageUrl?: string;
+    isGeneratingImage: boolean;
     onDescriptionChange: (shotId: string, newDescription: string) => void;
     onEnhancersChange: (shotId: string, newEnhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>) => void;
     onDeleteShot: (shotId: string) => void;
-}> = ({ shot, index, enhancers, onDescriptionChange, onEnhancersChange, onDeleteShot }) => {
+    onGenerateImage: (shotId: string) => void;
+}> = ({ shot, index, enhancers, imageUrl, isGeneratingImage, onDescriptionChange, onEnhancersChange, onDeleteShot, onGenerateImage }) => {
     const [isControlsVisible, setIsControlsVisible] = useState(false);
 
     return (
-        <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/80 transition-shadow hover:shadow-lg hover:shadow-indigo-500/10">
-            <div className="flex justify-between items-start gap-4">
-                <div className="flex-grow">
-                    <label className="block text-sm font-bold text-gray-300 mb-2">Shot {index + 1}</label>
-                    <textarea
-                        value={shot.description}
-                        onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
-                        rows={3}
-                        className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-2"
-                        placeholder="Describe the shot..."
-                    />
-                </div>
-                <div className="flex flex-col items-end gap-2 mt-8">
-                    <button
-                        onClick={() => setIsControlsVisible(!isControlsVisible)}
-                        className={`p-2 rounded-full transition-colors ${isControlsVisible ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
-                        aria-label="Toggle creative controls"
-                    >
-                        <SparklesIcon className="w-5 h-5" />
-                    </button>
-                    <button onClick={() => onDeleteShot(shot.id)} className="p-2 rounded-full bg-red-800/50 hover:bg-red-700 text-red-300 transition-colors" aria-label="Delete shot">
-                        <TrashIcon className="w-5 h-5" />
-                    </button>
-                </div>
-            </div>
-            {isControlsVisible && (
-                <div className="mt-4 pt-4 border-t border-gray-700/50 fade-in">
-                    <CreativeControls value={enhancers} onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)} />
+        <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/80 transition-shadow hover:shadow-lg hover:shadow-indigo-500/10 flex gap-4">
+            {imageUrl && (
+                <div className="w-1/4 flex-shrink-0">
+                    <img src={`data:image/jpeg;base64,${imageUrl}`} alt={`Preview for shot ${index + 1}`} className="rounded-md aspect-video object-cover" />
                 </div>
             )}
+            <div className="flex-grow">
+                <div className="flex justify-between items-start gap-4">
+                    <div className="flex-grow">
+                        <label className="block text-sm font-bold text-gray-300 mb-2">Shot {index + 1}</label>
+                        <textarea
+                            value={shot.description}
+                            onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
+                            rows={3}
+                            className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-2"
+                            placeholder="Describe the shot..."
+                        />
+                    </div>
+                    <div className="flex flex-col items-end gap-2 mt-8">
+                        <button
+                            onClick={() => setIsControlsVisible(!isControlsVisible)}
+                            className={`p-2 rounded-full transition-colors ${isControlsVisible ? 'bg-indigo-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+                            aria-label="Toggle creative controls"
+                        >
+                            <SparklesIcon className="w-5 h-5" />
+                        </button>
+                         <button onClick={() => onGenerateImage(shot.id)} disabled={isGeneratingImage} className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-wait" aria-label="Generate shot preview">
+                            {isGeneratingImage ? <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <ImageIcon className="w-5 h-5" />}
+                        </button>
+                        <button onClick={() => onDeleteShot(shot.id)} className="p-2 rounded-full bg-red-800/50 hover:bg-red-700 text-red-300 transition-colors" aria-label="Delete shot">
+                            <TrashIcon className="w-5 h-5" />
+                        </button>
+                    </div>
+                </div>
+                {isControlsVisible && (
+                    <div className="mt-4 pt-4 border-t border-gray-700/50 fade-in">
+                        <CreativeControls value={enhancers} onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)} />
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
 
-const TimelineEditor: React.FC<TimelineEditorProps> = ({ scene, onUpdateScene, directorsVision, storyBible, onApiStateChange, onApiLog, scenes }) => {
+const TimelineEditor: React.FC<TimelineEditorProps> = ({ 
+    scene, 
+    onUpdateScene, 
+    directorsVision, 
+    storyBible, 
+    onApiStateChange, 
+    onApiLog, 
+    scenes, 
+    onApplySuggestion,
+    generatedImages,
+    generatedShotImages,
+    setGeneratedShotImages,
+    localGenSettings,
+    localGenStatus,
+    setLocalGenStatus
+}) => {
     const [timeline, setTimeline] = useState<TimelineData>(scene.timeline);
     const [coDirectorResult, setCoDirectorResult] = useState<any | null>(null);
     const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
+    const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
+    const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string } | null>(null);
+    const [isGeneratingShotImage, setIsGeneratingShotImage] = useState<Record<string, boolean>>({});
+
+    const sceneKeyframe = generatedImages[scene.id];
     
     const getNarrativeContext = useCallback((sceneId: string): string => {
         const sceneIndex = scenes.findIndex(s => s.id === sceneId);
@@ -90,6 +137,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({ scene, onUpdateScene, d
 
     const handleSaveChanges = () => {
         onUpdateScene({ ...scene, timeline });
+        onApiStateChange('success', 'Timeline saved locally!');
     };
 
     const handleAddShot = () => {
@@ -122,8 +170,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({ scene, onUpdateScene, d
 
     const handleGenerateInitialShots = async () => {
         try {
-            const context = await getPrunedContextForShotGeneration(storyBible, getNarrativeContext(scene.id), scene.summary, directorsVision, onApiLog, onApiStateChange);
-            const shotDescriptions = await generateInitialShotsForScene(context, onApiLog, onApiStateChange);
+            const shotDescriptions = await generateInitialShotsForScene(scene.summary, onApiLog, onApiStateChange);
             
             const newShots: Shot[] = shotDescriptions.map((desc: string) => ({ id: `shot_${Date.now()}_${Math.random()}`, description: desc }));
             const newTransitions = new Array(Math.max(0, newShots.length - 1)).fill('Cut');
@@ -138,19 +185,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({ scene, onUpdateScene, d
         setIsCoDirectorLoading(true);
         setCoDirectorResult(null);
         try {
-            const context = await getPrunedContextForCoDirector(storyBible, getNarrativeContext(scene.id), scene, directorsVision, onApiLog, onApiStateChange);
-            const result = await getCoDirectorSuggestions(context, { ...scene, timeline }, objective, onApiLog, onApiStateChange);
+            const result = await getCoDirectorSuggestions(scene.summary, { ...scene, timeline }, objective, onApiLog, onApiStateChange);
             setCoDirectorResult(result);
         } catch (error) {
             console.error(error);
         } finally {
             setIsCoDirectorLoading(false);
         }
-    };
-
-    const handleApplyCoDirectorSuggestion = (suggestion: any) => {
-        console.log("Applying suggestion: ", suggestion);
-        // Implement logic to apply suggestion to timeline state
     };
     
     const handleBatchProcess = async (actions: Array<'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS'>) => {
@@ -186,13 +227,59 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({ scene, onUpdateScene, d
             console.error("Batch processing failed: ", error);
         }
     };
+    
+    const handleGenerateShotImage = async (shotId: string) => {
+        const shot = timeline.shots.find(s => s.id === shotId);
+        if (!shot) return;
+
+        setIsGeneratingShotImage(prev => ({ ...prev, [shotId]: true }));
+        try {
+            const enhancers = timeline.shotEnhancers[shotId] || {};
+            const image = await generateImageForShot(shot, enhancers, directorsVision, scene.summary, onApiLog, onApiStateChange);
+            setGeneratedShotImages(prev => ({ ...prev, [shotId]: image }));
+        } catch (error) {
+            console.error(`Failed to generate image for shot ${shotId}:`, error);
+        } finally {
+            setIsGeneratingShotImage(prev => ({ ...prev, [shotId]: false }));
+        }
+    };
+
+    const handleExportPrompts = () => {
+        const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary);
+        setPromptsToExport(payloads);
+        setIsPromptModalOpen(true);
+    };
+
+    const handleGenerateLocally = async () => {
+        if (!sceneKeyframe) {
+            onApiStateChange('error', 'Please generate a scene keyframe before local generation.');
+            return;
+        }
+        setLocalGenStatus(prev => ({ ...prev, [scene.id]: { status: 'queued', message: 'Preparing to queue prompt...', progress: 0 }}));
+        try {
+            const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary);
+            const response = await queueComfyUIPrompt(localGenSettings, payloads, sceneKeyframe);
+            setLocalGenStatus(prev => ({ ...prev, [scene.id]: { status: 'queued', message: `Prompt queued successfully! (ID: ${response.prompt_id})`, progress: 0 }}));
+        } catch (error) {
+             const message = error instanceof Error ? error.message : "An unknown error occurred.";
+             setLocalGenStatus(prev => ({ ...prev, [scene.id]: { status: 'error', message, progress: 0 }}));
+        }
+    };
+
 
     return (
         <div className="space-y-6">
-            <header className="bg-gray-800/30 p-4 rounded-lg border border-gray-700/50">
-                <h2 className="text-2xl font-bold text-white">{scene.title}</h2>
-                <p className="text-gray-400 mt-1">{scene.summary}</p>
-                 <p className="text-xs text-gray-500 mt-3 italic">Construct your scene shot-by-shot. Use the creative controls for detail and the Co-Director for AI-powered ideas.</p>
+            <header className="bg-gray-800/30 p-4 rounded-lg border border-gray-700/50 flex gap-6">
+                {sceneKeyframe && (
+                    <div className="w-1/3 flex-shrink-0">
+                        <img src={`data:image/jpeg;base64,${sceneKeyframe}`} alt={`Keyframe for ${scene.title}`} className="rounded-md aspect-video object-cover" />
+                    </div>
+                )}
+                <div className="flex-grow">
+                    <h2 className="text-2xl font-bold text-white">{scene.title}</h2>
+                    <p className="text-gray-400 mt-1">{scene.summary}</p>
+                    <p className="text-xs text-gray-500 mt-3 italic">Construct your scene shot-by-shot. Use the creative controls for detail and the Co-Director for AI-powered ideas.</p>
+                </div>
             </header>
 
             <div className="space-y-4">
@@ -203,9 +290,12 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({ scene, onUpdateScene, d
                                 shot={shot}
                                 index={index}
                                 enhancers={timeline.shotEnhancers[shot.id] || {}}
+                                imageUrl={generatedShotImages[shot.id]}
+                                isGeneratingImage={isGeneratingShotImage[shot.id] || false}
                                 onDescriptionChange={(shotId, desc) => updateTimeline({ shots: timeline.shots.map(s => s.id === shotId ? { ...s, description: desc } : s) })}
                                 onEnhancersChange={(shotId, enh) => updateTimeline({ shotEnhancers: { ...timeline.shotEnhancers, [shotId]: enh } })}
                                 onDeleteShot={handleDeleteShot}
+                                onGenerateImage={handleGenerateShotImage}
                             />
                             {index < timeline.shots.length - 1 && (
                                 <TransitionSelector value={timeline.transitions[index] || 'Cut'} onChange={(newVal) => {
@@ -247,17 +337,37 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({ scene, onUpdateScene, d
                 onGetSuggestions={handleGetCoDirectorSuggestions}
                 isLoading={isCoDirectorLoading}
                 result={coDirectorResult}
-                onApplySuggestion={handleApplyCoDirectorSuggestion}
+                onApplySuggestion={(suggestion) => onApplySuggestion(suggestion, scene.id)}
                 onClose={() => setCoDirectorResult(null)}
                 onGetInspiration={() => Promise.resolve([])}
                 onApiLog={onApiLog}
             />
-
-            <div className="text-center pt-6 border-t border-gray-700/50">
-                <button onClick={handleSaveChanges} className="px-8 py-3 bg-green-600 text-white font-semibold rounded-full shadow-lg hover:bg-green-700 transition-colors">
-                    Save Timeline
-                </button>
+            
+            <div className="space-y-6 pt-6 border-t border-gray-700/50">
+                 <LocalGenerationStatusComponent 
+                    status={localGenStatus[scene.id] || { status: 'idle', message: '', progress: 0 }}
+                    onClear={() => setLocalGenStatus(prev => ({ ...prev, [scene.id]: { status: 'idle', message: '', progress: 0 }}))}
+                 />
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="flex gap-4">
+                        <button onClick={handleExportPrompts} className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-full shadow-lg hover:bg-gray-700 transition-colors">
+                            Export Prompts
+                        </button>
+                        <button onClick={handleGenerateLocally} className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-full shadow-lg hover:bg-indigo-700 transition-colors">
+                           Generate Locally
+                        </button>
+                    </div>
+                    <button onClick={handleSaveChanges} className="px-8 py-3 bg-green-600 text-white font-semibold rounded-full shadow-lg hover:bg-green-700 transition-colors">
+                        Save Timeline
+                    </button>
+                </div>
             </div>
+
+             <FinalPromptModal 
+                isOpen={isPromptModalOpen}
+                onClose={() => setIsPromptModalOpen(false)}
+                payloads={promptsToExport}
+             />
         </div>
     );
 };

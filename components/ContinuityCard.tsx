@@ -2,14 +2,15 @@
 import React from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
-import { analyzeVideoFrames, getPrunedContextForContinuity, scoreContinuity, generateNextSceneFromContinuity } from '../services/geminiService';
+import { analyzeVideoFrames, getPrunedContextForContinuity, scoreContinuity } from '../services/geminiService';
+
 import FileUpload from './FileUpload';
 import VideoPlayer from './VideoPlayer';
 import FeedbackCard from './FeedbackCard';
-import AnalyzeButton from './AnalyzeButton';
 import { marked } from 'marked';
 import SparklesIcon from './icons/SparklesIcon';
 import FilmIcon from './icons/FilmIcon';
+import ImageIcon from './icons/ImageIcon';
 
 interface ContinuityCardProps {
   scene: Scene;
@@ -47,6 +48,19 @@ const ScoreCircle: React.FC<{ score: number; label: string }> = ({ score, label 
     );
 };
 
+const AnalysisLoadingIndicator: React.FC = () => (
+    <div className="flex flex-col items-center justify-center text-center p-8 h-full">
+        <div className="relative mb-4">
+            <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-indigo-400"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+                <FilmIcon className="w-8 h-8 text-indigo-400" />
+            </div>
+        </div>
+        <p className="text-lg font-semibold text-gray-200">Analyzing Video...</p>
+        <p className="text-sm text-gray-400 mt-2 max-w-xs">Extracting frames and evaluating content. This may take a moment for longer videos.</p>
+    </div>
+);
+
 
 const ContinuityCard: React.FC<ContinuityCardProps> = ({
   scene,
@@ -54,6 +68,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   storyBible,
   narrativeContext,
   directorsVision,
+  generatedImage,
   data,
   setContinuityData,
   addToast,
@@ -64,30 +79,21 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   onUpdateSceneSummary,
   onExtendTimeline
 }) => {
-
-  const handleFileSelect = (file: File) => {
-    setContinuityData(prev => ({
-      ...prev,
-      videoFile: file,
-      videoSrc: URL.createObjectURL(file),
-      status: 'idle',
-      error: undefined,
-      videoAnalysis: undefined,
-      continuityResult: undefined,
-      frames: undefined
-    }));
-  };
-
-  const handleAnalysis = async () => {
-    if (!data.videoFile) {
-      addToast('Please upload a video file first.', 'error');
-      return;
-    }
-
+  const handleAnalysis = async (file: File) => {
     try {
-      setContinuityData(prev => ({ ...prev, status: 'analyzing', error: undefined }));
-      const frames = await extractFramesFromVideo(data.videoFile, 1);
-      if (frames.length === 0) throw new Error("Could not extract frames. Video might be invalid.");
+      setContinuityData(prev => ({ 
+          ...prev, 
+          status: 'analyzing', 
+          error: undefined,
+          videoFile: file, 
+          videoSrc: URL.createObjectURL(file),
+          videoAnalysis: undefined,
+          continuityResult: undefined,
+          frames: undefined,
+      }));
+
+      const frames = await extractFramesFromVideo(file, 1);
+      if (frames.length === 0) throw new Error("Could not extract frames. Video might be invalid or in an unsupported format.");
       setContinuityData(prev => ({ ...prev, frames }));
 
       const analysis = await analyzeVideoFrames(frames, onApiLog, onApiStateChange);
@@ -101,7 +107,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
 
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred.';
-      setContinuityData(prev => ({ ...prev, status: 'error', error: errorMsg }));
+      setContinuityData(prev => ({ ...prev, status: 'error', error: errorMsg, videoFile: undefined, videoSrc: undefined, frames: [] }));
       addToast(errorMsg, 'error');
     }
   };
@@ -110,6 +116,8 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
     const rawMarkup = marked.parse(markdown);
     return { __html: rawMarkup as string };
   };
+
+  const isLoading = data.status === 'analyzing' || data.status === 'scoring';
 
   return (
     <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/80 rounded-xl shadow-lg overflow-hidden">
@@ -120,13 +128,20 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-gray-700/80">
             {/* Left Column: Upload & Video */}
-            <div className="p-6 bg-gray-800/80">
+            <div className="p-6 bg-gray-800/80 min-h-[400px] flex flex-col justify-center space-y-4">
+                {generatedImage && (
+                    <div className="mb-4">
+                        <h4 className="text-sm font-semibold text-gray-300 mb-2 flex items-center"><ImageIcon className="w-4 h-4 mr-2 text-indigo-400" />Scene Keyframe</h4>
+                        <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover border border-gray-600"/>
+                    </div>
+                )}
                 {data.videoSrc ? (
                     <VideoPlayer src={data.videoSrc} />
+                ) : isLoading ? (
+                    <AnalysisLoadingIndicator />
                 ) : (
-                    <FileUpload onFileSelect={handleFileSelect} />
+                    <FileUpload onFileSelect={handleAnalysis} />
                 )}
-                {data.videoFile && <AnalyzeButton onClick={handleAnalysis} isLoading={data.status === 'analyzing' || data.status === 'scoring'} />}
                 {data.error && <p className="text-center text-sm text-red-400 mt-4">{data.error}</p>}
             </div>
 
@@ -162,7 +177,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                         )}
                     </div>
                 ) : (
-                    <FeedbackCard title="Analysis & Feedback" content={data.videoAnalysis} isLoading={data.status === 'analyzing' || data.status === 'scoring'} />
+                    <FeedbackCard title="Analysis & Feedback" content={data.videoAnalysis} isLoading={isLoading} />
                 )}
             </div>
         </div>

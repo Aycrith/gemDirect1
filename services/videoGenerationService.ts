@@ -61,7 +61,7 @@ export const generateVideoRequestPayloads = (
  * @param sceneSummary A brief summary of the scene's purpose.
  * @returns A formatted string suitable for use as a descriptive prompt.
  */
-const generateHumanReadablePrompt = (
+export const generateHumanReadablePrompt = (
     timeline: TimelineData,
     directorsVision: string,
     sceneSummary: string
