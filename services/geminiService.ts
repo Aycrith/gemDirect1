@@ -114,7 +114,7 @@ export const getPrunedContextForShotGeneration = async (
 
     **SOURCE MATERIAL:**
     - Story Logline: ${storyBible.logline}
-    - Narrative Context (Current Act of the Hero's Journey): ${narrativeContext}
+    - Narrative Context (Current Story Act): ${narrativeContext}
     - Scene Summary: ${sceneSummary}
     - Director's Vision: ${directorsVision}
 
@@ -133,13 +133,13 @@ export const getPrunedContextForCoDirector = async (
     const prompt = `You are an expert script analyst. Your job is to create a concise "Co-Director's Brief" that summarizes the creative sandbox for the current scene. The brief should focus on the *goals and constraints* for making creative suggestions.
 
     **CRITICAL INFORMATION TO SUMMARIZE:**
-    1.  **Narrative Function:** What is this scene's specific job within the plot's current act (based on The Hero's Journey)?
+    1.  **Narrative Function:** What is this scene's specific job within the plot's current act (based on the story's structure)?
     2.  **Aesthetic Guardrails:** What are the key visual and tonal rules from the Director's Vision that MUST be followed?
     3.  **Character/Plot Development:** What key character change or plot point must be accomplished in this scene?
 
     **SOURCE MATERIAL:**
     - Story Logline: ${storyBible.logline}
-    - Narrative Context (Current Act): ${narrativeContext}
+    - Narrative Context (Current Story Act): ${narrativeContext}
     - Scene: "${scene.title}" - ${scene.summary}
     - Director's Vision: ${directorsVision}
 
@@ -156,7 +156,7 @@ export const getPrunedContextForBatchProcessing = async (
     const prompt = `You are a script supervisor. Distill the following creative guidelines into a single, concise "Cinematographer's Brief". This brief will be used to guide an AI assistant in refining multiple shots within a single scene. Focus on the core rules and feeling.
 
     **SOURCE MATERIAL:**
-    - Narrative Context (Current Act/Goal): ${narrativeContext}
+    - Narrative Context (Current Story Stage/Goal): ${narrativeContext}
     - Director's Vision (Aesthetic & Tone): ${directorsVision}
 
     **OUTPUT:** A single, dense paragraph (under 100 words). Do not include any preamble or explanation.`;
@@ -167,15 +167,30 @@ export const getPrunedContextForBatchProcessing = async (
 
 export const generateStoryBible = async (idea: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
     const context = 'generate Story Bible';
-    const prompt = `You are a master storyteller and screenwriter, deeply familiar with literary principles. Based on the following user idea, generate a compelling "Story Bible" that establishes a strong, plot-driven narrative foundation.
+    const prompt = `You are a master storyteller and screenwriter with a deep understanding of multiple narrative structures. Your task is to analyze a user's idea and generate a "Story Bible" using the most fitting narrative framework.
 
-    User Idea: "${idea}"
+    **Narrative Frameworks Available:**
+    - **Three-Act Structure:** A classic model with Setup, Confrontation, and Resolution.
+    - **The Hero's Journey:** A mythic quest pattern (Ordinary World, Call to Adventure, Ordeal, etc.). Ideal for epic adventures.
+    - **Seven-Point Story Structure:** A plot-focused model (Hook, Midpoint, Resolution, etc.). Great for thrillers and mysteries.
+    - **Save the Cat:** A detailed beat sheet for commercial screenplays.
+    - **Kishōtenketsu:** A four-act structure from East Asian narratives (Introduction, Development, Twist, Conclusion). Excellent for reflective stories or those with major twists.
 
-    Your task is to create a JSON object containing:
-    1.  **logline**: A single, concise sentence that captures the essence of the story (protagonist, goal, conflict).
-    2.  **characters**: A markdown-formatted list of 2-3 key characters with a brief, compelling description for each.
-    3.  **setting**: A paragraph describing the world, time, and atmosphere of the story.
-    4.  **plotOutline**: A markdown-formatted, 3-act structure (Act I, Act II, Act III). **Crucially, you must structure this plot using archetypal stages of 'The Hero's Journey' as a guide.** For example, Act I should contain 'The Ordinary World' and 'The Call to Adventure'. Act II should build through 'Tests, Allies, and Enemies' to 'The Ordeal'. Act III should cover 'The Road Back' and 'The Resurrection'. This structure is essential for producing a high-quality, resonant story.`;
+    **User Idea:** "${idea}"
+
+    **Your Task:**
+    1.  Analyze the user's idea to determine its genre, length, and core conflict.
+    2.  Select the **single most appropriate framework** from the list above that best serves the idea.
+    3.  **If none of the frameworks fit well** (e.g., for experimental concepts, character studies, or very short stories), create a logical, **custom plot structure** with a clear beginning, middle, and end. Do not force a framework where it doesn't belong.
+    4.  Generate a JSON object containing:
+        a. **logline**: A single, concise sentence capturing the story's essence (protagonist, goal, conflict).
+        b. **characters**: A markdown-formatted list of 2-3 key characters with brief, compelling descriptions.
+        c. **setting**: A paragraph describing the world, time, and atmosphere.
+        d. **plotOutline**: A markdown-formatted plot outline. **CRITICAL FOR SYSTEM COMPATIBILITY: You MUST structure the output into three acts (Act I, Act II, Act III).** Within this structure, integrate the key beats of your chosen framework. For example:
+            - If using **The Hero's Journey**: Act I might contain 'The Ordinary World' and 'Call to Adventure'. Act II could cover 'Tests, Allies, Enemies' up to 'The Ordeal'.
+            - If using **Kishōtenketsu**: Act I could be 'Ki (Introduction)' and 'Shō (Development)'. Act II could be 'Ten (Twist)'. Act III could be 'Ketsu (Conclusion)'.
+            - If using a **custom structure**, organize its beats logically across the three acts.
+    This approach ensures narrative depth while maintaining the required format. Do not explicitly state which framework you used in the output.`;
 
     const responseSchema = {
         type: Type.OBJECT,
@@ -210,7 +225,7 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
     const context = 'generate scene list';
     const prompt = `You are an expert film editor and screenwriter, tasked with breaking a story outline into a series of powerful, cinematic scenes. A new scene should be created for any significant shift in **location, time, or character objective/conflict**. Each scene must serve a clear purpose.
 
-    **Plot Outline (Based on The Hero's Journey):**
+    **Plot Outline (Based on the chosen narrative structure):**
     ${plotOutline}
 
     **Director's Vision (Aesthetic & Tonal Guide):**
@@ -827,7 +842,7 @@ export const getPrunedContextForContinuity = async (
 
     **SOURCE MATERIAL:**
     - Story Logline: ${storyBible.logline}
-    - Narrative Context: ${narrativeContext}
+    - Narrative Context (Current Story Act): ${narrativeContext}
     - Scene: "${scene.title}" - ${scene.summary}
     - Director's Vision: ${directorsVision}
     - Scene Shot List Summary: ${scene.timeline.shots.map(s => `- ${s.description}`).join('\n')}
