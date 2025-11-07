@@ -1052,7 +1052,7 @@ export const generateWorkflowMapping = async (
     workflowJson: string, 
     logApiCall: ApiLogCallback, 
     onStateChange?: ApiStateChangeCallback
-): Promise<any> => {
+): Promise<WorkflowMapping> => {
     const context = 'generate ComfyUI workflow mapping';
     const prompt = `You are an expert system integrator for ComfyUI workflows. Your task is to analyze the provided ComfyUI workflow JSON and determine the optimal data mappings for the "Cinematic Story Generator" application.
 

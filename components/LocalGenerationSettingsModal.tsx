@@ -11,6 +11,7 @@ import Tooltip from './Tooltip';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import PreflightCheck from './PreflightCheck';
 import AiConfigurator from './AiConfigurator';
+import RefreshCwIcon from './icons/RefreshCwIcon';
 
 interface Props {
     isOpen: boolean;
@@ -55,6 +56,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     const [localSettings, setLocalSettings] = useState<LocalGenerationSettings>(settings);
     const [workflowInputs, setWorkflowInputs] = useState<WorkflowInput[]>([]);
     const [discoveryStatus, setDiscoveryStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
+    const [isSyncing, setIsSyncing] = useState(false);
 
     useEffect(() => {
         setLocalSettings(settings);
@@ -84,6 +86,29 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
             setDiscoveryStatus('not_found');
         }
     };
+    
+    const handleSyncWorkflow = async () => {
+        if (!localSettings.comfyUIUrl) {
+            addToast('Please enter a server address first.', 'error');
+            return;
+        }
+        setIsSyncing(true);
+        try {
+            const url = localSettings.comfyUIUrl.endsWith('/') ? `${localSettings.comfyUIUrl}workflow` : `${localSettings.comfyUIUrl}/workflow`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Server responded with status ${response.status}`);
+            const workflowJson = await response.text();
+
+            setLocalSettings(prev => ({ ...prev, workflowJson }));
+            addToast('Workflow synced successfully! Please review your mappings.', 'success');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(`Sync failed: ${message}`, 'error');
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
 
     const handleMappingChange = (key: string, value: MappableData) => {
         setLocalSettings(prev => ({
@@ -159,6 +184,17 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                            onUpdateSettings={setLocalSettings}
                            addToast={addToast}
                         />
+
+                        <div className="text-center">
+                             <button
+                                onClick={handleSyncWorkflow}
+                                disabled={isSyncing}
+                                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-600/50 text-gray-300 font-semibold rounded-md hover:bg-gray-600/80 disabled:bg-gray-500 transition-colors text-xs border border-gray-500"
+                            >
+                                <RefreshCwIcon className="w-4 h-4" />
+                                {isSyncing ? 'Syncing...' : 'Re-sync Workflow Only (Manual Mode)'}
+                            </button>
+                        </div>
                         
                         {workflowInputs.length > 0 && (
                             <div className="space-y-3 pt-4 border-t border-gray-600">

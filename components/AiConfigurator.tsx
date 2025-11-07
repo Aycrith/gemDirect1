@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LocalGenerationSettings, WorkflowMapping, ToastMessage } from '../types';
+import { LocalGenerationSettings, WorkflowMapping } from '../types';
 import { generateWorkflowMapping } from '../services/geminiService';
 import { useApiStatus } from '../contexts/ApiStatusContext';
 import { useUsage } from '../contexts/UsageContext';
@@ -8,7 +8,7 @@ import SparklesIcon from './icons/SparklesIcon';
 interface AiConfiguratorProps {
     settings: LocalGenerationSettings;
     onUpdateSettings: (updater: (prev: LocalGenerationSettings) => LocalGenerationSettings) => void;
-    addToast: (message: string, type: ToastMessage['type']) => void;
+    addToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
 const AiConfigurator: React.FC<AiConfiguratorProps> = ({ settings, onUpdateSettings, addToast }) => {
@@ -35,9 +35,9 @@ const AiConfigurator: React.FC<AiConfiguratorProps> = ({ settings, onUpdateSetti
             // Step 2: Send to Gemini for mapping
             updateApiStatus('loading', 'AI is analyzing your workflow...');
             const mapping: WorkflowMapping = await generateWorkflowMapping(workflowJson, logApiCall, updateApiStatus);
-            
+
             if (Object.keys(mapping).length === 0) {
-                 throw new Error("AI analysis could not determine any valid mappings. Please check your workflow.");
+                throw new Error("AI analysis could not determine any valid mappings. Please check your workflow.");
             }
 
             // Step 3: Apply the new settings
@@ -58,7 +58,8 @@ const AiConfigurator: React.FC<AiConfiguratorProps> = ({ settings, onUpdateSetti
     return (
         <div className="p-3 bg-gray-800/50 rounded-lg border border-amber-500/30 text-center">
             <p className="text-sm text-amber-300 mb-3">
-                New! Let our AI analyze your live ComfyUI workflow and configure the data mappings for you.
+                New! Let our AI analyze your live ComfyUI workflow and configure the data mappings
+                for you.
             </p>
             <button
                 onClick={handleAiConfigure}
