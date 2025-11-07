@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { LocalGenerationSettings, WorkflowInput, MappableData, WorkflowMapping } from '../types';
 import ServerIcon from './icons/ServerIcon';
@@ -54,6 +53,8 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         setLocalSettings(settings);
         if (settings.workflowJson) {
             setWorkflowInputs(parseWorkflowForInputs(settings.workflowJson));
+        } else {
+            setWorkflowInputs([]);
         }
     }, [settings, isOpen]);
 
@@ -116,7 +117,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                             <input id="comfy-url" type="text" value={localSettings.comfyUIUrl} onChange={e => setLocalSettings(p => ({...p, comfyUIUrl: e.target.value}))} className="mt-1 block w-full bg-gray-800 border-gray-600 rounded-md p-2 text-sm" placeholder="http://127.0.0.1:8188"/>
                         </div>
                          <div>
-                            <label htmlFor="client-id" className="text-sm font-medium text-gray-300">Client ID</label>
+                            <label htmlFor="client-id" className="text-sm font-medium text-gray-300">Client ID (for WebSocket)</label>
                             <input id="client-id" type="text" value={localSettings.comfyUIClientId} onChange={e => setLocalSettings(p => ({...p, comfyUIClientId: e.target.value}))} className="mt-1 block w-full bg-gray-800 border-gray-600 rounded-md p-2 text-sm" placeholder="unique_client_id"/>
                         </div>
                     </div>

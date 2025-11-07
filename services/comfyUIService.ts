@@ -118,8 +118,6 @@ export const queueComfyUIPrompt = async (
                     case 'keyframe_image':
                         if (uploadedImageFilename && node.class_type === 'LoadImage') {
                              dataToInject = uploadedImageFilename;
-                        } else {
-                            dataToInject = base64Image;
                         }
                         break;
                 }
@@ -130,7 +128,7 @@ export const queueComfyUIPrompt = async (
         }
         
         // --- STEP 3: QUEUE THE PROMPT ---
-        const body = JSON.stringify({ prompt: promptPayload, client_id: settings.comfyUIClientId });
+        const body = JSON.stringify({ prompt: promptPayload, client_id: settings.comfyUIClientId || `csg_${Date.now()}` });
         const response = await fetch(`${baseUrl}prompt`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -234,12 +232,13 @@ export const trackPromptExecution = (
             case 'executed':
                 if (msg.data.prompt_id === promptId) {
                     const outputs = msg.data.output;
-                    const imageOutput = outputs.images?.[0] || outputs.gifs?.[0]; // Support images and gifs
+                    // Check for common output types
+                    const imageOutput = outputs.images?.[0] || outputs.gifs?.[0]; 
 
                     if (imageOutput) {
                         try {
-                            onProgress({ message: 'Fetching final image...', progress: 100 });
-                            const imageUrl = await fetchImageAsDataURL(
+                            onProgress({ message: 'Fetching final output...', progress: 100 });
+                            const outputUrl = await fetchImageAsDataURL(
                                 comfyUIUrl.endsWith('/') ? comfyUIUrl : `${comfyUIUrl}/`,
                                 imageOutput.filename,
                                 imageOutput.subfolder,
@@ -249,18 +248,18 @@ export const trackPromptExecution = (
                                 status: 'complete',
                                 message: 'Generation complete!',
                                 final_output: {
-                                    type: imageOutput.type === 'output' ? 'image' : 'video',
-                                    data: imageUrl,
+                                    type: imageOutput.type === 'output' ? 'image' : 'video', // 'output' is typically image, 'temp' can be video previews
+                                    data: outputUrl,
                                     filename: imageOutput.filename,
                                 },
                             });
                         } catch (error) {
-                             const message = error instanceof Error ? error.message : "Failed to fetch final image.";
+                             const message = error instanceof Error ? error.message : "Failed to fetch final output.";
                              onProgress({ status: 'error', message });
                         }
                     } else {
                          // If no image output, but execution finished, it's complete.
-                        onProgress({ status: 'complete', message: 'Generation complete! No image output found.' });
+                        onProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
                     }
                     ws.close(); // Close connection after completion
                 }
