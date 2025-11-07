@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';

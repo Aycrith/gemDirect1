@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as db from './database';
 import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot } from '../types';

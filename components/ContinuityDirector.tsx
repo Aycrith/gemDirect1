@@ -1,5 +1,3 @@
-
-
 import React, { useCallback } from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
 import ContinuityCard from './ContinuityCard';

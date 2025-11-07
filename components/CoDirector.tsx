@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import { CoDirectorResult, Suggestion, StoryBible, Scene } from '../types';
 import { suggestCoDirectorObjectives, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';

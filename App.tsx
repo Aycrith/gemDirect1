@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationSettings, LocalGenerationStatus, SceneContinuityData } from './types';
 import { useProjectData, usePersistentState } from './utils/hooks';
