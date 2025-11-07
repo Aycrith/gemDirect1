@@ -1,4 +1,4 @@
-import { TimelineData, Shot, CreativeEnhancers } from '../types';
+import { TimelineData, LocalGenerationSettings } from '../types';
 
 /**
  * Generates a structured JSON payload and a human-readable text prompt from timeline data.
@@ -100,28 +100,86 @@ const generateHumanReadablePrompt = (
 
 /**
  * Sends a prompt and an image to a local ComfyUI server.
+ * Can operate in a simple mode or an advanced mode with a full workflow.
  * @param url The endpoint URL of the ComfyUI server.
- * @param prompt The text prompt for generation.
+ * @param payloads The generated JSON and text prompts.
  * @param base64Image The base64-encoded keyframe image.
+ * @param settings Optional settings for advanced mode, including workflow JSON and mapping.
  */
 export const sendToComfyUI = async (
     url: string,
-    prompt: string,
-    base64Image: string
+    payloads: { json: string; text: string },
+    base64Image: string,
+    settings?: LocalGenerationSettings
 ): Promise<any> => {
-    const payload = {
-        prompt: prompt,
+    
+    // --- Advanced Path ---
+    if (settings && settings.workflowJson && settings.mapping && Object.keys(settings.mapping).length > 0) {
+        try {
+            const workflow = JSON.parse(settings.workflowJson);
+            // Deep copy the prompt part of the workflow to avoid modifying any original object
+            const promptPayload = JSON.parse(JSON.stringify(workflow.prompt));
+
+            for (const [key, dataType] of Object.entries(settings.mapping)) {
+                if (dataType === 'none') continue;
+
+                const [nodeId, inputName] = key.split(':');
+                const node = promptPayload[nodeId];
+                
+                if (node && node.inputs) {
+                    let dataToInject: any = null;
+                    switch (dataType) {
+                        case 'human_readable_prompt':
+                            dataToInject = payloads.text;
+                            break;
+                        case 'full_timeline_json':
+                            dataToInject = payloads.json;
+                            break;
+                        case 'keyframe_image':
+                             // This assumes the user has a custom node that accepts a base64 string.
+                             // Comfy's default `LoadImage` node requires a pre-uploaded filename.
+                            dataToInject = base64Image;
+                            break;
+                    }
+                    if (dataToInject !== null) {
+                        node.inputs[inputName] = dataToInject;
+                    }
+                }
+            }
+
+            const body = JSON.stringify({ prompt: promptPayload, client_id: `csg_${Date.now()}` });
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body,
+            });
+
+            if (!response.ok) {
+                let errorMessage = `ComfyUI server responded with status: ${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage += ` - ${errorData.error?.message || JSON.stringify(errorData)}`;
+                } catch (e) { /* ignore json parse error */ }
+                throw new Error(errorMessage);
+            }
+            return response.json();
+
+        } catch (error) {
+            console.error("Error processing advanced ComfyUI request:", error);
+            throw new Error(`Failed to process advanced ComfyUI workflow. Check workflow JSON and mapping. Error: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    // --- Simple Path (Fallback) ---
+    const simplePayload = {
+        prompt: payloads.text,
         image: base64Image,
     };
-
+    
     const response = await fetch(url, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        // A standard ComfyUI API call requires wrapping the workflow in a 'prompt' key.
-        // We'll wrap our simple payload similarly, assuming the user's workflow is set up to find inputs within this structure.
-        body: JSON.stringify({ prompt: payload, client_id: `csg_${Date.now()}` }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: simplePayload, client_id: `csg_${Date.now()}` }),
     });
 
     if (!response.ok) {

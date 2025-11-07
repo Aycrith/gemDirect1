@@ -605,6 +605,74 @@ export const generateKeyframeForScene = async (prompt: string, logApiCall: ApiLo
     return withRetry(apiCall, context, imageModel, logApiCall, onStateChange);
 };
 
+export const generateImageForShot = async (
+    shot: Shot, 
+    enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>, 
+    directorsVision: string,
+    sceneSummary: string,
+    logApiCall: ApiLogCallback, 
+    onStateChange?: ApiStateChangeCallback
+): Promise<string> => {
+    const context = 'generate shot preview';
+
+    let prompt = `Generate a single, cinematic keyframe image for a specific shot within a scene.
+    
+**Overall Scene Summary:** ${sceneSummary}
+**Director's Vision / Cinematic Style:** ${directorsVision}
+
+**Specific Shot Description:**
+${shot.description}
+`;
+
+    if (enhancers && Object.keys(enhancers).length > 0) {
+        const enhancerText = Object.entries(enhancers)
+            .map(([key, value]) => {
+                if (Array.isArray(value) && value.length > 0) {
+                    const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
+                    return `${formattedKey}: ${value.join(', ')}`;
+                }
+                return null;
+            })
+            .filter(Boolean)
+            .join('; ');
+        if (enhancerText) {
+            prompt += `\n**Creative Enhancers for this Shot:** ${enhancerText}`;
+        }
+    }
+
+    prompt += "\n\n**Task:** Create a photorealistic, high-quality image that captures this shot perfectly, adhering to all the specified styles and descriptions."
+
+    const apiCall = async () => {
+        const response = await ai.models.generateContent({
+            model: imageModel,
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                responseModalities: [Modality.IMAGE],
+            },
+        });
+        
+        const candidate = response.candidates?.[0];
+        if (candidate?.content?.parts) {
+            for (const part of candidate.content.parts) {
+                if (part.inlineData) {
+                    const base64ImageBytes: string = part.inlineData.data;
+                    const tokens = response.usageMetadata?.totalTokenCount || 0;
+                    return { result: base64ImageBytes, tokens };
+                }
+            }
+        }
+
+        if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+            throw new Error(`Image generation failed with reason: ${candidate.finishReason}. This could be due to safety filters or an invalid prompt.`);
+        }
+        
+        throw new Error("The model did not return an image for the shot preview.");
+    };
+
+    return withRetry(apiCall, context, imageModel, logApiCall, onStateChange);
+};
+
+
 export const analyzeVideoFrames = async (frames: string[], logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const context = 'analyze video frames';
     const contents = [
@@ -809,7 +877,7 @@ export const applyRefinement = async (
         const response = await ai.models.generateContent({
             model: proModel,
             contents: prompt,
-            config: { responseMimeType: 'application/json', responseSchema },
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
         });
         const text = response.text;
         if (!text) throw new Error(`The model returned an empty response for ${context}.`);

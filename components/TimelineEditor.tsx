@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, memo, useEffect } from 'react';
-import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible, BatchShotTask, SceneContinuityData, BatchShotResult } from '../types';
+import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible, BatchShotTask, BatchShotResult, LocalGenerationSettings } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 import NegativePromptSuggestions from './NegativePromptSuggestions';
@@ -13,10 +13,9 @@ import { batchProcessShotEnhancements, ApiStateChangeCallback, ApiLogCallback } 
 import Tooltip from './Tooltip';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import { useApiStatus } from '../contexts/ApiStatusContext';
-import VideoPlayer from './VideoPlayer';
 import { generateVideoRequestPayloads, sendToComfyUI } from '../services/videoGenerationService';
-import * as db from '../utils/database';
 import ServerIcon from './icons/ServerIcon';
+import ImageIcon from './icons/ImageIcon';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -32,16 +31,20 @@ interface TimelineEditorProps {
     onProceedToReview?: () => void;
     onApiStateChange: ApiStateChangeCallback;
     onApiLog: ApiLogCallback;
-    onGenerateVideo: (sceneId: string, timeline: TimelineData) => void;
-    sceneContinuity?: SceneContinuityData;
+    onGenerateKeyframe: (sceneId: string, timeline: TimelineData) => void;
+    onExportPrompts: (sceneId: string, timeline: TimelineData) => void;
     generatedImage?: string;
+    shotPreviewImages: Record<string, { image: string, isLoading: boolean }>;
+    onGenerateShotPreview: (shotId: string) => void;
+    localGenerationSettings: LocalGenerationSettings;
 }
 
 const SuggestionButton: React.FC<{
     onClick: () => void;
     isLoading: boolean;
     tooltip: string;
-}> = memo(({ onClick, isLoading, tooltip }) => (
+    icon?: React.ReactNode;
+}> = memo(({ onClick, isLoading, tooltip, icon }) => (
     <Tooltip text={tooltip}>
         <button
             onClick={onClick}
@@ -54,7 +57,7 @@ const SuggestionButton: React.FC<{
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
             ) : (
-                <SparklesIcon className="w-4 h-4" />
+                icon || <SparklesIcon className="w-4 h-4" />
             )}
         </button>
     </Tooltip>
@@ -65,18 +68,21 @@ const ShotCard: React.FC<{
     index: number;
     totalShots: number;
     enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>;
+    preview?: { image: string, isLoading: boolean };
     onDescriptionChange: (id: string, newDescription: string) => void;
     onEnhancersChange: (id: string, newEnhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>) => void;
     onDeleteShot: (id: string) => void;
     onAddShotAfter: (id: string) => void;
     onRefineDescription: (shot: Shot) => void;
     onSuggestEnhancers: (shot: Shot) => void;
+    onGeneratePreview: (shotId: string) => void;
     suggestionState: { processingIds: Set<string> };
 }> = ({ 
-    shot, index, totalShots, enhancers, onDescriptionChange, onEnhancersChange, 
-    onDeleteShot, onAddShotAfter, onRefineDescription, onSuggestEnhancers, suggestionState 
+    shot, index, totalShots, enhancers, preview, onDescriptionChange, onEnhancersChange, 
+    onDeleteShot, onAddShotAfter, onRefineDescription, onSuggestEnhancers, onGeneratePreview, suggestionState 
 }) => {
-    const isProcessing = suggestionState.processingIds.has(shot.id);
+    const isProcessingSuggestion = suggestionState.processingIds.has(shot.id);
+    const isPreviewLoading = preview?.isLoading ?? false;
 
     return (
         <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg fade-in">
@@ -94,6 +100,16 @@ const ShotCard: React.FC<{
                 </div>
             </div>
             <div className="p-4 space-y-4">
+                {preview?.image && !isPreviewLoading && (
+                     <div className="rounded-lg overflow-hidden border border-gray-600">
+                        <img src={`data:image/jpeg;base64,${preview.image}`} alt={`Preview for shot ${index + 1}`} className="w-full aspect-video object-cover"/>
+                    </div>
+                )}
+                {isPreviewLoading && (
+                    <div className="aspect-video bg-gray-900/50 flex items-center justify-center rounded-lg animate-pulse">
+                        <p className="text-sm text-gray-400">Generating preview...</p>
+                    </div>
+                )}
                 <div>
                     <div className="flex items-start gap-2">
                         <textarea
@@ -103,11 +119,19 @@ const ShotCard: React.FC<{
                             className="flex-grow w-full bg-gray-900/50 p-2 border border-gray-600 rounded-md focus:ring-1 focus:ring-indigo-500 text-sm text-gray-300"
                             placeholder="Describe the action in this shot..."
                         />
-                         <SuggestionButton 
-                            onClick={() => onRefineDescription(shot)}
-                            isLoading={isProcessing}
-                            tooltip="Refine Description with AI"
-                        />
+                         <div className="flex flex-col">
+                            <SuggestionButton 
+                                onClick={() => onRefineDescription(shot)}
+                                isLoading={isProcessingSuggestion}
+                                tooltip="Refine Description with AI"
+                            />
+                            <SuggestionButton 
+                                onClick={() => onGeneratePreview(shot.id)}
+                                isLoading={isPreviewLoading}
+                                tooltip="Generate Preview Image"
+                                icon={<ImageIcon className="w-4 h-4" />}
+                            />
+                        </div>
                     </div>
                 </div>
                 
@@ -116,7 +140,7 @@ const ShotCard: React.FC<{
                         <p className="text-sm font-semibold text-gray-300">Creative Enhancers (Directing Controls)</p>
                         <SuggestionButton 
                             onClick={() => onSuggestEnhancers(shot)}
-                            isLoading={isProcessing}
+                            isLoading={isProcessingSuggestion}
                             tooltip="Suggest Enhancers with AI"
                         />
                     </div>
@@ -143,9 +167,12 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     onProceedToReview,
     onApiStateChange,
     onApiLog,
-    onGenerateVideo,
-    sceneContinuity,
+    onGenerateKeyframe,
+    onExportPrompts,
     generatedImage,
+    shotPreviewImages,
+    onGenerateShotPreview,
+    localGenerationSettings,
 }) => {
     const { shots, shotEnhancers, transitions, negativePrompt } = scene.timeline;
     const { updateApiStatus } = useApiStatus();
@@ -157,34 +184,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [queuedTasks, setQueuedTasks] = useState<Map<string, BatchShotTask>>(new Map());
     const [suggestionState, setSuggestionState] = useState<{ processingIds: Set<string> }>({ processingIds: new Set() });
 
-    const [comfyUIUrl, setComfyUIUrl] = useState('http://127.0.0.1:8188/prompt');
     const [isSendingToComfy, setIsSendingToComfy] = useState(false);
 
-    useEffect(() => {
-        db.getData('comfyUIUrl').then(url => {
-            if (url && typeof url === 'string') {
-                setComfyUIUrl(url);
-            }
-        });
-    }, []);
-
-    useEffect(() => {
-        const handler = setTimeout(() => {
-            if(comfyUIUrl) {
-                db.saveData('comfyUIUrl', comfyUIUrl);
-            }
-        }, 500); // Debounce saving
-        return () => clearTimeout(handler);
-    }, [comfyUIUrl]);
-
     const processTaskQueue = useCallback(() => {
-        // FIX: Explicitly type `currentTasks` to help TypeScript correctly infer the type of `tasksToProcess`.
         setQueuedTasks((currentTasks: Map<string, BatchShotTask>) => {
             const tasksToProcess = Array.from(currentTasks.values());
             
             if (tasksToProcess.length > 0) {
-                // This async IIFE (Immediately Invoked Function Expression) is fired off
-                // to handle the API call without blocking the state update.
                 (async () => {
                     try {
                         const results = await batchProcessShotEnhancements(tasksToProcess, narrativeContext, directorsVision, onApiLog, onApiStateChange);
@@ -199,7 +205,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     } catch (e) {
                         console.error("Batch processing failed:", e);
                     } finally {
-                        // Once complete (or failed), remove the processed IDs from the loading state.
                         setSuggestionState(prev => {
                             const newProcessingIds = new Set(prev.processingIds);
                             tasksToProcess.forEach(task => newProcessingIds.delete(task.shot_id));
@@ -208,7 +213,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     }
                 })();
             }
-            // Always return a new empty Map to clear the queue for the next batch.
             return new Map<string, BatchShotTask>();
         });
     }, [narrativeContext, directorsVision, onApiLog, onApiStateChange, setShots, setShotEnhancers]);
@@ -311,28 +315,39 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     }, [shots, shotEnhancers, transitions, negativePrompt, mitigateViolence, enhanceRealism]);
     
     const handleSendToComfyUI = useCallback(async () => {
-        if (!generatedImage || !comfyUIUrl) {
-            onApiStateChange('error', 'Missing keyframe image or ComfyUI URL.');
+        if (!generatedImage) {
+            onApiStateChange('error', 'Missing keyframe image.');
+            return;
+        }
+        if (!localGenerationSettings?.comfyUIUrl) {
+            onApiStateChange('error', 'ComfyUI URL not set. Please configure it in Settings.');
             return;
         }
 
         setIsSendingToComfy(true);
-        onApiStateChange('loading', 'Sending to ComfyUI...');
+        onApiStateChange('loading', 'Sending to Local Generator...');
         try {
             const timelineData = buildTimelineData();
             const payloads = generateVideoRequestPayloads(timelineData, directorsVision, scene.summary);
             
-            await sendToComfyUI(comfyUIUrl, payloads.text, generatedImage);
+            const useAdvanced = localGenerationSettings.workflowJson && Object.keys(localGenerationSettings.mapping).length > 0;
+            
+            await sendToComfyUI(
+                localGenerationSettings.comfyUIUrl, 
+                payloads, 
+                generatedImage,
+                useAdvanced ? localGenerationSettings : undefined
+            );
 
-            onApiStateChange('success', 'Successfully queued prompt in ComfyUI!');
+            onApiStateChange('success', 'Successfully queued prompt in local generator!');
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-            onApiStateChange('error', `ComfyUI Error: ${errorMessage}`);
-            console.error("ComfyUI request failed:", error);
+            onApiStateChange('error', `Local Generator Error: ${errorMessage}`);
+            console.error("Local generation request failed:", error);
         } finally {
             setIsSendingToComfy(false);
         }
-    }, [generatedImage, comfyUIUrl, buildTimelineData, directorsVision, scene.summary, onApiStateChange]);
+    }, [generatedImage, localGenerationSettings, buildTimelineData, directorsVision, scene.summary, onApiStateChange]);
 
     const isProcessingSuggestions = suggestionState.processingIds.size > 0;
 
@@ -366,7 +381,21 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 {shots.length > 0 ? (
                     shots.map((shot, index) => (
                         <React.Fragment key={shot.id}>
-                            <ShotCard shot={shot} index={index} totalShots={shots.length} enhancers={shotEnhancers[shot.id] || {}} onDescriptionChange={handleDescriptionChange} onEnhancersChange={handleEnhancersChange} onDeleteShot={handleDeleteShot} onAddShotAfter={handleAddShotAfter} onRefineDescription={handleRefineDescription} onSuggestEnhancers={handleSuggestEnhancers} suggestionState={suggestionState} />
+                            <ShotCard 
+                                shot={shot} 
+                                index={index} 
+                                totalShots={shots.length} 
+                                enhancers={shotEnhancers[shot.id] || {}} 
+                                preview={shotPreviewImages[shot.id]}
+                                onDescriptionChange={handleDescriptionChange} 
+                                onEnhancersChange={handleEnhancersChange} 
+                                onDeleteShot={handleDeleteShot} 
+                                onAddShotAfter={handleAddShotAfter} 
+                                onRefineDescription={handleRefineDescription} 
+                                onSuggestEnhancers={handleSuggestEnhancers} 
+                                onGeneratePreview={onGenerateShotPreview}
+                                suggestionState={suggestionState} 
+                            />
                             {index < shots.length - 1 && (
                                 <TransitionSelector value={transitions[index]} onChange={(newValue) => handleTransitionChange(index, newValue)} />
                             )}
@@ -393,8 +422,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     setMitigateViolence={setMitigateViolence} 
                     enhanceRealism={enhanceRealism} 
                     setEnhanceRealism={setEnhanceRealism}
-                    comfyUIUrl={comfyUIUrl}
-                    setComfyUIUrl={setComfyUIUrl}
                 />
             </div>
 
@@ -407,34 +434,35 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         </div>
                     </div>
                 )}
-                {sceneContinuity?.videoSrc && (
-                    <div className="mb-6">
-                        <h3 className="text-xl font-bold text-green-400 mb-4">Uploaded Scene Video for Analysis</h3>
-                        <VideoPlayer src={sceneContinuity.videoSrc} />
-                    </div>
-                )}
+                
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                     {generatedImage ? (
+                        <button
+                            onClick={handleSendToComfyUI}
+                            disabled={!localGenerationSettings.comfyUIUrl || isSendingToComfy}
+                            className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
+                        >
+                            {isSendingToComfy ? (
+                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            ) : (
+                                <ServerIcon className="mr-3 h-6 w-6" />
+                            )}
+                            {isSendingToComfy ? 'Sending...' : 'Generate Video (Local)'}
+                        </button>
+                     ) : (
+                        <button
+                            onClick={() => onGenerateKeyframe(scene.id, buildTimelineData())}
+                            className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-green-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
+                        >
+                            <FilmIcon className="mr-3 h-6 w-6" />
+                            Generate Scene Keyframe
+                        </button>
+                     )}
                      <button
-                        onClick={() => onGenerateVideo(scene.id, buildTimelineData())}
-                        className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-green-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
+                        onClick={() => onExportPrompts(scene.id, buildTimelineData())}
+                        className="w-full sm:w-auto px-6 py-2 text-sm font-semibold rounded-full transition-all duration-300 ease-in-out bg-gray-700/80 text-gray-200 hover:bg-gray-700 border border-gray-600"
                     >
-                        <FilmIcon className="mr-3 h-6 w-6" />
-                        Generate Video Request
-                    </button>
-                    <button
-                        onClick={handleSendToComfyUI}
-                        disabled={!generatedImage || !comfyUIUrl || isSendingToComfy}
-                        className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-gray-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-gray-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
-                    >
-                        {isSendingToComfy ? (
-                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                        ) : (
-                            <ServerIcon className="mr-3 h-6 w-6" />
-                        )}
-                        {isSendingToComfy ? 'Sending...' : 'Generate with ComfyUI'}
+                        Export Prompts
                     </button>
                 </div>
 

@@ -113,3 +113,22 @@ export interface ApiCallLog {
     tokens: number;
     status: 'success' | 'error';
 }
+
+export interface WorkflowInput {
+    nodeId: string;
+    nodeType: string;
+    nodeTitle?: string;
+    inputName: string;
+    inputType: string; // e.g., 'STRING', 'IMAGE'
+}
+
+export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_json' | 'keyframe_image';
+
+// Key is `${nodeId}:${inputName}`
+export type WorkflowMapping = Record<string, MappableData>; 
+
+export interface LocalGenerationSettings {
+    comfyUIUrl: string;
+    workflowJson: string;
+    mapping: WorkflowMapping;
+}

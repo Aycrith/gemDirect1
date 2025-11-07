@@ -7,9 +7,9 @@ import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import ContinuityDirector from './components/ContinuityDirector';
 import FinalPromptModal from './components/FinalPromptModal';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateKeyframeForScene, applyRefinement, updateSceneSummaryWithRefinements, generateNextSceneFromContinuity } from './services/geminiService';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateKeyframeForScene, applyRefinement, updateSceneSummaryWithRefinements, generateNextSceneFromContinuity, generateImageForShot } from './services/geminiService';
 import { generateVideoRequestPayloads } from './services/videoGenerationService';
-import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData } from './types';
+import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData, LocalGenerationSettings } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
 import SaveIcon from './components/icons/SaveIcon';
@@ -20,8 +20,9 @@ import ApiStatusIndicator from './components/ApiStatusIndicator';
 import UsageDashboard from './components/UsageDashboard';
 import BarChartIcon from './components/icons/BarChartIcon';
 import TrashIcon from './components/icons/TrashIcon';
-import { Type } from "@google/genai";
 import ContinuityModal from './components/ContinuityModal';
+import SettingsIcon from './components/icons/SettingsIcon';
+import LocalGenerationSettingsModal from './components/LocalGenerationSettingsModal';
 
 const emptyTimeline: TimelineData = {
     shots: [],
@@ -30,11 +31,19 @@ const emptyTimeline: TimelineData = {
     negativePrompt: '',
 };
 
+const defaultLocalGenerationSettings: LocalGenerationSettings = {
+    comfyUIUrl: 'http://127.0.0.1:8188',
+    workflowJson: '',
+    mapping: {},
+};
+
 const AppContent: React.FC = () => {
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
     
     const [isUsageDashboardOpen, setIsUsageDashboardOpen] = useState(false);
+    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
 
     const handleApiStateChange: ApiStateChangeCallback = useCallback((status, message) => {
         updateApiStatus(status, message);
@@ -50,9 +59,11 @@ const AppContent: React.FC = () => {
     const [directorsVision, setDirectorsVision] = useState<string>('');
     const [scenes, setScenes] = useState<Scene[]>([]);
     const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
+    const [localGenerationSettings, setLocalGenerationSettings] = useState<LocalGenerationSettings>(defaultLocalGenerationSettings);
     
     // Generation State
     const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({}); // Keyframes
+    const [shotPreviewImages, setShotPreviewImages] = useState<Record<string, { image: string, isLoading: boolean }>>({}); // Previews
     const [continuityData, setContinuityData] = useState<Record<string, SceneContinuityData>>({});
     const [refinedSceneIds, setRefinedSceneIds] = useState<Set<string>>(new Set());
     
@@ -81,6 +92,7 @@ const AppContent: React.FC = () => {
         setDirectorsVision('');
         setActiveSceneId(null);
         setGeneratedImages({});
+        setShotPreviewImages({});
         setContinuityData({});
         setCoDirectorResult(null);
         setFinalPrompt(null);
@@ -91,13 +103,14 @@ const AppContent: React.FC = () => {
     useEffect(() => {
         const loadProject = async () => {
             try {
-                const [bible, savedScenes, vision, images, savedContinuityData, savedStage] = await Promise.all([
+                const [bible, savedScenes, vision, images, savedContinuityData, savedStage, savedSettings] = await Promise.all([
                     db.getStoryBible(),
                     db.getAllScenes(),
                     db.getData('directorsVision'),
                     db.getData('generatedImages'),
                     db.getData('continuityData'),
                     db.getData('workflowStage'),
+                    db.getData('localGenerationSettings'),
                 ]);
 
                 if (bible) {
@@ -112,12 +125,12 @@ const AppContent: React.FC = () => {
                     setDirectorsVision(vision || '');
                     setGeneratedImages(images || {});
                     setContinuityData(savedContinuityData || {});
+                    setLocalGenerationSettings(savedSettings || defaultLocalGenerationSettings);
                     
                     let determinedStage: WorkflowStage = 'bible';
                     if (vision) determinedStage = 'vision';
                     if (savedScenes && savedScenes.length > 0) determinedStage = 'director';
 
-                    // Prefer the saved stage if it's not "ahead" of what's possible with the loaded data.
                     const stageOrder: WorkflowStage[] = ['idea', 'bible', 'vision', 'director', 'continuity'];
                     const savedStageIndex = stageOrder.indexOf(savedStage);
                     const determinedStageIndex = stageOrder.indexOf(determinedStage);
@@ -382,6 +395,7 @@ const AppContent: React.FC = () => {
             await db.saveData('generatedImages', generatedImages);
             await db.saveData('continuityData', continuityData);
             await db.saveData('workflowStage', workflowStage);
+            await db.saveData('localGenerationSettings', localGenerationSettings);
             addToast('Project saved successfully!', 'success');
         } catch (error) {
             console.error("Failed to save project", error);
@@ -408,15 +422,14 @@ const AppContent: React.FC = () => {
         }
     };
 
-    const handleGenerateVideo = async (sceneId: string, timeline: TimelineData) => {
+    const handleGenerateKeyframe = async (sceneId: string, timeline: TimelineData) => {
         const activeScene = scenes.find(s => s.id === sceneId);
         if (!activeScene || !directorsVision) {
-            addToast('Could not generate video request: missing scene data or director\'s vision.', 'error');
+            addToast('Could not generate keyframe: missing scene data or director\'s vision.', 'error');
             return;
         }
         
         const payloads = generateVideoRequestPayloads(timeline, directorsVision, activeScene.summary);
-        setFinalPrompt(payloads);
 
         try {
             addToast('Generating scene keyframe...', 'info');
@@ -426,6 +439,34 @@ const AppContent: React.FC = () => {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
             addToast(`Failed to generate keyframe: ${errorMessage}`, 'error');
+        }
+    };
+    
+    const handleExportPrompts = (sceneId: string, timeline: TimelineData) => {
+        const activeScene = scenes.find(s => s.id === sceneId);
+        if (!activeScene || !directorsVision) {
+            addToast('Could not export prompts: missing scene data or director\'s vision.', 'error');
+            return;
+        }
+        const payloads = generateVideoRequestPayloads(timeline, directorsVision, activeScene.summary);
+        setFinalPrompt(payloads);
+    };
+
+    const handleGenerateShotPreview = async (shotId: string) => {
+        if (!activeScene || !directorsVision) return;
+        const shot = activeScene.timeline.shots.find(s => s.id === shotId);
+        if (!shot) return;
+        
+        setShotPreviewImages(prev => ({...prev, [shotId]: { image: prev[shotId]?.image || '', isLoading: true }}));
+        try {
+            const enhancers = activeScene.timeline.shotEnhancers[shotId] || {};
+            const image = await generateImageForShot(shot, enhancers, directorsVision, activeScene.summary, handleApiLog, handleApiStateChange);
+            setShotPreviewImages(prev => ({...prev, [shotId]: { image, isLoading: false }}));
+            addToast('Shot preview generated!', 'success');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(`Failed to generate shot preview: ${errorMessage}`, 'error');
+            setShotPreviewImages(prev => ({...prev, [shotId]: { image: '', isLoading: false }}));
         }
     };
 
@@ -562,9 +603,12 @@ const AppContent: React.FC = () => {
                                     onProceedToReview={() => setWorkflowStage('continuity')}
                                     onApiStateChange={handleApiStateChange}
                                     onApiLog={handleApiLog}
-                                    onGenerateVideo={handleGenerateVideo}
-                                    sceneContinuity={continuityData[activeScene.id]}
+                                    onGenerateKeyframe={handleGenerateKeyframe}
+                                    onExportPrompts={handleExportPrompts}
                                     generatedImage={generatedImages[activeScene.id]}
+                                    shotPreviewImages={shotPreviewImages}
+                                    onGenerateShotPreview={handleGenerateShotPreview}
+                                    localGenerationSettings={localGenerationSettings}
                                 />
                                 </>
                             )}
@@ -602,14 +646,17 @@ const AppContent: React.FC = () => {
             <Toast toasts={toasts} removeToast={removeToast} />
             <div className="flex justify-between items-start mb-8">
                  <h1 className="text-3xl sm:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">Cinematic Story Generator</h1>
-                 <div className="flex items-center gap-4">
-                    <button onClick={handleSaveProject} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700 disabled:opacity-50">
-                        <SaveIcon className="w-4 h-4" /> Save Project
+                 <div className="flex items-center gap-2">
+                    <button onClick={handleSaveProject} disabled={isLoading} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700 disabled:opacity-50">
+                        <SaveIcon className="w-4 h-4" /> Save
                     </button>
-                    <button onClick={() => setIsUsageDashboardOpen(true)} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700">
+                    <button onClick={() => setIsUsageDashboardOpen(true)} className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700">
                         <BarChartIcon className="w-4 h-4" /> Usage
                     </button>
-                    <button onClick={handleClearProject} disabled={isLoading} title="Clear Project & Start New" className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md border transition-colors bg-red-800/50 border-red-700 text-red-300 hover:bg-red-800 disabled:opacity-50">
+                    <button onClick={() => setIsSettingsModalOpen(true)} title="Local Generation Settings" className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700">
+                        <SettingsIcon className="w-4 h-4" /> Settings
+                    </button>
+                    <button onClick={handleClearProject} disabled={isLoading} title="Clear Project & Start New" className="flex items-center gap-2 px-3 py-2 text-sm font-semibold rounded-md border transition-colors bg-red-800/50 border-red-700 text-red-300 hover:bg-red-800 disabled:opacity-50">
                         <TrashIcon className="w-4 h-4" /> Clear
                     </button>
                  </div>
@@ -621,6 +668,18 @@ const AppContent: React.FC = () => {
             
             <ApiStatusIndicator />
             <UsageDashboard isOpen={isUsageDashboardOpen} onClose={() => setIsUsageDashboardOpen(false)} />
+            {isSettingsModalOpen && 
+                <LocalGenerationSettingsModal 
+                    isOpen={isSettingsModalOpen}
+                    onClose={() => setIsSettingsModalOpen(false)}
+                    settings={localGenerationSettings}
+                    onSave={(newSettings) => {
+                        setLocalGenerationSettings(newSettings);
+                        db.saveData('localGenerationSettings', newSettings);
+                        addToast('Settings saved!', 'success');
+                    }}
+                />
+            }
             <FinalPromptModal isOpen={!!finalPrompt} onClose={() => setFinalPrompt(null)} payloads={finalPrompt} />
             <ContinuityModal 
                 isOpen={!!continuityModalState}

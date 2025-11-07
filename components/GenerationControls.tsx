@@ -27,8 +27,6 @@ interface GenerationControlsProps {
     setMitigateViolence: (value: boolean) => void;
     enhanceRealism: boolean;
     setEnhanceRealism: (value: boolean) => void;
-    comfyUIUrl: string;
-    setComfyUIUrl: (value: string) => void;
 }
 
 const GenerationControls: React.FC<GenerationControlsProps> = ({
@@ -36,8 +34,6 @@ const GenerationControls: React.FC<GenerationControlsProps> = ({
     setMitigateViolence,
     enhanceRealism,
     setEnhanceRealism,
-    comfyUIUrl,
-    setComfyUIUrl
 }) => {
     return (
         <div className="space-y-4">
@@ -58,19 +54,6 @@ const GenerationControls: React.FC<GenerationControlsProps> = ({
                     <p className="text-xs text-gray-400 mt-1">Adds advanced prompts to avoid AI artifacts like smudging and watercolor effects, aiming for photorealism.</p>
                 </div>
                  <ToggleSwitch id="realism-toggle" checked={enhanceRealism} onChange={setEnhanceRealism} />
-            </div>
-
-            <div className="pt-4 border-t border-gray-700/50">
-                <label htmlFor="comfyui-url" className="font-medium text-gray-200">Local ComfyUI URL</label>
-                <p className="text-xs text-gray-400 mt-1 mb-2">Enter the prompt endpoint for your local video generation server (e.g., ComfyUI).</p>
-                <input 
-                    id="comfyui-url"
-                    type="text"
-                    value={comfyUIUrl}
-                    onChange={(e) => setComfyUIUrl(e.target.value)}
-                    placeholder="http://127.0.0.1:8188/prompt"
-                    className="block w-full bg-gray-900 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-2"
-                />
             </div>
         </div>
     );
