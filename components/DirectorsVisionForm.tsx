@@ -1,5 +1,3 @@
-
-
 import React, { useState, useCallback } from 'react';
 import PaintBrushIcon from './icons/PaintBrushIcon';
 import SparklesIcon from './icons/SparklesIcon';

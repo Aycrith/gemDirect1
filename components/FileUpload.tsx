@@ -52,7 +52,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
   };
 
   const borderStyle = isDragging 
-    ? 'border-indigo-500 bg-gray-800/50 scale-105 shadow-2xl shadow-indigo-500/30' 
+    ? 'border-amber-500 bg-gray-800/50 scale-105 shadow-2xl shadow-amber-500/30' 
     : 'border-gray-700 hover:border-gray-600 bg-gray-800/20';
 
   return (
@@ -81,7 +81,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
         onChange={handleFileChange}
       />
       <div className="flex flex-col items-center justify-center space-y-4">
-        <UploadCloudIcon className={`w-12 h-12 transition-colors duration-300 ${isDragging ? 'text-indigo-400' : 'text-gray-500'}`} />
+        <UploadCloudIcon className={`w-12 h-12 transition-colors duration-300 ${isDragging ? 'text-amber-400' : 'text-gray-500'}`} />
         <p className="text-lg font-semibold text-gray-200">Drag & drop your video here</p>
         <p className="text-gray-400">or click to browse files</p>
         <p className="text-xs text-gray-500 mt-2">MP4, WebM, MOV</p>

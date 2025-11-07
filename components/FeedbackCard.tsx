@@ -27,7 +27,7 @@ const FeedbackCard: React.FC<FeedbackCardProps> = ({ title, content, isLoading }
     
   return (
     <div className="bg-gray-900/40 backdrop-blur-sm ring-1 ring-gray-700/80 rounded-lg shadow-lg p-6 h-full">
-      <h2 className="text-xl font-bold text-indigo-400 mb-4">{title}</h2>
+      <h2 className="text-xl font-bold text-amber-400 mb-4">{title}</h2>
       <div className="prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 prose-p:text-gray-300 prose-ul:text-gray-300 prose-strong:text-white">
         {isLoading ? (
           <SkeletonLoader />

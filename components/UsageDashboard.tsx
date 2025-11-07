@@ -59,7 +59,7 @@ const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
             onClick={(e) => e.stopPropagation()}
         >
             <header className="flex justify-between items-center p-4 border-b border-gray-700">
-                <h3 id="usage-dashboard-title" className="flex items-center text-lg font-bold text-indigo-400">
+                <h3 id="usage-dashboard-title" className="flex items-center text-lg font-bold text-amber-400">
                     <BarChartIcon className="w-5 h-5 mr-2" />
                     API Usage & Cost Analysis
                 </h3>

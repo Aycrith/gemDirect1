@@ -1,5 +1,3 @@
-
-
 import React, { useState, useCallback } from 'react';
 import { StoryBible } from '../types';
 import { marked } from 'marked';

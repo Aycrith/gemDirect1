@@ -10,7 +10,7 @@ interface Props {
 const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
     <div className="w-full bg-gray-700 rounded-full h-2.5 my-1 relative overflow-hidden">
         <div 
-            className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2.5 rounded-full transition-all duration-500 ease-out" 
+            className="bg-gradient-to-r from-amber-500 to-orange-500 h-2.5 rounded-full transition-all duration-500 ease-out" 
             style={{ width: `${progress}%` }}
         ></div>
     </div>
@@ -28,10 +28,10 @@ const LocalGenerationStatus: React.FC<Props> = ({ status, onClear }) => {
             <div className="flex justify-between items-start">
                 <div>
                     <h3 className="flex items-center text-lg font-semibold text-gray-200">
-                        <ServerIcon className={`w-5 h-5 mr-3 ${isLoading ? 'animate-pulse text-indigo-400' : 'text-gray-400'}`} />
+                        <ServerIcon className={`w-5 h-5 mr-3 ${isLoading ? 'animate-pulse text-amber-400' : 'text-gray-400'}`} />
                         Local Generation Status
                     </h3>
-                    <p className="text-sm text-indigo-300 font-mono mt-1">{status.message}</p>
+                    <p className="text-sm text-amber-300 font-mono mt-1">{status.message}</p>
                 </div>
                 {status.status === 'complete' || status.status === 'error' ? (
                      <button onClick={onClear} className="text-sm font-semibold text-gray-400 hover:text-white">Clear</button>

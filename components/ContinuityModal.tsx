@@ -74,7 +74,7 @@ const ContinuityModal: React.FC<ContinuityModalProps> = ({ isOpen, onClose, onSu
                              <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-semibold rounded-md bg-gray-600 text-white hover:bg-gray-700 transition-colors">
                                 Cancel
                             </button>
-                            <button type="submit" disabled={isLoading || !direction.trim()} className="px-4 py-2 text-sm font-semibold rounded-md transition-colors bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                            <button type="submit" disabled={isLoading || !direction.trim()} className="px-4 py-2 text-sm font-semibold rounded-md transition-colors bg-amber-600 text-white hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
                                 {isLoading ? 'Generating...' : 'Generate Next Scene'}
                             </button>
                         </div>

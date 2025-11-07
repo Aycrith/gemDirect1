@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 import CompassIcon from './icons/CompassIcon';
 

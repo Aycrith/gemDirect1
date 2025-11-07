@@ -6,13 +6,13 @@ import InfoIcon from './icons/InfoIcon';
 const toastIcons = {
     success: <CheckCircleIcon className="w-5 h-5 text-green-400" />,
     error: <InfoIcon className="w-5 h-5 text-red-400" />,
-    info: <InfoIcon className="w-5 h-5 text-blue-400" />,
+    info: <InfoIcon className="w-5 h-5 text-amber-400" />,
 }
 
 const toastStyles = {
     success: 'bg-green-800/40 border-green-700/80 text-green-200',
     error: 'bg-red-800/40 border-red-700/80 text-red-200',
-    info: 'bg-blue-800/40 border-blue-700/80 text-blue-200',
+    info: 'bg-amber-900/40 border-amber-800/80 text-amber-200',
 }
 
 

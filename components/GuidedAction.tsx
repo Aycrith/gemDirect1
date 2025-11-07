@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 import SparklesIcon from './icons/SparklesIcon';
 

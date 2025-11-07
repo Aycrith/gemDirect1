@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { LocalGenerationSettings, WorkflowInput, MappableData, WorkflowMapping } from '../types';
 import { discoverComfyUIServer } from '../services/comfyUIService';
