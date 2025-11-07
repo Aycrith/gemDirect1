@@ -90,6 +90,7 @@ const AppContent: React.FC = () => {
     const [nodeTitles, setNodeTitles] = useState<Record<string, string>>({});
 
     useEffect(() => {
+        // This effect should only run when in the director stage to avoid unnecessary connections.
         if (!localGenerationSettings.comfyUIUrl || workflowStage !== 'director') return;
         
         const url = new URL(localGenerationSettings.comfyUIUrl);
@@ -98,11 +99,20 @@ const AppContent: React.FC = () => {
         websocketRef.current = new WebSocket(wsUrl);
 
         websocketRef.current.onopen = () => console.log('WebSocket connection established.');
-        websocketRef.current.onerror = (err) => console.error('WebSocket error:', err);
+        
+        websocketRef.current.onerror = (err) => {
+            console.error('WebSocket error:', err);
+            setLocalGenerationStatus({ status: 'error', message: 'WebSocket connection error. Is the ComfyUI server running with --enable-cors?', progress: 0 });
+            setMonitoringPromptId(null);
+        };
+
         websocketRef.current.onclose = () => console.log('WebSocket connection closed.');
 
         websocketRef.current.onmessage = (event) => {
             const msg = JSON.parse(event.data);
+            
+            // We only care about messages related to the prompt we are monitoring.
+            if (msg.data.prompt_id !== monitoringPromptId) return;
 
             if (msg.type === 'status') {
                 const { status } = msg.data;
@@ -114,36 +124,35 @@ const AppContent: React.FC = () => {
                         queue_position: status.exec_info.queue_remaining,
                     });
                 }
-            } else if (msg.type === 'execution_start' && msg.data.prompt_id === monitoringPromptId) {
+            } else if (msg.type === 'execution_start') {
                  setLocalGenerationStatus(prev => ({ ...prev, status: 'running', message: 'Execution started...', progress: 0 }));
-            } else if (msg.type === 'executing' && msg.data.prompt_id === monitoringPromptId) {
+            } else if (msg.type === 'executing') {
                  const nodeId = msg.data.node;
                  const title = nodeTitles[nodeId] || `Node ${nodeId}`;
                  setLocalGenerationStatus(prev => ({...prev, message: `Running: ${title}`, node_title: title, progress: prev.progress < 1 ? 1 : prev.progress }));
-            } else if (msg.type === 'progress' && msg.data.prompt_id === monitoringPromptId) {
+            } else if (msg.type === 'progress') {
                 const { value, max } = msg.data;
                 const progress = Math.round((value / max) * 100);
                 setLocalGenerationStatus(prev => ({ ...prev, progress, message: `Running: ${prev.node_title} (${value}/${max})`}));
-            } else if (msg.type === 'executed' && msg.data.prompt_id === monitoringPromptId) {
-                const { output, node } = msg.data;
-                if (output.images) {
-                    const { filename, subfolder, type } = output.images[0];
+            } else if (msg.type === 'executed') {
+                const { output } = msg.data;
+                const outputMedia = output.images?.[0] || output.gifs?.[0];
+
+                if (outputMedia) {
+                    const { filename, subfolder, type } = outputMedia;
                     const imageUrl = new URL(localGenerationSettings.comfyUIUrl);
                     const src = `${imageUrl.protocol}//${imageUrl.host}/view?filename=${filename}&subfolder=${subfolder}&type=${type}`;
                     
                     fetch(src).then(res => res.blob()).then(blob => {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            const base64 = (reader.result as string).split(',')[1];
-                             setLocalGenerationStatus(prev => ({ ...prev, status: 'complete', message: 'Generation Complete!', progress: 100, final_output: { type: 'image', data: base64, filename }}));
-                        };
-                        reader.readAsDataURL(blob);
+                        const objectUrl = URL.createObjectURL(blob);
+                        const mediaType = /\.(gif|mp4|webm)$/i.test(filename) ? 'video' : 'image';
+                        setLocalGenerationStatus(prev => ({ ...prev, status: 'complete', message: 'Generation Complete!', progress: 100, final_output: { type: mediaType, data: objectUrl, filename }}));
                     });
                 } else {
                     setLocalGenerationStatus(prev => ({ ...prev, status: 'complete', message: 'Generation Complete!', progress: 100 }));
                 }
                 setMonitoringPromptId(null);
-            } else if (msg.type === 'execution_error' && msg.data.prompt_id === monitoringPromptId) {
+            } else if (msg.type === 'execution_error') {
                 const { exception_message } = msg.data;
                 setLocalGenerationStatus({ status: 'error', message: `Error: ${exception_message}`, progress: 0 });
                 setMonitoringPromptId(null);
@@ -613,7 +622,7 @@ const AppContent: React.FC = () => {
     }
     
     if (isLoading && !storyBible) {
-      return <div className="flex justify-center items-center h-screen"><p>{loadingMessage}</p></div>
+        return <div className="flex justify-center items-center h-screen"><p>{loadingMessage}</p></div>;
     }
 
     return (

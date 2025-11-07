@@ -1,9 +1,9 @@
 import React from 'react';
-import { LocalGenerationStatus } from '../types';
+import { LocalGenerationStatus as LocalGenerationStatusType } from '../types';
 import ServerIcon from './icons/ServerIcon';
 
 interface Props {
-    status: LocalGenerationStatus;
+    status: LocalGenerationStatusType;
     onClear: () => void;
 }
 
@@ -41,11 +41,15 @@ const LocalGenerationStatus: React.FC<Props> = ({ status, onClear }) => {
             {(status.status === 'running' || (status.status === 'complete' && status.final_output)) && (
                 <div className="mt-4">
                     {status.status === 'running' && <ProgressBar progress={status.progress} />}
-                    {status.status === 'complete' && status.final_output?.type === 'image' && (
+                    {status.status === 'complete' && status.final_output && (
                         <div>
                             <h4 className="text-md font-bold text-green-400 mb-2 text-center">Generation Complete</h4>
                             <div className="max-w-md mx-auto bg-black rounded-lg overflow-hidden shadow-lg border border-gray-600">
-                                <img src={`data:image/jpeg;base64,${status.final_output.data}`} alt={status.final_output.filename} className="w-full aspect-video object-contain" />
+                                {status.final_output.type === 'image' ? (
+                                    <img src={status.final_output.data} alt={status.final_output.filename} className="w-full aspect-video object-contain" />
+                                ) : (
+                                    <video src={status.final_output.data} className="w-full aspect-video object-contain" controls autoPlay loop muted />
+                                )}
                             </div>
                         </div>
                     )}

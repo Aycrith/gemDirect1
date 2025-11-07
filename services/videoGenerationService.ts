@@ -102,6 +102,7 @@ const generateHumanReadablePrompt = (
 
 /**
  * Constructs and sends a generation request to a ComfyUI server based on a synced workflow.
+ * This function includes robust pre-flight checks to ensure configuration is valid before queuing.
  * @param settings The local generation settings, including URL, workflow, and mapping.
  * @param payloads The generated JSON and text prompts.
  * @param base64Image The base64-encoded keyframe image.
@@ -113,22 +114,55 @@ export const queueComfyUIPrompt = async (
     base64Image: string,
 ): Promise<any> => {
     
-    if (!settings.workflowJson || Object.keys(settings.mapping).length === 0) {
-        throw new Error("Workflow not synced or no inputs mapped. Please configure in Settings.");
+    // --- PRE-FLIGHT CHECK 1: Basic Configuration ---
+    if (!settings.comfyUIUrl) {
+        throw new Error("ComfyUI server address is not configured. Please set it in Settings.");
+    }
+    if (!settings.workflowJson) {
+        throw new Error("Workflow not synced. Please configure and sync it in Settings.");
+    }
+
+    // --- PRE-FLIGHT CHECK 2: Workflow & Mapping Validity ---
+    let workflowApi;
+    try {
+        workflowApi = JSON.parse(settings.workflowJson);
+    } catch (e) {
+        throw new Error("The synced workflow is not valid JSON. Please re-sync your workflow in Settings.");
+    }
+
+    const promptPayloadTemplate = workflowApi.prompt || workflowApi;
+    if (typeof promptPayloadTemplate !== 'object' || promptPayloadTemplate === null) {
+        throw new Error("Synced workflow has an invalid structure. Please re-sync.");
+    }
+
+    // Verify that all mapped inputs still exist in the workflow.
+    for (const [key, dataType] of Object.entries(settings.mapping)) {
+        if (dataType === 'none') continue;
+
+        const [nodeId, inputName] = key.split(':');
+        const node = promptPayloadTemplate[nodeId];
+
+        if (!node) {
+            throw new Error(`Configuration Mismatch: Mapped node ID '${nodeId}' not found in your workflow. Please re-sync your workflow in Settings.`);
+        }
+        if (!node.inputs || typeof node.inputs[inputName] === 'undefined') {
+            const nodeTitle = node._meta?.title || `Node ${nodeId}`;
+            throw new Error(`Configuration Mismatch: Mapped input '${inputName}' not found on node '${nodeTitle}'. Please re-sync your workflow in Settings.`);
+        }
     }
     
+    // --- ALL CHECKS PASSED, PROCEED WITH GENERATION ---
     try {
-        const workflow = JSON.parse(settings.workflowJson);
-        // Deep copy the prompt to avoid modifying any original object
-        const promptPayload = JSON.parse(JSON.stringify(workflow));
+        // Deep copy the prompt object to avoid modifying the stored settings object.
+        const promptPayload = JSON.parse(JSON.stringify(promptPayloadTemplate));
         const baseUrl = settings.comfyUIUrl.endsWith('/') ? settings.comfyUIUrl : `${settings.comfyUIUrl}/`;
         
         let uploadedImageFilename: string | null = null;
         
-        // --- Step 1: Handle Image Upload if Mapped ---
+        // --- STEP 1: UPLOAD ASSETS (IF MAPPED) ---
         const imageMappingKey = Object.keys(settings.mapping).find(key => settings.mapping[key] === 'keyframe_image');
         if (imageMappingKey) {
-            const [nodeId, inputName] = imageMappingKey.split(':');
+            const [nodeId] = imageMappingKey.split(':');
             const node = promptPayload[nodeId];
 
             if (node && node.class_type === 'LoadImage') {
@@ -148,7 +182,7 @@ export const queueComfyUIPrompt = async (
             }
         }
 
-        // --- Step 2: Inject Data into Workflow Based on Mapping ---
+        // --- STEP 2: INJECT DATA INTO WORKFLOW BASED ON MAPPING ---
         for (const [key, dataType] of Object.entries(settings.mapping)) {
             if (dataType === 'none') continue;
 
@@ -168,7 +202,6 @@ export const queueComfyUIPrompt = async (
                         if (uploadedImageFilename && node.class_type === 'LoadImage') {
                              dataToInject = uploadedImageFilename;
                         } else {
-                            // This handles custom Base64 nodes as a fallback
                             dataToInject = base64Image;
                         }
                         break;
@@ -179,7 +212,7 @@ export const queueComfyUIPrompt = async (
             }
         }
         
-        // --- Step 3: Queue the Prompt ---
+        // --- STEP 3: QUEUE THE PROMPT ---
         const body = JSON.stringify({ prompt: promptPayload, client_id: settings.comfyUIClientId });
         const response = await fetch(`${baseUrl}prompt`, {
             method: 'POST',
@@ -199,6 +232,9 @@ export const queueComfyUIPrompt = async (
 
     } catch (error) {
         console.error("Error processing ComfyUI request:", error);
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            throw new Error(`Failed to connect to ComfyUI at '${settings.comfyUIUrl}'. Please check if the server is running and accessible.`);
+        }
         throw new Error(`Failed to process ComfyUI workflow. Error: ${error instanceof Error ? error.message : String(error)}`);
     }
 };

@@ -321,16 +321,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     }, [shots, shotEnhancers, transitions, negativePrompt, mitigateViolence, enhanceRealism]);
     
     const handleQueueLocalGeneration = useCallback(async () => {
-        if (!generatedImage) {
-            onApiStateChange('error', 'Missing keyframe image.'); return;
-        }
-        if (!localGenerationSettings?.workflowJson) {
-            onApiStateChange('error', 'Workflow not synced. Please configure it in Settings.'); return;
-        }
-
         try {
+            // Early exit if keyframe isn't ready. This is also checked in the disabled logic.
+            if (!generatedImage) {
+                throw new Error("Cannot generate locally without a scene keyframe.");
+            }
+            
             const timelineData = buildTimelineData();
-            // Note: generateVideoRequestPayloads is now a local utility function, not from the service.
             const payloads = {
                 json: JSON.stringify({
                     scene_summary: scene.summary,
@@ -340,6 +337,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 text: "Human-readable prompt generation logic would go here if needed",
             };
 
+            // Let the service handle all validation and request logic.
             const response = await queueComfyUIPrompt(
                 localGenerationSettings,
                 payloads, 
@@ -348,19 +346,32 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             
             if (response.prompt_id) {
                  onStartLocalGeneration(response.prompt_id, localGenerationSettings.workflowJson);
+            } else {
+                 throw new Error("ComfyUI did not return a prompt_id.");
             }
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-            onApiStateChange('error', `Local Generator Error: ${errorMessage}`);
+            // Display specific errors from the pre-flight checks or API call to the user.
+            onApiStateChange('error', errorMessage); // This shows in the status bar and as a toast.
             console.error("Local generation request failed:", error);
         }
     }, [generatedImage, localGenerationSettings, buildTimelineData, directorsVision, scene.summary, onApiStateChange, onStartLocalGeneration]);
 
 
     const isProcessingSuggestions = suggestionState.processingIds.size > 0;
-    const isWorkflowSynced = localGenerationSettings.workflowJson && localGenerationSettings.workflowJson.length > 2;
+    const isWorkflowConfigured = localGenerationSettings.workflowJson && localGenerationSettings.workflowJson.length > 2 && Object.keys(localGenerationSettings.mapping).some(k => localGenerationSettings.mapping[k] !== 'none');
     const isGeneratingLocally = localGenerationStatus.status === 'queued' || localGenerationStatus.status === 'running';
+
+    const getLocalGenerationTooltip = () => {
+        if (!isWorkflowConfigured) {
+            return 'Sync a workflow and map inputs in Settings to enable local generation.';
+        }
+        if (!generatedImage) {
+            return 'Generate a scene keyframe before starting local generation.';
+        }
+        return 'Send the current timeline and keyframe to your local ComfyUI server.';
+    };
 
     return (
         <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-lg p-6">
@@ -451,10 +462,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 
                 {!isGeneratingLocally && <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                      {generatedImage ? (
-                        <Tooltip text={!isWorkflowSynced ? 'Sync a workflow in settings to enable' : ''}>
+                        <Tooltip text={getLocalGenerationTooltip()}>
                         <button
                             onClick={handleQueueLocalGeneration}
-                            disabled={!isWorkflowSynced}
+                            disabled={!isWorkflowConfigured || !generatedImage}
                             className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-indigo-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
                         >
                             <ServerIcon className="mr-3 h-6 w-6" />

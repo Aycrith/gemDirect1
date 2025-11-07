@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, ContinuityResult, Suggestion } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
 import { analyzeVideoFrames, scoreContinuity, getPrunedContextForContinuity, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
@@ -72,8 +72,8 @@ const ResultDisplay: React.FC<{
     onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
     onExtendTimeline: () => void;
 }> = ({ result, sceneId, isRefined, onApplyTimelineSuggestion, onUpdateSceneSummary, onExtendTimeline }) => {
-    const [applyingStatus, setApplyingStatus] = useState<Record<number, 'idle' | 'loading' | 'applied'>>({});
-    const [isUpdatingSummary, setIsUpdatingSummary] = useState(false);
+    const [applyingStatus, setApplyingStatus] = React.useState<Record<number, 'idle' | 'loading' | 'applied'>>({});
+    const [isUpdatingSummary, setIsUpdatingSummary] = React.useState(false);
 
     const handleApply = (suggestion: Suggestion, index: number) => {
         setApplyingStatus(prev => ({ ...prev, [index]: 'applied' }));
@@ -212,7 +212,11 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
 
   const renderStatus = () => {
       if (data.status === 'idle') {
-          return <FileUpload onFileSelect={handleFileSelect} />;
+          return (
+            <div className="h-full flex flex-col justify-center">
+                <FileUpload onFileSelect={handleFileSelect} />
+            </div>
+          );
       }
       if (data.status === 'analyzing') {
           return <div className="text-center p-8"><p className="text-gray-400 animate-pulse">Analyzing video frames...</p></div>;
