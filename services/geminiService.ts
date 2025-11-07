@@ -725,3 +725,50 @@ export const scoreContinuity = async (prunedContext: string, scene: Scene, video
     };
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
+
+// --- AI Self-Improvement ---
+
+export const applyRefinement = async (
+    originalContent: any,
+    suggestion: string,
+    targetContext: string,
+    responseSchema: any,
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<any> => {
+    const context = `apply refinement to ${targetContext}`;
+    const isString = typeof originalContent === 'string';
+
+    const prompt = `You are a world-class editor. Your task is to revise a piece of creative work based on a specific suggestion.
+
+    **Creative Context:** ${targetContext}
+    **Original Content:**
+    \`\`\`json
+    ${JSON.stringify(isString ? { content: originalContent } : originalContent, null, 2)}
+    \`\`\`
+
+    **Improvement Suggestion:** "${suggestion}"
+
+    **Your Task:**
+    Rewrite the 'Original Content' to incorporate the suggestion. Return ONLY the revised content as a valid JSON object matching the provided schema.
+    - Do not add any commentary, explanations, or markdown formatting around the final JSON output.`;
+
+    const apiCall = async () => {
+        const response = await ai.models.generateContent({
+            model: proModel,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema },
+        });
+        const text = response.text;
+        if (!text) throw new Error(`The model returned an empty response for ${context}.`);
+        
+        const result = JSON.parse(text.trim());
+        // If the original was a string, we expect the schema to produce an object with one key.
+        const finalResult = isString ? result[Object.keys(result)[0]] : result;
+
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result: finalResult, tokens };
+    };
+
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
+};

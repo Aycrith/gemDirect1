@@ -7,9 +7,9 @@ import CoDirector from './components/CoDirector';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import ContinuityDirector from './components/ContinuityDirector';
 import FinalPromptModal from './components/FinalPromptModal';
-import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateKeyframeForScene } from './services/geminiService';
+import { generateStoryBible, generateSceneList, generateInitialShotsForScene, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, ApiStateChangeCallback, ApiLogCallback, suggestCoDirectorObjectives, getCoDirectorSuggestions, generateKeyframeForScene, applyRefinement } from './services/geminiService';
 import { generateVideoRequestPayloads } from './services/videoGenerationService';
-import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData } from './types';
+import { StoryBible, Scene, Shot, ShotEnhancers, CoDirectorResult, Suggestion, TimelineData, ToastMessage, SceneContinuityData, ContinuityResult } from './types';
 import Toast from './components/Toast';
 import WorkflowTracker, { WorkflowStage } from './components/WorkflowTracker';
 import SaveIcon from './components/icons/SaveIcon';
@@ -19,6 +19,8 @@ import { UsageProvider, useUsage } from './contexts/UsageContext';
 import ApiStatusIndicator from './components/ApiStatusIndicator';
 import UsageDashboard from './components/UsageDashboard';
 import BarChartIcon from './components/icons/BarChartIcon';
+import TrashIcon from './components/icons/TrashIcon';
+import { Type } from "@google/genai";
 
 const emptyTimeline: TimelineData = {
     shots: [],
@@ -60,6 +62,27 @@ const AppContent: React.FC = () => {
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [finalPrompt, setFinalPrompt] = useState<{ json: string; text: string; } | null>(null);
 
+    const removeToast = useCallback((id: number) => {
+        setToasts(prev => prev.filter(toast => toast.id !== id));
+    }, []);
+
+    const addToast = useCallback((message: string, type: ToastMessage['type'] = 'info') => {
+        const id = Date.now();
+        setToasts(prev => [...prev, { id, message, type }]);
+        setTimeout(() => removeToast(id), 5000);
+    }, [removeToast]);
+    
+    const resetProjectState = useCallback(() => {
+        setStoryBible(null);
+        setScenes([]);
+        setDirectorsVision('');
+        setActiveSceneId(null);
+        setGeneratedImages({});
+        setContinuityData({});
+        setCoDirectorResult(null);
+        setFinalPrompt(null);
+        setWorkflowStage('idea');
+    }, []);
 
     useEffect(() => {
         const loadProject = async () => {
@@ -121,17 +144,7 @@ const AppContent: React.FC = () => {
             }
         };
         loadProject();
-    }, []);
-    
-    const removeToast = useCallback((id: number) => {
-        setToasts(prev => prev.filter(toast => toast.id !== id));
-    }, []);
-
-    const addToast = useCallback((message: string, type: ToastMessage['type'] = 'info') => {
-        const id = Date.now();
-        setToasts(prev => [...prev, { id, message, type }]);
-        setTimeout(() => removeToast(id), 5000);
-    }, [removeToast]);
+    }, [addToast]);
     
     const getNarrativeContext = useCallback((sceneId: string): string => {
         if (!storyBible || !scenes.length) return '';
@@ -340,7 +353,7 @@ const AppContent: React.FC = () => {
             });
         });
         addToast('Suggestion applied!', 'success');
-    }, [activeSceneId]);
+    }, [activeSceneId, addToast]);
     
     const handleGetInspiration = async () => {
         if (!storyBible || !activeSceneId) return;
@@ -368,6 +381,23 @@ const AppContent: React.FC = () => {
         }
     };
     
+     const handleClearProject = async () => {
+        if (window.confirm('Are you sure you want to clear all project data and start a new story? This action cannot be undone.')) {
+            setIsLoading(true);
+            setLoadingMessage('Clearing project...');
+            try {
+                await db.clearProjectData();
+                resetProjectState();
+                addToast('Project cleared. Ready for a new story!', 'success');
+            } catch (error) {
+                console.error("Failed to clear project data", error);
+                addToast('Failed to clear project.', 'error');
+            } finally {
+                setIsLoading(false);
+            }
+        }
+    };
+
     const handleGenerateVideo = async (sceneId: string, timeline: TimelineData) => {
         const activeScene = scenes.find(s => s.id === sceneId);
         if (!activeScene || !directorsVision) {
@@ -388,6 +418,43 @@ const AppContent: React.FC = () => {
             addToast(`Failed to generate keyframe: ${errorMessage}`, 'error');
         }
     };
+
+    const handleApplyRefinement = useCallback(async (
+        directive: ContinuityResult['refinement_directives'][0],
+        context: { scene?: Scene }
+    ): Promise<boolean> => {
+        try {
+            if (directive.target === 'Story Bible' && storyBible) {
+                const storyBibleSchema = {
+                    type: Type.OBJECT,
+                    properties: {
+                        logline: { type: Type.STRING }, characters: { type: Type.STRING },
+                        setting: { type: Type.STRING }, plotOutline: { type: Type.STRING },
+                    }, required: ['logline', 'characters', 'setting', 'plotOutline'],
+                };
+                const newBible = await applyRefinement(storyBible, directive.suggestion, 'Story Bible', storyBibleSchema, handleApiLog, handleApiStateChange);
+                setStoryBible(newBible);
+                addToast('Story Bible updated with AI refinement!', 'success');
+            } else if (directive.target === "Director's Vision") {
+                const visionSchema = {
+                    type: Type.OBJECT,
+                    properties: { refined_vision: { type: Type.STRING, description: "The refined director's vision text." } },
+                    required: ['refined_vision'],
+                };
+                const newVision = await applyRefinement(directorsVision, directive.suggestion, "Director's Vision", visionSchema, handleApiLog, handleApiStateChange);
+                setDirectorsVision(newVision);
+                addToast("Director's Vision updated with AI refinement!", 'success');
+            } else {
+                addToast(`Applying refinement for "${directive.target}" is not yet implemented.`, 'info');
+                return false;
+            }
+            return true;
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(`Failed to apply refinement: ${errorMessage}`, 'error');
+            return false;
+        }
+    }, [storyBible, directorsVision, handleApiLog, handleApiStateChange, addToast, setStoryBible, setDirectorsVision]);
     
     const getNextScene = () => {
         if (!activeSceneId) return null;
@@ -466,6 +533,7 @@ const AppContent: React.FC = () => {
                             addToast={addToast}
                             onApiStateChange={handleApiStateChange}
                             onApiLog={handleApiLog}
+                            onApplyRefinement={handleApplyRefinement}
                         />;
             default:
                 return <p>Welcome to the Cinematic Story Generator!</p>;
@@ -487,6 +555,9 @@ const AppContent: React.FC = () => {
                     </button>
                     <button onClick={() => setIsUsageDashboardOpen(true)} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md border transition-colors bg-gray-700/50 border-gray-600 text-gray-200 hover:bg-gray-700">
                         <BarChartIcon className="w-4 h-4" /> Usage
+                    </button>
+                    <button onClick={handleClearProject} disabled={isLoading} title="Clear Project & Start New" className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md border transition-colors bg-red-800/50 border-red-700 text-red-300 hover:bg-red-800 disabled:opacity-50">
+                        <TrashIcon className="w-4 h-4" /> Clear
                     </button>
                  </div>
             </div>

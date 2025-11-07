@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, ContinuityResult } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
 import { analyzeVideoFrames, scoreContinuity, getPrunedContextForContinuity, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
@@ -18,6 +18,7 @@ interface ContinuityCardProps {
   addToast: (message: string, type: ToastMessage['type']) => void;
   onApiStateChange: ApiStateChangeCallback;
   onApiLog: ApiLogCallback;
+  onApplyRefinement: (directive: ContinuityResult['refinement_directives'][0], context: { scene: Scene }) => Promise<boolean>;
 }
 
 const ScoreCircle: React.FC<{ label: string; score: number }> = ({ label, score }) => {
@@ -58,7 +59,22 @@ const ScoreCircle: React.FC<{ label: string; score: number }> = ({ label, score 
   );
 };
 
-const ResultDisplay: React.FC<{ result: ContinuityResult }> = ({ result }) => {
+const ResultDisplay: React.FC<{ 
+    result: ContinuityResult;
+    onApplyRefinement: (directive: ContinuityResult['refinement_directives'][0]) => Promise<boolean>;
+}> = ({ result, onApplyRefinement }) => {
+    const [applyingStatus, setApplyingStatus] = useState<Record<number, 'idle' | 'loading' | 'applied'>>({});
+
+    const handleApply = async (directive: ContinuityResult['refinement_directives'][0], index: number) => {
+        setApplyingStatus(prev => ({ ...prev, [index]: 'loading' }));
+        const success = await onApplyRefinement(directive);
+        if (success) {
+            setApplyingStatus(prev => ({ ...prev, [index]: 'applied' }));
+        } else {
+            setApplyingStatus(prev => ({ ...prev, [index]: 'idle' })); // Reset on failure
+        }
+    };
+
     const createMarkup = (markdown: string) => {
         const rawMarkup = marked(markdown);
         return { __html: rawMarkup };
@@ -76,14 +92,32 @@ const ResultDisplay: React.FC<{ result: ContinuityResult }> = ({ result }) => {
                  <div className="prose prose-invert prose-sm max-w-none text-gray-300 bg-gray-900/50 p-3 rounded-md" dangerouslySetInnerHTML={createMarkup(result.overall_feedback)} />
             </div>
             <div>
-                <h4 className="font-semibold text-yellow-400 mb-2">Refinement Directives</h4>
-                 <div className="space-y-2">
-                    {result.refinement_directives.map((dir, index) => (
-                        <div key={index} className="bg-gray-900/50 p-3 rounded-md">
-                            <p className="text-sm text-gray-300">{dir.suggestion}</p>
-                            <p className="text-xs text-yellow-500 mt-1">Target: <span className="font-mono bg-black/30 px-1 rounded">{dir.target} {dir.target_field && `-> ${dir.target_field}`}</span></p>
+                <h4 className="font-semibold text-yellow-400 mb-2">Actionable Refinement Directives</h4>
+                 <div className="space-y-3">
+                    {result.refinement_directives.map((dir, index) => {
+                        const status = applyingStatus[index] || 'idle';
+                        return (
+                        <div key={index} className="bg-gray-900/50 p-3 rounded-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                            <div>
+                                <p className="text-sm text-gray-300">{dir.suggestion}</p>
+                                <p className="text-xs text-yellow-500 mt-1">Target: <span className="font-mono bg-black/30 px-1 rounded">{dir.target} {dir.target_field && `-> ${dir.target_field}`}</span></p>
+                            </div>
+                            <button
+                                onClick={() => handleApply(dir, index)}
+                                disabled={status !== 'idle'}
+                                className="w-full sm:w-auto flex-shrink-0 inline-flex items-center justify-center px-4 py-2 text-xs font-semibold rounded-md transition-colors bg-yellow-600 text-white hover:bg-yellow-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                            >
+                                {status === 'loading' && (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                        Applying...
+                                    </>
+                                )}
+                                {status === 'applied' && 'Applied ✓'}
+                                {status === 'idle' && 'Apply Refinement'}
+                            </button>
                         </div>
-                    ))}
+                    )})}
                 </div>
             </div>
         </div>
@@ -102,7 +136,8 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   setContinuityData,
   addToast,
   onApiStateChange,
-  onApiLog
+  onApiLog,
+  onApplyRefinement
 }) => {
 
   const handleFileSelect = useCallback(async (file: File) => {
@@ -127,6 +162,11 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
         addToast(`Analysis failed for Scene ${sceneNumber}: ${error}`, 'error');
     }
   }, [scene, sceneNumber, storyBible, narrativeContext, directorsVision, setContinuityData, addToast, onApiStateChange, onApiLog]);
+  
+  const handleApplyRefinementWrapper = (directive: ContinuityResult['refinement_directives'][0]) => {
+      return onApplyRefinement(directive, { scene });
+  };
+
 
   const renderStatus = () => {
       if (data.status === 'idle') {
@@ -142,7 +182,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
           return <div className="text-center p-8"><p className="text-red-400">{data.error}</p></div>
       }
       if (data.status === 'complete' && data.continuityResult) {
-          return <ResultDisplay result={data.continuityResult} />;
+          return <ResultDisplay result={data.continuityResult} onApplyRefinement={handleApplyRefinementWrapper} />;
       }
       return null;
   }
