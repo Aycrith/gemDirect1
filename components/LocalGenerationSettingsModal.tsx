@@ -1,9 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { LocalGenerationSettings, WorkflowInput, MappableData, WorkflowMapping } from '../types';
+import { discoverComfyUIServer } from '../services/comfyUIService';
 import ServerIcon from './icons/ServerIcon';
 import SettingsIcon from './icons/SettingsIcon';
 import FileTextIcon from './icons/FileTextIcon';
 import ImageIcon from './icons/ImageIcon';
+import SearchIcon from './icons/SearchIcon';
+import HelpCircleIcon from './icons/HelpCircleIcon';
+import Tooltip from './Tooltip';
+import CheckCircleIcon from './icons/CheckCircleIcon';
 
 interface Props {
     isOpen: boolean;
@@ -48,6 +53,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     const [workflowInputs, setWorkflowInputs] = useState<WorkflowInput[]>([]);
     const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
     const [syncError, setSyncError] = useState('');
+    const [discoveryStatus, setDiscoveryStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
 
     useEffect(() => {
         setLocalSettings(settings);
@@ -56,11 +62,25 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         } else {
             setWorkflowInputs([]);
         }
+        // Reset statuses when modal is opened/closed
+        setDiscoveryStatus('idle');
+        setSyncStatus('idle');
     }, [settings, isOpen]);
+
+    const handleDiscover = async () => {
+        setDiscoveryStatus('searching');
+        const foundUrl = await discoverComfyUIServer();
+        if (foundUrl) {
+            setLocalSettings(prev => ({ ...prev, comfyUIUrl: foundUrl }));
+            setDiscoveryStatus('found');
+        } else {
+            setDiscoveryStatus('not_found');
+        }
+    };
 
     const handleSyncWorkflow = useCallback(async () => {
         if (!localSettings.comfyUIUrl) {
-            setSyncError("Please enter a valid ComfyUI server address.");
+            setSyncError("Please enter or discover a valid ComfyUI server address.");
             setSyncStatus('error');
             return;
         }
@@ -98,6 +118,18 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     };
 
     if (!isOpen) return null;
+    
+    const helpTooltipContent = (
+        <div className="text-left">
+            <p className="font-bold mb-2">How to find your ComfyUI address:</p>
+            <ol className="list-decimal list-inside space-y-1">
+                <li>Make sure ComfyUI is running.</li>
+                <li>Look at the black command window (terminal) that started ComfyUI.</li>
+                <li>Near the end, it will say: <br/><code className="bg-gray-800 text-yellow-300 p-1 rounded text-xs">== Starting server at: http://127.0.0.1:8188 ==</code></li>
+                <li>Copy and paste that address into the field.</li>
+            </ol>
+        </div>
+    );
 
     return (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center p-4" onClick={onClose}>
@@ -112,13 +144,29 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                     {/* Server Config */}
                     <div className="space-y-4 p-4 bg-gray-900/50 rounded-lg ring-1 ring-gray-700/50">
                         <h4 className="font-semibold text-gray-200 flex items-center"><ServerIcon className="w-5 h-5 mr-2 text-gray-400"/>ComfyUI Server</h4>
+
+                        <div className="p-3 bg-gray-800/50 rounded-lg">
+                            <button onClick={handleDiscover} disabled={discoveryStatus === 'searching'} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-md hover:bg-indigo-700 disabled:bg-gray-500 transition-colors">
+                                <SearchIcon className="w-5 h-5" />
+                                {discoveryStatus === 'searching' ? 'Searching...' : 'Automatically Find My ComfyUI Server'}
+                            </button>
+                             {discoveryStatus === 'found' && <p className="text-xs text-green-400 text-center mt-2 flex items-center justify-center gap-1"><CheckCircleIcon className="w-4 h-4" />Server found and URL has been filled in below!</p>}
+                             {discoveryStatus === 'not_found' && <p className="text-xs text-yellow-400 text-center mt-2">Could not find server automatically. Please ensure ComfyUI is running and enter the address manually below.</p>}
+                        </div>
+
                         <div>
-                            <label htmlFor="comfy-url" className="text-sm font-medium text-gray-300">Server Address</label>
+                            <label htmlFor="comfy-url" className="text-sm font-medium text-gray-300 flex items-center gap-1">
+                                Server Address (Manual Fallback)
+                                <Tooltip text={helpTooltipContent}>
+                                    <HelpCircleIcon className="w-4 h-4 text-gray-500" />
+                                </Tooltip>
+                            </label>
                             <input id="comfy-url" type="text" value={localSettings.comfyUIUrl} onChange={e => setLocalSettings(p => ({...p, comfyUIUrl: e.target.value}))} className="mt-1 block w-full bg-gray-800 border-gray-600 rounded-md p-2 text-sm" placeholder="http://127.0.0.1:8188"/>
                         </div>
                          <div>
-                            <label htmlFor="client-id" className="text-sm font-medium text-gray-300">Client ID (for WebSocket)</label>
-                            <input id="client-id" type="text" value={localSettings.comfyUIClientId} onChange={e => setLocalSettings(p => ({...p, comfyUIClientId: e.target.value}))} className="mt-1 block w-full bg-gray-800 border-gray-600 rounded-md p-2 text-sm" placeholder="unique_client_id"/>
+                            <label htmlFor="client-id" className="text-sm font-medium text-gray-300">Client ID (Unique Identifier)</label>
+                            <input id="client-id" type="text" value={localSettings.comfyUIClientId} onChange={e => setLocalSettings(p => ({...p, comfyUIClientId: e.target.value}))} className="mt-1 block w-full bg-gray-800 border-gray-600 rounded-md p-2 text-sm" placeholder="e.g., your_name_here"/>
+                             <p className="text-xs text-gray-500 mt-1">Enter any unique name here. This prevents conflicts if multiple browser tabs are open.</p>
                         </div>
                     </div>
 

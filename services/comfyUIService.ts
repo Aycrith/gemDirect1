@@ -1,6 +1,47 @@
 import { LocalGenerationSettings, LocalGenerationStatus } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 
+// A list of common URLs to try for auto-discovery.
+const DISCOVERY_CANDIDATES = [
+    'http://127.0.0.1:8188',
+    'http://localhost:8188',
+];
+
+/**
+ * Attempts to find a running ComfyUI server by checking a list of common addresses.
+ * @returns The URL of the found server, or null if no server is found.
+ */
+export const discoverComfyUIServer = async (): Promise<string | null> => {
+  for (const baseUrl of DISCOVERY_CANDIDATES) {
+    try {
+      // Use a short timeout to avoid long waits for unresponsive addresses.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000); // 2-second timeout
+
+      // Fetch a simple, known endpoint. /system_stats is lightweight and ideal for this check.
+      const url = baseUrl.endsWith('/') ? `${baseUrl}system_stats` : `${baseUrl}/system_stats`;
+      
+      const response = await fetch(url, { signal: controller.signal, mode: 'cors' });
+      clearTimeout(timeoutId);
+
+      // A successful response (even if not JSON, just getting a response is enough for discovery)
+      if (response.ok) {
+        const data = await response.json();
+        // A simple check to see if the response looks like ComfyUI's stats
+        if (data && data.system && data.devices) {
+             return baseUrl;
+        }
+      }
+    } catch (error) {
+      // This will catch network errors (server not running), CORS errors (server running but not configured for this origin), and timeouts.
+      // We ignore them and proceed to the next candidate.
+      console.log(`Discovery attempt failed for ${baseUrl}:`, error);
+    }
+  }
+  return null; // No servers found from the candidate list.
+};
+
+
 // Fetches an image from the ComfyUI server and converts it to a data URL.
 const fetchImageAsDataURL = async (url: string, filename: string, subfolder: string, type: string): Promise<string> => {
     const response = await fetch(`${url}view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`);
