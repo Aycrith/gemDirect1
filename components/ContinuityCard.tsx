@@ -209,7 +209,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                                 <h4 className="flex items-center text-lg font-semibold text-indigo-400 mb-4"><SparklesIcon className="w-5 h-5 mr-2" /> Timeline Refinements</h4>
                                  <p className="text-xs text-indigo-400/80 mb-3 p-2 bg-indigo-900/20 rounded-md border border-indigo-800/30">
                                     These suggestions are specific to this scene's timeline. Apply them to improve the pacing, visuals, and storytelling of this individual scene.
-                                </p>
+                                 </p>
                                 <div className="space-y-3 max-h-60 overflow-y-auto pr-2 -mr-2">
                                     {timelineChanges.map((s, i) => (
                                         <div key={`time-${i}`} className="bg-gray-900/70 p-3 rounded-md flex items-center justify-between gap-4">
