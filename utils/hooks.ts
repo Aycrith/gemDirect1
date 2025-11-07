@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as db from './database';
 import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot } from '../types';
@@ -150,6 +151,11 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                     successes++;
                 } catch (e) {
                     console.error(`Failed to generate keyframe for scene "${scene.title}":`, e);
+                }
+
+                // Add a delay after each request (except the last) to stay well under RPM limits.
+                if (i < newScenes.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1100)); // ~55 RPM max
                 }
             }
             

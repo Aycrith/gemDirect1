@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion, DetailedShotResult } from "../types";
 import { ApiStatus } from "../contexts/ApiStatusContext";
@@ -56,7 +57,7 @@ export const withRetry = async <T>(
             if (isRateLimitError && attempt < MAX_RETRIES - 1) {
                 const delay = INITIAL_BACKOFF_MS * Math.pow(2, attempt) + Math.random() * 1000; // add jitter
                 const delayInSeconds = Math.round(delay/1000);
-                const retryMessage = `Rate limit hit on "${context}". Retrying in ${delayInSeconds}s... (Attempt ${attempt + 1}/${MAX_RETRIES})`;
+                const retryMessage = `Model is busy (rate limit). Automatically retrying in ${delayInSeconds}s... (Attempt ${attempt + 1}/${MAX_RETRIES})`;
                 console.warn(retryMessage);
                 onStateChange?.('retrying', retryMessage);
                 await new Promise(res => setTimeout(res, delay));
@@ -74,12 +75,15 @@ export const withRetry = async <T>(
 
 // --- Context Pruning & Summarization ---
 
+const summarizationSystemInstruction = "You are an expert script supervisor. Your sole task is to distill the provided information into a concise, actionable brief according to the user's instructions. Be as efficient and direct as possible.";
+
 const getPrunedContext = async (prompt: string, context: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: proModel, // Use the more powerful model for summarization
             contents: prompt,
             config: {
+                systemInstruction: summarizationSystemInstruction,
                 temperature: 0.2, // Low temperature for factual, consistent summarization
             }
         });
@@ -102,7 +106,7 @@ export const getPrunedContextForShotGeneration = async (
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
-    const prompt = `You are a script supervisor. Your job is to create a concise "Cinematographer's Brief" for an AI Director of Photography. Distill the following information into a single, focused paragraph (under 150 words) that will guide the creation of a shot list.
+    const prompt = `You are a script supervisor. Your job is to create a concise "Cinematographer's Brief" for an AI Director of Photography. Distill the following information into a single, focused paragraph that will guide the creation of a shot list.
 
     **CRITICAL INFORMATION TO INCLUDE:**
     1.  **Scene's Core Purpose:** What is the main point of this scene in the story's journey (e.g., "The hero's lowest point," "Meeting the mentor").
@@ -115,7 +119,7 @@ export const getPrunedContextForShotGeneration = async (
     - Scene Summary: ${sceneSummary}
     - Director's Vision: ${directorsVision}
 
-    **Your Output:** A single paragraph Cinematographer's Brief.`;
+    **OUTPUT:** A single, dense paragraph (under 150 words). Do not include any preamble or explanation.`;
     return getPrunedContext(prompt, 'prune context for shot generation', logApiCall, onStateChange);
 };
 
@@ -127,7 +131,7 @@ export const getPrunedContextForCoDirector = async (
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
-    const prompt = `You are an expert script analyst. Your job is to create a concise "Co-Director's Brief" (under 200 words) that summarizes the creative sandbox for the current scene. The brief should focus on the *goals and constraints* for making creative suggestions.
+    const prompt = `You are an expert script analyst. Your job is to create a concise "Co-Director's Brief" that summarizes the creative sandbox for the current scene. The brief should focus on the *goals and constraints* for making creative suggestions.
 
     **CRITICAL INFORMATION TO SUMMARIZE:**
     1.  **Narrative Function:** What is this scene's specific job within the plot's current act (based on The Hero's Journey)?
@@ -140,7 +144,7 @@ export const getPrunedContextForCoDirector = async (
     - Scene: "${scene.title}" - ${scene.summary}
     - Director's Vision: ${directorsVision}
 
-    **Your Output:** A single paragraph co-director's brief.`;
+    **OUTPUT:** A single, dense paragraph (under 200 words). Do not include any preamble or explanation.`;
     return getPrunedContext(prompt, 'prune context for co-director', logApiCall, onStateChange);
 };
 
@@ -150,13 +154,13 @@ export const getPrunedContextForBatchProcessing = async (
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
-    const prompt = `You are a script supervisor. Distill the following creative guidelines into a single, concise "Cinematographer's Brief" (under 100 words). This brief will be used to guide an AI assistant in refining multiple shots within a single scene. Focus on the core rules and feeling.
+    const prompt = `You are a script supervisor. Distill the following creative guidelines into a single, concise "Cinematographer's Brief". This brief will be used to guide an AI assistant in refining multiple shots within a single scene. Focus on the core rules and feeling.
 
     **SOURCE MATERIAL:**
     - Narrative Context (Current Act/Goal): ${narrativeContext}
     - Director's Vision (Aesthetic & Tone): ${directorsVision}
 
-    **Your Output:** A single paragraph Cinematographer's Brief.`;
+    **OUTPUT:** A single, dense paragraph (under 100 words). Do not include any preamble or explanation.`;
     return getPrunedContext(prompt, 'prune context for batch processing', logApiCall, onStateChange);
 };
 
@@ -815,7 +819,7 @@ export const getPrunedContextForContinuity = async (
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
-     const prompt = `You are a script supervisor preparing for a continuity check. Distill the following information into a concise "Continuity Brief" (under 200 words). The brief should focus on the *intended* creative and narrative goals against which a generated video will be judged.
+     const prompt = `You are a script supervisor preparing for a continuity check. Distill the following information into a concise "Continuity Brief". The brief should focus on the *intended* creative and narrative goals against which a generated video will be judged.
 
     **CRITICAL INFORMATION TO SUMMARIZE:**
     1.  **Core Narrative Purpose:** What is the primary goal of this scene in the plot?
@@ -829,7 +833,7 @@ export const getPrunedContextForContinuity = async (
     - Director's Vision: ${directorsVision}
     - Scene Shot List Summary: ${scene.timeline.shots.map(s => `- ${s.description}`).join('\n')}
 
-    **Your Output:** A single paragraph continuity brief.`;
+    **OUTPUT:** A single, dense paragraph (under 200 words). Do not include any preamble or explanation.`;
     return getPrunedContext(prompt, 'prune context for continuity', logApiCall, onStateChange);
 };
 
