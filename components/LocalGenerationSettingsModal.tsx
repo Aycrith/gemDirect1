@@ -65,6 +65,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     const [mapping, setMapping] = useState<WorkflowMapping>(settings.mapping);
     const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
     const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     const parsedInputs = useMemo(() => parseWorkflowForInputs(workflowJson), [workflowJson]);
     
@@ -73,31 +74,52 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         if (isOpen && settings.workflowJson) {
             setSyncStatus('success');
         } else if (!isOpen) {
+            // Reset state when modal closes
             setSyncStatus('idle');
+            setConnectionStatus('idle');
+            setErrorMessage(null);
+            setComfyUIUrl(settings.comfyUIUrl);
+            setWorkflowJson(settings.workflowJson);
+            setMapping(settings.mapping);
         }
-    }, [isOpen, settings.workflowJson]);
+    }, [isOpen, settings]);
     
     const handleSave = () => {
         onSave({ comfyUIUrl, workflowJson, mapping, comfyUIClientId });
         onClose();
     };
 
+    const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setComfyUIUrl(e.target.value);
+        setConnectionStatus('idle');
+        setSyncStatus('idle');
+        setErrorMessage(null);
+    };
+
     const handleTestConnection = useCallback(async () => {
         setConnectionStatus('testing');
+        setErrorMessage(null);
         try {
             const testUrl = new URL(comfyUIUrl);
-            const response = await fetch(testUrl.toString(), { method: 'GET', mode: 'cors' });
+            const response = await fetch(testUrl.origin, { method: 'GET', mode: 'cors' });
             if (response.ok) {
                 setConnectionStatus('success');
+                setTimeout(() => setConnectionStatus('idle'), 3000);
             } else { throw new Error(`Server responded with status ${response.status}`); }
         } catch (error) {
-            setConnectionStatus('error'); console.error('Connection test failed:', error);
+            setConnectionStatus('error');
+            console.error('Connection test failed:', error);
+            if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
+                setErrorMessage("Connection failed. This is likely a CORS issue. Please ensure your ComfyUI server was started with the '--enable-cors' flag.");
+            } else {
+                setErrorMessage(error instanceof Error ? error.message : 'An unknown connection error occurred.');
+            }
         }
-        setTimeout(() => setConnectionStatus('idle'), 3000);
     }, [comfyUIUrl]);
 
     const handleSyncWorkflow = useCallback(async () => {
         setSyncStatus('syncing');
+        setErrorMessage(null);
         setMapping({}); // Clear old mapping
         try {
             const url = comfyUIUrl.endsWith('/') ? `${comfyUIUrl}prompt` : `${comfyUIUrl}/prompt`;
@@ -110,6 +132,11 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
             setSyncStatus('error');
             setWorkflowJson('');
             console.error('Workflow sync failed:', error);
+            if (error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')) {
+                setErrorMessage("Workflow sync failed. This is likely a CORS issue. Please ensure your ComfyUI server was started with the '--enable-cors' flag.");
+            } else {
+                setErrorMessage(error instanceof Error ? error.message : 'An unknown sync error occurred.');
+            }
         }
     }, [comfyUIUrl]);
     
@@ -156,7 +183,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                                 id="comfyui-url"
                                 type="text"
                                 value={comfyUIUrl}
-                                onChange={(e) => setComfyUIUrl(e.target.value)}
+                                onChange={handleUrlChange}
                                 placeholder="http://127.0.0.1:8188"
                                 className="flex-grow bg-gray-900 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 p-2"
                             />
@@ -168,6 +195,13 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                             </button>
                         </div>
                     </div>
+
+                    {errorMessage && (
+                        <div className="p-3 bg-red-900/50 border border-red-700 rounded-md text-sm text-red-300">
+                            <p className="font-semibold">Error:</p>
+                            <p>{errorMessage}</p>
+                        </div>
+                    )}
                     
                      <div>
                         <label className="font-medium text-gray-200 block text-sm mb-1">ComfyUI Workflow</label>
