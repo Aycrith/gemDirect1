@@ -1,4 +1,5 @@
 
+
 import React, { useCallback } from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
 import ContinuityCard from './ContinuityCard';
@@ -46,11 +47,12 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
 
       const plotLines = storyBible.plotOutline.split('\n');
       const actStarts: Record<string, number> = {
-          'act i': plotLines.findIndex(l => l.toLowerCase().includes('act i')),
-          'act ii': plotLines.findIndex(l => l.toLowerCase().includes('act ii')),
-          'act iii': plotLines.findIndex(l => l.toLowerCase().includes('act iii')),
+          'act i': plotLines.findIndex(l => l.trim().toLowerCase().startsWith('act i')),
+          'act ii': plotLines.findIndex(l => l.trim().toLowerCase().startsWith('act ii')),
+          'act iii': plotLines.findIndex(l => l.trim().toLowerCase().startsWith('act iii')),
       };
 
+      // Heuristic to determine which act the scene falls into based on its sequence order.
       const sceneFraction = scenes.length > 1 ? sceneIndex / (scenes.length - 1) : 0;
       let currentActKey: 'act i' | 'act ii' | 'act iii' = 'act i';
       if (actStarts['act iii'] !== -1 && sceneFraction >= 0.7) {
@@ -63,10 +65,13 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
       const start = actStarts[currentActKey];
       if (start !== -1) {
           let end: number | undefined;
+          // Find the start of the next act to define the end of the current one
           if (currentActKey === 'act i') end = actStarts['act ii'] !== -1 ? actStarts['act ii'] : actStarts['act iii'];
           if (currentActKey === 'act ii') end = actStarts['act iii'] !== -1 ? actStarts['act iii'] : undefined;
+          
           actText = plotLines.slice(start, end).join('\n');
       } else {
+          // Fallback if no explicit "Act" markers are found.
           actText = storyBible.plotOutline;
       }
 
