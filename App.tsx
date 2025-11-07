@@ -391,7 +391,7 @@ const App: React.FC = () => (
     <UsageProvider>
         <ApiStatusProvider>
             <AppContent />
-        </Api-status-provider>
+        </ApiStatusProvider>
     </UsageProvider>
 );
 
