@@ -47,7 +47,7 @@ export const queueComfyUIPrompt = async (
         throw new Error("The synced workflow is not valid JSON. Please re-sync your workflow in Settings.");
     }
 
-    const promptPayloadTemplate = workflowApi.prompt || workflowApi;
+    const promptPayloadTemplate = workflowApi.prompt || workflowApi; // Handle both API and embedded formats
     if (typeof promptPayloadTemplate !== 'object' || promptPayloadTemplate === null) {
         throw new Error("Synced workflow has an invalid structure. Please re-sync.");
     }
