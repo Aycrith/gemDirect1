@@ -1,12 +1,12 @@
-
 import React, { useState, useCallback } from 'react';
 import { StoryBible } from '../types';
 import { marked } from 'marked';
-import { refineEntireStoryBible, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
+import { refineStoryBibleSection, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import BookOpenIcon from './icons/BookOpenIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import SaveIcon from './icons/SaveIcon';
 import ClapperboardIcon from './icons/ClapperboardIcon';
+import RefreshCwIcon from './icons/RefreshCwIcon';
 
 interface StoryBibleEditorProps {
     storyBible: StoryBible;
@@ -20,7 +20,7 @@ interface StoryBibleEditorProps {
 const TabButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
     <button
         onClick={onClick}
-        className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${active ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'}`}
+        className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${active ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'}`}
     >
         {children}
     </button>
@@ -42,10 +42,11 @@ const EditableField: React.FC<{ label: string; description: string; value: strin
 
 const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdate, onGenerateScenes, isLoading, onApiStateChange, onApiLog }) => {
     const [editableBible, setEditableBible] = useState(storyBible);
-    const [isRefining, setIsRefining] = useState(false);
     const [charTab, setCharTab] = useState<'edit' | 'preview'>('edit');
     const [plotTab, setPlotTab] = useState<'edit' | 'preview'>('edit');
 
+    const [previewContent, setPreviewContent] = useState({ characters: '', plotOutline: '' });
+    const [isPreviewLoading, setIsPreviewLoading] = useState({ characters: false, plotOutline: false });
 
     const handleFieldChange = (field: keyof StoryBible, value: string) => {
         setEditableBible(prev => ({ ...prev, [field]: value }));
@@ -55,26 +56,78 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
         onUpdate(editableBible);
     };
 
-    const handleRefine = async () => {
-        setIsRefining(true);
-        try {
-            const refinedBible = await refineEntireStoryBible(editableBible, onApiLog, onApiStateChange);
-            setEditableBible(refinedBible);
-            onUpdate(refinedBible); // Also update parent state
-        } catch (e) {
-            console.error(e);
-            // Error toast is handled by the service
-        } finally {
-            setIsRefining(false);
-        }
-    };
-    
     const createMarkup = (markdown: string) => {
         const rawMarkup = marked.parse(markdown);
         return { __html: rawMarkup as string };
     };
+    
+    const handleGeneratePreview = async (section: 'characters' | 'plotOutline') => {
+        const currentContent = editableBible[section];
+        setIsPreviewLoading(prev => ({ ...prev, [section]: true }));
+        setPreviewContent(prev => ({ ...prev, [section]: '' })); // Clear previous preview
+        try {
+            const refinedText = await refineStoryBibleSection(
+                section,
+                currentContent,
+                { logline: editableBible.logline },
+                onApiLog,
+                onApiStateChange
+            );
+            setPreviewContent(prev => ({ ...prev, [section]: refinedText }));
+        } catch(e) {
+            console.error(e);
+            // Error toast handled by service
+        } finally {
+            setIsPreviewLoading(prev => ({ ...prev, [section]: false }));
+        }
+    };
+    
+    const handleTabClick = (section: 'characters' | 'plotOutline', tab: 'edit' | 'preview') => {
+        if (section === 'characters') setCharTab(tab);
+        if (section === 'plotOutline') setPlotTab(tab);
+
+        if (tab === 'preview') {
+            handleGeneratePreview(section);
+        }
+    };
+
+    const acceptPreview = (section: 'characters' | 'plotOutline') => {
+        if (previewContent[section]) {
+            handleFieldChange(section, previewContent[section]);
+            if (section === 'characters') setCharTab('edit');
+            if (section === 'plotOutline') setPlotTab('edit');
+        }
+    };
 
     const hasChanges = JSON.stringify(storyBible) !== JSON.stringify(editableBible);
+
+    const renderPreviewPane = (section: 'characters' | 'plotOutline') => (
+        <div className="prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 bg-gray-900/50 p-4 rounded-md border border-gray-700/50 min-h-[210px] relative">
+            {isPreviewLoading[section] ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/50">
+                    <svg className="animate-spin h-8 w-8 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <p className="mt-3 text-sm text-gray-400">AI is refining...</p>
+                </div>
+            ) : previewContent[section] ? (
+                <>
+                    <div dangerouslySetInnerHTML={createMarkup(previewContent[section])} />
+                    <div className="absolute top-2 right-2 not-prose">
+                        <button 
+                            onClick={() => acceptPreview(section)} 
+                            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-500"
+                        >
+                            <RefreshCwIcon className="w-4 h-4" />
+                            Accept & Update
+                        </button>
+                    </div>
+                </>
+            ) : (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <p className="text-gray-500 italic">Click the tab again to re-generate.</p>
+                </div>
+            )}
+        </div>
+    );
 
     return (
         <div className="max-w-4xl mx-auto space-y-8">
@@ -100,8 +153,10 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                              <p className="text-xs text-gray-400 mt-1">Introduce your key players. Give them a compelling hook.</p>
                         </div>
                         <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
-                            <TabButton active={charTab === 'edit'} onClick={() => setCharTab('edit')}>Edit</TabButton>
-                            <TabButton active={charTab === 'preview'} onClick={() => setCharTab('preview')}>Preview</TabButton>
+                            <TabButton active={charTab === 'edit'} onClick={() => handleTabClick('characters', 'edit')}>Edit</TabButton>
+                            <TabButton active={charTab === 'preview'} onClick={() => handleTabClick('characters', 'preview')}>
+                                <SparklesIcon className="w-3 h-3" /> AI Preview
+                            </TabButton>
                         </div>
                     </div>
                     {charTab === 'edit' ? (
@@ -111,11 +166,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                             rows={8}
                             className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-200 p-3"
                         />
-                    ) : (
-                         <div className="prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 bg-gray-900/50 p-4 rounded-md border border-gray-700/50 min-h-[210px]">
-                            <div dangerouslySetInnerHTML={createMarkup(editableBible.characters)} />
-                        </div>
-                    )}
+                    ) : renderPreviewPane('characters')}
                 </div>
 
                 <EditableField 
@@ -133,8 +184,10 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                             <p className="text-xs text-gray-400 mt-1">Structure your narrative. Using a classic structure like the Hero's Journey creates a resonant story.</p>
                         </div>
                         <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
-                           <TabButton active={plotTab === 'edit'} onClick={() => setPlotTab('edit')}>Edit</TabButton>
-                           <TabButton active={plotTab === 'preview'} onClick={() => setPlotTab('preview')}>Preview</TabButton>
+                           <TabButton active={plotTab === 'edit'} onClick={() => handleTabClick('plotOutline', 'edit')}>Edit</TabButton>
+                           <TabButton active={plotTab === 'preview'} onClick={() => handleTabClick('plotOutline', 'preview')}>
+                               <SparklesIcon className="w-3 h-3" /> AI Preview
+                           </TabButton>
                         </div>
                     </div>
                      {plotTab === 'edit' ? (
@@ -144,21 +197,10 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                             rows={10}
                             className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:ring-indigo-500 focus:border-indigo-500 text-sm text-gray-200 p-3"
                         />
-                    ) : (
-                        <div className="mt-4 prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 bg-gray-900/50 p-4 rounded-md border border-gray-700/50 min-h-[260px] max-h-80 overflow-y-auto">
-                            <div dangerouslySetInnerHTML={createMarkup(editableBible.plotOutline)} />
-                        </div>
-                    )}
+                    ) : renderPreviewPane('plotOutline')}
                 </div>
 
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6 border-t border-gray-700/50">
-                    <button
-                        onClick={handleRefine}
-                        disabled={isLoading || isRefining}
-                        className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3 bg-yellow-600 text-white font-semibold rounded-full shadow-sm transition-colors hover:bg-yellow-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                    >
-                         {isRefining ? 'Refining...' : <><SparklesIcon className="mr-2 h-5 w-5" /> Refine with AI</>}
-                    </button>
+                <div className="flex flex-col sm:flex-row justify-end items-center gap-4 pt-6 border-t border-gray-700/50">
                     <div className="flex gap-4">
                         <button
                             onClick={handleSave}

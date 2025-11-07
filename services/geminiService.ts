@@ -414,6 +414,52 @@ export const refineEntireStoryBible = async (storyBible: StoryBible, logApiCall:
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
+export const refineStoryBibleSection = async (
+    section: 'characters' | 'plotOutline',
+    content: string,
+    storyContext: { logline: string },
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<string> => {
+    const context = `refine Story Bible ${section}`;
+    
+    let instruction = '';
+    if (section === 'characters') {
+        instruction = "You are a master storyteller. Refine the following character descriptions to be more vivid, compelling, and concise. Enhance their motivations and conflicts. Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
+    } else { // plotOutline
+        instruction = "You are a master screenwriter. Refine the following plot outline, ensuring it adheres strongly to the 3-act structure and The Hero's Journey. Make the plot points more dramatic and the pacing more effective. Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
+    }
+
+    const prompt = `${instruction}
+
+    **Story Logline (for context):**
+    "${storyContext.logline}"
+
+    **Original Content to Refine:**
+    ---
+    ${content}
+    ---
+    `;
+
+    const apiCall = async () => {
+        const response = await ai.models.generateContent({
+            model: proModel,
+            contents: prompt,
+            config: { temperature: 0.6 },
+        });
+        const text = response.text;
+        if (!text) {
+            throw new Error(`The model returned an empty response for ${context}.`);
+        }
+        // Also remove markdown code fences if the model adds them
+        const result = text.trim().replace(/^```markdown\n/, '').replace(/\n```$/, '');
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
+    };
+
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
+};
+
 export const suggestCoDirectorObjectives = async (logline: string, sceneSummary: string, directorsVision: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
     const context = 'suggest Co-Director objectives';
     const prompt = `You are a creative film producer. Based on the following context, generate 3 diverse, actionable objectives for an AI Co-Director to improve a scene. The objectives should be phrased as commands or requests.
