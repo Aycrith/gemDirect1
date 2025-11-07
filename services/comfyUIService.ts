@@ -1,4 +1,3 @@
-
 import { LocalGenerationSettings, LocalGenerationStatus, WorkflowInput, WorkflowMapping } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 
@@ -192,8 +191,8 @@ export const validateWorkflowAndMappings = (settings: LocalGenerationSettings): 
         if (dataType === 'keyframe_image' && node.class_type !== 'LoadImage') {
              mappingErrors.push(`'Keyframe Image' is mapped to node '${nodeTitle}', which is not a 'LoadImage' node. This will cause an error.`);
         }
-        if ((dataType === 'human_readable_prompt' || dataType === 'full_timeline_json' || dataType === 'negative_prompt') && node.class_type !== 'CLIPTextEncode') {
-             mappingErrors.push(`Warning: Text data ('${dataType}') is mapped to '${nodeTitle}', which isn't a standard 'CLIPTextEncode' node. This might not work as expected with custom nodes.`);
+        if ((dataType === 'human_readable_prompt' || dataType === 'full_timeline_json' || dataType === 'negative_prompt') && !node.class_type.includes('Text')) {
+             mappingErrors.push(`Warning: Text data ('${dataType}') is mapped to '${nodeTitle}', which isn't a standard text input node (e.g., CLIPTextEncode). This might not work as expected with custom nodes.`);
         }
     }
 

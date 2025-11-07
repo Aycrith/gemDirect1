@@ -12,7 +12,7 @@ interface StructuredPayloadItem {
 interface FinalPromptModalProps {
     isOpen: boolean;
     onClose: () => void;
-    payloads: { json: string; text: string; structured: StructuredPayloadItem[] } | null;
+    payloads: { json: string; text: string; structured: StructuredPayloadItem[]; negativePrompt: string } | null;
 }
 
 const FinalPromptModal: React.FC<FinalPromptModalProps> = ({ isOpen, onClose, payloads }) => {
