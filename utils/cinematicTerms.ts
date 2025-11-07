@@ -2,10 +2,12 @@ export const FRAMING_OPTIONS = ["Bird's-Eye View", "Close-Up", "Cowboy Shot", "E
 export const MOVEMENT_OPTIONS = ["Arc Shot", "Crane/Jib Shot", "Dolly Zoom", "Dutch Tilt", "Follow Shot", "Handheld", "Majestic Sweep", "Pan", "Pull Out", "Push In", "Static Shot", "Steadicam", "Tilt", "Tracking Shot", "Whip Pan", "Zoom In/Out"];
 export const LENS_OPTIONS = ["Anamorphic", "Bokeh", "Deep Focus", "Fisheye Lens", "Lens Flare", "Probe Lens", "Rack Focus", "Shallow Depth of Field", "Soft Focus", "Split Diopter", "Telephoto", "Tilt-Shift", "Wide-Angle"];
 export const PACING_OPTIONS = ["Bullet Time", "Chaotic", "Cross-Cutting", "Fast-Paced", "Freeze Frame", "Graceful", "Jump Cut", "Long Take", "Montage", "Rhythmic Cutting", "Slow Motion", "Smash Cut", "Speed Ramp"];
-export const LIGHTING_OPTIONS = ["Low-Key (Chiaroscuro)", "High-Key", "Backlight / Rim Light", "Golden Hour", "Neon Glow", "Hard Lighting"];
+export const LIGHTING_OPTIONS = ["Low-Key (Chiaroscuro)", "High-Key", "Backlight / Rim Light", "Golden Hour", "Neon Glow", "Hard Lighting", "Silhouette", "Gobo/Cookies", "Volumetric Lighting"];
 export const MOOD_OPTIONS = ["Suspenseful", "Epic", "Gritty", "Dreamlike", "Tense", "Energetic", "Nostalgic"];
 export const VFX_OPTIONS = ["Bleach Bypass", "Chromatic Aberration", "Color Grading (Teal & Orange)", "Day-for-Night", "Desaturated", "Film Grain", "Glitch Effect", "Glow/Bloom", "High Contrast", "Lens Dirt/Smudges", "Light Leaks", "Motion Blur", "Particle Effects", "Scanlines", "VHS Look", "Vignette"];
-export const PLOT_ENHANCEMENTS_OPTIONS = ["Add Character Action", "Introduce Conflict", "Foreshadowing Moment", "Heighten Emotion", "Add Dialogue Snippet", "Reveal a Detail", "Introduce Sci-Fi Element"];
+export const PLOT_ENHANCEMENTS_OPTIONS = ["Add Character Action", "Introduce Conflict", "Foreshadowing Moment", "Heighten Emotion", "Add Dialogue Snippet", "Reveal a Detail", "Introduce Sci-Fi Element", "Introduce Plot Twist"];
+export const TRANSITION_OPTIONS = ["Cut", "Dissolve", "Wipe", "Match Cut", "J-Cut", "L-Cut", "Whip Pan", "Glitch Effect", "Fade to Black", "Iris In/Out", "Smash Cut"];
+
 
 export const CINEMATIC_TERMS: Record<string, Record<string, string>> = {
   framing: {
@@ -80,6 +82,9 @@ export const CINEMATIC_TERMS: Record<string, Record<string, string>> = {
     "Golden Hour": "The period shortly after sunrise or before sunset, known for its warm, soft, and cinematic light.",
     "Neon Glow": "Vibrant, colorful light from neon signs, often used in cyberpunk or urban noir settings.",
     "Hard Lighting": "Creates sharp, well-defined shadows and high contrast. Can feel intense or dramatic.",
+    "Silhouette": "The subject is seen as a black shape against a bright background, concealing detail and creating mystery or drama.",
+    "Gobo/Cookies": "Using a stencil (gobo or 'cookie') to cast patterned shadows, like light through window blinds or leaves.",
+    "Volumetric Lighting": "Making light beams visible, like dusty rays of light in a room or misty god rays, adding depth and atmosphere.",
   },
   mood: {
     "Suspenseful": "Creating a feeling of anticipation, tension, and uncertainty about what is going to happen.",
@@ -116,5 +121,19 @@ export const CINEMATIC_TERMS: Record<string, Record<string, string>> = {
     "Add Dialogue Snippet": "Insert a brief line of dialogue that reveals crucial information or character.",
     "Reveal a Detail": "Show the audience an important object or detail that was previously unseen or unnoticed.",
     "Introduce Sci-Fi Element": "Add a piece of futuristic technology, an alien object, or a sci-fi concept to the scene.",
+    "Introduce Plot Twist": "Introduce a radical, unexpected change in the direction or expected outcome of the plot.",
+  },
+  transitions: {
+    "Cut": "The most common transition, an instant change from one shot to another.",
+    "Dissolve": "One shot gradually fades out while another fades in, often used to show passage of time.",
+    "Wipe": "A line or shape moves across the screen, pushing one shot off and revealing the next.",
+    "Match Cut": "Cuts from one shot to another by matching action or composition, creating a strong link.",
+    "J-Cut": "The audio from the next scene begins before the video changes.",
+    "L-Cut": "The audio from the current scene continues into the next shot.",
+    "Whip Pan": "A very fast pan that blurs the image, creating a sense of energy and speed.",
+    "Glitch Effect": "A digital distortion effect used as a stylistic transition.",
+    "Fade to Black": "The image gradually fades to a black screen, often used to signify an ending.",
+    "Iris In/Out": "A circular mask closes in (out) or opens up (in) on a shot, a classic, stylized transition.",
+    "Smash Cut": "An abrupt and often jarring transition from one scene to another, usually from quiet to loud or vice-versa.",
   }
 };

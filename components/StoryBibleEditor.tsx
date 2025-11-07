@@ -177,7 +177,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                     <div className="flex justify-between items-center mb-2">
                         <div>
                              <label className="block text-sm font-medium text-gray-300">Characters</label>
-                             <p className="text-xs text-gray-400 mt-1">Introduce your key players. Give them a compelling hook.</p>
+                             <p className="text-xs text-gray-400 mt-1">Introduce your key players. Deepen their motivations and conflicts to drive the story.</p>
                         </div>
                         <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
                             <TabButton active={charTab === 'edit'} onClick={() => handleTabClick('characters', 'edit')}>Edit</TabButton>
@@ -210,7 +210,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                     <div className="flex justify-between items-center mb-2">
                          <div>
                             <label className="block text-sm font-medium text-gray-300">Plot Outline (The Hero's Journey)</label>
-                            <p className="text-xs text-gray-400 mt-1">Structure your narrative. Using a classic structure like the Hero's Journey creates a resonant story.</p>
+                            <p className="text-xs text-gray-400 mt-1">Structure your narrative. A classic structure creates a resonant story. Use the AI refiner to add twists and foreshadowing.</p>
                         </div>
                         <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
                            <TabButton active={plotTab === 'edit'} onClick={() => handleTabClick('plotOutline', 'edit')}>Edit</TabButton>

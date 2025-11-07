@@ -276,7 +276,7 @@ export const generateAndDetailInitialShots = async (
     Generate a JSON object with a single key: "shots".
     The value should be an array of 3-4 shot objects. For each shot, provide:
     1.  "description": (string) A vivid, actionable description written as a clear instruction for a camera operator. It must be cinematic and concise.
-    2.  "suggested_enhancers": (object) A JSON object of specific, synergistic creative enhancers (framing, movement, lighting, etc.) that bring the shot to life and align perfectly with the brief. Ensure the enhancers for each shot contribute to the scene's overall emotional arc.`;
+    2.  "suggested_enhancers": (object) A JSON object of specific, synergistic creative enhancers (framing, movement, lighting, etc.) that bring the shot to life and align perfectly with the brief. Ensure the enhancers for each shot contribute to the scene's overall emotional arc, paying special attention to how lighting evolves to match the mood.`;
     
     const detailedShotsSchema = {
         type: Type.OBJECT,
@@ -429,9 +429,9 @@ export const refineStoryBibleSection = async (
     
     let instruction = '';
     if (section === 'characters') {
-        instruction = "You are a master storyteller. Refine the following character descriptions to be more vivid, compelling, and concise. Enhance their motivations and conflicts. Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
+        instruction = "You are a master storyteller. Refine the following character descriptions to be more vivid and compelling. **Crucially, deepen their motivations, clarify their core desires, and introduce an internal or external conflict that drives their actions.** Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
     } else { // plotOutline
-        instruction = "You are a master screenwriter. Refine the following plot outline, ensuring it adheres strongly to the 3-act structure and The Hero's Journey. Make the plot points more dramatic and the pacing more effective. Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
+        instruction = "You are a master screenwriter. Refine the following plot outline, ensuring it adheres strongly to the 3-act structure and The Hero's Journey. Make the plot points more dramatic and the pacing more effective. **Where appropriate, suggest a compelling plot twist or a moment of foreshadowing that enhances the narrative.** Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
     }
 
     const prompt = `${instruction}
@@ -476,7 +476,9 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
 
     Example objectives:
     - "Inject more visual tension and a sense of impending dread."
-    - "Give this scene a more surreal, dreamlike quality."
+    - "Introduce a shocking plot twist that re-contextualizes the scene."
+    - "Weave in a subtle moment of foreshadowing for a future event."
+    - "Use lighting to create a stronger sense of mystery or isolation."
     - "Heighten the emotional vulnerability of the main character."
     `;
 
@@ -532,7 +534,7 @@ const suggestedChangesSchema = {
 
 export const getCoDirectorSuggestions = async (prunedContext: string, timelineSummary: string, objective: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<CoDirectorResult> => {
     const context = 'get Co-Director suggestions';
-    const prompt = `You are an AI Co-Director with a deep understanding of narrative, cinematography, and editing. Your task is to analyze a scene and suggest specific, creative changes to achieve a user's stated objective. Be bold and imaginative, but your suggestions must respect the established creative boundaries.
+    const prompt = `You are an AI Co-Director with a deep understanding of narrative, cinematography, and editing. Your task is to analyze a scene and suggest specific, creative changes to achieve a user's stated objective. Be bold and imaginative, but your suggestions must respect the established creative boundaries. **Consider adding plot twists, moments of foreshadowing, or using advanced cinematic techniques (especially lighting and transitions) to heighten the emotional impact.**
 
     **Co-Director's Brief (Key Context):**
     ${prunedContext}
@@ -547,7 +549,7 @@ export const getCoDirectorSuggestions = async (prunedContext: string, timelineSu
     Return a single, valid JSON object.
     1.  **thematic_concept**: A short, evocative phrase (3-5 words) that encapsulates your new creative direction for the scene (e.g., "Echoes of a Fading Memory", "The Walls Close In").
     2.  **reasoning**: A markdown-formatted paragraph. For each suggestion you make, you must explicitly state **why** it helps achieve the user's objective. Explain your creative choices clearly.
-    3.  **suggested_changes**: A JSON array of 2-4 diverse, actionable suggestions. Aim for variety: suggest changes to cinematography, add a new story beat, or alter the pacing. Each suggestion object must have:
+    3.  **suggested_changes**: A JSON array of 2-4 diverse, actionable suggestions. **Aim for variety: suggest changes to cinematography (lighting, framing), add a new story beat (like a plot twist or foreshadowing), or alter the pacing and transitions.** Each suggestion object must have:
         *   **type**: (string) One of 'UPDATE_SHOT', 'ADD_SHOT_AFTER', or 'UPDATE_TRANSITION'.
         *   **shot_id** or **after_shot_id** or **transition_index**: The identifier for where the change should occur.
         *   **payload**: (object) The data for the change.
@@ -732,11 +734,11 @@ ${sceneSummary}
 **Description:**
 ${shot.description}
 
-**Creative Enhancers:**
+**Creative Enhancers to Render Precisely:**
 - Framing: ${enhancers.framing?.join(', ') || 'N/A'}
 - Camera Movement: ${enhancers.movement?.join(', ') || 'N/A'}
 - Lens & Focus: ${enhancers.lens?.join(', ') || 'N/A'}
-- Lighting Style: ${enhancers.lighting?.join(', ') || 'N/A'}
+- Lighting Style: ${enhancers.lighting?.join(', ') || 'N/A'} **Lighting is critical: create the exact lighting style described (e.g., 'Low-Key' means dramatic shadows, not just a dark image).**
 - Mood & Tone: ${enhancers.mood?.join(', ') || 'N/A'}
 - Visual Style & VFX: ${enhancers.vfx?.join(', ') || 'N/A'}
 
@@ -851,7 +853,7 @@ export const scoreContinuity = async (prunedContext: string, scene: Scene, video
     Provide a detailed critique as a JSON object.
     1.  **scores**: A JSON object with three scores, each from 1-10 (integer). Be strict.
         *   **narrative_coherence**: How well does the video's action match the scene's plot purpose?
-        *   **aesthetic_alignment**: How well does the video's visual style match the Director's Vision?
+        *   **aesthetic_alignment**: How well does the video's visual style match the Director's Vision? **Pay close attention to specified lighting and mood.**
         *   **thematic_resonance**: How well does the video capture the intended mood and emotional core?
     2.  **overall_feedback**: A markdown-formatted paragraph summarizing your assessment. What worked, and what were the biggest deviations?
     3.  **suggested_changes**: A JSON array of specific, actionable suggestions. **Prioritize high-level, root-cause fixes.**
