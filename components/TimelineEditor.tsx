@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, memo } from 'react';
+import React, { useState, useCallback, useRef, memo, useEffect } from 'react';
 import { Shot, ShotEnhancers, CreativeEnhancers, Scene, TimelineData, StoryBible, BatchShotTask, SceneContinuityData, BatchShotResult } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
@@ -14,6 +14,9 @@ import Tooltip from './Tooltip';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import { useApiStatus } from '../contexts/ApiStatusContext';
 import VideoPlayer from './VideoPlayer';
+import { generateVideoRequestPayloads, sendToComfyUI } from '../services/videoGenerationService';
+import * as db from '../utils/database';
+import ServerIcon from './icons/ServerIcon';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -154,6 +157,26 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [queuedTasks, setQueuedTasks] = useState<Map<string, BatchShotTask>>(new Map());
     const [suggestionState, setSuggestionState] = useState<{ processingIds: Set<string> }>({ processingIds: new Set() });
 
+    const [comfyUIUrl, setComfyUIUrl] = useState('http://127.0.0.1:8188/prompt');
+    const [isSendingToComfy, setIsSendingToComfy] = useState(false);
+
+    useEffect(() => {
+        db.getData('comfyUIUrl').then(url => {
+            if (url && typeof url === 'string') {
+                setComfyUIUrl(url);
+            }
+        });
+    }, []);
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            if(comfyUIUrl) {
+                db.saveData('comfyUIUrl', comfyUIUrl);
+            }
+        }, 500); // Debounce saving
+        return () => clearTimeout(handler);
+    }, [comfyUIUrl]);
+
     const processTaskQueue = useCallback(() => {
         // FIX: Explicitly type `currentTasks` to help TypeScript correctly infer the type of `tasksToProcess`.
         setQueuedTasks((currentTasks: Map<string, BatchShotTask>) => {
@@ -287,6 +310,30 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         return { shots, shotEnhancers, transitions, negativePrompt: finalNegativePrompt.trim() };
     }, [shots, shotEnhancers, transitions, negativePrompt, mitigateViolence, enhanceRealism]);
     
+    const handleSendToComfyUI = useCallback(async () => {
+        if (!generatedImage || !comfyUIUrl) {
+            onApiStateChange('error', 'Missing keyframe image or ComfyUI URL.');
+            return;
+        }
+
+        setIsSendingToComfy(true);
+        onApiStateChange('loading', 'Sending to ComfyUI...');
+        try {
+            const timelineData = buildTimelineData();
+            const payloads = generateVideoRequestPayloads(timelineData, directorsVision, scene.summary);
+            
+            await sendToComfyUI(comfyUIUrl, payloads.text, generatedImage);
+
+            onApiStateChange('success', 'Successfully queued prompt in ComfyUI!');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            onApiStateChange('error', `ComfyUI Error: ${errorMessage}`);
+            console.error("ComfyUI request failed:", error);
+        } finally {
+            setIsSendingToComfy(false);
+        }
+    }, [generatedImage, comfyUIUrl, buildTimelineData, directorsVision, scene.summary, onApiStateChange]);
+
     const isProcessingSuggestions = suggestionState.processingIds.size > 0;
 
     return (
@@ -341,7 +388,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
             <div className="mt-8 pt-6 border-t border-gray-700 space-y-8">
                 <NegativePromptSuggestions suggestions={['shaky camera', 'blurry', 'low quality', 'watermark', 'text']} negativePrompt={negativePrompt} setNegativePrompt={setNegativePrompt} />
-                <GenerationControls mitigateViolence={mitigateViolence} setMitigateViolence={setMitigateViolence} enhanceRealism={enhanceRealism} setEnhanceRealism={setEnhanceRealism} />
+                <GenerationControls 
+                    mitigateViolence={mitigateViolence} 
+                    setMitigateViolence={setMitigateViolence} 
+                    enhanceRealism={enhanceRealism} 
+                    setEnhanceRealism={setEnhanceRealism}
+                    comfyUIUrl={comfyUIUrl}
+                    setComfyUIUrl={setComfyUIUrl}
+                />
             </div>
 
             <div className="mt-8 pt-6 border-t border-gray-700">
@@ -366,6 +420,21 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     >
                         <FilmIcon className="mr-3 h-6 w-6" />
                         Generate Video Request
+                    </button>
+                    <button
+                        onClick={handleSendToComfyUI}
+                        disabled={!generatedImage || !comfyUIUrl || isSendingToComfy}
+                        className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 bg-gray-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-gray-500 focus:ring-opacity-50 disabled:bg-gray-500 disabled:cursor-not-allowed transform hover:scale-105"
+                    >
+                        {isSendingToComfy ? (
+                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        ) : (
+                            <ServerIcon className="mr-3 h-6 w-6" />
+                        )}
+                        {isSendingToComfy ? 'Sending...' : 'Generate with ComfyUI'}
                     </button>
                 </div>
 

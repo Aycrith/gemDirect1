@@ -97,3 +97,43 @@ const generateHumanReadablePrompt = (
 
     return prompt.trim();
 };
+
+/**
+ * Sends a prompt and an image to a local ComfyUI server.
+ * @param url The endpoint URL of the ComfyUI server.
+ * @param prompt The text prompt for generation.
+ * @param base64Image The base64-encoded keyframe image.
+ */
+export const sendToComfyUI = async (
+    url: string,
+    prompt: string,
+    base64Image: string
+): Promise<any> => {
+    const payload = {
+        prompt: prompt,
+        image: base64Image,
+    };
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        // A standard ComfyUI API call requires wrapping the workflow in a 'prompt' key.
+        // We'll wrap our simple payload similarly, assuming the user's workflow is set up to find inputs within this structure.
+        body: JSON.stringify({ prompt: payload, client_id: `csg_${Date.now()}` }),
+    });
+
+    if (!response.ok) {
+        let errorMessage = `ComfyUI server responded with status: ${response.status}`;
+        try {
+            const errorData = await response.json();
+            errorMessage += ` - ${errorData.error || errorData.message || JSON.stringify(errorData)}`;
+        } catch (e) {
+            errorMessage += ` - ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+    }
+
+    return response.json();
+};
