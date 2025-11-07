@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion, DetailedShotResult } from "../types";
+import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion, DetailedShotResult, WorkflowMapping } from "../types";
 import { ApiStatus } from "../contexts/ApiStatusContext";
 
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
@@ -1047,3 +1047,62 @@ export const updateSceneSummaryWithRefinements = async (
     
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 }
+
+export const generateWorkflowMapping = async (
+    workflowJson: string, 
+    logApiCall: ApiLogCallback, 
+    onStateChange?: ApiStateChangeCallback
+): Promise<any> => {
+    const context = 'generate ComfyUI workflow mapping';
+    const prompt = `You are an expert system integrator for ComfyUI workflows. Your task is to analyze the provided ComfyUI workflow JSON and determine the optimal data mappings for the "Cinematic Story Generator" application.
+
+    **Application Data Types Available for Mapping:**
+    - "human_readable_prompt": The main positive prompt, a detailed text description of the entire scene.
+    - "full_timeline_json": A structured JSON payload of the entire scene (alternative to the human-readable prompt).
+    - "keyframe_image": The initial input image that serves as the scene's keyframe.
+    - "negative_prompt": The scene-wide negative prompt text.
+
+    **Workflow JSON to Analyze:**
+    \`\`\`json
+    ${workflowJson}
+    \`\`\`
+
+    **Your Task:**
+    1.  Identify the primary text input node for the positive prompt. This is typically a \`CLIPTextEncode\` node where the input is named "text" or "prompt". Map this to **"human_readable_prompt"**.
+    2.  Identify the primary text input node for the negative prompt. This will also be a \`CLIPTextEncode\` node, often connected to the "negative" input of a sampler. Map this to **"negative_prompt"**.
+    3.  Identify the initial image input node. This is almost always a \`LoadImage\` node. Map its "image" input to **"keyframe_image"**.
+    4.  Return a single, valid JSON object representing the mapping. The keys should be in the format \`"nodeId:inputName"\` and the values should be one of the application data types listed above.
+
+    **Example Output Format:**
+    {
+      "3:text": "human_readable_prompt",
+      "4:image": "keyframe_image",
+      "7:text": "negative_prompt"
+    }
+    
+    Do not include any data types that are not present in the workflow. If an input (like a negative prompt) is not found, do not include it in the mapping. Return only the JSON object.`;
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        description: "A mapping of ComfyUI node inputs to application data types.",
+        // We cannot define exact properties as they are dynamic based on the workflow.
+        // Let the model generate the key-value pairs freely.
+    };
+
+    const apiCall = async () => {
+        const response = await ai.models.generateContent({
+            model: proModel, // Use gemini-2.5-pro for this complex reasoning task
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema, temperature: 0.1 },
+        });
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for workflow mapping.");
+        }
+        const result = JSON.parse(text.trim());
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
+    };
+
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
+};

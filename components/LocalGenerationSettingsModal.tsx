@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { LocalGenerationSettings, WorkflowInput, MappableData, WorkflowMapping } from '../types';
+import { LocalGenerationSettings, WorkflowInput, MappableData, WorkflowMapping, ToastMessage } from '../types';
 import { discoverComfyUIServer } from '../services/comfyUIService';
 import ServerIcon from './icons/ServerIcon';
 import SettingsIcon from './icons/SettingsIcon';
@@ -10,12 +10,14 @@ import HelpCircleIcon from './icons/HelpCircleIcon';
 import Tooltip from './Tooltip';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import PreflightCheck from './PreflightCheck';
+import AiConfigurator from './AiConfigurator';
 
 interface Props {
     isOpen: boolean;
     onClose: () => void;
     settings: LocalGenerationSettings;
     onSave: (settings: LocalGenerationSettings) => void;
+    addToast: (message: string, type: ToastMessage['type']) => void;
 }
 
 const parseWorkflowForInputs = (workflowJson: string): WorkflowInput[] => {
@@ -49,11 +51,9 @@ const parseWorkflowForInputs = (workflowJson: string): WorkflowInput[] => {
     }
 };
 
-const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settings, onSave }) => {
+const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settings, onSave, addToast }) => {
     const [localSettings, setLocalSettings] = useState<LocalGenerationSettings>(settings);
     const [workflowInputs, setWorkflowInputs] = useState<WorkflowInput[]>([]);
-    const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
-    const [syncError, setSyncError] = useState('');
     const [discoveryStatus, setDiscoveryStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
 
     useEffect(() => {
@@ -63,10 +63,16 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         } else {
             setWorkflowInputs([]);
         }
-        // Reset statuses when modal is opened/closed
         setDiscoveryStatus('idle');
-        setSyncStatus('idle');
     }, [settings, isOpen]);
+    
+    useEffect(() => {
+        // When localSettings (which can be updated by AiConfigurator) changes, re-parse the inputs
+        if(localSettings.workflowJson) {
+            setWorkflowInputs(parseWorkflowForInputs(localSettings.workflowJson));
+        }
+    }, [localSettings.workflowJson]);
+
 
     const handleDiscover = async () => {
         setDiscoveryStatus('searching');
@@ -78,33 +84,6 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
             setDiscoveryStatus('not_found');
         }
     };
-
-    const handleSyncWorkflow = useCallback(async () => {
-        if (!localSettings.comfyUIUrl) {
-            setSyncError("Please enter or discover a valid ComfyUI server address.");
-            setSyncStatus('error');
-            return;
-        }
-        setSyncStatus('syncing');
-        setSyncError('');
-        try {
-            const url = localSettings.comfyUIUrl.endsWith('/') ? `${localSettings.comfyUIUrl}workflow` : `${localSettings.comfyUIUrl}/workflow`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`Server responded with status ${response.status}`);
-            const workflowJson = await response.text();
-
-            // Reset mapping when syncing a new workflow
-            const newMapping: WorkflowMapping = {};
-            setLocalSettings(prev => ({...prev, workflowJson, mapping: newMapping }));
-            setWorkflowInputs(parseWorkflowForInputs(workflowJson));
-            setSyncStatus('success');
-        } catch (error) {
-            console.error(error);
-            const errorMsg = error instanceof Error ? error.message : "An unknown error occurred.";
-            setSyncError(`Failed to sync workflow. Is the server running and accessible? Error: ${errorMsg}`);
-            setSyncStatus('error');
-        }
-    }, [localSettings.comfyUIUrl]);
 
     const handleMappingChange = (key: string, value: MappableData) => {
         setLocalSettings(prev => ({
@@ -174,12 +153,12 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                     {/* Workflow Sync & Mapping */}
                     <div className="space-y-4 p-4 bg-gray-900/50 rounded-lg ring-1 ring-gray-700/50">
                         <h4 className="font-semibold text-gray-200">Workflow Configuration</h4>
-                        <button onClick={handleSyncWorkflow} disabled={syncStatus === 'syncing'} className="w-full text-center px-4 py-2 bg-amber-600 text-white font-semibold rounded-md hover:bg-amber-700 disabled:bg-gray-500">
-                            {syncStatus === 'syncing' ? 'Syncing...' : 'Sync Workflow from Server'}
-                        </button>
-                        <p className="text-xs text-gray-500 text-center -mt-2">Note: Syncing will overwrite any existing workflow and reset your data mappings.</p>
-                        {syncStatus === 'error' && <p className="text-xs text-red-400">{syncError}</p>}
-                        {syncStatus === 'success' && <p className="text-xs text-green-400">Workflow synced successfully! Parsed {workflowInputs.length} potential inputs.</p>}
+                        
+                        <AiConfigurator 
+                           settings={localSettings}
+                           onUpdateSettings={setLocalSettings}
+                           addToast={addToast}
+                        />
                         
                         {workflowInputs.length > 0 && (
                             <div className="space-y-3 pt-4 border-t border-gray-600">

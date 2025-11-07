@@ -331,6 +331,7 @@ const AppContent: React.FC = () => {
                     setLocalGenSettings(newSettings);
                     addToast('Settings saved!', 'success');
                 }}
+                addToast={addToast}
             />
             {continuityModal && (
                 <ContinuityModal
@@ -391,7 +392,7 @@ const App: React.FC = () => (
     <UsageProvider>
         <ApiStatusProvider>
             <AppContent />
-        </ApiStatusProvider>
+        </Api-StatusProvider>
     </UsageProvider>
 );
 
