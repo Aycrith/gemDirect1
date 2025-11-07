@@ -27,7 +27,7 @@ const fetchImageAsDataURL = async (url: string, filename: string, subfolder: str
  */
 export const queueComfyUIPrompt = async (
     settings: LocalGenerationSettings,
-    payloads: { json: string; text: string },
+    payloads: { json: string; text: string; structured: any[] },
     base64Image: string,
 ): Promise<any> => {
     

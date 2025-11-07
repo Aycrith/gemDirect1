@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, TimelineData, Shot } from './types';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationSettings, LocalGenerationStatus, SceneContinuityData } from './types';
 import { useProjectData, usePersistentState } from './utils/hooks';
 import { updateSceneSummaryWithRefinements, generateNextSceneFromContinuity } from './services/geminiService';
 import { ApiStatusProvider, useApiStatus } from './contexts/ApiStatusContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
+import { saveProjectToFile, loadProjectFromFile } from './utils/projectUtils';
 
 import StoryIdeaForm from './components/StoryIdeaForm';
 import StoryBibleEditor from './components/StoryBibleEditor';
@@ -20,14 +21,18 @@ import LocalGenerationSettingsModal from './components/LocalGenerationSettingsMo
 import ContinuityDirector from './components/ContinuityDirector';
 import ContinuityModal from './components/ContinuityModal';
 import SparklesIcon from './components/icons/SparklesIcon';
+import SaveIcon from './components/icons/SaveIcon';
+import UploadCloudIcon from './components/icons/UploadCloudIcon';
+import ProgressBar from './components/ProgressBar';
 
 const AppContent: React.FC = () => {
+    const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0, task: '' });
     const { 
         workflowStage, setWorkflowStage, storyBible, setStoryBible, 
         directorsVision, setDirectorsVision, scenes, setScenes,
         handleGenerateStoryBible, handleGenerateScenes, isLoading: isProjectLoading,
-        scenesToReview, applySuggestions
-    } = useProjectData();
+        scenesToReview, setScenesToReview, applySuggestions
+    } = useProjectData(setGenerationProgress);
 
     const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -37,12 +42,13 @@ const AppContent: React.FC = () => {
     const [continuityModal, setContinuityModal] = useState<{ sceneId: string, lastFrame: string } | null>(null);
     const [isExtending, setIsExtending] = useState(false);
 
-    const [localGenSettings, setLocalGenSettings] = usePersistentState('localGenSettings', { comfyUIUrl: '', comfyUIClientId: '', workflowJson: '', mapping: {} });
-    const [generatedImages, setGeneratedImages] = usePersistentState('generatedImages', {});
-    const [generatedShotImages, setGeneratedShotImages] = usePersistentState('generatedShotImages', {});
-    const [continuityData, setContinuityData] = usePersistentState('continuityData', {});
-    const [localGenStatus, setLocalGenStatus] = usePersistentState('localGenStatus', {});
+    const [localGenSettings, setLocalGenSettings] = usePersistentState<LocalGenerationSettings>('localGenSettings', { comfyUIUrl: '', comfyUIClientId: '', workflowJson: '', mapping: {} });
+    const [generatedImages, setGeneratedImages] = usePersistentState<Record<string, string>>('generatedImages', {});
+    const [generatedShotImages, setGeneratedShotImages] = usePersistentState<Record<string, string>>('generatedShotImages', {});
+    const [continuityData, setContinuityData] = usePersistentState<Record<string, SceneContinuityData>>('continuityData', {});
+    const [localGenStatus, setLocalGenStatus] = usePersistentState<Record<string, LocalGenerationStatus>>('localGenStatus', {});
     
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
 
@@ -99,7 +105,7 @@ const AppContent: React.FC = () => {
         applySuggestions([suggestion], sceneId, addToast);
         
         // Mark scene as refined if it was a timeline change
-        if (suggestion.type === 'ADD_SHOT_AFTER' || suggestion.type === 'UPDATE_SHOT') {
+        if (suggestion.type === 'ADD_SHOT_AFTER' || suggestion.type === 'UPDATE_SHOT' || suggestion.type === 'UPDATE_TRANSITION') {
             setRefinedSceneIds(prev => new Set(prev).add(sceneId));
         }
     };
@@ -129,6 +135,67 @@ const AppContent: React.FC = () => {
     
     const handleExtendTimeline = (sceneId: string, lastFrame: string) => {
         setContinuityModal({ sceneId, lastFrame });
+    };
+
+    const handleSaveProject = () => {
+        saveProjectToFile({
+            storyBible,
+            directorsVision,
+            scenes,
+            generatedImages,
+            generatedShotImages,
+            continuityData,
+            localGenSettings,
+            localGenStatus,
+            scenesToReview,
+        });
+        addToast('Project saved to your downloads!', 'success');
+    };
+
+    const handleLoadProjectClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file) {
+            try {
+                const data = await loadProjectFromFile(file);
+                
+                // Hard reset of the application state
+                setStoryBible(data.storyBible);
+                setDirectorsVision(data.directorsVision);
+                setScenes(data.scenes);
+                setGeneratedImages(data.generatedImages || {});
+                setGeneratedShotImages(data.generatedShotImages || {});
+                setContinuityData(data.continuityData || {});
+                setLocalGenSettings(data.localGenSettings || { comfyUIUrl: '', comfyUIClientId: '', workflowJson: '', mapping: {} });
+                setLocalGenStatus(data.localGenStatus || {});
+                setScenesToReview(new Set(data.scenesToReview || []));
+
+                // Determine workflow stage from loaded data
+                if (data.storyBible) {
+                    if (data.directorsVision) {
+                        if (data.scenes.length > 0) {
+                            setWorkflowStage('director');
+                        } else {
+                            setWorkflowStage('vision');
+                        }
+                    } else {
+                        setWorkflowStage('bible');
+                    }
+                } else {
+                    setWorkflowStage('idea');
+                }
+                addToast('Project loaded successfully!', 'success');
+            } catch (e) {
+                addToast(e instanceof Error ? e.message : 'Failed to load project.', 'error');
+            } finally {
+                if (event.target) {
+                    event.target.value = ''; // Reset file input
+                }
+            }
+        }
     };
 
     const activeScene = scenes.find(s => s.id === activeSceneId);
@@ -218,6 +285,13 @@ const AppContent: React.FC = () => {
                     <h1 className="text-xl font-bold text-white">Cinematic Story Generator</h1>
                 </div>
                 <div>
+                    <button onClick={handleSaveProject} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Save project">
+                        <SaveIcon className="w-6 h-6 text-gray-400" />
+                    </button>
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" style={{ display: 'none' }} />
+                    <button onClick={handleLoadProjectClick} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Load project">
+                        <UploadCloudIcon className="w-6 h-6 text-gray-400" />
+                    </button>
                      <button onClick={() => setIsUsageDashboardOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Open usage dashboard">
                         <BarChartIcon className="w-6 h-6 text-gray-400" />
                     </button>
@@ -230,6 +304,13 @@ const AppContent: React.FC = () => {
             <main className="py-8 sm:py-12">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
+                    {generationProgress.total > 0 && (
+                        <ProgressBar
+                            current={generationProgress.current}
+                            total={generationProgress.total}
+                            task={generationProgress.task}
+                        />
+                    )}
                     {renderCurrentStage()}
                 </div>
             </main>

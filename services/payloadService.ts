@@ -1,4 +1,29 @@
-import { TimelineData } from '../types';
+import { TimelineData, Shot, CreativeEnhancers } from '../types';
+
+const generateHumanReadablePromptForShot = (
+    shot: Shot, 
+    enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>,
+    index: number
+): string => {
+    let prompt = `Shot ${index + 1}: ${shot.description}`;
+    if (enhancers && Object.keys(enhancers).length > 0) {
+        const enhancerText = Object.entries(enhancers)
+            .map(([key, value]) => {
+                if (Array.isArray(value) && value.length > 0) {
+                    const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
+                    return `${formattedKey}: ${value.join(', ')}`;
+                }
+                return null;
+            })
+            .filter(Boolean)
+            .join('; ');
+        if (enhancerText) {
+            prompt += ` (Style: ${enhancerText})`;
+        }
+    }
+    return prompt.trim() + '.';
+};
+
 
 /**
  * Generates a structured JSON payload and a human-readable text prompt from timeline data.
@@ -10,8 +35,9 @@ import { TimelineData } from '../types';
 export const generateVideoRequestPayloads = (
     timeline: TimelineData,
     directorsVision: string,
-    sceneSummary: string
-): { json: string; text: string } => {
+    sceneSummary: string,
+    generatedShotImages: Record<string, string>
+): { json: string; text: string; structured: any[] } => {
 
     const interleavedTimeline = timeline.shots.reduce((acc: any[], shot, index) => {
         const shotData = {
@@ -48,52 +74,29 @@ export const generateVideoRequestPayloads = (
     };
 
     const json = JSON.stringify(payload, null, 2);
-    const text = generateHumanReadablePrompt(timeline, directorsVision, sceneSummary);
+    
+    let fullTextPrompt = `Create a cinematic sequence. The scene is about: "${sceneSummary}". The overall visual style should be "${directorsVision}".\n\n`;
+    const structuredPayload = timeline.shots.map((shot, index) => {
+        const text = generateHumanReadablePromptForShot(shot, timeline.shotEnhancers[shot.id] || {}, index);
+        const image = generatedShotImages[shot.id] || null;
+        const transition = index < timeline.transitions.length ? timeline.transitions[index] : null;
 
-    return { json, text };
-};
-
-/**
- * Creates a human-readable, narrative prompt from the timeline data.
- * @param timeline The scene's timeline data.
- * @param directorsVision The overall visual style guide.
- * @param sceneSummary A brief summary of the scene's purpose.
- * @returns A formatted string suitable for use as a descriptive prompt.
- */
-export const generateHumanReadablePrompt = (
-    timeline: TimelineData,
-    directorsVision: string,
-    sceneSummary: string
-): string => {
-    let prompt = `Create a cinematic sequence. The scene is about: "${sceneSummary}". The overall visual style should be "${directorsVision}".\n\n`;
-
-    timeline.shots.forEach((shot, index) => {
-        prompt += `Shot ${index + 1}: ${shot.description}`;
-        const enhancers = timeline.shotEnhancers[shot.id];
-        if (enhancers && Object.keys(enhancers).length > 0) {
-            const enhancerText = Object.entries(enhancers)
-                .map(([key, value]) => {
-                    if (Array.isArray(value) && value.length > 0) {
-                        return `${key}: ${value.join(', ')}`;
-                    }
-                    return null;
-                })
-                .filter(Boolean)
-                .join('; ');
-            if (enhancerText) {
-                prompt += ` (Style: ${enhancerText})`;
-            }
+        fullTextPrompt += text;
+        if(transition) {
+            fullTextPrompt += `\n\n--[${transition}]-->\n\n`;
         }
-        prompt += '.\n';
 
-        if (index < timeline.transitions.length) {
-            prompt += `\n--[${timeline.transitions[index]}]-->\n\n`;
-        }
+        return {
+            shotNumber: index + 1,
+            text,
+            image,
+            transition,
+        };
     });
-
-    if (timeline.negativePrompt) {
-        prompt += `\nGlobal Style & Negative Prompt: ${timeline.negativePrompt}`;
+    
+     if (timeline.negativePrompt) {
+        fullTextPrompt += `\n\nGlobal Style & Negative Prompt: ${timeline.negativePrompt}`;
     }
 
-    return prompt.trim();
+    return { json, text: fullTextPrompt.trim(), structured: structuredPayload };
 };

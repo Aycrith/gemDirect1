@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { CoDirectorResult, Suggestion } from '../types';
+import { CoDirectorResult, Suggestion, StoryBible, Scene } from '../types';
+import { suggestCoDirectorObjectives, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import LightbulbIcon from './icons/LightbulbIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import { marked } from 'marked';
@@ -10,7 +11,11 @@ interface CoDirectorProps {
   result: CoDirectorResult | null;
   onApplySuggestion: (suggestion: Suggestion) => void;
   onClose: () => void;
-  onGetInspiration: () => Promise<string[] | undefined>;
+  storyBible: StoryBible;
+  scene: Scene;
+  directorsVision: string;
+  onApiLog: ApiLogCallback;
+  onApiStateChange: ApiStateChangeCallback;
 }
 
 const SuggestionModal: React.FC<{
@@ -89,7 +94,18 @@ const SuggestionModal: React.FC<{
 });
 
 
-const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, result, onApplySuggestion, onClose, onGetInspiration }) => {
+const CoDirector: React.FC<CoDirectorProps> = ({ 
+    onGetSuggestions, 
+    isLoading, 
+    result, 
+    onApplySuggestion, 
+    onClose, 
+    storyBible, 
+    scene, 
+    directorsVision,
+    onApiLog,
+    onApiStateChange
+}) => {
     const [objective, setObjective] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -111,14 +127,22 @@ const CoDirector: React.FC<CoDirectorProps> = ({ onGetSuggestions, isLoading, re
         setIsProcessing(true);
         setSuggestions([]);
         try {
-            const result = await onGetInspiration();
+            const result = await suggestCoDirectorObjectives(
+                storyBible.logline,
+                scene.summary,
+                directorsVision,
+                onApiLog,
+                onApiStateChange
+            );
             if (result) {
                 setSuggestions(result);
             }
+        } catch(e) {
+            console.error(e)
         } finally {
             setIsProcessing(false);
         }
-    }, [onGetInspiration]);
+    }, [storyBible, scene, directorsVision, onApiLog, onApiStateChange]);
 
     const isAnyActionLoading = isLoading || isProcessing;
 

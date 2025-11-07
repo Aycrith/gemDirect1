@@ -157,7 +157,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                         <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
                             <TabButton active={charTab === 'edit'} onClick={() => handleTabClick('characters', 'edit')}>Edit</TabButton>
                             <TabButton active={charTab === 'preview'} onClick={() => handleTabClick('characters', 'preview')}>
-                                <SparklesIcon className="w-3 h-3" /> AI Preview
+                                <SparklesIcon className="w-3 h-3" /> Refine with AI
                             </TabButton>
                         </div>
                     </div>
@@ -188,7 +188,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                         <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
                            <TabButton active={plotTab === 'edit'} onClick={() => handleTabClick('plotOutline', 'edit')}>Edit</TabButton>
                            <TabButton active={plotTab === 'preview'} onClick={() => handleTabClick('plotOutline', 'preview')}>
-                               <SparklesIcon className="w-3 h-3" /> AI Preview
+                               <SparklesIcon className="w-3 h-3" /> Refine with AI
                            </TabButton>
                         </div>
                     </div>

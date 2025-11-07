@@ -52,7 +52,7 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
 /**
  * A custom hook to manage the core project data lifecycle.
  */
-export function useProjectData() {
+export function useProjectData(setGenerationProgress: React.Dispatch<React.SetStateAction<{ current: number, total: number, task: string }>>) {
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('idea');
     const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
     const [directorsVision, setDirectorsVision] = useState<string>('');
@@ -133,28 +133,40 @@ export function useProjectData() {
                 timeline: { shots: [], shotEnhancers: {}, transitions: [], negativePrompt: '' },
             }));
             setScenes(newScenes);
-            addToast(`${newScenes.length} scenes generated! Now generating keyframe images. This may take a moment due to rate limits.`, 'info');
+            addToast(`${newScenes.length} scenes generated! Now generating keyframe images.`, 'info');
+            
+            setGenerationProgress({ current: 0, total: newScenes.length, task: 'Generating Scene Keyframes...' });
 
-            // Generate images sequentially to respect API rate limits.
             let successes = 0;
             for (let i = 0; i < newScenes.length; i++) {
                 const scene = newScenes[i];
                 try {
-                    // Update UI with progress. The 'withRetry' helper will also show its own messages.
-                    updateApiStatus('loading', `Generating keyframe ${i + 1}/${newScenes.length} for scene: "${scene.title}"`);
+                    const taskMessage = `Generating keyframe for scene: "${scene.title}"`;
+                    setGenerationProgress(prev => ({ ...prev, current: i + 1, task: taskMessage }));
                     
-                    const prompt = `A cinematic keyframe for a scene about: "${scene.summary}". Style: ${vision}`;
+                    const prompt = `Generate a single, cinematic, photorealistic, high-quality keyframe image that encapsulates the essence of an entire scene.
+
+**Director's Vision (Cinematic Style Bible):**
+"${vision}"
+
+**Scene to Visualize:**
+"${scene.summary}"
+
+**TASK:**
+Create one powerful, evocative image that represents the most crucial moment or overall mood of this scene, strictly adhering to the specified Director's Vision.
+
+**NEGATIVE PROMPT:**
+Avoid generic or boring compositions. Do not include text, watermarks, or logos. Focus on dynamic lighting and a strong sense of atmosphere.`;
                     const image = await generateKeyframeForScene(prompt, logApiCall, updateApiStatus);
                     
-                    // Update state incrementally so the user sees images appear one by one.
                     setGeneratedImages(prev => ({ ...prev, [scene.id]: image }));
                     successes++;
                 } catch (e) {
-                    // The withRetry handler will show a toast, but we can log it here too.
                     console.error(`Failed to generate keyframe for scene "${scene.title}":`, e);
-                    // The error toast is already handled by `withRetry`.
                 }
             }
+            
+            setGenerationProgress({ current: 0, total: 0, task: '' }); // Reset progress bar
 
             setWorkflowStage('director');
             if (successes === newScenes.length) {
@@ -165,12 +177,12 @@ export function useProjectData() {
 
         } catch (e) {
             console.error(e);
-            // This catches errors from generateSceneList.
             addToast(e instanceof Error ? e.message : 'Failed to generate scenes.', 'error');
         } finally {
             setIsLoading(false);
+            setGenerationProgress({ current: 0, total: 0, task: '' });
         }
-    }, [storyBible, logApiCall, updateApiStatus]);
+    }, [storyBible, logApiCall, updateApiStatus, setGenerationProgress]);
 
 
     const applySuggestions = useCallback((suggestions: Suggestion[], sceneIdToUpdate?: string, addToast?: (message: string, type: ToastMessage['type']) => void) => {
@@ -259,7 +271,7 @@ export function useProjectData() {
         directorsVision, setDirectorsVision,
         scenes, setScenes,
         isLoading,
-        scenesToReview,
+        scenesToReview, setScenesToReview,
         handleGenerateStoryBible,
         handleGenerateScenes,
         applySuggestions,

@@ -275,7 +275,7 @@ export const generateAndDetailInitialShots = async (
     **Your Task:**
     Generate a JSON object with a single key: "shots".
     The value should be an array of 3-4 objects. Each object represents a single cinematic shot and must contain:
-    1.  "description": (string) A vivid description of the shot.
+    1.  "description": (string) A vivid, actionable, and cinematic description of the shot.
     2.  "suggested_enhancers": (object) A JSON object of creative enhancers (like framing, movement, lighting) that perfectly match the shot's description and the overall brief. Be creative and specific.`;
     
     const detailedShotsSchema = {
@@ -377,40 +377,44 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible, logApiCall
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
-export const refineEntireStoryBible = async (storyBible: StoryBible, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
-    const context = 'refine Story Bible';
-    const prompt = `You are a master screenwriter and editor. Your task is to refine the following Story Bible. Enhance the clarity, emotional impact, and narrative cohesion of each section without fundamentally changing the core concepts. Make the logline punchier, the characters more compelling, the setting more evocative, and the plot outline more tightly structured around The Hero's Journey.
+export const refineDirectorsVision = async (
+    vision: string,
+    storyBible: StoryBible,
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<string> => {
+    const context = 'refine Director\'s Vision';
+    const prompt = `You are a visionary film director and critic. Your task is to refine and expand upon the following "Director's Vision" to make it more evocative, detailed, and actionable for a creative team. Incorporate specific cinematic language and techniques that align with the provided story bible.
 
-    **Original Story Bible:**
-    ${JSON.stringify(storyBible, null, 2)}
+    **Story Bible (for context):**
+    - Logline: ${storyBible.logline}
+    - Characters: ${storyBible.characters}
+    - Setting: ${storyBible.setting}
+    - Plot Outline: ${storyBible.plotOutline}
 
-    **Your Output:** Return a JSON object with the refined Story Bible, following the exact same schema.`;
+    **Original Director's Vision to Refine:**
+    ---
+    "${vision}"
+    ---
 
-    const responseSchema = {
-        type: Type.OBJECT,
-        properties: {
-            logline: { type: Type.STRING },
-            characters: { type: Type.STRING },
-            setting: { type: Type.STRING },
-            plotOutline: { type: Type.STRING },
-        },
-        required: ['logline', 'characters', 'setting', 'plotOutline'],
-    };
+    **Your Output:**
+    Return a single paragraph of the refined Director's Vision. It should be a more descriptive and professional version of the original idea, rich with cinematic terminology (e.g., mentioning camera work, color palettes, lighting styles, editing pace, sound design).`;
 
     const apiCall = async () => {
         const response = await ai.models.generateContent({
             model: proModel,
             contents: prompt,
-            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+            config: { temperature: 0.7 },
         });
         const text = response.text;
         if (!text) {
-            throw new Error("The model returned an empty response for refining Story Bible.");
+            throw new Error(`The model returned an empty response for ${context}.`);
         }
-        const result = JSON.parse(text.trim()) as StoryBible;
+        const result = text.trim();
         const tokens = response.usageMetadata?.totalTokenCount || 0;
         return { result, tokens };
     };
+
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
@@ -648,7 +652,6 @@ export const batchProcessShotEnhancements = async (
         return { result, tokens };
     };
 
-    // FIX: Explicitly specify the generic type for `withRetry` to ensure correct type inference.
     return withRetry<BatchShotResult[]>(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
@@ -696,32 +699,35 @@ export const generateImageForShot = async (
 ): Promise<string> => {
     const context = 'generate shot preview';
 
-    let prompt = `Generate a single, cinematic keyframe image for a specific shot within a scene.
-    
-**Overall Scene Summary:** ${sceneSummary}
-**Director's Vision / Cinematic Style:** ${directorsVision}
+    const prompt = `Generate a single, cinematic, photorealistic, high-quality keyframe image for a specific shot. The image must perfectly capture the shot's description and strictly adhere to the director's vision.
 
-**Specific Shot Description:**
+**Overall Scene Summary:**
+${sceneSummary}
+
+**Director's Vision (Cinematic Style Bible):**
+${directorsVision}
+
+---
+**SPECIFIC SHOT DETAILS**
+
+**Description:**
 ${shot.description}
+
+**Creative Enhancers for this Shot:**
+- Framing: ${enhancers.framing?.join(', ') || 'N/A'}
+- Camera Movement: ${enhancers.movement?.join(', ') || 'N/A'}
+- Lens & Focus: ${enhancers.lens?.join(', ') || 'N/A'}
+- Lighting Style: ${enhancers.lighting?.join(', ') || 'N/A'}
+- Mood & Tone: ${enhancers.mood?.join(', ') || 'N/A'}
+- Visual Style & VFX: ${enhancers.vfx?.join(', ') || 'N/A'}
+
+---
+**TASK:**
+Create the image based on the **SPECIFIC SHOT DETAILS**. The overall style must match the **Director's Vision**.
+
+**NEGATIVE PROMPT:**
+Avoid static, boring, or centered compositions. Do not include text, watermarks, or logos. Ensure characters look natural and anatomically correct.
 `;
-
-    if (enhancers && Object.keys(enhancers).length > 0) {
-        const enhancerText = Object.entries(enhancers)
-            .map(([key, value]) => {
-                if (Array.isArray(value) && value.length > 0) {
-                    const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
-                    return `${formattedKey}: ${value.join(', ')}`;
-                }
-                return null;
-            })
-            .filter(Boolean)
-            .join('; ');
-        if (enhancerText) {
-            prompt += `\n**Creative Enhancers for this Shot:** ${enhancerText}`;
-        }
-    }
-
-    prompt += "\n\n**Task:** Create a photorealistic, high-quality image that captures this shot perfectly, adhering to all the specified styles and descriptions."
 
     const apiCall = async () => {
         const response = await ai.models.generateContent({
@@ -822,6 +828,8 @@ export const scoreContinuity = async (prunedContext: string, scene: Scene, video
 
     **AI's Analysis of the Generated Video (The Result):**
     ${videoAnalysis}
+    
+    **Critical Analysis:** Go beyond surface-level mismatches. Your primary value is in identifying *why* the generated video failed. Does it indicate a flaw in the original shot description, a clash between the director's vision and the scene's content, or a misunderstanding of the narrative's core purpose? Your suggestions should aim to fix the root cause.
 
     **Your Task:**
     Provide a detailed critique as a JSON object. Your analysis must be strict and constructive.

@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import PaintBrushIcon from './icons/PaintBrushIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { suggestDirectorsVisions, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
+import { suggestDirectorsVisions, refineDirectorsVision, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import { StoryBible } from '../types';
 import { useInteractiveSpotlight } from '../utils/hooks';
 import ThematicLoader from './ThematicLoader';
@@ -18,6 +18,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
     const [vision, setVision] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
+    const [isEnhancing, setIsEnhancing] = useState(false);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -40,6 +41,19 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
         }
     }, [storyBible, onApiStateChange, onApiLog]);
 
+    const handleEnhance = useCallback(async () => {
+        if (!vision.trim()) return;
+        setIsEnhancing(true);
+        try {
+            const enhancedVision = await refineDirectorsVision(vision, storyBible, onApiLog, onApiStateChange);
+            setVision(enhancedVision);
+        } catch(e) {
+            console.error(e);
+        } finally {
+            setIsEnhancing(false);
+        }
+    }, [vision, storyBible, onApiLog, onApiStateChange]);
+
     return (
         <div ref={spotlightRef} className="max-w-3xl mx-auto text-center glass-card p-8 rounded-xl shadow-2xl shadow-black/30 interactive-spotlight">
             <h2 className="text-3xl font-bold text-gray-100 mb-4">Define Your Director's Vision</h2>
@@ -48,13 +62,28 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
             </p>
             
             <form onSubmit={handleSubmit}>
-                <textarea
-                    value={vision}
-                    onChange={(e) => setVision(e.target.value)}
-                    rows={4}
-                    className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-green-500/30 shadow-black/30 focus:ring-2 focus:ring-green-500 focus:border-green-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
-                    placeholder="e.g., 'A fast-paced, kinetic style inspired by Edgar Wright...' or 'A lush, hand-painted Ghibli aesthetic with an emphasis on nature...' or 'Spider-Verse-style dynamic comic book visuals.'"
-                />
+                 <div className="relative">
+                    <textarea
+                        value={vision}
+                        onChange={(e) => setVision(e.target.value)}
+                        rows={4}
+                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-green-500/30 shadow-black/30 focus:ring-2 focus:ring-green-500 focus:border-green-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+                        placeholder="e.g., 'A fast-paced, kinetic style inspired by Edgar Wright...' or 'A lush, hand-painted Ghibli aesthetic with an emphasis on nature...' or 'Spider-Verse-style dynamic comic book visuals.'"
+                    />
+                    <button
+                        type="button"
+                        onClick={handleEnhance}
+                        disabled={isEnhancing || !vision.trim()}
+                        className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-indigo-600/50 text-indigo-200 hover:bg-indigo-600/80 disabled:bg-gray-600 disabled:text-gray-400"
+                    >
+                        {isEnhancing ? (
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        ) : (
+                            <SparklesIcon className="w-4 h-4" />
+                        )}
+                        Enhance
+                    </button>
+                </div>
                 <button
                     type="submit"
                     disabled={isLoading || !vision.trim()}

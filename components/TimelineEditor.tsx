@@ -1,7 +1,5 @@
-
-
 import React, { useState, useCallback } from 'react';
-import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult } from '../types';
+import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 import CoDirector from './CoDirector';
@@ -9,8 +7,7 @@ import PlusIcon from './icons/PlusIcon';
 import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import ImageIcon from './icons/ImageIcon';
-// FIX: Import 'getCoDirectorSuggestions' and 'batchProcessShotEnhancements' from geminiService.
-import { generateAndDetailInitialShots, generateImageForShot, getCoDirectorSuggestions, batchProcessShotEnhancements, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, getPrunedContextForBatchProcessing } from '../services/geminiService';
+import { generateAndDetailInitialShots, generateImageForShot, getCoDirectorSuggestions, batchProcessShotEnhancements, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, getPrunedContextForBatchProcessing, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import { generateVideoRequestPayloads } from '../services/payloadService';
 import { queueComfyUIPrompt, trackPromptExecution } from '../services/comfyUIService';
 import FinalPromptModal from './FinalPromptModal';
@@ -26,9 +23,9 @@ interface TimelineEditorProps {
     scene: Scene;
     onUpdateScene: (scene: Scene) => void;
     directorsVision: string;
-    storyBible: any;
-    onApiStateChange: (status: any, message: string) => void;
-    onApiLog: (log: any) => void;
+    storyBible: StoryBible;
+    onApiStateChange: ApiStateChangeCallback;
+    onApiLog: ApiLogCallback;
     scenes: Scene[];
     onApplySuggestion: (suggestion: Suggestion, sceneId: string) => void;
     generatedImages: Record<string, string>;
@@ -122,7 +119,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [coDirectorResult, setCoDirectorResult] = useState<any | null>(null);
     const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
     const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
-    const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string } | null>(null);
+    const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string; structured: any[] } | null>(null);
     const [isGeneratingShotImage, setIsGeneratingShotImage] = useState<Record<string, boolean>>({});
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
     const [isSaved, setIsSaved] = useState(false);
@@ -280,7 +277,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     };
 
     const handleExportPrompts = () => {
-        const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary);
+        const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary, generatedShotImages);
         setPromptsToExport(payloads);
         setIsPromptModalOpen(true);
     };
@@ -302,7 +299,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         updateStatus({ status: 'queued', message: 'Preparing to queue prompt...', progress: 0 });
         
         try {
-            const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary);
+            const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary, generatedShotImages);
             const response = await queueComfyUIPrompt(localGenSettings, payloads, sceneKeyframe);
             
             if (response.prompt_id) {
@@ -407,7 +404,11 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 result={coDirectorResult}
                 onApplySuggestion={(suggestion) => onApplySuggestion(suggestion, scene.id)}
                 onClose={() => setCoDirectorResult(null)}
-                onGetInspiration={() => Promise.resolve([])}
+                storyBible={storyBible}
+                scene={scene}
+                directorsVision={directorsVision}
+                onApiLog={onApiLog}
+                onApiStateChange={onApiStateChange}
             />
             
             <div className="space-y-6 pt-6 border-t border-gray-700/50">
