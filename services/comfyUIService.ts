@@ -1,3 +1,4 @@
+
 import { LocalGenerationSettings, LocalGenerationStatus, WorkflowInput, WorkflowMapping } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 
@@ -115,6 +116,29 @@ export const checkSystemResources = async (url: string): Promise<string> => {
 };
 
 /**
+ * Fetches the current queue status from the ComfyUI server.
+ * @param url The server URL to check.
+ * @returns A promise that resolves to an object containing running and pending queue counts.
+ */
+export const getQueueInfo = async (url: string): Promise<{ queue_running: number, queue_pending: number }> => {
+    if (!url) {
+        throw new Error("Server address is not configured.");
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const response = await fetch(`${url}/queue`, { signal: controller.signal, mode: 'cors' });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+        throw new Error(`Could not retrieve queue info (status: ${response.status}).`);
+    }
+    const data = await response.json();
+    return {
+        queue_running: data.queue_running.length,
+        queue_pending: data.queue_pending.length,
+    };
+};
+
+/**
  * Validates the synced workflow and the consistency of the data mappings.
  * @param settings The current local generation settings.
  * @returns A promise that resolves if validation passes, and rejects with an array of specific error messages otherwise.
@@ -137,34 +161,43 @@ export const validateWorkflowAndMappings = (settings: LocalGenerationSettings): 
     }
 
     const mappingErrors: string[] = [];
-
-    // Check if essential data types are mapped
     const mappedDataTypes = new Set(Object.values(settings.mapping));
+
+    // Stricter checks for essential mappings
     if (!mappedDataTypes.has('human_readable_prompt') && !mappedDataTypes.has('full_timeline_json')) {
-        mappingErrors.push("Workflow is missing a mapping for the main text prompt (either Human-Readable or JSON).");
+        mappingErrors.push("Workflow is missing a mapping for the main text prompt. Please map either 'Human-Readable Prompt' or 'Full Timeline JSON' to a text input in your workflow.");
     }
     if (!mappedDataTypes.has('keyframe_image')) {
-        mappingErrors.push("Workflow is missing a mapping for the keyframe image input.");
+        mappingErrors.push("Workflow is missing a mapping for the keyframe image. Please map 'Keyframe Image' to a 'LoadImage' node's 'image' input.");
     }
     
+    // Check individual mappings for consistency and type compatibility
     for (const [key, dataType] of Object.entries(settings.mapping)) {
         if (dataType === 'none') continue;
 
         const [nodeId, inputName] = key.split(':');
         const node = promptPayloadTemplate[nodeId];
+        const nodeTitle = node?._meta?.title || `Node ${nodeId}`;
 
         if (!node) {
-            mappingErrors.push(`Mapped node ID '${nodeId}' no longer exists in your workflow.`);
-            continue; // Skip further checks for this node
+            mappingErrors.push(`Mapped node '${nodeTitle}' no longer exists in your workflow. Please re-sync and update mappings.`);
+            continue;
         }
         if (!node.inputs || typeof node.inputs[inputName] === 'undefined') {
-            const nodeTitle = node._meta?.title || `Node ${nodeId}`;
-            mappingErrors.push(`Mapped input '${inputName}' not found on node '${nodeTitle}'.`);
+            mappingErrors.push(`Mapped input '${inputName}' not found on node '${nodeTitle}'. The workflow may have changed.`);
+            continue;
+        }
+
+        // Add type-specific validation
+        if (dataType === 'keyframe_image' && node.class_type !== 'LoadImage') {
+             mappingErrors.push(`'Keyframe Image' is mapped to node '${nodeTitle}', which is not a 'LoadImage' node. This will cause an error.`);
+        }
+        if ((dataType === 'human_readable_prompt' || dataType === 'full_timeline_json' || dataType === 'negative_prompt') && node.class_type !== 'CLIPTextEncode') {
+             mappingErrors.push(`Warning: Text data ('${dataType}') is mapped to '${nodeTitle}', which isn't a standard 'CLIPTextEncode' node. This might not work as expected with custom nodes.`);
         }
     }
 
     if (mappingErrors.length > 0) {
-        // We throw a single error containing all the specific issues.
         throw new Error(`Mapping Consistency Errors:\n- ${mappingErrors.join('\n- ')}\nPlease re-sync your workflow or adjust mappings.`);
     }
 };
@@ -196,7 +229,7 @@ const fetchImageAsDataURL = async (url: string, filename: string, subfolder: str
  */
 export const queueComfyUIPrompt = async (
     settings: LocalGenerationSettings,
-    payloads: { json: string; text: string; structured: any[] },
+    payloads: { json: string; text: string; structured: any[], negativePrompt: string },
     base64Image: string,
 ): Promise<any> => {
     
@@ -258,6 +291,9 @@ export const queueComfyUIPrompt = async (
                         break;
                     case 'full_timeline_json':
                         dataToInject = payloads.json;
+                        break;
+                    case 'negative_prompt':
+                        dataToInject = payloads.negativePrompt;
                         break;
                     case 'keyframe_image':
                         if (uploadedImageFilename && node.class_type === 'LoadImage') {
@@ -324,6 +360,7 @@ export const trackPromptExecution = (
     };
 
     ws.onmessage = async (event) => {
+        if (typeof event.data !== 'string') return; // Ignore binary data
         const msg = JSON.parse(event.data);
         
         switch (msg.type) {
@@ -372,11 +409,19 @@ export const trackPromptExecution = (
                     });
                 }
                 break;
+            
+            case 'execution_error':
+                if (msg.data.prompt_id === promptId) {
+                    const errorDetails = msg.data;
+                    const errorMessage = `Execution error on node ${errorDetails.node_id}: ${errorDetails.exception_message}`;
+                    onProgress({ status: 'error', message: errorMessage });
+                    ws.close();
+                }
+                break;
 
             case 'executed':
                 if (msg.data.prompt_id === promptId) {
                     const outputs = msg.data.output;
-                    // Check for common output types
                     const imageOutput = outputs.images?.[0] || outputs.gifs?.[0]; 
 
                     if (imageOutput) {
@@ -392,7 +437,7 @@ export const trackPromptExecution = (
                                 status: 'complete',
                                 message: 'Generation complete!',
                                 final_output: {
-                                    type: imageOutput.type === 'output' ? 'image' : 'video', // 'output' is typically image, 'temp' can be video previews
+                                    type: imageOutput.type === 'output' ? 'image' : 'video', 
                                     data: outputUrl,
                                     filename: imageOutput.filename,
                                 },
@@ -402,10 +447,9 @@ export const trackPromptExecution = (
                              onProgress({ status: 'error', message });
                         }
                     } else {
-                         // If no image output, but execution finished, it's complete.
                         onProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
                     }
-                    ws.close(); // Close connection after completion
+                    ws.close();
                 }
                 break;
         }

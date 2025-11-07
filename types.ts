@@ -1,3 +1,4 @@
+
 import { ReactNode } from "react";
 
 export interface Shot {
@@ -138,7 +139,7 @@ export interface WorkflowInput {
     inputType: string; // e.g., 'STRING', 'IMAGE'
 }
 
-export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_json' | 'keyframe_image';
+export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_json' | 'keyframe_image' | 'negative_prompt';
 
 // Key is `${nodeId}:${inputName}`
 export type WorkflowMapping = Record<string, MappableData>; 

@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { LocalGenerationSettings } from '../types';
-import { checkServerConnection, validateWorkflowAndMappings, checkSystemResources } from '../services/comfyUIService';
+import { checkServerConnection, validateWorkflowAndMappings, checkSystemResources, getQueueInfo } from '../services/comfyUIService';
 import ShieldCheckIcon from './icons/ShieldCheckIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import AlertTriangleIcon from './icons/AlertTriangleIcon';
@@ -20,6 +20,7 @@ interface CheckResult {
 const initialCheckState: Record<string, CheckResult> = {
     connection: { status: 'idle', message: '' },
     resources: { status: 'idle', message: '' },
+    queue: { status: 'idle', message: '' },
     workflow: { status: 'idle', message: '' },
 };
 
@@ -64,7 +65,21 @@ const PreflightCheck: React.FC<PreflightCheckProps> = ({ settings }) => {
             : 'success';
         setCheckResults(prev => ({ ...prev, resources: { status: resourceStatus, message: resourceMessage }}));
 
-        // Check 3: Workflow & Mappings
+        // Check 3: Queue Status (Informational)
+        setCheckResults(prev => ({...prev, queue: { status: 'running', message: 'Checking server queue...' }}));
+        try {
+            const { queue_running, queue_pending } = await getQueueInfo(settings.comfyUIUrl);
+            const totalInQueue = queue_running + queue_pending;
+            const queueMessage = totalInQueue > 0
+                ? `Server is busy. ${queue_running} job(s) running, ${queue_pending} pending.`
+                : 'Server queue is empty. Ready for new jobs.';
+            setCheckResults(prev => ({ ...prev, queue: { status: 'success', message: queueMessage }}));
+        } catch(e) {
+            const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+            setCheckResults(prev => ({...prev, queue: { status: 'error', message: `Could not check queue: ${errorMsg}` }}));
+        }
+
+        // Check 4: Workflow & Mappings
         setCheckResults(prev => ({ ...prev, workflow: { status: 'running', message: 'Validating workflow & mappings...' }}));
         try {
             validateWorkflowAndMappings(settings);
@@ -105,6 +120,7 @@ const PreflightCheck: React.FC<PreflightCheckProps> = ({ settings }) => {
                     {Object.entries({
                         'Server Connection': checkResults.connection,
                         'System Resources': checkResults.resources,
+                        'Queue Status': checkResults.queue,
                         'Workflow & Mapping Consistency': checkResults.workflow,
                     }).map(([label, result]) => (
                          result.status !== 'idle' && (

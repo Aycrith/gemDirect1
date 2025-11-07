@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { LocalGenerationSettings, WorkflowInput, MappableData, WorkflowMapping } from '../types';
 import { discoverComfyUIServer } from '../services/comfyUIService';
@@ -200,6 +201,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                                                 {input.inputType === 'STRING' && <>
                                                     <option value="human_readable_prompt">Human-Readable Prompt</option>
                                                     <option value="full_timeline_json">Full Timeline JSON</option>
+                                                    <option value="negative_prompt">Negative Prompt</option>
                                                 </>}
                                                 {input.inputType === 'IMAGE' && <>
                                                     <option value="keyframe_image">Keyframe Image</option>

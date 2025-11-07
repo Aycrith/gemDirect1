@@ -1,3 +1,4 @@
+
 import { TimelineData, Shot, CreativeEnhancers } from '../types';
 
 const generateHumanReadablePromptForShot = (
@@ -37,7 +38,7 @@ export const generateVideoRequestPayloads = (
     directorsVision: string,
     sceneSummary: string,
     generatedShotImages: Record<string, string>
-): { json: string; text: string; structured: any[] } => {
+): { json: string; text: string; structured: any[]; negativePrompt: string } => {
 
     const interleavedTimeline = timeline.shots.reduce((acc: any[], shot, index) => {
         const shotData = {
@@ -98,5 +99,5 @@ export const generateVideoRequestPayloads = (
         fullTextPrompt += `\n\nGlobal Style & Negative Prompt: ${timeline.negativePrompt}`;
     }
 
-    return { json, text: fullTextPrompt.trim(), structured: structuredPayload };
+    return { json, text: fullTextPrompt.trim(), structured: structuredPayload, negativePrompt: timeline.negativePrompt || '' };
 };
