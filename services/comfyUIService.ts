@@ -1,4 +1,4 @@
-import { LocalGenerationSettings, LocalGenerationStatus } from '../types';
+import { LocalGenerationSettings, LocalGenerationStatus, WorkflowInput, WorkflowMapping } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 
 // A list of common URLs to try for auto-discovery.
@@ -42,6 +42,83 @@ export const discoverComfyUIServer = async (): Promise<string | null> => {
 };
 
 
+// --- Intelligent Pre-flight Check Functions ---
+
+/**
+ * Checks if the ComfyUI server is running and accessible.
+ * @param url The server URL to check.
+ * @returns A promise that resolves if the connection is successful, and rejects with an error message otherwise.
+ */
+export const checkServerConnection = async (url: string): Promise<void> => {
+    if (!url) {
+        throw new Error("Server address is not configured.");
+    }
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3-second timeout for checks
+        const response = await fetch(`${url}/system_stats`, { signal: controller.signal, mode: 'cors' });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+            throw new Error(`Server responded with status ${response.status}.`);
+        }
+        const data = await response.json();
+        if (!data || !data.system || !data.devices) {
+            throw new Error("Connected, but the response doesn't look like a valid ComfyUI server.");
+        }
+    } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+             throw new Error("Connection timed out. The server might be slow or unresponsive.");
+        }
+        throw new Error(`Failed to connect to server at '${url}'. Please ensure it is running and accessible.`);
+    }
+};
+
+/**
+ * Validates the synced workflow and the consistency of the data mappings.
+ * @param settings The current local generation settings.
+ * @returns A promise that resolves if validation passes, and rejects with an array of specific error messages otherwise.
+ */
+export const validateWorkflowAndMappings = (settings: LocalGenerationSettings): void => {
+    if (!settings.workflowJson) {
+        throw new Error("No workflow has been synced from the server.");
+    }
+
+    let workflowApi;
+    try {
+        workflowApi = JSON.parse(settings.workflowJson);
+    } catch (e) {
+        throw new Error("The synced workflow is not valid JSON. Please re-sync.");
+    }
+
+    const promptPayloadTemplate = workflowApi.prompt || workflowApi;
+    if (typeof promptPayloadTemplate !== 'object' || promptPayloadTemplate === null) {
+        throw new Error("Synced workflow has an invalid structure. Please re-sync.");
+    }
+
+    const mappingErrors: string[] = [];
+    for (const [key, dataType] of Object.entries(settings.mapping)) {
+        if (dataType === 'none') continue;
+
+        const [nodeId, inputName] = key.split(':');
+        const node = promptPayloadTemplate[nodeId];
+
+        if (!node) {
+            mappingErrors.push(`Mapped node ID '${nodeId}' no longer exists in your workflow.`);
+            continue; // Skip further checks for this node
+        }
+        if (!node.inputs || typeof node.inputs[inputName] === 'undefined') {
+            const nodeTitle = node._meta?.title || `Node ${nodeId}`;
+            mappingErrors.push(`Mapped input '${inputName}' not found on node '${nodeTitle}'.`);
+        }
+    }
+
+    if (mappingErrors.length > 0) {
+        // We throw a single error containing all the specific issues.
+        throw new Error(`Mapping Consistency Errors:\n- ${mappingErrors.join('\n- ')}\nPlease re-sync your workflow or adjust mappings.`);
+    }
+};
+
+
 // Fetches an image from the ComfyUI server and converts it to a data URL.
 const fetchImageAsDataURL = async (url: string, filename: string, subfolder: string, type: string): Promise<string> => {
     const response = await fetch(`${url}view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`);
@@ -72,45 +149,20 @@ export const queueComfyUIPrompt = async (
     base64Image: string,
 ): Promise<any> => {
     
-    // --- PRE-FLIGHT CHECK 1: Basic Configuration ---
-    if (!settings.comfyUIUrl) {
-        throw new Error("ComfyUI server address is not configured. Please set it in Settings.");
-    }
-    if (!settings.workflowJson) {
-        throw new Error("Workflow not synced. Please configure and sync it in Settings.");
-    }
-
-    // --- PRE-FLIGHT CHECK 2: Workflow & Mapping Validity ---
-    let workflowApi;
+    // --- Run final pre-flight checks before queuing ---
     try {
-        workflowApi = JSON.parse(settings.workflowJson);
-    } catch (e) {
-        throw new Error("The synced workflow is not valid JSON. Please re-sync your workflow in Settings.");
-    }
-
-    const promptPayloadTemplate = workflowApi.prompt || workflowApi; // Handle both API and embedded formats
-    if (typeof promptPayloadTemplate !== 'object' || promptPayloadTemplate === null) {
-        throw new Error("Synced workflow has an invalid structure. Please re-sync.");
-    }
-
-    // Verify that all mapped inputs still exist in the workflow.
-    for (const [key, dataType] of Object.entries(settings.mapping)) {
-        if (dataType === 'none') continue;
-
-        const [nodeId, inputName] = key.split(':');
-        const node = promptPayloadTemplate[nodeId];
-
-        if (!node) {
-            throw new Error(`Configuration Mismatch: Mapped node ID '${nodeId}' not found in your workflow. Please re-sync your workflow in Settings.`);
-        }
-        if (!node.inputs || typeof node.inputs[inputName] === 'undefined') {
-            const nodeTitle = node._meta?.title || `Node ${nodeId}`;
-            throw new Error(`Configuration Mismatch: Mapped input '${inputName}' not found on node '${nodeTitle}'. Please re-sync your workflow in Settings.`);
-        }
+        await checkServerConnection(settings.comfyUIUrl);
+        validateWorkflowAndMappings(settings);
+    } catch(error) {
+        // Re-throw the specific error from the checks to be displayed to the user.
+        throw error;
     }
     
     // --- ALL CHECKS PASSED, PROCEED WITH GENERATION ---
     try {
+        const workflowApi = JSON.parse(settings.workflowJson);
+        const promptPayloadTemplate = workflowApi.prompt || workflowApi;
+
         // Deep copy the prompt object to avoid modifying the stored settings object.
         const promptPayload = JSON.parse(JSON.stringify(promptPayloadTemplate));
         const baseUrl = settings.comfyUIUrl.endsWith('/') ? settings.comfyUIUrl : `${settings.comfyUIUrl}/`;

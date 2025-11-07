@@ -9,6 +9,7 @@ import SearchIcon from './icons/SearchIcon';
 import HelpCircleIcon from './icons/HelpCircleIcon';
 import Tooltip from './Tooltip';
 import CheckCircleIcon from './icons/CheckCircleIcon';
+import PreflightCheck from './PreflightCheck';
 
 interface Props {
     isOpen: boolean;
@@ -210,6 +211,10 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                             </div>
                         )}
                     </div>
+
+                    {/* Pre-flight Check */}
+                    <PreflightCheck settings={localSettings} />
+
                 </div>
                 <footer className="p-4 mt-auto border-t border-gray-700 flex justify-end gap-4 bg-gray-900/50 rounded-b-lg">
                     <button onClick={onClose} className="px-4 py-2 text-sm font-semibold rounded-md bg-gray-600 text-white hover:bg-gray-700">Cancel</button>
