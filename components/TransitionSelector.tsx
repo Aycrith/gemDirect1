@@ -34,7 +34,7 @@ const TransitionSelector: React.FC<TransitionSelectorProps> = ({ value, onChange
             <div className="relative">
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-300 bg-gray-800/60 border border-gray-700 rounded-full hover:bg-gray-700/80 hover:border-gray-600 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-300 bg-gray-800/60 border border-gray-700 rounded-full hover:bg-gray-700/80 hover:border-amber-600/50 transition-colors"
                 >
                     <TransitionsIcon className="w-4 h-4" />
                     {selectedTransition}

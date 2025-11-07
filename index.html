@@ -170,6 +170,23 @@
       100% { border-color: rgba(251, 191, 36, 0.4); }
   }
 
+  /* Drag and Drop styles */
+  .drag-over-indicator {
+    height: 2px;
+    background: #fbbf24; /* amber-400 */
+    margin: -4px 0;
+    transition: all 0.2s ease-out;
+    border-radius: 1px;
+    box-shadow: 0 0 10px #fbbf24;
+  }
+
+  .dragging {
+    opacity: 0.5;
+    transform: rotate(1deg);
+    border-color: #f59e0b !important; /* amber-600 */
+    box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+  }
+
   /* Thematic Loader Animations */
   @keyframes clap-top {
     0%, 100% { transform: rotate(0deg); }

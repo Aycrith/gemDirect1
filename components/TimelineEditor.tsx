@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
@@ -51,12 +51,17 @@ const TimelineItem: React.FC<{
     onEnhancersChange: (shotId: string, newEnhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>) => void;
     onDeleteShot: (shotId: string) => void;
     onGenerateImage: (shotId: string) => void;
-}> = ({ shot, index, enhancers, imageUrl, isGeneratingImage, onDescriptionChange, onEnhancersChange, onDeleteShot, onGenerateImage }) => {
+    isDragging: boolean;
+}> = ({ shot, index, enhancers, imageUrl, isGeneratingImage, onDescriptionChange, onEnhancersChange, onDeleteShot, onGenerateImage, isDragging }) => {
     const [isControlsVisible, setIsControlsVisible] = useState(false);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
 
     return (
-        <div ref={spotlightRef} className="bg-gray-800/50 p-4 rounded-lg border border-gray-700/80 transition-shadow hover:shadow-lg hover:shadow-amber-500/10 flex gap-4 interactive-spotlight">
+        <div 
+            ref={spotlightRef} 
+            draggable
+            className={`bg-gray-800/50 p-4 rounded-lg border border-gray-700/80 transition-all duration-200 flex gap-4 interactive-spotlight ${isDragging ? 'dragging' : 'hover:shadow-lg hover:shadow-amber-500/10'}`}
+        >
             {imageUrl && (
                 <div className="w-1/4 flex-shrink-0">
                     <img src={`data:image/jpeg;base64,${imageUrl}`} alt={`Preview for shot ${index + 1}`} className="rounded-md aspect-video object-cover" />
@@ -65,7 +70,7 @@ const TimelineItem: React.FC<{
             <div className="flex-grow">
                 <div className="flex justify-between items-start gap-4">
                     <div className="flex-grow">
-                        <label className="block text-sm font-bold text-gray-300 mb-2">Shot {index + 1}</label>
+                        <label className="block text-sm font-bold text-gray-300 mb-2 cursor-grab">Shot {index + 1}</label>
                         <textarea
                             value={shot.description}
                             onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
@@ -125,18 +130,41 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string; structured: any[] } | null>(null);
     const [isGeneratingShotImage, setIsGeneratingShotImage] = useState<Record<string, boolean>>({});
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
     const [isBatchProcessing, setIsBatchProcessing] = useState<false | 'description' | 'enhancers'>(false);
+    
+    // Auto-save state
+    const saveTimeoutRef = useRef<number | null>(null);
+    const [saveStatus, setSaveStatus] = useState<'saved' | 'unsaved' | 'saving'>('saved');
 
+    // Drag and drop state
+    const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
+    const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
     const sceneKeyframe = generatedImages[scene.id];
     
     useEffect(() => {
-        // When the scene prop changes, reset the timeline state
         setTimeline(scene.timeline);
         setHasChanges(false);
+        setSaveStatus('saved');
     }, [scene]);
+
+    // Auto-save effect
+    useEffect(() => {
+        if (saveStatus === 'saved' || !hasChanges) return;
+
+        setSaveStatus('unsaved');
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+        saveTimeoutRef.current = window.setTimeout(() => {
+            setSaveStatus('saving');
+            onUpdateScene({ ...scene, timeline });
+            setHasChanges(false);
+            setTimeout(() => setSaveStatus('saved'), 1000);
+        }, 1500); // 1.5 second debounce
+
+        return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current) };
+    }, [timeline, scene, onUpdateScene, hasChanges, saveStatus]);
 
     const getNarrativeContext = useCallback((sceneId: string): string => {
         const sceneIndex = scenes.findIndex(s => s.id === sceneId);
@@ -155,13 +183,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const updateTimeline = (newTimeline: Partial<TimelineData>) => {
         setTimeline(prev => ({ ...prev, ...newTimeline }));
         setHasChanges(true);
-    };
-
-    const handleSaveChanges = () => {
-        setIsSaving(true);
-        onUpdateScene({ ...scene, timeline });
-        setHasChanges(false);
-        setTimeout(() => setIsSaving(false), 1500); // Simulate save time for visual feedback
     };
 
     const handleAddShot = () => {
@@ -305,7 +326,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             return;
         }
 
-        // Scoped status updater for this specific scene
         const updateStatus = (update: Partial<LocalGenerationStatus>) => {
             setLocalGenStatus(prev => ({
                 ...prev,
@@ -322,7 +342,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             
             if (response.prompt_id) {
                 updateStatus({ message: `Prompt queued! (ID: ${response.prompt_id})` });
-                // Start tracking progress via WebSocket
                 trackPromptExecution(localGenSettings, response.prompt_id, updateStatus);
             } else {
                  updateStatus({ status: 'error', message: 'Queueing failed: No prompt ID received.' });
@@ -338,8 +357,58 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         await onUpdateSceneSummary(scene.id);
         setIsSummaryUpdating(false);
     };
+
+    const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+        setDraggedItemIndex(index);
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+        e.preventDefault();
+        setDragOverIndex(index);
+    };
+
+    const handleDrop = () => {
+        if (draggedItemIndex === null || dragOverIndex === null || draggedItemIndex === dragOverIndex) {
+            return;
+        }
+
+        const newShots = [...timeline.shots];
+        const [removedShot] = newShots.splice(draggedItemIndex, 1);
+        newShots.splice(dragOverIndex, 0, removedShot);
+
+        // Adjust transitions as well. A transition belongs to the shot *before* it.
+        const newTransitions = [...timeline.transitions];
+        if(draggedItemIndex > 0) { // If we are moving a shot that has a preceding transition
+            const [removedTransition] = newTransitions.splice(draggedItemIndex - 1, 1);
+            if(dragOverIndex > 0) {
+                 newTransitions.splice(dragOverIndex - 1, 0, removedTransition);
+            } else {
+                newTransitions.unshift(removedTransition)
+            }
+        }
+
+        updateTimeline({ shots: newShots, transitions: newTransitions });
+    };
+
+    const handleDragEnd = () => {
+        setDraggedItemIndex(null);
+        setDragOverIndex(null);
+    };
     
     const isLocalGenConfigured = localGenSettings.comfyUIUrl && localGenSettings.workflowJson;
+
+    const renderSaveStatus = () => {
+        switch (saveStatus) {
+            case 'unsaved':
+                return <span className="flex items-center justify-center text-yellow-300"><SaveIcon className="w-5 h-5 mr-2" /> Unsaved</span>;
+            case 'saving':
+                return <span className="flex items-center justify-center text-gray-300"><svg className="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Saving...</span>;
+            case 'saved':
+            default:
+                return <span className="flex items-center justify-center text-green-400"><CheckCircleIcon className="w-5 h-5 mr-2" /> Auto-saved</span>;
+        }
+    };
 
     return (
         <div className="space-y-6">
@@ -379,17 +448,29 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                  <GuideCard title="Refine Your Timeline">
                     <p>Your initial shot list is ready. Now you can bring your creative direction to life:</p>
                     <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
+                        <li>Drag and drop shots to reorder your sequence.</li>
                         <li>Manually edit shot descriptions and add <strong className="text-amber-300">Creative Controls</strong> for cinematic flair.</li>
-                        <li>Use the <strong className="text-amber-300">"Refine All"</strong> buttons for quick, AI-powered improvements across the whole scene.</li>
-                        <li>When you're ready for a fresh perspective, consult the <strong className="text-amber-300">AI Co-Director</strong> below for bold, creative suggestions.</li>
+                        <li>Use the <strong className="text-amber-300">"Refine All"</strong> buttons for quick, AI-powered improvements.</li>
+                        <li>Consult the <strong className="text-amber-300">AI Co-Director</strong> below for bold, creative suggestions.</li>
                     </ul>
                 </GuideCard>
             )}
 
-            <div className="space-y-4">
+            <div 
+                className="space-y-4"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
+            >
                 {timeline.shots.length > 0 ? (
                     timeline.shots.map((shot, index) => (
-                        <React.Fragment key={shot.id}>
+                        <div key={shot.id} 
+                            onDragStart={(e) => handleDragStart(e, index)}
+                            onDragOver={(e) => handleDragOver(e, index)}
+                        >
+                            {dragOverIndex === index && draggedItemIndex !== null && dragOverIndex !== draggedItemIndex && (
+                               <div className="drag-over-indicator"></div>
+                            )}
                             <TimelineItem
                                 shot={shot}
                                 index={index}
@@ -400,6 +481,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 onEnhancersChange={(shotId, enh) => updateTimeline({ shotEnhancers: { ...timeline.shotEnhancers, [shotId]: enh } })}
                                 onDeleteShot={handleDeleteShot}
                                 onGenerateImage={handleGenerateShotImage}
+                                isDragging={draggedItemIndex === index}
                             />
                             {index < timeline.shots.length - 1 && (
                                 <TransitionSelector value={timeline.transitions[index] || 'Cut'} onChange={(newVal) => {
@@ -408,7 +490,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                     updateTimeline({ transitions: newTransitions });
                                 }} />
                             )}
-                        </React.Fragment>
+                        </div>
                     ))
                 ) : null}
             </div>
@@ -421,31 +503,36 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             
             {timeline.shots.length > 0 && (
                 <>
-                    <div className="flex flex-col sm:flex-row justify-center gap-4 mt-4">
-                        <button
-                            onClick={() => handleBatchProcess(['REFINE_DESCRIPTION'])}
-                            disabled={isBatchProcessing !== false}
-                            className="text-sm font-semibold text-amber-400 hover:text-amber-300 disabled:text-gray-500 flex items-center gap-2 justify-center"
-                        >
-                            {isBatchProcessing === 'description' ? (
-                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                            ) : (
-                                <SparklesIcon className="w-4 h-4" />
-                            )}
-                            Refine All Descriptions
-                        </button>
-                        <button
-                            onClick={() => handleBatchProcess(['SUGGEST_ENHANCERS'])}
-                            disabled={isBatchProcessing !== false}
-                            className="text-sm font-semibold text-amber-400 hover:text-amber-300 disabled:text-gray-500 flex items-center gap-2 justify-center"
-                        >
-                            {isBatchProcessing === 'enhancers' ? (
-                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                            ) : (
-                                <SparklesIcon className="w-4 h-4" />
-                            )}
-                            Suggest All Enhancers
-                        </button>
+                     <div className="space-y-4 p-4 bg-gray-900/30 rounded-lg ring-1 ring-gray-700/50">
+                        <div>
+                            <label htmlFor="negative-prompt" className="block text-sm font-semibold text-gray-200 mb-2">Scene-Wide Negative Prompt</label>
+                            <textarea
+                                id="negative-prompt"
+                                value={timeline.negativePrompt}
+                                onChange={(e) => updateTimeline({ negativePrompt: e.target.value })}
+                                rows={2}
+                                className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-2"
+                                placeholder="e.g., text, watermark, blurry, low-resolution, ugly, tiling..."
+                            />
+                        </div>
+                        <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4 border-t border-gray-800">
+                             <button
+                                onClick={() => handleBatchProcess(['REFINE_DESCRIPTION'])}
+                                disabled={isBatchProcessing !== false}
+                                className="text-sm font-semibold text-amber-400 hover:text-amber-300 disabled:text-gray-500 flex items-center gap-2 justify-center"
+                            >
+                                {isBatchProcessing === 'description' ? <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <SparklesIcon className="w-4 h-4" />}
+                                Refine All Descriptions
+                            </button>
+                            <button
+                                onClick={() => handleBatchProcess(['SUGGEST_ENHANCERS'])}
+                                disabled={isBatchProcessing !== false}
+                                className="text-sm font-semibold text-amber-400 hover:text-amber-300 disabled:text-gray-500 flex items-center gap-2 justify-center"
+                            >
+                                {isBatchProcessing === 'enhancers' ? <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <SparklesIcon className="w-4 h-4" />}
+                                Suggest All Enhancers
+                            </button>
+                        </div>
                     </div>
                     
                     {!coDirectorResult && timeline.shots.length > 0 && (
@@ -477,9 +564,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         onApiLog={onApiLog}
                         onApiStateChange={onApiStateChange}
                     />
-                    {hasChanges && (
-                        <GuidedAction title="You have unsaved changes!" description="Don't lose your creative work. Save the timeline to lock in your edits before moving on." buttonText="Save Timeline" onClick={handleSaveChanges} isLoading={isSaving} icon={<SaveIcon className="w-12 h-12"/>}/>
-                    )}
                 </>
             )}
             
@@ -503,29 +587,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             </button>
                         </Tooltip>
                     </div>
-                     <button
-                        onClick={handleSaveChanges}
-                        disabled={isSaving || !hasChanges}
-                        className={`px-8 py-3 text-white font-semibold rounded-full shadow-lg transition-colors w-44 text-center ${
-                            isSaving
-                            ? 'bg-green-600 cursor-default'
-                            : hasChanges ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 cursor-not-allowed'
-                        }`}
-                    >
-                        {isSaving ? (
-                            <span className="flex items-center justify-center">
-                                <CheckCircleIcon className="w-5 h-5 mr-2" /> Saved
-                            </span>
-                        ) : hasChanges ? (
-                            <span className="flex items-center justify-center">
-                                <SaveIcon className="w-5 h-5 mr-2" /> Save Timeline
-                            </span>
-                        ) : (
-                             <span className="flex items-center justify-center">
-                                <CheckCircleIcon className="w-5 h-5 mr-2" /> All Saved
-                            </span>
-                        )}
-                    </button>
+                     <div className="px-4 py-2 text-sm font-semibold rounded-full bg-gray-800/60 border border-gray-700 w-40 text-center">
+                        {renderSaveStatus()}
+                    </div>
                 </div>
                  <GuideCard title="Next Step: Local Generation">
                     <p>Once your timeline is complete and saved, it's time to bring it to life! Use the <strong>Export Prompts</strong> or <strong>Generate Locally</strong> buttons. This will create the necessary data to feed into an external video generation model (like a local ComfyUI instance) to create your cinematic scene.</p>
