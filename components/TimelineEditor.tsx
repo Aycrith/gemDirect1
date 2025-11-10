@@ -7,9 +7,8 @@ import PlusIcon from './icons/PlusIcon';
 import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import ImageIcon from './icons/ImageIcon';
-import { generateAndDetailInitialShots, generateImageForShot, getCoDirectorSuggestions, batchProcessShotEnhancements, getPrunedContextForShotGeneration, getPrunedContextForCoDirector, getPrunedContextForBatchProcessing, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
 import { generateVideoRequestPayloads } from '../services/payloadService';
-import { queueComfyUIPrompt, trackPromptExecution } from '../services/comfyUIService';
+import { generateTimelineVideos, stripDataUrlPrefix } from '../services/comfyUIService';
 import FinalPromptModal from './FinalPromptModal';
 import LocalGenerationStatusComponent from './LocalGenerationStatus';
 import TimelineIcon from './icons/TimelineIcon';
@@ -22,6 +21,9 @@ import GuidedAction from './GuidedAction';
 import GuideCard from './GuideCard';
 import CompassIcon from './icons/CompassIcon';
 import NegativePromptSuggestions from './NegativePromptSuggestions';
+import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
+import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
+import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -35,6 +37,7 @@ interface TimelineEditorProps {
     generatedImages: Record<string, string>;
     generatedShotImages: Record<string, string>;
     setGeneratedShotImages: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+    onSceneKeyframeGenerated?: (sceneId: string, base64Image: string) => void;
     localGenSettings: LocalGenerationSettings;
     localGenStatus: Record<string, LocalGenerationStatus>;
     setLocalGenStatus: React.Dispatch<React.SetStateAction<Record<string, LocalGenerationStatus>>>;
@@ -118,6 +121,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     generatedImages,
     generatedShotImages,
     setGeneratedShotImages,
+    onSceneKeyframeGenerated,
     localGenSettings,
     localGenStatus,
     setLocalGenStatus,
@@ -143,6 +147,69 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
     const sceneKeyframe = generatedImages[scene.id];
+    const planActions = usePlanExpansionActions();
+    const mediaActions = useMediaGenerationActions();
+
+    const ensureSceneAssets = useCallback(async () => {
+        let resolvedSceneKeyframe = sceneKeyframe;
+        const shotImages: Record<string, string> = { ...generatedShotImages };
+
+        if (!resolvedSceneKeyframe) {
+            onApiStateChange('loading', 'Generating base scene keyframe...');
+            const generated = await mediaActions.generateKeyframeForScene(
+                directorsVision,
+                scene.summary,
+                onApiLog,
+                onApiStateChange
+            );
+            resolvedSceneKeyframe = stripDataUrlPrefix(generated);
+            onSceneKeyframeGenerated?.(scene.id, resolvedSceneKeyframe);
+        }
+
+        const missingShots = timeline.shots.filter((shot) => !shotImages[shot.id]);
+        if (missingShots.length > 0) {
+            const newlyGenerated: Record<string, string> = {};
+            for (const shot of missingShots) {
+                const enhancers = timeline.shotEnhancers[shot.id];
+                const generated = await mediaActions.generateImageForShot(
+                    shot,
+                    enhancers,
+                    directorsVision,
+                    scene.summary,
+                    onApiLog,
+                    onApiStateChange
+                );
+                const normalized = stripDataUrlPrefix(generated);
+                shotImages[shot.id] = normalized;
+                newlyGenerated[shot.id] = normalized;
+            }
+            if (Object.keys(newlyGenerated).length > 0) {
+                setGeneratedShotImages((prev) => ({ ...prev, ...newlyGenerated }));
+            }
+        }
+
+        if (!resolvedSceneKeyframe) {
+            throw new Error('Unable to generate a scene keyframe. Please try again.');
+        }
+
+        return {
+            sceneKeyframe: resolvedSceneKeyframe,
+            shotImages,
+        };
+    }, [
+        sceneKeyframe,
+        generatedShotImages,
+        timeline.shots,
+        timeline.shotEnhancers,
+        directorsVision,
+        scene.summary,
+        mediaActions,
+        onApiLog,
+        onApiStateChange,
+        setGeneratedShotImages,
+        onSceneKeyframeGenerated,
+        scene.id,
+    ]);
     
     useEffect(() => {
         setTimeline(scene.timeline);
@@ -217,8 +284,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const handleGenerateAndDetailInitialShots = async () => {
         try {
             const narrativeContext = getNarrativeContext(scene.id);
-            const prunedContext = await getPrunedContextForShotGeneration(storyBible, narrativeContext, scene.summary, directorsVision, onApiLog, onApiStateChange);
-            const detailedShots: DetailedShotResult[] = await generateAndDetailInitialShots(prunedContext, onApiLog, onApiStateChange);
+            const prunedContext = await planActions.getPrunedContextForShotGeneration(storyBible, narrativeContext, scene.summary, directorsVision, onApiLog, onApiStateChange);
+            const detailedShots: DetailedShotResult[] = await planActions.generateAndDetailInitialShots(prunedContext, onApiLog, onApiStateChange);
             
             const newShots: Shot[] = [];
             const newEnhancers: ShotEnhancers = {};
@@ -242,7 +309,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setCoDirectorResult(null);
         try {
             const narrativeContext = getNarrativeContext(scene.id);
-            const prunedContext = await getPrunedContextForCoDirector(storyBible, narrativeContext, scene, directorsVision, onApiLog, onApiStateChange);
+            const prunedContext = await planActions.getPrunedContextForCoDirector(storyBible, narrativeContext, scene, directorsVision, onApiLog, onApiStateChange);
             
             const timelineSummary = timeline.shots.map((shot, index) => {
                 const enhancers = timeline.shotEnhancers[shot.id] || {};
@@ -251,7 +318,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 return `Shot ${index + 1} (ID: ${shot.id}): ${shot.description}${enhancerString}`;
             }).join('\n');
 
-            const result = await getCoDirectorSuggestions(prunedContext, timelineSummary, objective, onApiLog, onApiStateChange);
+            const result = await planActions.getCoDirectorSuggestions(prunedContext, timelineSummary, objective, onApiLog, onApiStateChange);
             setCoDirectorResult(result);
         } catch (error) {
             console.error(error);
@@ -272,8 +339,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setIsBatchProcessing(actions.includes('REFINE_DESCRIPTION') ? 'description' : 'enhancers');
         try {
             const narrativeContext = getNarrativeContext(scene.id);
-            const prunedContext = await getPrunedContextForBatchProcessing(narrativeContext, directorsVision, onApiLog, onApiStateChange);
-            const results = await batchProcessShotEnhancements(tasks, prunedContext, onApiLog, onApiStateChange);
+            const prunedContext = await planActions.getPrunedContextForBatchProcessing(narrativeContext, directorsVision, onApiLog, onApiStateChange);
+            const results = await planActions.batchProcessShotEnhancements(tasks, prunedContext, onApiLog, onApiStateChange);
 
             const newShots = [...timeline.shots];
             const newEnhancers: ShotEnhancers = JSON.parse(JSON.stringify(timeline.shotEnhancers));
@@ -305,8 +372,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setIsGeneratingShotImage(prev => ({ ...prev, [shotId]: true }));
         try {
             const enhancers = timeline.shotEnhancers[shotId] || {};
-            const image = await generateImageForShot(shot, enhancers, directorsVision, scene.summary, onApiLog, onApiStateChange);
-            setGeneratedShotImages(prev => ({ ...prev, [shotId]: image }));
+            const image = await mediaActions.generateImageForShot(shot, enhancers, directorsVision, scene.summary, onApiLog, onApiStateChange);
+            setGeneratedShotImages(prev => ({ ...prev, [shotId]: stripDataUrlPrefix(image) }));
         } catch (error) {
             console.error(`Failed to generate image for shot ${shotId}:`, error);
         } finally {
@@ -322,34 +389,88 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     };
 
     const handleGenerateLocally = async () => {
-        if (!sceneKeyframe) {
-            onApiStateChange('error', 'Please generate a scene keyframe before local generation.');
-            return;
-        }
+        const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary, generatedShotImages);
+        onUpdateScene({ ...scene, generatedPayload: payloads });
+
+        const totalShots = timeline.shots.length;
+        const shotIndexMap = timeline.shots.reduce<Record<string, number>>((acc, shot, index) => {
+            acc[shot.id] = index;
+            return acc;
+        }, {});
 
         const updateStatus = (update: Partial<LocalGenerationStatus>) => {
             setLocalGenStatus(prev => ({
                 ...prev,
-                [scene.id]: { ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }), ...update }
+                [scene.id]: {
+                    ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
+                    ...update
+                }
             }));
         };
 
-        updateStatus({ status: 'queued', message: 'Preparing to queue prompt...', progress: 0 });
-        
+        if (totalShots === 0) {
+            updateStatus({ status: 'error', message: 'No shots available to generate.', progress: 0 });
+            return;
+        }
+
+        updateStatus({ status: 'queued', message: 'Preparing timeline generation...', progress: 0 });
+
+        let assets: { sceneKeyframe: string; shotImages: Record<string, string> };
         try {
-            const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary, generatedShotImages);
-            onUpdateScene({ ...scene, generatedPayload: payloads });
-            const response = await queueComfyUIPrompt(localGenSettings, payloads, sceneKeyframe);
-            
-            if (response.prompt_id) {
-                updateStatus({ message: `Prompt queued! (ID: ${response.prompt_id})` });
-                trackPromptExecution(localGenSettings, response.prompt_id, updateStatus);
-            } else {
-                 updateStatus({ status: 'error', message: 'Queueing failed: No prompt ID received.' });
-            }
+            assets = await ensureSceneAssets();
         } catch (error) {
-             const message = error instanceof Error ? error.message : "An unknown error occurred.";
-             updateStatus({ status: 'error', message });
+            const reason = error instanceof Error ? error.message : 'Failed to prepare scene assets.';
+            updateStatus({ status: 'error', message: reason, progress: 0 });
+            return;
+        }
+
+        const keyframeImages: Record<string, string> = {};
+        timeline.shots.forEach(shot => {
+            const keyframeForShot = assets.shotImages[shot.id] || assets.sceneKeyframe;
+            if (keyframeForShot) {
+                keyframeImages[shot.id] = keyframeForShot;
+            }
+        });
+
+        try {
+            const results = await generateTimelineVideos(
+                localGenSettings,
+                timeline,
+                directorsVision,
+                scene.summary,
+                keyframeImages,
+                (shotId, statusUpdate) => {
+                    const shotIndex = shotIndexMap[shotId] ?? 0;
+                    const total = totalShots || 1;
+                    const baseProgress = (shotIndex / total) * 100;
+                    const incremental = (statusUpdate.progress ?? 0) / total;
+                    const aggregatedProgress = Math.min(100, baseProgress + incremental);
+
+                    updateStatus({
+                        status: statusUpdate.status ?? 'running',
+                        message: `Shot ${shotIndex + 1}/${totalShots}: ${statusUpdate.message || 'Processing...'}`,
+                        progress: Math.round(aggregatedProgress)
+                    });
+                }
+            );
+
+            const lastShotId = timeline.shots[totalShots - 1]?.id;
+            const finalResult = lastShotId ? results[lastShotId] : undefined;
+            const finalOutput = finalResult && finalResult.videoPath ? {
+                type: 'video' as const,
+                data: finalResult.videoPath,
+                filename: finalResult.filename
+            } : undefined;
+
+            updateStatus({
+                status: 'complete',
+                message: `Generated ${totalShots} ${totalShots === 1 ? 'shot' : 'shots'} locally.`,
+                progress: 100,
+                final_output: finalOutput
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error during local generation.';
+            updateStatus({ status: 'error', message, progress: 0 });
         }
     };
     

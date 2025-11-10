@@ -1,5 +1,9 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
+export { default } from './components/TimelineEditor';export { default } from './components/TimelineEditor';import React, { useState, useCallback, useEffect } from 'react';
+
+export * from './components/TimelineEditor';
+
+export * from './components/TimelineEditor';import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
+
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 import CoDirector from './CoDirector';

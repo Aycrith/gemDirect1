@@ -52,6 +52,30 @@ export interface ToastMessage {
   type: ToastType;
 }
 
+export interface PlanExpansionStrategy {
+  id: string;
+  label: string;
+  description?: string;
+  isAvailable: boolean;
+  isDefault?: boolean;
+  disabledReason?: string;
+}
+
+export interface MediaGenerationProviderCapabilities {
+  images: boolean;
+  video: boolean;
+}
+
+export interface MediaGenerationProvider {
+  id: string;
+  label: string;
+  description?: string;
+  isAvailable: boolean;
+  isDefault?: boolean;
+  disabledReason?: string;
+  capabilities: MediaGenerationProviderCapabilities;
+}
+
 export interface ControlSectionConfig {
     id: keyof Omit<CreativeEnhancers, 'transitions' | 'plotEnhancements'>;
     title: string;

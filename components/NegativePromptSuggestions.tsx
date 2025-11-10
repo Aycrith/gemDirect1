@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import { suggestNegativePrompts, ApiLogCallback, ApiStateChangeCallback } from '../services/geminiService';
+import type { ApiLogCallback, ApiStateChangeCallback } from '../services/planExpansionService';
 import SparklesIcon from './icons/SparklesIcon';
+import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 
 interface NegativePromptSuggestionsProps {
     directorsVision: string;
@@ -13,12 +14,13 @@ interface NegativePromptSuggestionsProps {
 const NegativePromptSuggestions: React.FC<NegativePromptSuggestionsProps> = ({ directorsVision, sceneSummary, onSelect, onApiLog, onApiStateChange }) => {
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const planActions = usePlanExpansionActions();
 
     const handleSuggest = useCallback(async () => {
         setIsLoading(true);
         setSuggestions([]);
         try {
-            const result = await suggestNegativePrompts(directorsVision, sceneSummary, onApiLog, onApiStateChange);
+            const result = await planActions.suggestNegativePrompts(directorsVision, sceneSummary, onApiLog, onApiStateChange);
             setSuggestions(result);
         } catch (e) {
             console.error(e);
@@ -26,7 +28,7 @@ const NegativePromptSuggestions: React.FC<NegativePromptSuggestionsProps> = ({ d
         } finally {
             setIsLoading(false);
         }
-    }, [directorsVision, sceneSummary, onApiLog, onApiStateChange]);
+    }, [directorsVision, sceneSummary, onApiLog, onApiStateChange, planActions]);
     
     const handleSelect = (suggestion: string) => {
         onSelect(suggestion);

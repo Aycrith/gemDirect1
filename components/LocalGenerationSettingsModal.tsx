@@ -1,6 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { LocalGenerationSettings, WorkflowInput, MappableData, WorkflowMapping, ToastMessage } from '../types';
 import { discoverComfyUIServer } from '../services/comfyUIService';
+import { usePlanExpansionActions, usePlanExpansionStrategy } from '../contexts/PlanExpansionStrategyContext';
+import { useMediaGenerationProvider } from '../contexts/MediaGenerationProviderContext';
+import { useApiStatus } from '../contexts/ApiStatusContext';
+import { useUsage } from '../contexts/UsageContext';
 import ServerIcon from './icons/ServerIcon';
 import SettingsIcon from './icons/SettingsIcon';
 import FileTextIcon from './icons/FileTextIcon';
@@ -12,6 +16,7 @@ import CheckCircleIcon from './icons/CheckCircleIcon';
 import PreflightCheck from './PreflightCheck';
 import AiConfigurator from './AiConfigurator';
 import RefreshCwIcon from './icons/RefreshCwIcon';
+import ProviderHealthMonitor from './ProviderHealthMonitor';
 
 interface Props {
     isOpen: boolean;
@@ -57,6 +62,14 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     const [workflowInputs, setWorkflowInputs] = useState<WorkflowInput[]>([]);
     const [discoveryStatus, setDiscoveryStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
     const [isSyncing, setIsSyncing] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    
+    // Provider contexts
+    const { strategies, activeStrategy, activeStrategyId, selectStrategy } = usePlanExpansionStrategy();
+    const { providers, activeProvider, activeProviderId, selectProvider } = useMediaGenerationProvider();
+    const planActions = usePlanExpansionActions();
+    const { updateApiStatus } = useApiStatus();
+    const { logApiCall } = useUsage();
 
     useEffect(() => {
         setLocalSettings(settings);
@@ -94,21 +107,102 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         }
         setIsSyncing(true);
         try {
-            const url = localSettings.comfyUIUrl.endsWith('/') ? `${localSettings.comfyUIUrl}workflow` : `${localSettings.comfyUIUrl}/workflow`;
-            const response = await fetch(url);
+            // ComfyUI doesn't have a /workflow endpoint. Instead, we need to get it from the prompt history
+            // Try to get the most recent workflow from the history
+            const baseUrl = localSettings.comfyUIUrl.replace(/\/+$/, ''); // Remove trailing slashes
+            const historyUrl = `${baseUrl}/history`;
+            const response = await fetch(historyUrl);
             if (!response.ok) throw new Error(`Server responded with status ${response.status}`);
-            const workflowJson = await response.text();
+            const history = await response.json();
+            
+            // Get the most recent workflow from history
+            const historyEntries = Object.values(history);
+            if (historyEntries.length === 0) {
+                throw new Error('No workflows found in history. Please run a workflow in ComfyUI first, then sync again.');
+            }
+            
+            // Get the most recent entry
+            const latestEntry: any = historyEntries[historyEntries.length - 1];
+            if (!latestEntry.prompt || !latestEntry.prompt[2]) {
+                throw new Error('Latest history entry has no workflow. Please run a workflow in ComfyUI first.');
+            }
+            
+            // The workflow is in prompt[2], which contains the actual node structure
+            const workflowJson = JSON.stringify(latestEntry.prompt[2], null, 2);
 
             setLocalSettings(prev => ({ ...prev, workflowJson }));
-            addToast('Workflow synced successfully! Please review your mappings.', 'success');
+            addToast('Workflow synced successfully from ComfyUI history! Please review your mappings.', 'success');
         } catch (error) {
             const message = error instanceof Error ? error.message : "An unknown error occurred.";
-            addToast(`Sync failed: ${message}`, 'error');
+            addToast(`Sync failed: ${message}. Try running a workflow in ComfyUI first, or paste your workflow JSON manually below.`, 'error');
         } finally {
             setIsSyncing(false);
         }
     };
 
+
+    const handleLoadBundledWorkflow = async () => {
+        try {
+            const bundledUrl = new URL('../workflows/text-to-video.json', import.meta.url);
+            const response = await fetch(bundledUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to load bundled workflow (status ${response.status}).`);
+            }
+            const workflowJson = await response.text();
+            setLocalSettings(prev => ({ ...prev, workflowJson }));
+            setWorkflowInputs(parseWorkflowForInputs(workflowJson));
+            addToast('Bundled workflow loaded. Review mappings below.', 'success');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unexpected error loading bundled workflow.';
+            addToast(message, 'error');
+        }
+    };
+
+    const handleWorkflowFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) {
+            return;
+        }
+        try {
+            const text = await file.text();
+            setLocalSettings(prev => ({ ...prev, workflowJson: text }));
+            setWorkflowInputs(parseWorkflowForInputs(text));
+            addToast(`Imported workflow from ${file.name}.`, 'success');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Could not read workflow file.';
+            addToast(message, 'error');
+        } finally {
+            if (event.target) {
+                event.target.value = '';
+            }
+        }
+    };
+
+    const handleAutoMapCurrentWorkflow = async () => {
+        if (!localSettings.workflowJson || !localSettings.workflowJson.trim()) {
+            addToast('Please load or paste a workflow JSON first.', 'error');
+            return;
+        }
+        try {
+            updateApiStatus('loading', 'Analyzing workflow locally...');
+            const mapping: WorkflowMapping = await planActions.generateWorkflowMapping(
+                localSettings.workflowJson,
+                logApiCall,
+                updateApiStatus
+            );
+            setLocalSettings(prev => ({ ...prev, mapping }));
+            addToast('Workflow inputs mapped automatically.', 'success');
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Failed to analyze workflow mapping.';
+            addToast(message, 'error');
+        } finally {
+            updateApiStatus('idle', '');
+        }
+    };
+
+    const handleUploadWorkflowClick = () => {
+        fileInputRef.current?.click();
+    };
 
     const handleMappingChange = (key: string, value: MappableData) => {
         setLocalSettings(prev => ({
@@ -118,6 +212,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     };
 
     const handleSave = () => {
+        console.log('[LocalGenerationSettingsModal] handleSave called with localSettings:', JSON.stringify(localSettings, null, 2));
         onSave(localSettings);
         onClose();
     };
@@ -146,6 +241,72 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                     </h3>
                 </header>
                 <div className="p-6 space-y-6 overflow-y-auto">
+                    {/* Health Monitor */}
+                    <ProviderHealthMonitor comfyUIUrl={localSettings.comfyUIUrl} />
+                    
+                    {/* Provider Selection */}
+                    <div className="space-y-4 p-4 bg-gradient-to-br from-purple-900/30 to-blue-900/30 rounded-lg ring-2 ring-purple-500/50 shadow-lg">
+                        <h4 className="font-semibold text-purple-200 flex items-center text-lg">
+                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                            AI Provider Selection
+                        </h4>
+                        <p className="text-sm text-gray-300">Choose which AI services power your story generation and media creation.</p>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                            {/* Plan Expansion Strategy */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-purple-200 flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Story Planning Provider
+                                </label>
+                                <select 
+                                    value={activeStrategyId}
+                                    onChange={(e) => {
+                                        selectStrategy(e.target.value);
+                                        addToast(`Switched to ${strategies.find(s => s.id === e.target.value)?.label}`, 'success');
+                                    }}
+                                    className="w-full bg-gray-800/80 border-purple-500/50 rounded-md p-2.5 text-sm text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                >
+                                    {strategies.map(strategy => (
+                                        <option key={strategy.id} value={strategy.id}>
+                                            {strategy.label} {!strategy.isAvailable && '(Unavailable)'}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-gray-400 italic">{activeStrategy.description}</p>
+                            </div>
+
+                            {/* Media Generation Provider */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-blue-200 flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                    Media Generation Provider
+                                </label>
+                                <select 
+                                    value={activeProviderId}
+                                    onChange={(e) => {
+                                        selectProvider(e.target.value);
+                                        addToast(`Switched to ${providers.find(p => p.id === e.target.value)?.label}`, 'success');
+                                    }}
+                                    className="w-full bg-gray-800/80 border-blue-500/50 rounded-md p-2.5 text-sm text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                >
+                                    {providers.map(provider => (
+                                        <option key={provider.id} value={provider.id}>
+                                            {provider.label} {!provider.isAvailable && '(Unavailable)'}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-gray-400 italic">{activeProvider.description}</p>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Server Config */}
                     <div className="space-y-4 p-4 bg-gray-900/50 rounded-lg ring-1 ring-gray-700/50">
                         <h4 className="font-semibold text-gray-200 flex items-center"><ServerIcon className="w-5 h-5 mr-2 text-gray-400"/>ComfyUI Server</h4>
@@ -184,6 +345,33 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                            onUpdateSettings={setLocalSettings}
                            addToast={addToast}
                         />
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="application/json"
+                            className="hidden"
+                            onChange={handleWorkflowFileSelected}
+                        />
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                            <button
+                                onClick={handleLoadBundledWorkflow}
+                                className="flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-indigo-600/80 text-white font-semibold hover:bg-indigo-600 transition-colors"
+                            >
+                                Load Sample Workflow
+                            </button>
+                            <button
+                                onClick={handleUploadWorkflowClick}
+                                className="flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-gray-700 text-gray-100 font-semibold hover:bg-gray-600 transition-colors"
+                            >
+                                Import JSON File
+                            </button>
+                            <button
+                                onClick={handleAutoMapCurrentWorkflow}
+                                className="flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-emerald-600/80 text-white font-semibold hover:bg-emerald-600 transition-colors"
+                            >
+                                Auto-map Current Workflow
+                            </button>
+                        </div>
 
                         <div className="text-center">
                              <button

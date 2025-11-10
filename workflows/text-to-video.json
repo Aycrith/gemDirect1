@@ -1,0 +1,141 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "SVD\\svd_xt.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load SVD Model"
+    }
+  },
+  "2": {
+    "inputs": {
+      "image": "test_keyframe.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Keyframe Image"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": "A cinematic sweeping crane shot, highly detailed, professional cinematography",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "blurry, low resolution, distorted, watermark, text, artifacts",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "5": {
+    "inputs": {
+      "clip_name": "ViT-L-14-BEST-smooth-GmP-HF-format.safetensors"
+    },
+    "class_type": "CLIPVisionLoader",
+    "_meta": {
+      "title": "Load CLIP Vision"
+    }
+  },
+  "6": {
+    "inputs": {
+      "clip_vision": [
+        "5",
+        0
+      ],
+      "init_image": [
+        "2",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ],
+      "width": 576,
+      "height": 1024,
+      "video_frames": 25,
+      "motion_bucket_id": 127,
+      "fps": 24,
+      "augmentation_level": 0
+    },
+    "class_type": "SVD_img2vid_Conditioning",
+    "_meta": {
+      "title": "SVD Image to Video"
+    }
+  },
+  "7": {
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "seed": 0,
+      "steps": 30,
+      "cfg": 7.5,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "karras",
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "6",
+        1
+      ],
+      "latent_image": [
+        "6",
+        2
+      ],
+      "denoise": 1.0
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Video Sampler"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "9": {
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "gemdirect1_shot",
+      "format": "image/png"
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Frames"
+    }
+  }
+}
