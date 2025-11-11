@@ -182,6 +182,14 @@ if (Test-Path $OutputsDir) {
         }
     }
     $FrameSummary | ConvertTo-Json | Out-File -Encoding utf8 $FrameValidation
+    $OutputsArchive = Join-Path $RunDir 'generated-frames'
+    New-Item -ItemType Directory -Path $OutputsArchive -Force | Out-Null
+    Try {
+        Copy-Item -Path (Join-Path $OutputsDir 'gemdirect1_shot*.png') -Destination $OutputsArchive -Force -ErrorAction SilentlyContinue
+        Add-Content -Path $SummaryPath -Value "Copied frames to $OutputsArchive"
+    } Catch {
+        Add-Content -Path $SummaryPath -Value "Warning: Failed to copy generated frames - $($_.Exception.Message)"
+    }
 } else {
     Add-Content -Path $SummaryPath -Value "Warning: Outputs directory $OutputsDir not found."
 }
