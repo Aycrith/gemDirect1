@@ -1,0 +1,33 @@
+name: PR Unit Tests (Vitest)
+
+on:
+  pull_request:
+
+jobs:
+  vitest:
+    name: Run Vitest on Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+        shell: pwsh
+
+      - name: Run unit tests (Vitest)
+        run: |
+          # Use npm exec to ensure local vitest is used
+          npm exec vitest -- run --reporter json --outputFile vitest-report.json
+        shell: pwsh
+
+      - name: Upload vitest JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-report
+          path: vitest-report.json
