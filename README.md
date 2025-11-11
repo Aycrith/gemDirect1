@@ -40,3 +40,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uvkkeiyDr3iI4KPyB4ICS6
   5. Stops the services, zips the log folder, and stores the artifact in both `logs/<timestamp>/comfyui-e2e-<timestamp>.zip` and `artifacts/comfyui-e2e-<timestamp>.zip`.
 
 - Run the script from PowerShell with `-ExecutionPolicy Bypass` (the script already ensures Node 22.19.0 is first on `PATH`), then inspect the log directory and artifact ZIP for the generated JSON files and Vitest logs.
+ 6. Automatically queues a real SVD shot by resolving the SVD/CLIP checkpoints from `models/checkpoints/SVD` and `models/clip_vision`, uploads `sample_frame_start.png`, and logs the generated frames before the suites run.
+ 7. Copies any `gemdirect1_shot*.png` files from `ComfyUI/output` into the log directory so the zipped artifact includes the actual frames you just generated.
+
+- If the helper still warns “Outputs directory not found” or `frameCount` remains 0, make sure your ComfyUI install contains an SVD checkpoint under `models/checkpoints/SVD` (e.g., `svd_xt.safetensors`), a ViT-L-14 CLIP vision checkpoint (any of the `ViT-L-14-*.safetensors` files), and place `sample_frame_start.png` at the repo root. Once those exist, rerun `scripts/run-comfyui-e2e.ps1`—the new `queue-real-shot.log` will show which files were used and list the generated frames for quick verification.
