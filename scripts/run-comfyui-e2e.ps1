@@ -165,14 +165,31 @@ Write-Host "Step 6/7: Running Vitest suites using $RunVitestsScript"
 & powershell -NoLogo -ExecutionPolicy Bypass -File $RunVitestsScript -ProjectRoot $ProjectRoot -RunDir $RunDir
 $vitestHelperExit = $LASTEXITCODE
 
-# Parse the vitest exit codes written into the run summary (the helper appends lines)
+# Prefer reading machine-readable vitest results produced by the helper
+$ResultJsonPath = Join-Path $RunDir 'vitest-results.json'
+$ComfyTestLog = Join-Path $RunDir 'vitest-comfyui.log'
+$E2eTestLog = Join-Path $RunDir 'vitest-e2e.log'
 $comfyExit = 1
 $e2eExit = 1
-if (Test-Path $SummaryPath) {
-    $summaryLines = Get-Content -Path $SummaryPath -ErrorAction SilentlyContinue
-    foreach ($ln in $summaryLines) {
-        if ($ln -match 'Vitest comfyUI exitCode=(\d+)') { $comfyExit = [int]$Matches[1] }
-        if ($ln -match 'Vitest e2e exitCode=(\d+)') { $e2eExit = [int]$Matches[1] }
+if (Test-Path $ResultJsonPath) {
+    try {
+        $r = Get-Content -Path $ResultJsonPath -Raw | ConvertFrom-Json
+        $comfyExit = [int]$r.comfyExit
+        $e2eExit = [int]$r.e2eExit
+        if ($r.comfyLog) { $ComfyTestLog = $r.comfyLog }
+        if ($r.e2eLog) { $E2eTestLog = $r.e2eLog }
+        Add-RunSummary ("Vitest results read from JSON: {0}" -f $ResultJsonPath)
+    } catch {
+        Add-RunSummary ("Failed to read vitest results JSON: {0}" -f $_.Exception.Message)
+    }
+} else {
+    # Fallback: parse the textual run-summary for compat
+    if (Test-Path $SummaryPath) {
+        $summaryLines = Get-Content -Path $SummaryPath -ErrorAction SilentlyContinue
+        foreach ($ln in $summaryLines) {
+            if ($ln -match 'Vitest comfyUI exitCode=(\d+)') { $comfyExit = [int]$Matches[1] }
+            if ($ln -match 'Vitest e2e exitCode=(\d+)') { $e2eExit = [int]$Matches[1] }
+        }
     }
 }
 
