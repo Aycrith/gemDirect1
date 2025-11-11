@@ -25,10 +25,32 @@ function Log-Result {
 }
 
 function Start-ProcessAndLog {
-    param($Name, $File, $Args, $OutputLog)
-    $proc = Start-Process -FilePath $File -ArgumentList $Args -WorkingDirectory $ProjectRoot `
-        -RedirectStandardOutput $OutputLog -RedirectStandardError $OutputLog -NoNewWindow -PassThru
+    param(
+        $Name,
+        $File,
+        $Arguments,
+        $OutputLog
+    )
+    $stdOutPath = $OutputLog
+    $stdErrPath = $OutputLog
+    $needsMerge = $false
+    if ($stdOutPath -eq $stdErrPath) {
+        $needsMerge = $true
+        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($OutputLog)
+        $extension = [System.IO.Path]::GetExtension($OutputLog)
+        if (-not $extension) { $extension = '.log' }
+        $stdErrPath = Join-Path ([System.IO.Path]::GetDirectoryName($OutputLog)) "$baseName.stderr$extension"
+        if (Test-Path $stdErrPath) { Remove-Item $stdErrPath -Force }
+    }
+
+    $proc = Start-Process -FilePath $File -ArgumentList $Arguments -WorkingDirectory $ProjectRoot `
+        -RedirectStandardOutput $stdOutPath -RedirectStandardError $stdErrPath -NoNewWindow -PassThru
     $proc.WaitForExit()
+    if ($needsMerge -and (Test-Path $stdErrPath)) {
+        Add-Content -Path $OutputLog -Value "`n--- STDERR ---`n"
+        Get-Content -Path $stdErrPath -Raw | Add-Content -Path $OutputLog
+        Remove-Item $stdErrPath -Force
+    }
     Log-Result $Name $proc.ExitCode
     return $proc
 }
@@ -64,16 +86,17 @@ if (-not $Ready) {
 
 $AppOut = Join-Path $RunDir 'app.out.log'
 $AppErr = Join-Path $RunDir 'app.err.log'
-$NpmProc = Start-Process -FilePath 'npm' -ArgumentList 'run','dev' -WorkingDirectory $ProjectRoot `
+$NpmExecutable = if (Get-Command 'npm.cmd' -ErrorAction SilentlyContinue) { 'npm.cmd' } else { 'npm' }
+$NpmProc = Start-Process -FilePath $NpmExecutable -ArgumentList 'run','dev' -WorkingDirectory $ProjectRoot `
     -RedirectStandardOutput $AppOut -RedirectStandardError $AppErr -PassThru -NoNewWindow
 Add-Content -Path $SummaryPath -Value "npm dev process started (PID $($NpmProc.Id))"
 
 # Run targeted test suites
 $ComfyTestLog = Join-Path $RunDir 'vitest-comfyui.log'
-Start-ProcessAndLog 'Vitest-ComfyUI' 'node' @('./node_modules/vitest/vitest.mjs','run','--pool=vmThreads','services/comfyUIService.test.ts') $ComfyTestLog
+Start-ProcessAndLog -Name 'Vitest-ComfyUI' -File 'node' -Arguments @('./node_modules/vitest/vitest.mjs','run','--pool=vmThreads','services/comfyUIService.test.ts') -OutputLog $ComfyTestLog
 
 $E2eTestLog = Join-Path $RunDir 'vitest-e2e.log'
-Start-ProcessAndLog 'Vitest-E2E' 'node' @('./node_modules/vitest/vitest.mjs','run','--pool=vmThreads','services/e2e.test.ts') $E2eTestLog
+Start-ProcessAndLog -Name 'Vitest-E2E' -File 'node' -Arguments @('./node_modules/vitest/vitest.mjs','run','--pool=vmThreads','services/e2e.test.ts') -OutputLog $E2eTestLog
 
 # Diagnostics captured after tests
 $QueueInfoPath = Join-Path $RunDir 'queue_info.json'
@@ -132,15 +155,24 @@ $FinalPayload = [ordered]@{
 $FinalPayload | ConvertTo-Json -Depth 5 | Out-File -Encoding utf8 $FinalOutputPath
 
 # Summaries and cleanup
+# Summaries and cleanup
+function Stop-AndWait {
+    param($Proc, $Name)
+    if (-not $Proc) { return }
+    try {
+        if (-not $Proc.HasExited) {
+            Stop-Process -Id $Proc.Id -Force -ErrorAction SilentlyContinue
+            Add-Content -Path $SummaryPath -Value "Stopped $Name (PID $($Proc.Id))."
+        }
+    } finally {
+        Wait-Process -Id $Proc.Id -ErrorAction SilentlyContinue
+    }
+}
+
 Start-Sleep -Seconds 2
-if ($NpmProc -and -not $NpmProc.HasExited) {
-    Stop-Process -Id $NpmProc.Id -Force -ErrorAction SilentlyContinue
-    Add-Content -Path $SummaryPath -Value "Stopped npm dev (PID $($NpmProc.Id))."
-}
-if ($ComfyProc -and -not $ComfyProc.HasExited) {
-    Stop-Process -Id $ComfyProc.Id -Force -ErrorAction SilentlyContinue
-    Add-Content -Path $SummaryPath -Value "Stopped ComfyUI (PID $($ComfyProc.Id))."
-}
+Stop-AndWait $NpmProc 'npm dev'
+Stop-AndWait $ComfyProc 'ComfyUI'
+Start-Sleep -Seconds 2
 
 # Capture git status
 $GitStatusPath = Join-Path $RunDir 'git-status.txt'
