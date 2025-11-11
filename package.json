@@ -26,6 +26,7 @@
     "@vitest/ui": "^4.0.8",
     "happy-dom": "^20.0.10",
     "typescript": "~5.8.2",
+    "ts-node": "^10.9.1",
     "vite": "^6.2.0",
     "vitest": "^4.0.8"
   }
