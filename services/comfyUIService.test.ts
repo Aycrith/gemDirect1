@@ -146,7 +146,7 @@ describe('generateVideoFromShot', () => {
       });
     });
 
-    await comfyUIService.generateVideoFromShot(
+    const generationPromise = comfyUIService.generateVideoFromShot(
       settings,
       baseShot,
       baseEnhancers,
@@ -160,6 +160,9 @@ describe('generateVideoFromShot', () => {
       },
       { negativePrompt: 'foggy, desaturated' },
     );
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await generationPromise;
 
     expect(queueMock).toHaveBeenCalledWith(
       expect.any(Object),

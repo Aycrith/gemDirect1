@@ -175,11 +175,23 @@ export interface LocalGenerationSettings {
     mapping: WorkflowMapping;
 }
 
+export interface LocalGenerationAsset {
+    type: 'image' | 'video';
+    data: string;
+    filename: string;
+}
+
+export interface LocalGenerationOutput extends LocalGenerationAsset {
+    images?: string[];
+    videos?: string[];
+    assets?: LocalGenerationAsset[];
+}
+
 export interface LocalGenerationStatus {
     status: 'idle' | 'queued' | 'running' | 'complete' | 'error';
     message: string;
     progress: number; // 0-100
     queue_position?: number;
     node_title?: string;
-    final_output?: { type: 'image' | 'video', data: string, filename: string };
+    final_output?: LocalGenerationOutput;
 }

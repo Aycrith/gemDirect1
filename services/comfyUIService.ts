@@ -1,4 +1,4 @@
-import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, CreativeEnhancers, WorkflowMapping, MappableData } from '../types';
+import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 
 export const DEFAULT_NEGATIVE_PROMPT = 'blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, oversaturated, undersaturated, motion blur';
@@ -514,43 +514,72 @@ export const trackPromptExecution = (
 
             case 'executed':
                 if (msg.data.prompt_id === promptId) {
-                    const outputs = msg.data.output;
-                    let assetInfo: { entry: any; resultType: 'image' | 'video' } | null = null;
+                    const outputs = msg.data.output || {};
+                    const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [
+                        { entries: outputs.videos, resultType: 'video' },
+                        { entries: outputs.images, resultType: 'image' },
+                        { entries: outputs.gifs, resultType: 'video' },
+                        { entries: outputs.output, resultType: 'image' },
+                    ];
 
-                    if (Array.isArray(outputs.videos) && outputs.videos.length > 0) {
-                        assetInfo = { entry: outputs.videos[0], resultType: 'video' };
-                    } else if (Array.isArray(outputs.images) && outputs.images.length > 0) {
-                        assetInfo = { entry: outputs.images[0], resultType: 'image' };
-                    } else if (Array.isArray(outputs.gifs) && outputs.gifs.length > 0) {
-                        assetInfo = { entry: outputs.gifs[0], resultType: 'video' };
-                    } else if (Array.isArray(outputs.output) && outputs.output.length > 0) {
-                        assetInfo = { entry: outputs.output[0], resultType: 'image' };
-                    }
+                    const fetchAssetCollection = async (
+                        entries: any[] | undefined,
+                        resultType: LocalGenerationAsset['type']
+                    ): Promise<LocalGenerationAsset[]> => {
+                        if (!Array.isArray(entries) || entries.length === 0) {
+                            return [];
+                        }
+                        return Promise.all(
+                            entries.map(async (entry) => ({
+                                type: resultType,
+                                data: await fetchAssetAsDataURL(
+                                    comfyUIUrl,
+                                    entry.filename,
+                                    entry.subfolder,
+                                    entry.type || 'output'
+                                ),
+                                filename: entry.filename,
+                            }))
+                        );
+                    };
 
-                    if (assetInfo) {
-                        try {
-                            onProgress({ message: 'Fetching final output...', progress: 100 });
-                            const outputUrl = await fetchAssetAsDataURL(
-                                comfyUIUrl,
-                                assetInfo.entry.filename,
-                                assetInfo.entry.subfolder,
-                                assetInfo.entry.type || 'output'
-                            );
+                    try {
+                        onProgress({ message: 'Fetching final output...', progress: 100 });
+                        const downloadedAssets: LocalGenerationAsset[] = [];
+
+                        for (const source of assetSources) {
+                            const assets = await fetchAssetCollection(source.entries, source.resultType);
+                            downloadedAssets.push(...assets);
+                        }
+
+                        if (downloadedAssets.length > 0) {
+                            const imageAssets = downloadedAssets.filter(asset => asset.type === 'image');
+                            const videoAssets = downloadedAssets.filter(asset => asset.type === 'video');
+                            const finalOutput: LocalGenerationStatus['final_output'] = {
+                                type: downloadedAssets[0].type,
+                                data: downloadedAssets[0].data,
+                                filename: downloadedAssets[0].filename,
+                                assets: downloadedAssets,
+                            };
+
+                            if (imageAssets.length > 0) {
+                                finalOutput.images = imageAssets.map(asset => asset.data);
+                            }
+                            if (videoAssets.length > 0) {
+                                finalOutput.videos = videoAssets.map(asset => asset.data);
+                            }
+
                             onProgress({
                                 status: 'complete',
                                 message: 'Generation complete!',
-                                final_output: {
-                                    type: assetInfo.resultType,
-                                    data: outputUrl,
-                                    filename: assetInfo.entry.filename,
-                                },
+                                final_output: finalOutput,
                             });
-                        } catch (error) {
-                            const message = error instanceof Error ? error.message : "Failed to fetch final output.";
-                            onProgress({ status: 'error', message });
+                        } else {
+                            onProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
                         }
-                    } else {
-                        onProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
+                    } catch (error) {
+                        const message = error instanceof Error ? error.message : "Failed to fetch final output.";
+                        onProgress({ status: 'error', message });
                     }
                     ws.close();
                 }
