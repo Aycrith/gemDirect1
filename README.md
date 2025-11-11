@@ -29,3 +29,14 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uvkkeiyDr3iI4KPyB4ICS6
   ```
 
   This command matches the validated workflow from both Linux and Windows environments.
+
+### Automated ComfyUI E2E
+
+- Use `scripts/run-comfyui-e2e.ps1` to drive a reproducible end-to-end run. It:
+  1. Starts the local ComfyUI server (`C:\ComfyUI\start-comfyui.bat`) and records `system_stats.json`.
+  2. Launches `npm run dev` and executes both `services/comfyUIService.test.ts` and `services/e2e.test.ts` via Vitest with the `vmThreads` pool.
+  3. Captures queue details, frame inventories, and a computed `final_output.json` for analysis.
+  4. Validates that a real frame sequence exists under `C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\outputs` and writes `frame-validation.json`.
+  5. Stops the services, zips the log folder, and stores the artifact in both `logs/<timestamp>/comfyui-e2e-<timestamp>.zip` and `artifacts/comfyui-e2e-<timestamp>.zip`.
+
+- Run the script from PowerShell with `-ExecutionPolicy Bypass` (the script already ensures Node 22.19.0 is first on `PATH`), then inspect the log directory and artifact ZIP for the generated JSON files and Vitest logs.
