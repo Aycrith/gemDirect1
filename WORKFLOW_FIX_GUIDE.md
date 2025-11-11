@@ -6,6 +6,23 @@
 
 ---
 
+## Gap Inventory
+
+### Resolved Issues
+- Simplified the workflow to mirror ComfyUI_examples (ImageOnlyCheckpointLoader → VideoLinearCFGGuidance → SVD_img2vid_Conditioning → KSampler → VAEDecode → SaveImage) so the checkpoint loader, conditioning, and sampler inputs align.
+- `scripts/queue-real-workflow.ps1` patches `__KEYFRAME_IMAGE__`, `__SCENE_PREFIX__`, `_meta.scene_prompt`, and `_meta.negative_prompt`, copies keyframes into `C:\ComfyUI\...\input`, prunes stale frames, copies PNGs + `history.json`, and returns metrics for logging.
+- `scripts/run-comfyui-e2e.ps1` drives story generation, ComfyUI readiness, scene queueing, Vitest suites (with `--pool=vmThreads`), warning detection for the 25-frame floor, and artifact zipping with structured logs.
+
+### Known Gaps
+- The story generator remains deterministic; the Gemini/story service integration is still pending, so prompts/loglines are not driven by production data.
+- Failure handling only warns about low frame counts and logs REST errors; missing keyframes or ComfyUI rejects still leave gaps without retries.
+- Tests do not cover placeholder patching or story-generator output, so workflow tweaks can break the helper undetected.
+
+### Lessons Learned
+- Runtime placeholder patching keeps `text-to-video.json` immutable while giving each scene its own context.
+- Vitest suites must run with `--pool=vmThreads` on Windows; capturing their exit codes and log files confirms service health.
+- A structured `run-summary.txt` (`## Story`, per-scene lines, warnings, `## Artifact Index`) plus zipped logs keeps manual review fast.
+
 ## ✅ Updated Workflow
 
 The workflow has been **simplified to use only core ComfyUI nodes** that are guaranteed to work.
@@ -26,6 +43,23 @@ The workflow has been **simplified to use only core ComfyUI nodes** that are gua
 | 8 | VAEDecode | Decode latents to images | ✅ Core |
 | 9 | SaveImage | Persist PNG frames | ✅ Core |
 
+### Story-aware placeholders (NEW)
+
+To keep the helper in sync with the auto-generated story assets, the workflow ships with simple string placeholders that scripts/queue-real-workflow.ps1 patches right before queuing:
+
+| Placeholder | Location | Filled by |
+|-------------|----------|-----------|
+| __KEYFRAME_IMAGE__ | LoadImage.inputs.image + widgets_values[0] | Scene keyframe written by scripts/generate-story-scenes.ts |
+| __SCENE_PREFIX__ | SaveImage.inputs.filename_prefix | Creates scene-specific prefixes (gemdirect1_<sceneId>) so frames can be copied deterministically |
+| _meta.scene_prompt / _meta.negative_prompt | SaveImage._meta | Stores the story prompt + negative prompt next to the frames for traceability |
+
+This preserves compatibility with the validated [ComfyUI_examples SVD workflow](https://github.com/comfyanonymous/ComfyUI_examples/blob/master/video/workflow_image_to_video.json) while letting us inject per-scene data without editing JSON manually. The queue script also:
+
+1. Copies each scene’s keyframe into C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\input.
+2. Deletes stale frames matching the same prefix inside both output and outputs.
+3. Posts the patched workflow to /prompt, polls /history/<promptId>, and copies the new frames plus history.json into logs/<ts>/<sceneId>/generated-frames.
+
+See STORY_TO_VIDEO_PIPELINE_PLAN.md for the full automation plan and the community references (Civitai Txt2Video SVD, ComfyUI-Stable-Video-Diffusion).
 ### Data Flow
 
 ```
@@ -261,3 +295,4 @@ ffmpeg -framerate 24 -i $inputPattern -c:v libx264 -pix_fmt yuv420p -crf 23 $out
 ---
 
 **Status**: ✅ Workflow Fixed | ⏳ Ready for Testing | 🚀 Ready for Production Integration
+

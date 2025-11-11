@@ -1,90 +1,163 @@
-param()
-# Queue real SVD workflow and capture frames
-# Uses ComfyUI's REST API directly
+param(
+    [Parameter(Mandatory = $true)]
+    [string] $SceneId,
 
-$ProjectRoot = 'C:\Dev\gemDirect1'
-$ComfyUrl = 'http://127.0.0.1:8188'
+    [Parameter(Mandatory = $true)]
+    [string] $Prompt,
 
-Write-Host ""
-Write-Host "[Real E2E] Queueing actual SVD workflow via REST API..."
+    [string] $NegativePrompt = 'blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, oversaturated, undersaturated, motion blur',
+
+    [Parameter(Mandatory = $true)]
+    [string] $KeyframePath,
+
+    [Parameter(Mandatory = $true)]
+    [string] $SceneOutputDir,
+
+    [string] $ProjectRoot = 'C:\Dev\gemDirect1',
+    [string] $ComfyUrl = 'http://127.0.0.1:8188',
+    [int] $FrameFloor = 25,
+    [int] $MaxWaitSeconds = 600
+)
+
+function Write-SceneLog {
+    param(
+        [string] $Message
+    )
+    Write-Host "[Real E2E][$SceneId] $Message"
+}
+
+if (-not (Test-Path $SceneOutputDir)) {
+    New-Item -ItemType Directory -Path $SceneOutputDir -Force | Out-Null
+}
+
+$generatedFramesDir = Join-Path $SceneOutputDir 'generated-frames'
+New-Item -ItemType Directory -Path $generatedFramesDir -Force | Out-Null
 
 $WorkflowPath = Join-Path $ProjectRoot 'workflows\text-to-video.json'
 if (-not (Test-Path $WorkflowPath)) {
-    Write-Warning "Workflow not found at $WorkflowPath"
-    exit 1
+    throw "Workflow not found at $WorkflowPath"
 }
 
-# Read workflow template
-$workflow = Get-Content $WorkflowPath -Raw | ConvertFrom-Json
-Write-Host "[Real E2E] Workflow template loaded"
+if (-not (Test-Path $KeyframePath)) {
+    throw "Keyframe path not found: $KeyframePath"
+}
 
-# Build the payload that ComfyUI expects: { prompt: <workflow>, client_id: <id> }
-$clientId = "csg_$(Get-Random)"
+$scenePrefix = "gemdirect1_$SceneId"
+$comfyInputDir = 'C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\input'
+if (-not (Test-Path $comfyInputDir)) {
+    New-Item -ItemType Directory -Path $comfyInputDir -Force | Out-Null
+}
+
+$keyframeName = "{0}_keyframe{1}" -f $SceneId, [IO.Path]::GetExtension($KeyframePath)
+$keyframeTarget = Join-Path $comfyInputDir $keyframeName
+
+Write-SceneLog "Preparing keyframe $keyframeName"
+Copy-Item -Path $KeyframePath -Destination $keyframeTarget -Force
+
+# Remove stale frames matching this prefix
+$possibleOutputDirs = @(
+    'C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\outputs',
+    'C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\output',
+    'C:\ComfyUI\ComfyUI_windows_portable\outputs',
+    'C:\ComfyUI\outputs'
+)
+foreach ($dir in $possibleOutputDirs) {
+    if (Test-Path $dir) {
+        Get-ChildItem -Path $dir -Filter "$scenePrefix*.png" -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+}
+
+$workflow = Get-Content $WorkflowPath -Raw | ConvertFrom-Json
+$workflow.'2'.inputs.image = $keyframeName
+$workflow.'2'.widgets_values[0] = $keyframeName
+$workflow.'7'.inputs.filename_prefix = $scenePrefix
+if ($workflow.'7'.PSObject.Properties.Name -notcontains '_meta') {
+    $workflow.'7' | Add-Member -MemberType NoteProperty -Name _meta -Value @{ }
+}
+$workflow.'7'._meta.scene_prompt = $Prompt
+$workflow.'7'._meta.negative_prompt = $NegativePrompt
+
+$clientId = "scene-$SceneId-$([guid]::NewGuid().ToString('N'))"
 $payload = @{
-    prompt = $workflow
+    prompt    = $workflow
     client_id = $clientId
 }
 $payloadJson = $payload | ConvertTo-Json -Depth 10
 
-# Queue the prompt
-try {
-    Write-Host "[Real E2E] Sending prompt to ComfyUI (client_id: $clientId)..."
-    $response = Invoke-RestMethod -Uri "$ComfyUrl/prompt" `
-        -Method POST `
-        -ContentType 'application/json' `
-        -Body $payloadJson `
-        -TimeoutSec 10 `
-        -ErrorAction Stop
-    
-    $promptId = $response.prompt_number
-    Write-Host "[Real E2E] SUCCESS: Queued with prompt ID $promptId"
-} catch {
-    $errorMsg = $_ | ConvertTo-Json
-    Write-Host "[Real E2E] Failed to queue: $errorMsg"
-    exit 1
+Write-SceneLog "Queuing workflow (client_id: $clientId)"
+$promptResponse = Invoke-RestMethod -Uri "$ComfyUrl/prompt" -Method POST -ContentType 'application/json' -Body $payloadJson -TimeoutSec 15 -ErrorAction Stop
+
+if (-not $promptResponse.prompt_id) {
+    throw "ComfyUI did not return a prompt_id for scene $SceneId"
 }
 
-# Poll for completion (max 120 seconds)
-Write-Host "[Real E2E] Monitoring execution..."
-$start = Get-Date
-$maxWait = 120
-$pollCount = 0
+$promptId = $promptResponse.prompt_id
+Write-SceneLog "Queued prompt_id $promptId"
 
-while ((New-TimeSpan -Start $start).TotalSeconds -lt $maxWait) {
-    $pollCount++
+$startTime = Get-Date
+$maxWaitSeconds = $MaxWaitSeconds
+$historyData = $null
+
+while ((New-TimeSpan -Start $startTime).TotalSeconds -lt $maxWaitSeconds) {
     try {
         $history = Invoke-RestMethod -Uri "$ComfyUrl/history/$promptId" -TimeoutSec 5 -ErrorAction SilentlyContinue
         if ($history -and $history.$promptId -and $history.$promptId.outputs) {
-            Write-Host "[Real E2E] Workflow completed after $([Math]::Round((New-TimeSpan -Start $start).TotalSeconds, 1))s"
+            $historyData = $history
+            Write-SceneLog ("Workflow completed after {0}s" -f [Math]::Round((New-TimeSpan -Start $startTime).TotalSeconds, 1))
             break
         }
-    } catch { }
-    Start-Sleep -Seconds 3
+    } catch {
+        Start-Sleep -Seconds 2
+    }
+    Start-Sleep -Seconds 2
 }
 
-# Check for frames (ComfyUI creates output dir in its working directory)
-Write-Host "[Real E2E] Checking generated frames..."
-$possibleOutputDirs = @(
-    'C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\outputs',
-    'C:\ComfyUI\ComfyUI_windows_portable\outputs',
-    'C:\ComfyUI\outputs'
-)
+if (-not $historyData) {
+    throw "Scene $SceneId did not finish within $maxWaitSeconds seconds"
+}
 
-$foundFrames = 0
+$historyPath = Join-Path $SceneOutputDir 'history.json'
+$historyData | ConvertTo-Json -Depth 10 | Set-Content -Path $historyPath
+
+$copiedFrom = @()
+$sceneFrames = @()
 foreach ($outputDir in $possibleOutputDirs) {
-    if (Test-Path $outputDir) {
-        $frames = @(Get-ChildItem -Path $outputDir -Filter 'gemdirect1_shot*.png' -File -ErrorAction SilentlyContinue)
-        if ($frames.Count -gt 0) {
-            Write-Host "[Real E2E] SUCCESS: Generated $($frames.Count) frames in $outputDir"
-            $frames | ForEach-Object { Write-Host "  - $($_.Name)" }
-            $foundFrames = $frames.Count
-            break
+    if (-not (Test-Path $outputDir)) {
+        continue
+    }
+
+    $frames = @(Get-ChildItem -Path $outputDir -Filter "$scenePrefix*.png" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime)
+    if ($frames.Count -gt 0) {
+        foreach ($frame in $frames) {
+            Copy-Item -Path $frame.FullName -Destination (Join-Path $generatedFramesDir $frame.Name) -Force
         }
+        $sceneFrames += $frames
+        $copiedFrom += $outputDir
     }
 }
 
-if ($foundFrames -eq 0) {
-    Write-Host "[Real E2E] INFO: No frames generated (workflow may have failed - check ComfyUI history)"
+if ($sceneFrames.Count -eq 0) {
+    Write-SceneLog "No frames found for prefix $scenePrefix"
+} else {
+    Write-SceneLog ("Copied {0} frames into {1}" -f $sceneFrames.Count, $generatedFramesDir)
 }
 
-Write-Host "[Real E2E] Workflow test complete"
+$result = [pscustomobject]@{
+    SceneId            = $SceneId
+    Prompt             = $Prompt
+    NegativePrompt     = $NegativePrompt
+    KeyframeSource     = $KeyframePath
+    KeyframeInputName  = $keyframeName
+    FrameCount         = $sceneFrames.Count
+    FramePrefix        = $scenePrefix
+    ClientId           = $clientId
+    PromptId           = $promptId
+    DurationSeconds    = [Math]::Round((New-TimeSpan -Start $startTime).TotalSeconds, 1)
+    GeneratedFramesDir = $generatedFramesDir
+    HistoryPath        = $historyPath
+    OutputDirsScanned  = $copiedFrom
+    Success            = ($sceneFrames.Count -gt 0)
+    MeetsFrameFloor    = ($sceneFrames.Count -ge $FrameFloor)
+}
+
+return $result

@@ -19,7 +19,6 @@ const workflowJson = JSON.parse(workflowJsonContent);
 
 const modelsRoot = path.resolve('C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\models');
 const checkpointsDir = path.join(modelsRoot, 'checkpoints', 'SVD');
-const clipVisionDir = path.join(modelsRoot, 'clip_vision');
 const keyframePath = path.join(projectRoot, 'sample_frame_start.png');
 
 const shot: Shot = {
@@ -53,21 +52,16 @@ async function findModelFile(dir: string, pattern: RegExp): Promise<string> {
 
 const buildSettings = async (): Promise<LocalGenerationSettings> => {
     const svdFilename = await findModelFile(checkpointsDir, /^svd.*\.safetensors$/i);
-    const clipFilename = await findModelFile(clipVisionDir, /^ViT-L-14.*\.safetensors$/i);
     console.log(`Using SVD checkpoint: ${svdFilename}`);
-    console.log(`Using CLIP vision checkpoint: ${clipFilename}`);
 
     const workflow = JSON.parse(JSON.stringify(workflowJson));
     workflow['1'].inputs.ckpt_name = `SVD\\${svdFilename}`;
-    workflow['5'].inputs.clip_name = clipFilename;
 
     return {
         comfyUIUrl: 'http://127.0.0.1:8188',
         comfyUIClientId: 'queue-real-shot',
         workflowJson: JSON.stringify(workflow),
         mapping: {
-            '3:text': 'human_readable_prompt',
-            '4:text': 'negative_prompt',
             '2:image': 'keyframe_image',
         },
     };

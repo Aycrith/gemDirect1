@@ -3,60 +3,48 @@
     "inputs": {
       "ckpt_name": "SVD\\svd_xt.safetensors"
     },
-    "class_type": "CheckpointLoaderSimple",
+    "class_type": "ImageOnlyCheckpointLoader",
     "_meta": {
-      "title": "Load SVD Model"
-    }
+      "title": "Load SVD Model (Image Only)"
+    },
+    "widgets_values": [
+      "svd.safetensors"
+    ]
   },
   "2": {
     "inputs": {
-      "image": "test_keyframe.jpg"
+      "image": "__KEYFRAME_IMAGE__"
     },
     "class_type": "LoadImage",
     "_meta": {
-      "title": "Load Keyframe Image"
-    }
+      "title": "Load Keyframe"
+    },
+    "widgets_values": [
+      "__KEYFRAME_IMAGE__",
+      "image"
+    ]
   },
   "3": {
     "inputs": {
-      "text": "A cinematic sweeping crane shot, highly detailed, professional cinematography",
-      "clip": [
+      "model": [
         "1",
-        1
-      ]
+        0
+      ],
+      "min_cfg": 1
     },
-    "class_type": "CLIPTextEncode",
+    "class_type": "VideoLinearCFGGuidance",
     "_meta": {
-      "title": "Positive Prompt"
-    }
+      "title": "Video CFG Guidance"
+    },
+    "widgets_values": [
+      1
+    ]
   },
   "4": {
     "inputs": {
-      "text": "blurry, low resolution, distorted, watermark, text, artifacts",
-      "clip": [
+      "clip_vision": [
         "1",
         1
-      ]
-    },
-    "class_type": "CLIPTextEncode",
-    "_meta": {
-      "title": "Negative Prompt"
-    }
-  },
-  "5": {
-    "inputs": {
-      "clip_name": "ViT-L-14-BEST-smooth-GmP-HF-format.safetensors"
-    },
-    "class_type": "CLIPVisionLoader",
-    "_meta": {
-      "title": "Load CLIP Vision"
-    }
-  },
-  "6": {
-    "inputs": {
-      "clip_vision": [
-        "5",
-        0
       ],
       "init_image": [
         "2",
@@ -75,43 +63,60 @@
     },
     "class_type": "SVD_img2vid_Conditioning",
     "_meta": {
-      "title": "SVD Image to Video"
-    }
+      "title": "SVD Conditioning"
+    },
+    "widgets_values": [
+      576,
+      1024,
+      25,
+      127,
+      24,
+      0
+    ]
   },
-  "7": {
+  "5": {
     "inputs": {
       "model": [
-        "1",
+        "3",
         0
       ],
       "seed": 0,
       "steps": 30,
-      "cfg": 7.5,
+      "cfg": 4.5,
       "sampler_name": "euler_ancestral",
       "scheduler": "karras",
       "positive": [
-        "6",
+        "4",
         0
       ],
       "negative": [
-        "6",
+        "4",
         1
       ],
       "latent_image": [
-        "6",
+        "4",
         2
       ],
-      "denoise": 1.0
+      "denoise": 1
     },
     "class_type": "KSampler",
     "_meta": {
       "title": "Video Sampler"
-    }
+    },
+    "widgets_values": [
+      2389290561623,
+      "randomize",
+      30,
+      4.5,
+      "euler_ancestral",
+      "karras",
+      1
+    ]
   },
-  "8": {
+  "6": {
     "inputs": {
       "samples": [
-        "7",
+        "5",
         0
       ],
       "vae": [
@@ -124,18 +129,20 @@
       "title": "VAE Decode"
     }
   },
-  "9": {
+  "7": {
     "inputs": {
       "images": [
-        "8",
+        "6",
         0
       ],
-      "filename_prefix": "gemdirect1_shot",
+      "filename_prefix": "__SCENE_PREFIX__",
       "format": "image/png"
     },
     "class_type": "SaveImage",
     "_meta": {
-      "title": "Save Frames"
+      "title": "Save Frames",
+      "scene_prompt": "__SCENE_PROMPT__",
+      "negative_prompt": "__NEGATIVE_PROMPT__"
     }
   }
 }

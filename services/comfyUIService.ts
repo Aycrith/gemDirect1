@@ -186,11 +186,17 @@ export const validateWorkflowAndMappings = (settings: LocalGenerationSettings): 
     }
 
     const mapping = settings.mapping ?? {};
+    const workflowNodes = Object.values(promptPayloadTemplate ?? {}) as Array<Record<string, any>>;
+    const hasSvdConditioning = workflowNodes.some((node) => node?.class_type === 'SVD_img2vid_Conditioning');
     const mappingErrors: string[] = [];
     const mappedDataTypes = new Set(Object.values(mapping));
 
     // Stricter checks for essential mappings
-    if (!mappedDataTypes.has('human_readable_prompt') && !mappedDataTypes.has('full_timeline_json')) {
+    if (
+        !hasSvdConditioning &&
+        !mappedDataTypes.has('human_readable_prompt') &&
+        !mappedDataTypes.has('full_timeline_json')
+    ) {
         mappingErrors.push("Workflow is missing a mapping for the main text prompt. Please map either 'Human-Readable Prompt' or 'Full Timeline JSON' to a text input in your workflow.");
     }
     if (!mappedDataTypes.has('keyframe_image')) {

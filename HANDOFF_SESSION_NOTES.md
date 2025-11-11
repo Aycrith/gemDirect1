@@ -360,6 +360,17 @@ Optional: Convert to MP4 using FFmpeg
 
 ---
 
+## ?? Story-to-Video Automation (Update: Nov 11, 2025)
+
+- `scripts/generate-story-scenes.ts` now produces a deterministic, documented story stub (logline, director vision, per-scene prompts + keyframes) inside each `logs/<ts>/story/` folder.
+- `workflows/text-to-video.json` carries placeholders (`__KEYFRAME_IMAGE__`, `__SCENE_PREFIX__`, `_meta.scene_prompt`, `_meta.negative_prompt`) so `scripts/queue-real-workflow.ps1` can inject the story data just before posting to `/prompt`. This keeps us aligned with the [ComfyUI_examples SVD reference](https://github.com/comfyanonymous/ComfyUI_examples/blob/master/video/workflow_image_to_video.json) while staying compatible with other SVD templates (e.g., the [ComfyUI Txt2Video SVD workflow on Civitai](https://civitai.com/models/211703/comfyui-txt2video-with-svd)).
+- `scripts/queue-real-workflow.ps1` is parameterized per scene (`-SceneId`, `-Prompt`, `-KeyframePath`, `-FrameFloor`). It copies the keyframe into `ComfyUI\\input`, purges stale frames, posts the prompt, saves `history.json`, and copies every `gemdirect1_<sceneId>*` PNG into `logs/<ts>/<sceneId>/generated-frames`.
+- The workflow rewrites `__KEYFRAME_IMAGE__`, `__SCENE_PREFIX__`, `_meta.scene_prompt`, and `_meta.negative_prompt` so `text-to-video.json` stays immutable, and each scene run adds `[Scene ...]` stats, warnings, and the `## Artifact Index` block to `logs/<ts>/run-summary.txt`; refer to `STORY_TO_VIDEO_TEST_CHECKLIST.md` for the template and `STORY_TO_VIDEO_PIPELINE_PLAN.md` for the contextual roadmap before rerunning.
+- `scripts/run-comfyui-e2e.ps1` sequences everything: generate story ➜ start ComfyUI ➜ queue/poll scenes ➜ run both Vitest suites ➜ zip `logs/<ts>` into `artifacts/comfyui-e2e-<ts>.zip`. The `run-summary.txt` now logs timestamps, per-scene stats, warnings (<25 frames), and an artifact index.
+- Validation order lives in `STORY_TO_VIDEO_TEST_CHECKLIST.md`. Always walk through that doc (along with `README.md` + `E2E_TEST_FIX_COMPLETE.md`) before declaring a run “good.”
+- If you need to plug in a richer story generator later, you can swap `story/story.json` or feed new prompts into `queue-real-workflow.ps1` without touching the workflow JSON.
+
+---
 ## 💡 Tips for Next Session
 
 ### Before Starting

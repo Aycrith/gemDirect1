@@ -1,344 +1,103 @@
-# 🎯 Next Session Action Plan
+# ?? Next Session Action Plan
 
-**Created**: November 9, 2025  
-**For**: Next Development Agent  
-**Estimated Duration**: 30 min - 5 hours (depending on scope)
-
----
-
-## ⚡ Quick Start (First 5 Minutes)
-
-### 1. Verify System Status
-```powershell
-# Check ComfyUI is running
-curl http://127.0.0.1:8188/system_stats
-
-# If not running:
-taskkill /IM python.exe /F
-C:\ComfyUI\start-comfyui.bat
-```
-
-### 2. Read Context
-- Read: `HANDOFF_SESSION_NOTES.md` (15 min) ← Start here
-- Reference: `WORKFLOW_DEBUG_FIXED.md` (10 min) ← For workflow details
-- Optional: `REFERENCE_INDEX.md` (5 min) ← For file navigation
-
-### 3. Verify Workflow Status
-```
-Open: http://127.0.0.1:8188
-Load: workflows/text-to-video.json
-Verify: All 8 nodes connected (no red X marks)
-```
+**Updated**: November 11, 2025  
+**For**: The next development agent who picks up gemDirect1  
+**Estimated Duration**: 20–90 min (verification-first, optional rerun)
 
 ---
 
-## 📋 Priority-Based Task List
+**Heads up**: before editing any scripts, re-read `STORY_TO_VIDEO_PIPELINE_PLAN.md` and `STORY_TO_VIDEO_TEST_CHECKLIST.md` so you understand the story → keyframe → ComfyUI loop and the required `run-summary.txt` template that drives the artifact index.
 
-### 🔴 BLOCKING - Must Complete First
+## ? Quick Start (First 5 Minutes)
 
-**Task**: Manual Workflow Test  
-**Status**: NOT YET DONE (this is the blocker)  
-**Time**: 30 minutes  
+### 1. Review the latest log bundle
+- Open `logs/<timestamp>/run-summary.txt`. Confirm it has three sections:
+  1. `## Story` (story ID, director vision, scene count)
+  2. Per-scene lines like `[Scene scene-001] Frames=60 Duration=84s Prefix=gemdirect1_scene-001`
+  3. `## Artifact Index` listing the story folder, Vitest logs, and zip path.
+- Inspect `logs/<timestamp>/story/story.json` plus `story/scenes/*.json` and `story/keyframes/*.png`. These must line up with the folders under `logs/<timestamp>/<sceneId>/`.
+- Spot-check each `logs/<timestamp>/<sceneId>/generated-frames` directory and confirm the PNG counts match the summary lines.
+- Verify `artifacts/comfyui-e2e-<timestamp>.zip` contains the entire structure above before trusting a run.
+
+### 2. Read the references
+- Skim `STORY_TO_VIDEO_PIPELINE_PLAN.md` for the architectural rationale and citations (ComfyUI_examples, Civitai SVD reference workflows, etc.).
+- Use `README.md` (Automated ComfyUI E2E section) and `STORY_TO_VIDEO_TEST_CHECKLIST.md` as your canonical “how to rerun + validate” guides.
+- Keep `E2E_TEST_FIX_COMPLETE.md` handy—it now documents the story ➜ ComfyUI loop.
+
+### 3. Ready the environment
+- When you rerun the helper, always start from the repo root:
+  ```powershell
+  cd C:\Dev\gemDirect1
+  powershell -NoLogo -ExecutionPolicy Bypass -File ".\scripts\run-comfyui-e2e.ps1"
+  ```
+- Watch for `[Scene ...] Frames=##` logs. The helper continues even if a scene fails but exits with `1` in that case.
+- If you need to debug a specific scene, re-run with the same `story/story.json` by copying it into a fresh run directory or by wiring your own prompts into `queue-real-workflow.ps1`.
+
+---
+
+## ?? Priority-Based Task List
+
+### ? BLOCKING — Verify the story ➜ video artifact
+
+**Task**: Treat the latest `logs/<timestamp>` as evidence only after it passes the checklist  
+**Status**: Fresh run recommended per milestone  
 **Steps**:
-1. Open http://127.0.0.1:8188
-2. Load `workflows/text-to-video.json`
-3. All 8 nodes should be visible
-4. All nodes should be connected (look for yellow lines)
-5. Prepare a test keyframe image:
-   - Use any PNG/JPG
-   - Save to: `C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\input\test.jpg`
-6. In workflow: Click "Load Keyframe Image" → Choose your test image
-7. Click "Queue Prompt"
-8. Wait 2-3 minutes
-9. Check output: `C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\output\`
-10. Verify 25 PNG files created
+1. Follow `STORY_TO_VIDEO_TEST_CHECKLIST.md` verbatim (story folder → scene folders → frames → Vitest logs → zip).
+2. Confirm every scene copied ≥1 frame and that warnings for `<25` frames are recorded in `run-summary.txt`.
+3. Preserve any failure directories; do **not** delete them before the next agent inspects them.
 
-**Success Criteria**:
-- ✅ Workflow loads without errors
-- ✅ All nodes connected
-- ✅ Generation completes
-- ✅ PNG files in output folder
-- ✅ No CUDA errors
+### ?? SECONDARY - Near-term improvements
 
-**If fails**: Check `WORKFLOW_DEBUG_FIXED.md` troubleshooting section
+- **Story generator integration**: Swap the deterministic stub in `scripts/generate-story-scenes.ts` for the Gemini-backed story service, persist real loglines/keyframes, and funnel that metadata into `run-summary.txt`/`story/story.json`.
+- **Tests**: Add Vitest coverage for the placeholder patching (`queue-real-workflow.ps1` behavior is mirrored in `services/comfyUIService.ts`).
+- **UI Surfacing**: Surface `story/story.json`, per-scene `history.json`, and `generated-frames` previews in the React UI while honoring the `run-summary.txt` artifact index so the web app can replay the helper output without filesystem dives.
+- **Docs**: Keep `WORKFLOW_FIX_GUIDE.md`, `HANDOFF_SESSION_NOTES.md`, and this plan synchronized whenever workflow placeholders or helper behavior changes.
+
+### ?? TERTIARY — Nice to have
+
+- Generate a `frame-validation.json` per scene (min/max timestamps, total file size) inside `run-comfyui-e2e.ps1` and fail if two consecutive scenes drop below the frame floor.
+- Experiment with alternate SVD prompt mappings (e.g., [ComfyUI Txt2Video with SVD](https://civitai.com/models/211703/comfyui-txt2video-with-svd)) once the base pipeline is rock-solid.
 
 ---
 
-### 🟡 SECONDARY - After Manual Test Passes
+## ?? Status Dashboard
 
-**Option A: Unit Tests** (1.5 hours)  
-**Status**: Code ready, tests not written  
-**Location**: Create new file or add to existing test suite  
-**What to Test**:
-- `generateVideoFromShot()` - Main function
-- `buildShotPrompt()` - Prompt builder
-- `generateTimelineVideos()` - Batch processor
+### What's Working ?
+- `scripts/generate-story-scenes.ts` + `scripts/queue-real-workflow.ps1` + `scripts/run-comfyui-e2e.ps1` now automate the full story ➜ keyframe ➜ ComfyUI loop.
+- `workflows/text-to-video.json` uses placeholders (`__KEYFRAME_IMAGE__`, `__SCENE_PREFIX__`, metadata prompts) so we can inject scene data without editing JSON manually.
+- Both Vitest suites run after every helper invocation; their logs (with exit codes) land under `logs/<ts>/`.
 
-**Option B: Component Integration** (2 hours)  
-**Status**: Code ready, UI not updated  
-**Location**: Modify `components/GenerationControls.tsx` or similar  
-**What to Change**:
-- Add button to trigger generateVideoFromShot()
-- Display progress
-- Show results in timeline
+### What Needs Testing ??
+- Additional Vitest/unit coverage for the workflow mapping + story generator.
+- UI playback of generated frames (pulling from `history.json` + `generated-frames`) once `final_output` surfaces.
+- Model/regression testing when new checkpoints are dropped into `ComfyUI\models\checkpoints\SVD\`.
+
+### Known blockers ?
+- Optional ComfyUI nodes (VHS, Copilot, etc.) remain disabled until validated.
+- The helper warns (but does not fail) if a scene produces <25 frames—treat those runs as degraded until acknowledged.
 
 ---
 
-### 🟢 TERTIARY - Nice to Have
+## ?? Key Files Reference
 
-**Option C: Performance Optimization**  
-**Possible Improvements**:
-- Add upscaling node (currently simplified out)
-- Implement frame-to-video concatenation
-- Add error recovery between shots
-- Implement parallel shot processing
+### Documentation
+- `README.md` — Local run instructions + Automated ComfyUI E2E (story-first flow).
+- `STORY_TO_VIDEO_PIPELINE_PLAN.md` — Actionable plan + references to ComfyUI_examples and community workflows.
+- `STORY_TO_VIDEO_TEST_CHECKLIST.md` — Step-by-step validation checklist + run-summary template.
+- `E2E_TEST_FIX_COMPLETE.md` — Narrative of the fixes and validation evidence.
+- `HANDOFF_SESSION_NOTES.md` — Historical context; now includes the story ➜ video pipeline summary.
 
-**Option D: Documentation**  
-**If time permits**:
-- Create user guide for video generation
-- Document troubleshooting procedures
-- Create API documentation
-
----
-
-## 📂 Key Files Reference
-
-### Must Read First
-```
-✅ HANDOFF_SESSION_NOTES.md ← Start here (this session's context)
-✅ WORKFLOW_DEBUG_FIXED.md ← Node details and connections
-✅ REFERENCE_INDEX.md ← File navigation guide
-```
-
-### Code Files
-```
-📝 services/comfyUIService.ts (lines 482-688)
-  - generateVideoFromShot() [lines 482-569]
-  - buildShotPrompt() [lines 571-609]
-  - generateTimelineVideos() [lines 629-688]
-
-🔧 workflows/text-to-video.json
-  - 8-node workflow (verified working)
-  - All nodes connected
-
-⚙️ comfyui-config.json
-  - Configuration and presets
-```
-
-### Type Definitions
-```
-📋 types.ts
-  - Shot interface ✅ Already defined
-  - TimelineData interface ✅ Already defined
-  - CreativeEnhancers interface ✅ Already defined
-  - LocalGenerationSettings ✅ Already defined
-```
+### Core Automation
+- `scripts/generate-story-scenes.ts` — Story stub (logline, prompts, per-scene keyframes).
+- `workflows/text-to-video.json` — Placeholder-enabled SVD workflow (ImageOnlyCheckpointLoader ➜ SVD_img2vid ➜ SaveImage).
+- `scripts/queue-real-workflow.ps1` — Scene-aware workflow patching + frame copying.
+- `scripts/run-comfyui-e2e.ps1` — Orchestrates story generation, ComfyUI lifecycle, Vitest runs, and artifact archival.
+- `services/comfyUIService.ts` — Programmatic integration (watch this if you add more automation/tests).
 
 ---
 
-## 🚦 Status Dashboard
+## ?? Git/Commit Considerations
 
-### What's Working ✅
-- ComfyUI server running
-- All 7 models installed (24GB)
-- Workflow file created and fixed
-- 3 functions implemented (164 lines)
-- Type system complete
-- Error handling complete
-- Documentation complete
-
-### What Needs Testing ⏳
-- Workflow manual test (BLOCKING)
-- Unit tests
-- Component integration
-- End-to-end testing
-
-### What's Known Broken ⚠️
-- ComfyUI-Copilot disabled (dependency issue)
-  - Status: Can be fixed later
-  - Workaround: Manual testing works fine
-
-### What's Pending 📋
-- Manual workflow testing
-- Unit tests
-- UI integration
-- Performance profiling
-
----
-
-## 💾 Git/Commit Considerations
-
-### Files Modified
-```
-services/comfyUIService.ts (+164 lines)
-```
-
-### Files Created
-```
-workflows/text-to-video.json
-comfyui-config.json
-WORKFLOW_DEBUG_FIXED.md
-WORKFLOW_FIX_GUIDE.md
-HANDOFF_SESSION_NOTES.md
-NEXT_SESSION_ACTION_PLAN.md (this file)
-+ Many documentation files from previous sessions
-```
-
-### Recommended Commit Message
-```
-feat: Fix and simplify SVD workflow, update video generation functions
-
-- Fix disconnected workflow nodes (now 8 properly-connected nodes)
-- Simplify workflow to use only core ComfyUI nodes (removed VHS dependency)
-- Update generateVideoFromShot() to handle PNG frame sequence output
-- Disable broken ComfyUI-Copilot module (dependency conflict)
-- Add comprehensive workflow debugging guide
-
-Workflow now outputs PNG frame sequence (25 frames, 576x1024, 24fps)
-Ready for manual UI testing and component integration.
-```
-
----
-
-## 🎓 Key Context for Next Agent
-
-### The Problem We're Solving
-**Goal**: Generate cinematic videos from story descriptions  
-**Approach**: Stable Video Diffusion (SVD) via ComfyUI  
-**Status**: Infrastructure ready, workflow fixed, needs testing
-
-### How It Works
-```
-Story Idea → Timeline with Shots → generateVideoFromShot() 
-→ ComfyUI SVD Workflow → PNG Frames (25 frames, ~1 second each)
-→ Optional: Convert to MP4 → Timeline Editor
-```
-
-### Key Technologies
-- **ComfyUI**: Local video generation platform
-- **SVD Model**: Stable Video Diffusion (9.56GB, NVIDIA-trained)
-- **Workflow**: Node-based pipeline (8 nodes)
-- **Output**: PNG sequence (can be converted to MP4)
-
-### Architecture Decisions
-1. **PNG Output** instead of single MP4 (more flexible)
-2. **Simplified Workflow** (core nodes only, no custom packages)
-3. **Service Layer Pattern** (functions called from components)
-4. **Full Type Safety** (100% TypeScript, no `any` types)
-
----
-
-## ⚠️ Known Limitations
-
-1. **PNG Sequence Output**
-   - Creates 25 PNG files instead of single MP4
-   - Requires FFmpeg to convert to video
-   - More flexible for UI preview, less convenient for export
-
-2. **Memory Usage**
-   - Peak VRAM: ~10GB (SVD is memory-intensive)
-   - Requires NVIDIA GPU with 8+ GB VRAM
-   - CPU mode available but very slow
-
-3. **Generation Speed**
-   - 2-3 minutes per shot (with GPU)
-   - Can be optimized by reducing steps
-   - Currently set to 30 steps (balanced quality)
-
-4. **No Error Recovery**
-   - If one shot fails, entire batch stops
-   - Could be improved by skipping failed shots
-   - Future enhancement: implement graceful degradation
-
----
-
-## 🔗 External Reference Links
-
-### ComfyUI
-- **Official**: https://github.com/comfyanonymous/ComfyUI
-- **Custom Nodes**: Installed via Manager UI
-
-### Models
-- **SVD**: https://huggingface.co/stabilityai/stable-video-diffusion
-- **4x-UltraSharp**: https://huggingface.co/Kim2091/UltraSharp
-- **FFmpeg**: https://ffmpeg.org/
-
-### Project Docs
-- **Setup**: `LOCAL_SETUP_GUIDE.md`
-- **Quick Start**: `QUICK_START.md`
-- **Troubleshooting**: `SETUP_AND_TROUBLESHOOTING.md`
-
----
-
-## 🆘 If You Get Stuck
-
-### Workflow Doesn't Load
-→ Check: `WORKFLOW_DEBUG_FIXED.md` - Troubleshooting section
-
-### Generation Fails
-→ Check: ComfyUI terminal output
-→ Solution: Reduce steps or check VRAM
-
-### Can't Connect to ComfyUI
-→ Command: `curl http://127.0.0.1:8188/system_stats`
-→ If fails: `C:\ComfyUI\start-comfyui.bat`
-
-### Need Help Understanding Code
-→ File: `COMFYUI_INTEGRATION_COMPLETE.md` - Architecture section
-→ File: `REFERENCE_INDEX.md` - Navigation guide
-
----
-
-## ✨ Quick Win Ideas (If Ahead of Schedule)
-
-1. **Frame to MP4 Conversion** (30 min)
-   - Add FFmpeg integration
-   - Automatically create MP4 after generation
-
-2. **UI Progress Display** (45 min)
-   - Add progress bar for generation
-   - Show estimated time remaining
-
-3. **Quality Presets** (30 min)
-   - Implement fast/balanced/quality modes
-   - Update workflow with different step counts
-
-4. **Error Messages** (20 min)
-   - Add user-friendly error handling
-   - Display clear error messages in UI
-
----
-
-## 📊 Estimated Timeline
-
-- **Manual Test**: 30 min
-- **Unit Tests**: 1.5 hours
-- **Component Integration**: 2 hours
-- **End-to-End Testing**: 1 hour
-- **Total**: 4-5 hours
-
-**If only doing manual test + basic integration**: 1-2 hours
-
----
-
-## ✅ Session Completion Checklist
-
-- [ ] Read HANDOFF_SESSION_NOTES.md
-- [ ] Read WORKFLOW_DEBUG_FIXED.md
-- [ ] Manual workflow test passes
-- [ ] Unit tests pass (optional)
-- [ ] Component integration complete (optional)
-- [ ] End-to-end testing passes (optional)
-- [ ] All changes committed to git
-- [ ] New handoff notes created
-
----
-
-**Status**: 🟢 Ready for Next Session  
-**Confidence**: High  
-**Blockers**: None (manual test first)
-
-**Questions?** See:
-1. HANDOFF_SESSION_NOTES.md - Full context
-2. WORKFLOW_DEBUG_FIXED.md - Workflow details
-3. COMFYUI_INTEGRATION_COMPLETE.md - Architecture
+- `scripts/run-comfyui-e2e.ps1`, `scripts/queue-real-workflow.ps1`, and `workflows/text-to-video.json` now work as a set. Update them together and mention the trio in commit messages.
+- If you tweak the workflow placeholders or add prompts, update `STORY_TO_VIDEO_PIPELINE_PLAN.md`, `WORKFLOW_FIX_GUIDE.md`, this plan, and `README.md` in the same commit.
+- When you produce a new artifact, note the timestamp in `NEXT_SESSION_ACTION_PLAN.md` so the next agent knows which log bundle to open first.

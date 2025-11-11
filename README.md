@@ -29,18 +29,24 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uvkkeiyDr3iI4KPyB4ICS6
   ```
 
   This command matches the validated workflow from both Linux and Windows environments.
+- Before running the helper, read `STORY_TO_VIDEO_PIPELINE_PLAN.md` and `STORY_TO_VIDEO_TEST_CHECKLIST.md` to understand the story/keyframe → ComfyUI flow and the structured `run-summary.txt` template that the helper emits.
 
 ### Automated ComfyUI E2E
 
-- Use `scripts/run-comfyui-e2e.ps1` to drive a reproducible end-to-end run. It:
-  1. Starts the local ComfyUI server (`C:\ComfyUI\start-comfyui.bat`) and records `system_stats.json`.
-  2. Launches `npm run dev` and executes both `services/comfyUIService.test.ts` and `services/e2e.test.ts` via Vitest with the `vmThreads` pool.
-  3. Captures queue details, frame inventories, and a computed `final_output.json` for analysis.
-  4. Validates that a real frame sequence exists under `C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\outputs` and writes `frame-validation.json`.
-  5. Stops the services, zips the log folder, and stores the artifact in both `logs/<timestamp>/comfyui-e2e-<timestamp>.zip` and `artifacts/comfyui-e2e-<timestamp>.zip`.
+- Run `scripts/run-comfyui-e2e.ps1` from PowerShell with `-ExecutionPolicy Bypass` to orchestrate the full story ➜ video loop:
+  1. **Story + keyframes**: `scripts/generate-story-scenes.ts` synthesizes a 3-scene narrative, writes `logs/<ts>/story/story.json`, and copies per-scene keyframes (defaults to `sample_frame_start.png`).
+  2. **Scene loop**: `scripts/queue-real-workflow.ps1` now accepts per-scene `-SceneId/-Prompt/-KeyframePath` parameters, patches placeholders inside `workflows/text-to-video.json` (derived from the [ComfyUI_examples SVD workflow](https://github.com/comfyanonymous/ComfyUI_examples/blob/master/video/workflow_image_to_video.json)), posts to `/prompt`, and copies `gemdirect1_<sceneId>*` frames into `logs/<ts>/<sceneId>/generated-frames`. Prompts are also embedded in the workflow metadata so Comfy’s UI can display them alongside the frames.
+  3. **Validation**: For each scene, the helper records frame counts, the copied folder, and any errors inside `run-summary.txt`. If a scene generates <25 frames, it is marked as a warning but subsequent scenes continue.
+  4. **Tests**: After the scene loop finishes, the script runs `services/comfyUIService.test.ts` and `services/e2e.test.ts` via Vitest (`vmThreads` pool) and captures the logs beside the artifacts.
+  5. **Archival**: ComfyUI stops, then the helper zips the entire `logs/<ts>` directory (story folder, scene folders, Vitest logs) into `artifacts/comfyui-e2e-<ts>.zip`.
 
-- Run the script from PowerShell with `-ExecutionPolicy Bypass` (the script already ensures Node 22.19.0 is first on `PATH`), then inspect the log directory and artifact ZIP for the generated JSON files and Vitest logs.
- 6. Automatically queues a real SVD shot by resolving the SVD/CLIP checkpoints from `models/checkpoints/SVD` and `models/clip_vision`, uploads `sample_frame_start.png`, and logs the generated frames before the suites run.
- 7. Copies any `gemdirect1_shot*.png` files from `ComfyUI/output` into the log directory so the zipped artifact includes the actual frames you just generated.
-
-- If the helper still warns “Outputs directory not found” or `frameCount` remains 0, make sure your ComfyUI install contains an SVD checkpoint under `models/checkpoints/SVD` (e.g., `svd_xt.safetensors`), a ViT-L-14 CLIP vision checkpoint (any of the `ViT-L-14-*.safetensors` files), and place `sample_frame_start.png` at the repo root. Once those exist, rerun `scripts/run-comfyui-e2e.ps1`—the new `queue-real-shot.log` will show which files were used and list the generated frames for quick verification.
+- Post-run checklist:
+  - Read `logs/<ts>/run-summary.txt`, confirming the `## Story`, per-scene frame lines, warnings, and `## Artifact Index` entries reflect what you saw in the console (frame counts, durations, Vitest exit codes).
+  - Local test helper: you can run the Vitest suites and capture their logs using the helper script `scripts/run-vitests.ps1`. When run standalone it creates a timestamped `logs/<ts>/` folder with `vitest-comfyui.log`, `vitest-e2e.log`, and `run-summary.txt`. `scripts/run-comfyui-e2e.ps1` now calls this helper automatically for Steps 6/7 and will colocate the Vitest logs in the main run folder.
+  - Inspect each `logs/<ts>/<sceneId>/` folder: check `scene.json`, `keyframe.png`, `history.json`, and the `generated-frames/*.png` files and make sure the frame count matches the `run-summary.txt` warning/measurement.
+  - Confirm `artifacts/comfyui-e2e-<ts>.zip` mirrors the `logs/<ts>` tree (story folder, scene folders, generated frames, `history.json`, Vitest logs) before sharing the archive.
+  - Use the run-summary template in `STORY_TO_VIDEO_TEST_CHECKLIST.md` as your guide when evaluating the logged sections and artifact index entries.
+- Troubleshooting tips:
+  - If frame counts stay at 0, verify `ComfyUI/models/checkpoints/SVD/` contains `svd_xt*.safetensors` (see [thecooltechguy/ComfyUI-Stable-Video-Diffusion](https://github.com/thecooltechguy/ComfyUI-Stable-Video-Diffusion) for model expectations) and that `C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\output` is writable.
+  - Alternate SVD prompt wiring examples (e.g., [ComfyUI Txt2Video with SVD on Civitai](https://civitai.com/models/211703/comfyui-txt2video-with-svd)) are referenced in `STORY_TO_VIDEO_PIPELINE_PLAN.md` if you need to adjust node mappings.
+- Need a step-by-step validation flow? Follow `STORY_TO_VIDEO_TEST_CHECKLIST.md` for the exact commands, verification steps, and run-summary template.
