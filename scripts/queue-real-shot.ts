@@ -1,16 +1,26 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
-import { generateVideoFromShot } from '../services/comfyUIService';
-import type { CreativeEnhancers, LocalGenerationSettings, Shot } from '../types';
-import workflowJson from '../workflows/text-to-video.json' assert { type: 'json' };
+import { generateVideoFromShot } from '../services/comfyUIService.ts';
+import type { CreativeEnhancers, LocalGenerationSettings, Shot } from '../types.ts';
 
 (globalThis as any).WebSocket = WebSocket;
+
+// Resolve project root from this script's location
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '..');
+
+// Load workflow JSON by reading the file directly
+const workflowJsonPath = path.join(projectRoot, 'workflows', 'text-to-video.json');
+const workflowJsonContent = await fs.readFile(workflowJsonPath, 'utf-8');
+const workflowJson = JSON.parse(workflowJsonContent);
 
 const modelsRoot = path.resolve('C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\models');
 const checkpointsDir = path.join(modelsRoot, 'checkpoints', 'SVD');
 const clipVisionDir = path.join(modelsRoot, 'clip_vision');
-const keyframePath = path.resolve('sample_frame_start.png');
+const keyframePath = path.join(projectRoot, 'sample_frame_start.png');
 
 const shot: Shot = {
     id: 'auto-shot',
@@ -104,4 +114,4 @@ async function main() {
     }
 }
 
-main();
+await main();
