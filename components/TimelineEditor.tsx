@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
@@ -16,7 +16,7 @@ import RefreshCwIcon from './icons/RefreshCwIcon';
 import Tooltip from './Tooltip';
 import SaveIcon from './icons/SaveIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
-import { useInteractiveSpotlight } from '../utils/hooks';
+import { useInteractiveSpotlight, useArtifactMetadata } from '../utils/hooks';
 import GuidedAction from './GuidedAction';
 import GuideCard from './GuideCard';
 import CompassIcon from './icons/CompassIcon';
@@ -137,6 +137,11 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
     const [isBatchProcessing, setIsBatchProcessing] = useState<false | 'description' | 'enhancers'>(false);
+    const { artifact: latestArtifact } = useArtifactMetadata();
+    const latestSceneSnapshot = useMemo(
+        () => (latestArtifact ? latestArtifact.Scenes.find((meta) => meta.SceneId === scene.id) ?? null : null),
+        [latestArtifact, scene.id],
+    );
     
     // Auto-save state
     const saveTimeoutRef = useRef<number | null>(null);
@@ -555,6 +560,30 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     )}
                 </div>
             </header>
+
+            {latestSceneSnapshot && (
+                <div className="bg-gray-800/30 border border-emerald-500/30 rounded-lg p-4 text-xs text-gray-300 space-y-1">
+                    <div className="flex items-center justify-between text-[11px] text-gray-400 uppercase tracking-wide">
+                        <span>Latest ComfyUI run</span>
+                        <span>{latestArtifact?.RunId}</span>
+                    </div>
+                    <div className="text-base text-gray-100 font-semibold">
+                        Frames {latestSceneSnapshot.FrameCount}/{latestSceneSnapshot.FrameFloor}
+                    </div>
+                    {typeof latestSceneSnapshot.Telemetry?.DurationSeconds === 'number' && (
+                        <div>Duration {latestSceneSnapshot.Telemetry.DurationSeconds.toFixed(1)}s</div>
+                    )}
+                    {latestSceneSnapshot.Telemetry?.GPU?.Name && (
+                        <div>GPU {latestSceneSnapshot.Telemetry.GPU.Name}</div>
+                    )}
+                    {latestSceneSnapshot.Warnings?.map((warning) => (
+                        <div key={warning} className="text-amber-300">⚠ {warning}</div>
+                    ))}
+                    {latestSceneSnapshot.Errors?.map((err) => (
+                        <div key={err} className="text-red-300">⛔ {err}</div>
+                    ))}
+                </div>
+            )}
 
             {timeline.shots.length === 0 && (
                 <GuidedAction

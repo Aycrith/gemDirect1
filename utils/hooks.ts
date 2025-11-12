@@ -315,6 +315,123 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
     };
 }
 
+export interface SceneTelemetryMetadata {
+    DurationSeconds?: number;
+    MaxWaitSeconds?: number;
+    PollIntervalSeconds?: number;
+    HistoryAttempts?: number;
+    GPU?: {
+        Name?: string;
+        Type?: string;
+        Index?: number;
+        VramFreeBefore?: string | number;
+        VramFreeAfter?: string | number;
+        VramTotal?: string | number;
+    };
+}
+
+export interface ArtifactSceneMetadata {
+    SceneId: string;
+    SceneTitle?: string;
+    SceneSummary?: string;
+    StoryMood?: string;
+    StoryExpectedFrames?: number;
+    FrameCount: number;
+    FrameFloor: number;
+    HistoryRetrieved: boolean;
+    HistoryAttempts?: number;
+    Warnings?: string[];
+    Errors?: string[];
+    Telemetry?: SceneTelemetryMetadata;
+    HistoryPath?: string;
+    HistoryRetrievedAt?: string;
+    HistoryPollLog?: {
+        Attempt: number;
+        Timestamp: string;
+        Status: string;
+        Message?: string;
+    }[];
+    HistoryErrors?: string[];
+    Success?: boolean;
+    MeetsFrameFloor?: boolean;
+    GeneratedFramesDir?: string;
+    KeyframeSource?: string;
+    AttemptSummaries?: {
+        Attempt: number;
+        Timestamp: string;
+        FrameCount: number;
+        Success: boolean;
+        MeetsFrameFloor: boolean;
+        HistoryRetrieved: boolean;
+        Warnings?: string[];
+        Errors?: string[];
+    }[];
+}
+
+export interface ArtifactMetadata {
+    RunId: string;
+    Timestamp: string;
+    RunDir: string;
+    Story: {
+        Id: string;
+        Logline: string;
+        DirectorsVision: string;
+        Generator: string;
+        LLM?: Record<string, unknown>;
+        Warnings?: string[];
+    };
+    Scenes: ArtifactSceneMetadata[];
+    VitestLogs: {
+        ComfyUI: string;
+        E2E: string;
+        Scripts: string;
+        ResultsJson?: string | null;
+    };
+    Archive: string;
+}
+
+export interface ArtifactMetadataState {
+    artifact: ArtifactMetadata | null;
+    loading: boolean;
+    error: string | null;
+    refresh: () => void;
+}
+
+export function useArtifactMetadata(autoRefreshMs = 0): ArtifactMetadataState {
+    const [artifact, setArtifact] = useState<ArtifactMetadata | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchMetadata = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const response = await fetch(`/artifacts/latest-run.json?t=${Date.now()}`);
+            if (!response.ok) {
+                throw new Error(`Unable to load artifact data (${response.status})`);
+            }
+            const payload = (await response.json()) as ArtifactMetadata;
+            setArtifact(payload);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+            setArtifact(null);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchMetadata();
+        if (autoRefreshMs > 0) {
+            const intervalId = window.setInterval(fetchMetadata, autoRefreshMs);
+            return () => window.clearInterval(intervalId);
+        }
+        return undefined;
+    }, [autoRefreshMs, fetchMetadata]);
+
+    return { artifact, loading, error, refresh: fetchMetadata };
+}
+
 /**
  * A custom hook to apply an interactive spotlight effect to an element.
  * @returns A ref to be attached to the target HTML element.

@@ -5,15 +5,17 @@ _Last updated: 2025-11-11_
 This plan maps the next-phase implementation work needed to connect the gemDirect1 story generator to the ComfyUI Stable Video Diffusion (SVD) workflow so the entire e2e helper can run unattended. The scope aligns with the user request (Sections A-F).
 
 ## Resolved Issues
-- Aligned the SVD pipeline with the ComfyUI_examples `workflow_image_to_video.json` flow (ImageOnlyCheckpointLoader → VideoLinearCFGGuidance → SVD_img2vid_Conditioning → KSampler → VAEDecode → SaveImage), so the checkpoint receives the expected embeddings and conditioning inputs.
+- Aligned the SVD pipeline with the ComfyUI_examples `workflow_image_to_video.json` flow (ImageOnlyCheckpointLoader   VideoLinearCFGGuidance   SVD_img2vid_Conditioning   KSampler   VAEDecode   SaveImage), so the checkpoint receives the expected embeddings and conditioning inputs.
 - `scripts/queue-real-workflow.ps1` now copies each scene keyframe into `C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\input`, patches `__KEYFRAME_IMAGE__`, `__SCENE_PREFIX__`, and `_meta.{scene_prompt,negative_prompt}`, prunes stale frames, saves `history.json`, and returns per-scene metrics for logging.
 - `scripts/run-comfyui-e2e.ps1` orchestrates story creation, ComfyUI startup/polling, the scene loop, Vitest suites, warning detection for frame-floor breaches, and zips the entire `logs/<ts>` directory while writing a structured `run-summary.txt`.
+- Local LLM prompts are now first-class: whenever `LOCAL_STORY_PROVIDER_URL` is set the generator records provider URL, seed, duration, and fallback warnings and threads moods/expected frame floors through story JSON, run summaries, artifact metadata, and the UI.
+- Per-scene telemetry (GPU model, VRAM deltas, poll cadence, runtime) is emitted by `queue-real-workflow.ps1`, enforced by `validate-run-summary.ps1`, and rendered in both the Artifact Snapshot and Timeline Editor for quick triage.
 
 ## Known Gaps
 - The story generator is still deterministic and detached from the Gemini/story-service backend, so story IDs, loglines, and prompts are not driven by real creative data yet.
-- Failure handling treats fewer than 25 frames as a warning, but REST errors, ComfyUI timeouts, and missing keyframes still only surface via logs rather than metadata or retries.
-- Artifact enrichment is incomplete: per-scene `history.json`, prompt metadata, and frame-set provenance are not surfaced to the UI/docs even though the archive contains the files.
-- Test coverage does not exercise the placeholder patching logic or story generator output, leaving the scripts vulnerable to future workflow changes.
+- Auto retries + `[Scene …] HISTORY WARNING` logging now surface REST or history issues, but we still need a follow-on workflow to escalate repeat failures or to notify the helper operator when a scene exceeds the retry budget.
+- Artifact metadata now lists prompts, warnings, requeue timelines, and Vitest logs, yet the rest of the UI (timeline, history explorer) is not consuming that metadata; future work should feed those contexts into additional panels beyond the Artifact Snapshot.
+- Unit tests now cover the story generator + workflow patcher helpers, but there is still no coverage for the ComfyUI REST client/service glue that orchestrates retries and metadata writes.
 
 ## Lessons Learned
 - Placeholder patching is reliable, so we can keep the workflow JSON static while `queue-real-workflow.ps1` injects context (keyframes, prompts, prefixes) immediately before posting.
@@ -70,17 +72,18 @@ This plan maps the next-phase implementation work needed to connect the gemDirec
    5. After all scenes, run Vitest suites (already implemented steps 5–6).
    6. Archive `logs/<ts>` (which now contains `story/`, per-scene folders, Vitest logs).
 2. **Success criteria:** Scene succeeds if `FrameCount >= 1`, REST calls return 2xx, and queue history responds without errors. Add optional warning if `<25` frames.
-3. **Failure handling:** Wrap each scene invocation in `try/catch`. On failure:
-   - Log `[Scene scene-002] ERROR: <message>` in `run-summary.txt`.
-   - Continue to the next scene (so archive still includes partial data).
-   - Surface an aggregated failure flag before zipping (non-zero exit at the very end if any scene failed).
+3. **Failure handling + retries:** Each scene invocation is wrapped in `try/catch`, the helper enforces Node ≥ 22.19.0 up front, and the history poller now keeps retrying until `MaxWaitSeconds` (set `MaxAttemptCount` to >0 if you need a hard cap). Auto requeues still trigger when there are no frames, the frame floor is missed, or history polling ultimately fails. Every attempt prints `[Scene <id>][Attempt <n>] …` plus the matching `[Scene …] HISTORY WARNING/ERROR`/`WARNING: Frame count below floor` lines so `scripts/validate-run-summary.ps1` can assert that degraded scenes were documented. Aggregated failure flags remain in place (最终 exit > 0 if any scene still fails after the retry budget) so CI/agents can bail quickly.
 
 ## D. Artifact Enrichment
 
-1. **Directory structure:**
+1. Each run now gathers metadata (story logline, prompts, director vision, per-scene frame counts, frame floors, warnings/errors, history poll timelines, requeue summaries, Vitest logs, archive path) into `logs/<ts>/artifact-metadata.json` and mirrors the same payload to `public/artifacts/latest-run.json`. The React Artifact Snapshot panel reads that file so reviewers can inspect prompts, keyframes, attempt counts, and vitest log paths without opening Explorer.
+
+2. **Directory structure:**
    ```
    logs/<ts>/
      run-summary.txt
+     artifact-metadata.json
+     vitest-results.json
      story/
        story.json
        scenes/scene-001.json
@@ -89,14 +92,16 @@ This plan maps the next-phase implementation work needed to connect the gemDirec
        scene.json
        keyframe.png
        generated-frames/*.png
-       history.json (optional future)
+       history.json
      vitest-comfyui.log
      vitest-e2e.log
+     vitest-scripts.log
    ```
-2. **Zip contents:** `artifacts/comfyui-e2e-<ts>.zip` already mirrors `logs/<ts>`, so containing story assets now automatically enriches the archive.
-3. **Summary line items:** After Vitest, append a “## Artifact Index” block inside `run-summary.txt` enumerating:
+3. **Zip contents:** `artifacts/comfyui-e2e-<ts>.zip` already mirrors `logs/<ts>`, so containing story assets now automatically enriches the archive.
+4. **Summary line items:** After Vitest, append a “## Artifact Index” block inside `run-summary.txt` enumerating:
    - Story file path
    - Each scene folder with frame count & frame destination
+   - Vitest comfyUI/e2e/scripts logs + `vitest-results.json`
    - Zip path
 
 ## E. Documentation & Meta-Docs
@@ -116,16 +121,19 @@ This plan maps the next-phase implementation work needed to connect the gemDirec
    - `powershell -NoLogo -ExecutionPolicy Bypass -File .\scripts\run-comfyui-e2e.ps1`
    - Validate console lines: `Scene scene-001 => FrameCount: ###`, `Vitest ... completed`.
 3. **Post-run inspection:**
-   - Ensure each `scene-###/generated-frames` folder contains PNGs.
+   - Ensure each `scene-###/generated-frames` folder contains PNGs and that `history.json` exists even when history polling warned/retried.
    - Confirm `logs/<ts>/story/story.json` references the same scene IDs and keyframe paths found on disk.
-   - Check `vitest-*.log` for failures.
-   - Verify `artifacts/comfyui-e2e-<ts>.zip` includes `story/` and per-scene directories.
+   - Check `vitest-comfyui.log`, `vitest-e2e.log`, `vitest-scripts.log`, and `vitest-results.json` for failures; the helper writes their absolute paths into `## Artifact Index`.
+   - Verify `artifacts/comfyui-e2e-<ts>.zip` mirrors the entire `logs/<ts>` directory (story folder, scene folders, vitest logs, artifact metadata).
+   - Open the Artifact Snapshot panel (or `public/artifacts/latest-run.json`) and ensure it reports story metadata, prompts, history poll timelines, warnings, requeue counts, and Vitest logs that match what you observed on disk.
+   - Re-run `scripts/validate-run-summary.ps1 -RunDir logs/<ts>` if you edit the summary manually; the validator now enforces `[Scene …] HISTORY WARNING/ERROR` and `WARNING: Frame count below floor` entries whenever the artifact metadata marks history failures or low frame counts.
 4. **Failure triage guidance:** Document in README:
-   - If frame count < 25, flag run as degraded, re-queue scene.
-   - If REST errors occur, collect `history/<prompt_id>` response and attach to run summary.
-   - If keyframes missing, rerun generator or point to `sample_frame_start.png`.
+   - If frame count < 25, flag run as degraded. The helper already retries once automatically, so add context in `run-summary.txt` about why the second attempt still failed.
+   - If REST errors occur, collect `history/<prompt_id>` response and attach to the run summary; the helper now lists each error inside `HistoryPollLog`/`HistoryErrors` for the Artifact Snapshot.
+   - If keyframes missing, rerun generator or point to `sample_frame_start.png` so the next attempt can continue.
 5. **Risk mitigations:** list prongs (missing keyframes, checkpoint mismatch, REST timeouts) plus the detection logic we’ll add (non-zero frame check, story JSON presence check).
 
 ---
 
 This plan will be reflected in the updated helper, workflow, docs, and testing artefacts delivered in this session.
+

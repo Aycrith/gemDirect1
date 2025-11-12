@@ -16,7 +16,9 @@ param(
     [string] $ProjectRoot = 'C:\Dev\gemDirect1',
     [string] $ComfyUrl = 'http://127.0.0.1:8188',
     [int] $FrameFloor = 25,
-    [int] $MaxWaitSeconds = 600
+    [int] $MaxWaitSeconds = 600,
+    [int] $MaxAttemptCount = 0,
+    [int] $HistoryPollIntervalSeconds = 2
 )
 
 function Write-SceneLog {
@@ -24,6 +26,38 @@ function Write-SceneLog {
         [string] $Message
     )
     Write-Host "[Real E2E][$SceneId] $Message"
+}
+
+function Get-ComfySystemStats {
+    param(
+        [string] $BaseUrl
+    )
+    try {
+        return Invoke-RestMethod -Uri "$BaseUrl/system_stats" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+    } catch {
+        return $null
+    }
+}
+
+function Get-GpuSnapshot {
+    param(
+        [object] $Stats
+    )
+
+    if (-not $Stats -or -not $Stats.devices) {
+        return $null
+    }
+    $device = $Stats.devices | Select-Object -First 1
+    if (-not $device) {
+        return $null
+    }
+    return @{
+        Name = $device.name
+        Type = $device.type
+        Index = $device.index
+        VramTotal = $device.vram_total
+        VramFree = $device.vram_free
+    }
 }
 
 if (-not (Test-Path $SceneOutputDir)) {
@@ -67,6 +101,9 @@ foreach ($dir in $possibleOutputDirs) {
     }
 }
 
+$systemStatsBefore = Get-ComfySystemStats -BaseUrl $ComfyUrl
+$gpuBefore = Get-GpuSnapshot -Stats $systemStatsBefore
+
 $workflow = Get-Content $WorkflowPath -Raw | ConvertFrom-Json
 $workflow.'2'.inputs.image = $keyframeName
 $workflow.'2'.widgets_values[0] = $keyframeName
@@ -95,29 +132,61 @@ $promptId = $promptResponse.prompt_id
 Write-SceneLog "Queued prompt_id $promptId"
 
 $startTime = Get-Date
-$maxWaitSeconds = $MaxWaitSeconds
 $historyData = $null
+$historyErrorMessage = $null
+$historyAttempts = 0
+$historyErrors = @()
+$historyPollLog = @()
+$historyRetrievedAt = $null
 
-while ((New-TimeSpan -Start $startTime).TotalSeconds -lt $maxWaitSeconds) {
+while ((New-TimeSpan -Start $startTime).TotalSeconds -lt $MaxWaitSeconds -and (($MaxAttemptCount -le 0) -or ($historyAttempts -lt $MaxAttemptCount))) {
+    $historyAttempts += 1
+    $pollTimestamp = Get-Date
     try {
-        $history = Invoke-RestMethod -Uri "$ComfyUrl/history/$promptId" -TimeoutSec 5 -ErrorAction SilentlyContinue
+        $history = Invoke-RestMethod -Uri "$ComfyUrl/history/$promptId" -TimeoutSec 5 -ErrorAction Stop
         if ($history -and $history.$promptId -and $history.$promptId.outputs) {
             $historyData = $history
+            $historyRetrievedAt = Get-Date
+            $historyPollLog += [pscustomobject]@{
+                    Attempt   = $historyAttempts
+                    Timestamp = $historyRetrievedAt.ToString('o')
+                    Status    = 'success'
+                }
             Write-SceneLog ("Workflow completed after {0}s" -f [Math]::Round((New-TimeSpan -Start $startTime).TotalSeconds, 1))
             break
+        } else {
+            $historyPollLog += [pscustomobject]@{
+                    Attempt   = $historyAttempts
+                    Timestamp = $pollTimestamp.ToString('o')
+                    Status    = 'pending'
+                }
         }
     } catch {
-        Start-Sleep -Seconds 2
+        $historyErrorMessage = $_.Exception.Message
+        $historyErrors += $historyErrorMessage
+        $historyPollLog += [pscustomobject]@{
+                Attempt   = $historyAttempts
+                Timestamp = $pollTimestamp.ToString('o')
+                Status    = 'error'
+                Message   = $historyErrorMessage
+            }
+        Write-SceneLog ("History attempt {0}/{1} failed: {2}" -f $historyAttempts, $MaxAttemptCount, $historyErrorMessage)
     }
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds $HistoryPollIntervalSeconds
 }
 
 if (-not $historyData) {
-    throw "Scene $SceneId did not finish within $maxWaitSeconds seconds"
+    if (-not $historyErrorMessage) {
+        $historyErrorMessage = "No history found after $MaxWaitSeconds seconds"
+    }
+    Write-SceneLog "WARNING: $historyErrorMessage"
 }
 
-$historyPath = Join-Path $SceneOutputDir 'history.json'
-$historyData | ConvertTo-Json -Depth 10 | Set-Content -Path $historyPath
+$historyPath = $null
+if ($historyData) {
+    $historyPath = Join-Path $SceneOutputDir 'history.json'
+    $historyData | ConvertTo-Json -Depth 10 | Set-Content -Path $historyPath
+}
 
 $copiedFrom = @()
 $sceneFrames = @()
@@ -142,22 +211,72 @@ if ($sceneFrames.Count -eq 0) {
     Write-SceneLog ("Copied {0} frames into {1}" -f $sceneFrames.Count, $generatedFramesDir)
 }
 
+$sceneEndTime = Get-Date
+$systemStatsAfter = Get-ComfySystemStats -BaseUrl $ComfyUrl
+$gpuAfter = Get-GpuSnapshot -Stats $systemStatsAfter
+
+$warnings = @()
+$errors = @()
+
+if ($sceneFrames.Count -lt $FrameFloor) {
+    $warnings += "Frame count below floor ($($sceneFrames.Count)/$FrameFloor)"
+}
+if (-not $historyData) {
+    $warnings += "History missing: $historyErrorMessage"
+}
+if ($sceneFrames.Count -eq 0) {
+    $errors += 'No frames copied'
+}
+
+$telemetryDurationSeconds = if ($sceneEndTime) { [Math]::Round((New-TimeSpan -Start $startTime -End $sceneEndTime).TotalSeconds, 1) } else { [Math]::Round((New-TimeSpan -Start $startTime).TotalSeconds, 1) }
+$telemetryQueueEnd = if ($sceneEndTime) { $sceneEndTime } else { Get-Date }
+$telemetry = [pscustomobject]@{
+    QueueStart = $startTime.ToString('o')
+    QueueEnd = $telemetryQueueEnd.ToString('o')
+    DurationSeconds = $telemetryDurationSeconds
+    MaxWaitSeconds = $MaxWaitSeconds
+    PollIntervalSeconds = $HistoryPollIntervalSeconds
+    HistoryAttempts = $historyAttempts
+    GPU = @{
+        Name = if ($gpuAfter?.Name) { $gpuAfter.Name } elseif ($gpuBefore?.Name) { $gpuBefore.Name } else { $null }
+        Type = if ($gpuAfter?.Type) { $gpuAfter.Type } elseif ($gpuBefore?.Type) { $gpuBefore.Type } else { $null }
+        Index = if ($gpuAfter?.Index -ne $null) { $gpuAfter.Index } elseif ($gpuBefore?.Index -ne $null) { $gpuBefore.Index } else { $null }
+        VramFreeBefore = $gpuBefore?.VramFree
+        VramFreeAfter = $gpuAfter?.VramFree
+        VramTotal = if ($gpuAfter?.VramTotal) { $gpuAfter.VramTotal } else { $gpuBefore?.VramTotal }
+    }
+    System = @{
+        Before = $systemStatsBefore?.system
+        After = $systemStatsAfter?.system
+    }
+}
+
 $result = [pscustomobject]@{
-    SceneId            = $SceneId
-    Prompt             = $Prompt
-    NegativePrompt     = $NegativePrompt
-    KeyframeSource     = $KeyframePath
-    KeyframeInputName  = $keyframeName
-    FrameCount         = $sceneFrames.Count
-    FramePrefix        = $scenePrefix
-    ClientId           = $clientId
-    PromptId           = $promptId
-    DurationSeconds    = [Math]::Round((New-TimeSpan -Start $startTime).TotalSeconds, 1)
-    GeneratedFramesDir = $generatedFramesDir
-    HistoryPath        = $historyPath
-    OutputDirsScanned  = $copiedFrom
-    Success            = ($sceneFrames.Count -gt 0)
-    MeetsFrameFloor    = ($sceneFrames.Count -ge $FrameFloor)
+    SceneId             = $SceneId
+    Prompt              = $Prompt
+    NegativePrompt      = $NegativePrompt
+    FrameFloor          = $FrameFloor
+    KeyframeSource      = $KeyframePath
+    KeyframeInputName   = $keyframeName
+    FrameCount          = $sceneFrames.Count
+    FramePrefix         = $scenePrefix
+    ClientId            = $clientId
+    PromptId            = $promptId
+    DurationSeconds     = [Math]::Round((New-TimeSpan -Start $startTime).TotalSeconds, 1)
+    GeneratedFramesDir  = $generatedFramesDir
+    HistoryPath         = $historyPath
+    OutputDirsScanned   = $copiedFrom
+    Success             = ($sceneFrames.Count -gt 0)
+    MeetsFrameFloor     = ($sceneFrames.Count -ge $FrameFloor)
+    HistoryRetrieved    = ($historyData -ne $null)
+    HistoryAttempts     = $historyAttempts
+    HistoryRetrievedAt  = $historyRetrievedAt
+    HistoryPollLog      = $historyPollLog
+    HistoryErrors       = $historyErrors
+    HistoryError        = $historyErrorMessage
+    Warnings            = $warnings
+    Errors              = $errors
+    Telemetry           = $telemetry
 }
 
 return $result

@@ -23,3 +23,4 @@ idea
 *.sln
 *.sw?
 artifacts/
+public/artifacts/latest-run.json

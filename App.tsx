@@ -14,6 +14,7 @@ import DirectorsVisionForm from './components/DirectorsVisionForm';
 import SceneNavigator from './components/SceneNavigator';
 import TimelineEditor from './components/TimelineEditor';
 import WorkflowTracker from './components/WorkflowTracker';
+import ArtifactViewer from './components/ArtifactViewer';
 import Toast from './components/Toast';
 import ApiStatusIndicator from './components/ApiStatusIndicator';
 import UsageDashboard from './components/UsageDashboard';
@@ -317,6 +318,7 @@ const AppContent: React.FC = () => {
             <main className="py-8 sm:py-12">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
+                    <ArtifactViewer />
                     {generationProgress.total > 0 && (
                         <ProgressBar
                             current={generationProgress.current}

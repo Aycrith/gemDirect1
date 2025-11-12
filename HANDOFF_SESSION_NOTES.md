@@ -5,6 +5,13 @@
 **Current Status**: Workflow fixed and ready for testing  
 **Next Steps**: Test workflow, then integrate into components
 
+## ✅ November 2025 Refresh Highlights
+
+- The ComfyUI helper now auto-retries each scene once when history polling fails, no frames are copied, or the frame floor is missed. Every attempt is logged as `[Scene …][Attempt n] …` plus explicit `HISTORY WARNING/ERROR` and `Requeue requested … reason: …` lines so downstream agents know exactly what happened.
+- `scripts/queue-real-workflow.ps1` captures a `HistoryPollLog` (timestamp, status, error) and `HistoryErrors` array for each attempt. These details flow into `logs/<ts>/artifact-metadata.json` and `public/artifacts/latest-run.json`, letting the in-app Artifact Snapshot panel display prompts, keyframes, warnings, history timelines, and Vitest log locations without digging through Explorer.
+- `scripts/run-vitests.ps1` now drives three suites (comfyUI service, e2e glue, and `scripts/__tests__`) via `npm exec vitest`, writing `vitest-comfyui.log`, `vitest-e2e.log`, `vitest-scripts.log`, and a machine-readable `vitest-results.json`. The helper imports those paths into `run-summary.txt` + artifact metadata, and CI (Node 22) still publishes `vitest-report.json`.
+- `scripts/validate-run-summary.ps1` cross-checks `run-summary.txt` with `artifact-metadata.json` to ensure every history failure or low-frame scenario recorded in the metadata has a matching `HISTORY WARNING/ERROR` / `WARNING: Frame count below floor` entry in the summary. If you edit the log manually, rerun the validator so the pipeline stays auditable.
+
 ---
 
 ## 📋 Session Overview
@@ -366,7 +373,9 @@ Optional: Convert to MP4 using FFmpeg
 - `workflows/text-to-video.json` carries placeholders (`__KEYFRAME_IMAGE__`, `__SCENE_PREFIX__`, `_meta.scene_prompt`, `_meta.negative_prompt`) so `scripts/queue-real-workflow.ps1` can inject the story data just before posting to `/prompt`. This keeps us aligned with the [ComfyUI_examples SVD reference](https://github.com/comfyanonymous/ComfyUI_examples/blob/master/video/workflow_image_to_video.json) while staying compatible with other SVD templates (e.g., the [ComfyUI Txt2Video SVD workflow on Civitai](https://civitai.com/models/211703/comfyui-txt2video-with-svd)).
 - `scripts/queue-real-workflow.ps1` is parameterized per scene (`-SceneId`, `-Prompt`, `-KeyframePath`, `-FrameFloor`). It copies the keyframe into `ComfyUI\\input`, purges stale frames, posts the prompt, saves `history.json`, and copies every `gemdirect1_<sceneId>*` PNG into `logs/<ts>/<sceneId>/generated-frames`.
 - The workflow rewrites `__KEYFRAME_IMAGE__`, `__SCENE_PREFIX__`, `_meta.scene_prompt`, and `_meta.negative_prompt` so `text-to-video.json` stays immutable, and each scene run adds `[Scene ...]` stats, warnings, and the `## Artifact Index` block to `logs/<ts>/run-summary.txt`; refer to `STORY_TO_VIDEO_TEST_CHECKLIST.md` for the template and `STORY_TO_VIDEO_PIPELINE_PLAN.md` for the contextual roadmap before rerunning.
+- Each run also writes `artifact-metadata.json` inside `logs/<ts>/` and mirrors it to `public/artifacts/latest-run.json`, which the Artifact Snapshot panel uses to show story + history metadata (frame counts, vitest logs, archive path) directly in the UI.
 - `scripts/run-comfyui-e2e.ps1` sequences everything: generate story ➜ start ComfyUI ➜ queue/poll scenes ➜ run both Vitest suites ➜ zip `logs/<ts>` into `artifacts/comfyui-e2e-<ts>.zip`. The `run-summary.txt` now logs timestamps, per-scene stats, warnings (<25 frames), and an artifact index.
+- Added Vitest/unit coverage for the story generator helper and workflow patcher (`scripts/__tests__`). Run `npm exec vitest -- run scripts/__tests__` locally or rely on `.github/workflows/pr-vitest.yml`, which uploads `vitest-report.json` for inspection. The workflow also allows a manual `workflow_dispatch` to run the full `scripts/run-comfyui-e2e.ps1` helper if ComfyUI is available.
 - Validation order lives in `STORY_TO_VIDEO_TEST_CHECKLIST.md`. Always walk through that doc (along with `README.md` + `E2E_TEST_FIX_COMPLETE.md`) before declaring a run “good.”
 - If you need to plug in a richer story generator later, you can swap `story/story.json` or feed new prompts into `queue-real-workflow.ps1` without touching the workflow JSON.
 

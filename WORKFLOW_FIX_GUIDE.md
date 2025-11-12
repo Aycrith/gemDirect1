@@ -23,6 +23,14 @@
 - Vitest suites must run with `--pool=vmThreads` on Windows; capturing their exit codes and log files confirms service health.
 - A structured `run-summary.txt` (`## Story`, per-scene lines, warnings, `## Artifact Index`) plus zipped logs keeps manual review fast.
 
+## Logging & Artifact Snapshot (Nov 2025 refresh)
+
+- `scripts/queue-real-workflow.ps1` now records every history poll attempt (timestamp, status, and error), tracks how many attempts were made, and returns warnings/errors so the runner can surface `[Scene …] HISTORY WARNING/ERROR` lines in `run-summary.txt`.
+- `scripts/run-comfyui-e2e.ps1` automatically retries a scene once when history retrieval fails, no frames were copied, or the frame floor was missed. Every attempt logs `[Scene …][Attempt n] …` and the helper always emits explicit `Requeue requested … reason: …` entries so future agents can see why another attempt ran.
+- Each run writes `logs/<ts>/artifact-metadata.json` and mirrors it to `public/artifacts/latest-run.json`. The payload captures story metadata, prompts, frame floors, warnings/errors, history poll timelines, attempt summaries, Vitest logs (comfyUI/e2e/scripts), and the archive path for the Artifact Snapshot panel in the UI.
+- `scripts/validate-run-summary.ps1` cross-checks `run-summary.txt` against `artifact-metadata.json`. If metadata says a scene failed history or fell below the frame floor, the validator expects matching `[Scene …] HISTORY …` / `WARNING: Frame count below floor` lines so CI reviewers can trust every run log.
+- All helper scripts now verify `node -v` (minimum 22.19.0) before doing work, and Vitest is invoked directly via `node ./node_modules/vitest/vitest.mjs` to avoid npm shim issues.
+
 ## ✅ Updated Workflow
 
 The workflow has been **simplified to use only core ComfyUI nodes** that are guaranteed to work.
@@ -58,6 +66,8 @@ This preserves compatibility with the validated [ComfyUI_examples SVD workflow](
 1. Copies each scene’s keyframe into C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\input.
 2. Deletes stale frames matching the same prefix inside both output and outputs.
 3. Posts the patched workflow to /prompt, polls /history/<promptId>, and copies the new frames plus history.json into logs/<ts>/<sceneId>/generated-frames.
+
+Each run now snapshots its metadata (story logline, scene frame counts, history paths, and Vitest logs) inside `logs/<ts>/artifact-metadata.json` and mirrors it to `public/artifacts/latest-run.json`. The React Artifact Snapshot panel consumes that file so you can inspect story/context details and frame counts directly in the UI without opening Explorer.
 
 See STORY_TO_VIDEO_PIPELINE_PLAN.md for the full automation plan and the community references (Civitai Txt2Video SVD, ComfyUI-Stable-Video-Diffusion).
 ### Data Flow
@@ -295,4 +305,5 @@ ffmpeg -framerate 24 -i $inputPattern -c:v libx264 -pix_fmt yuv420p -crf 23 $out
 ---
 
 **Status**: ✅ Workflow Fixed | ⏳ Ready for Testing | 🚀 Ready for Production Integration
+
 
