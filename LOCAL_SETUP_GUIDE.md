@@ -147,6 +147,27 @@ python main.py
 python main.py --port 8188
 ```
 
+**⚠️ Windows Users - UTF-8 Encoding Required**
+
+If you encounter a `UnicodeEncodeError` when running ComfyUI on Windows (typically from tqdm progress bars), you must set UTF-8 encoding **before** starting ComfyUI:
+
+```powershell
+# PowerShell (Windows)
+$env:PYTHONIOENCODING = 'utf-8'
+$env:PYTHONLEGACYWINDOWSSTDIO = '0'
+python main.py --port 8188
+
+# Or use the provided UTF-8 wrapper script:
+.\scripts\start-comfyui-utf8.ps1
+```
+
+**Why?** Windows defaults to cp1252 encoding, which cannot render Unicode block characters (█) used by tqdm progress bars. This causes KSampler workflows to fail during frame generation.
+
+**Verification**: If the error is fixed, you should see properly formatted progress bars:
+```
+ 75%|██████▌   | 15/20 [01:30<00:30, 2.0s/it]
+```
+
 The app includes **Pre-flight Checks** that verify:
 - ✅ Server connection
 - ✅ System resources (VRAM)
@@ -276,11 +297,170 @@ npm run preview
 npm install --ignore-scripts
 ```
 
+## Troubleshooting
+
+### ComfyUI Connection Issues
+
+**Problem**: "Cannot connect to ComfyUI" or "Failed to reach server"
+
+**Solutions**:
+1. Verify ComfyUI is running: `curl http://127.0.0.1:8188/system_stats` (PowerShell) or `Invoke-RestMethod http://127.0.0.1:8188/system_stats`
+2. Check the port matches your ComfyUI startup command
+3. Ensure firewall allows port 8188
+4. Try `http://localhost:8188` instead of `127.0.0.1:8188`
+
+---
+
+### Windows: UnicodeEncodeError in KSampler
+
+**Problem**: 
+```
+UnicodeEncodeError: 'charmap' codec can't encode character '\u258e' in position 6
+```
+
+**Root Cause**: Windows console uses cp1252 encoding by default, which cannot render Unicode block characters used by tqdm progress bars.
+
+**Solution - Set UTF-8 BEFORE starting ComfyUI**:
+
+```powershell
+# Option 1: Set environment variables in PowerShell
+$env:PYTHONIOENCODING = 'utf-8'
+$env:PYTHONLEGACYWINDOWSSTDIO = '0'
+cd C:\ComfyUI\ComfyUI_windows_portable
+.\python_embeded\python.exe -s ComfyUI\main.py --listen 0.0.0.0 --port 8188
+
+# Option 2: Use the provided UTF-8 wrapper script
+.\scripts\start-comfyui-utf8.ps1
+
+# Option 3: Use VS Code task "Start ComfyUI Server" (UTF-8 pre-configured)
+# Ctrl+Shift+P → Tasks: Run Task → Start ComfyUI Server
+```
+
+**Verification**: Progress bar should display properly:
+```
+ 50%|█████     | 15/30 [00:45<00:45, 3.0s/it]
+```
+
+---
+
+### Frame Generation Not Working
+
+**Problem**: Scenes complete but 0 frames generated
+
+**Checklist**:
+1. ✅ Check ComfyUI logs for errors (watch terminal while generating)
+2. ✅ Verify SVD model is loaded: `curl http://127.0.0.1:8188/system_stats`
+3. ✅ Check VRAM availability (need ~12GB for SVD video generation)
+4. ✅ Ensure keyframe image was properly uploaded to ComfyUI
+5. ✅ Verify workflow mapping is correct in Settings
+6. ✅ Check `ComfyUI/user/logs/` for detailed error logs
+
+---
+
+### Gemini API Issues
+
+**Problem**: "API rate limit exceeded" or "Quota exceeded"
+
+**Solutions**:
+1. Check your quota at: https://ai.google.dev/pricing
+2. Verify API key in `.env.local` is correct: `cat .env.local`
+3. Wait 1 minute before retrying (rate limiting: Flash 60 RPM, Pro 15 RPM)
+4. Use Flash model instead of Pro for faster operations
+
+**Problem**: Empty or malformed responses
+
+**Solutions**:
+1. Ensure JSON schemas match expected structure
+2. Check Gemini API status: https://status.cloud.google.com
+3. Try regenerating with a simpler prompt
+
+---
+
+### App Data Not Persisting
+
+**Problem**: Lose project data after page refresh
+
+**Solution**: Ensure using `usePersistentState` hook for all user data (not regular `useState`)
+- This automatically saves to IndexedDB
+
+**Data Stored**:
+- ✅ Project metadata
+- ✅ Stories and scenes
+- ✅ Generated images/frames
+- ✅ Settings
+- ✅ Continuity analysis
+
+---
+
+### Port Already in Use
+
+**Problem**: "Port 3000 already in use" or "Port 8188 already in use"
+
+**Solutions**:
+
+*For dev server (port 3000)*:
+```powershell
+# Find process using port 3000
+Get-NetTCPConnection -LocalPort 3000 | Select-Object OwningProcess
+# Kill it
+Stop-Process -Id <PID> -Force
+# Restart dev server
+npm run dev
+```
+
+*For ComfyUI (port 8188)*:
+```powershell
+# Find process using port 8188
+Get-NetTCPConnection -LocalPort 8188 | Select-Object OwningProcess
+# Kill it
+Stop-Process -Id <PID> -Force
+# Restart ComfyUI
+.\scripts\start-comfyui-utf8.ps1
+```
+
+---
+
+### Video Generation Timeout
+
+**Problem**: Generation starts but hangs or times out after X minutes
+
+**Causes**:
+- GPU is thermal throttling (check temps)
+- Out of VRAM (need GPU restart)
+- Workflow is stuck waiting for node input
+- Network connectivity lost to ComfyUI
+
+**Solutions**:
+1. Reduce frame count in workflow (default 30, try 15-20)
+2. Use smaller model if available
+3. Ensure GPU has adequate cooling
+4. Restart ComfyUI: `.\scripts\check-comfyui-recovery.ps1`
+5. Check ComfyUI queue: `curl http://127.0.0.1:8188/queue`
+
+---
+
+### CORS Errors
+
+**Problem**: "CORS policy: No 'Access-Control-Allow-Origin' header"
+
+**Solution**: ComfyUI must be started with CORS enabled:
+
+```powershell
+# UTF-8 wrapper script already includes CORS flag
+.\scripts\start-comfyui-utf8.ps1
+
+# Or manually with CORS:
+python main.py --listen 0.0.0.0 --port 8188 --enable-cors-header "*"
+```
+
+---
+
 ## Support & Resources
 
 - **Original AI Studio Project**: https://ai.studio/apps/drive/1uvkkeiyDr3iI4KPyB4ICS6JaMrDY4TjF
 - **GitHub Repository**: https://github.com/Aycrith/gemDirect1
 - **Gemini API Key**: Configured in `.env.local`
+- **Windows UTF-8 Fix**: See `WINDOWS_UTF8_FIX_SUCCESS.md` for complete details
 
 ---
 
