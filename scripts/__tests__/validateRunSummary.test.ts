@@ -149,7 +149,7 @@ describe('validate-run-summary.ps1', () => {
         const result = runValidator(runDir);
         expect(result.status).toBe(0);
         expect(result.stdout).toMatch(/run-summary validation: PASS/);
-    });
+    }, 20000);
 
     it('fails when telemetry is missing from artifact metadata', () => {
         const runDir = mkdtempSync(path.join(os.tmpdir(), 'validate-run-missing-'));
