@@ -2,18 +2,6 @@ import { useState, useMemo } from 'react';
 import { useArtifactMetadata, type ArtifactMetadata, type ArtifactSceneMetadata, type StoryLLMMetadata } from '../utils/hooks';
 
 type ArtifactScene = ArtifactSceneMetadata;
-type StoryLLMMetadata = {
-    status?: string;
-    providerUrl?: string;
-    seed?: string;
-    durationMs?: number;
-    error?: string;
-    model?: string;
-    requestFormat?: string;
-    temperature?: number;
-    scenesRequested?: number;
-    scenesReceived?: number;
-};
 
 const formatVramValue = (value?: number | string | null): string => {
     if (value == null) return 'n/a';
