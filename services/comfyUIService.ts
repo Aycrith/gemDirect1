@@ -549,6 +549,15 @@ export const trackPromptExecution = (
                         );
                     };
 
+                    // If there are no declared output entries at all, report completion synchronously
+                    // so callers/tests do not race on the async fetch logic.
+                    const hasDeclaredEntries = assetSources.some(s => Array.isArray(s.entries) && s.entries.length > 0);
+                    if (!hasDeclaredEntries) {
+                        onProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
+                        ws.close();
+                        return;
+                    }
+
                     try {
                         onProgress({ message: 'Fetching final output...', progress: 100 });
                         const downloadedAssets: LocalGenerationAsset[] = [];

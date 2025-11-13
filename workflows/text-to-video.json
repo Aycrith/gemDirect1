@@ -144,5 +144,37 @@
       "scene_prompt": "__SCENE_PROMPT__",
       "negative_prompt": "__NEGATIVE_PROMPT__"
     }
+  },
+  "8": {
+    "inputs": {
+      "input": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "ReroutePrimitive|pysssss",
+    "_meta": {
+      "title": "Complete Signal"
+    }
+  }
+  ,
+  "9": {
+    "inputs": {
+      "input": [
+        "7",
+        0
+      ],
+      "scene_prefix": "__SCENE_PREFIX__"
+    },
+    "class_type": "WriteDoneMarker|pysssss",
+    "_meta": {
+      "title": "Write Done Marker (producer)",
+      "atomic_tmp_write": true,
+      "tmp_extension": ".tmp",
+      "notes": "Writes <prefix>.done.tmp and renames atomically to <prefix>.done; includes Timestamp, FrameCount, Latest fields"
+    },
+    "widgets_values": [
+      "__SCENE_PREFIX__"
+    ]
   }
 }

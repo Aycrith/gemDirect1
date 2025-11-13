@@ -1,5 +1,87 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
+
+const formatVramValue = (value?: number | string | null): string => {
+    if (value == null) return 'n/a';
+    const numeric = typeof value === 'string' ? Number(value) : value;
+    if (Number.isNaN(numeric)) return 'n/a';
+    return `${Math.round(numeric / 1048576)}MB`;
+};
+
+const formatVramDelta = (value?: number | string | null): string => {
+    if (value == null) return 'n/a';
+    const numeric = typeof value === 'string' ? Number(value) : value;
+    if (Number.isNaN(numeric)) return 'n/a';
+    const sign = numeric >= 0 ? '+' : '-';
+    return `${sign}${Math.round(Math.abs(numeric) / 1048576)}MB`;
+};
+
+const buildTimelineTelemetryChips = (telemetry?: SceneTelemetryMetadata): string[] => {
+    if (!telemetry) {
+        return [];
+    }
+    const chips: string[] = [];
+    if (typeof telemetry.DurationSeconds === 'number') {
+        chips.push(`DurationSeconds=${telemetry.DurationSeconds.toFixed(1)}s`);
+    }
+    if (typeof telemetry.MaxWaitSeconds === 'number') {
+        chips.push(`MaxWaitSeconds=${telemetry.MaxWaitSeconds}s`);
+    }
+    if (typeof telemetry.PollIntervalSeconds === 'number') {
+        chips.push(`PollIntervalSeconds=${telemetry.PollIntervalSeconds}s`);
+    }
+    if (typeof telemetry.HistoryAttempts === 'number') {
+        chips.push(`HistoryAttempts=${telemetry.HistoryAttempts}`);
+    }
+    const pollLimitLabel = telemetry.HistoryAttemptLimit != null ? telemetry.HistoryAttemptLimit : 'unbounded';
+    chips.push(`pollLimit=${pollLimitLabel}`);
+    const retryBudgetLabel =
+        telemetry.SceneRetryBudget != null && telemetry.SceneRetryBudget > 0 ? telemetry.SceneRetryBudget : 'unbounded';
+    chips.push(`SceneRetryBudget=${retryBudgetLabel}`);
+    if (typeof telemetry.PostExecutionTimeoutSeconds === 'number') {
+        chips.push(`PostExecutionTimeoutSeconds=${telemetry.PostExecutionTimeoutSeconds}s`);
+    }
+    if (telemetry.ExecutionSuccessDetected) {
+        chips.push('ExecutionSuccessDetected=true');
+    }
+    if (telemetry.ExecutionSuccessAt) {
+        try {
+            const resolved = new Date(telemetry.ExecutionSuccessAt);
+            if (!Number.isNaN(resolved.getTime())) {
+                chips.push(`ExecutionSuccessAt=${resolved.toLocaleTimeString()}`);
+            } else {
+                chips.push(`ExecutionSuccessAt=${telemetry.ExecutionSuccessAt}`);
+            }
+        } catch {
+            chips.push(`ExecutionSuccessAt=${telemetry.ExecutionSuccessAt}`);
+        }
+    }
+    if (telemetry.HistoryExitReason) {
+        chips.push(`HistoryExitReason=${telemetry.HistoryExitReason}`);
+    }
+    if (telemetry.HistoryPostExecutionTimeoutReached) {
+        chips.push('HistoryPostExecutionTimeoutReached=true');
+    }
+    if (telemetry.GPU?.Name) {
+        chips.push(`GPU=${telemetry.GPU.Name}`);
+        if (telemetry.GPU.VramBeforeMB != null) {
+            chips.push(`VRAMBeforeMB=${telemetry.GPU.VramBeforeMB}MB`);
+        }
+        if (telemetry.GPU.VramAfterMB != null) {
+            chips.push(`VRAMAfterMB=${telemetry.GPU.VramAfterMB}MB`);
+        }
+        if (telemetry.GPU.VramDeltaMB != null) {
+            chips.push(`VRAMDeltaMB=${telemetry.GPU.VramDeltaMB}MB`);
+        }
+    }
+    if (telemetry.System?.FallbackNotes?.length) {
+        const notes = telemetry.System.FallbackNotes.filter(Boolean);
+        if (notes.length > 0) {
+            chips.push(`fallback ${notes.join('; ')}`);
+        }
+    }
+    return chips;
+};
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 import CoDirector from './CoDirector';
@@ -16,7 +98,7 @@ import RefreshCwIcon from './icons/RefreshCwIcon';
 import Tooltip from './Tooltip';
 import SaveIcon from './icons/SaveIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
-import { useInteractiveSpotlight, useArtifactMetadata } from '../utils/hooks';
+import { useInteractiveSpotlight, useArtifactMetadata, type SceneTelemetryMetadata } from '../utils/hooks';
 import GuidedAction from './GuidedAction';
 import GuideCard from './GuideCard';
 import CompassIcon from './icons/CompassIcon';
@@ -138,10 +220,37 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [hasChanges, setHasChanges] = useState(false);
     const [isBatchProcessing, setIsBatchProcessing] = useState<false | 'description' | 'enhancers'>(false);
     const { artifact: latestArtifact } = useArtifactMetadata();
+    const queuePolicy = latestArtifact?.QueueConfig;
+    const llmMetadata = latestArtifact?.Story.LLM as
+        | {
+              providerUrl?: string;
+              model?: string;
+              requestFormat?: string;
+              seed?: string;
+              durationMs?: number;
+              error?: string;
+          }
+        | undefined;
+    const healthCheck = latestArtifact?.Story.HealthCheck;
     const latestSceneSnapshot = useMemo(
         () => (latestArtifact ? latestArtifact.Scenes.find((meta) => meta.SceneId === scene.id) ?? null : null),
         [latestArtifact, scene.id],
     );
+    const latestSceneInsights = latestSceneSnapshot
+        ? (() => {
+              const historyLog = latestSceneSnapshot.HistoryPollLog ?? [];
+            return {
+                 historyConfig: latestSceneSnapshot.HistoryConfig,
+                 pollLogCount: historyLog.length,
+                 lastPollStatus: historyLog.length > 0 ? historyLog[historyLog.length - 1]?.Status ?? 'n/a' : 'n/a',
+                 pollLimit: latestSceneSnapshot.Telemetry?.HistoryAttemptLimit ?? 'unbounded',
+                 fallbackNotes: latestSceneSnapshot.Telemetry?.System?.FallbackNotes?.filter(Boolean) ?? [],
+             };
+        })()
+        : null;
+    const latestTelemetryChips = latestSceneSnapshot ? buildTimelineTelemetryChips(latestSceneSnapshot.Telemetry) : [];
+    const latestGpu = latestSceneSnapshot?.Telemetry?.GPU;
+    const latestFallbackNotes = latestSceneSnapshot?.Telemetry?.System?.FallbackNotes?.filter(Boolean) ?? [];
     
     // Auto-save state
     const saveTimeoutRef = useRef<number | null>(null);
@@ -562,7 +671,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             </header>
 
             {latestSceneSnapshot && (
-                <div className="bg-gray-800/30 border border-emerald-500/30 rounded-lg p-4 text-xs text-gray-300 space-y-1">
+                <div className="bg-gray-800/30 border border-emerald-500/30 rounded-lg p-4 text-xs text-gray-300 space-y-3">
                     <div className="flex items-center justify-between text-[11px] text-gray-400 uppercase tracking-wide">
                         <span>Latest ComfyUI run</span>
                         <span>{latestArtifact?.RunId}</span>
@@ -570,21 +679,85 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     <div className="text-base text-gray-100 font-semibold">
                         Frames {latestSceneSnapshot.FrameCount}/{latestSceneSnapshot.FrameFloor}
                     </div>
-                    {typeof latestSceneSnapshot.Telemetry?.DurationSeconds === 'number' && (
-                        <div>Duration {latestSceneSnapshot.Telemetry.DurationSeconds.toFixed(1)}s</div>
+                    {latestTelemetryChips.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                            {latestTelemetryChips.map((chip) => (
+                                <span key={chip} className="px-2 py-0.5 rounded-full bg-gray-900/80 text-[11px] text-gray-200 border border-gray-700/60">
+                                    {chip}
+                                </span>
+                            ))}
+                        </div>
                     )}
-                    {latestSceneSnapshot.Telemetry?.GPU?.Name && (
-                        <div>GPU {latestSceneSnapshot.Telemetry.GPU.Name}</div>
+                    {queuePolicy && (
+                        <div className="text-[11px] text-gray-400">
+                            Queue policy: retry budget {queuePolicy.SceneRetryBudget}, wait {queuePolicy.HistoryMaxWaitSeconds}s, poll interval {queuePolicy.HistoryPollIntervalSeconds}s, attempts{' '}
+                            {queuePolicy.HistoryMaxAttempts > 0 ? queuePolicy.HistoryMaxAttempts : 'unbounded'}, post-exec {queuePolicy.PostExecutionTimeoutSeconds}s
+                        </div>
                     )}
-                    {latestSceneSnapshot.Warnings?.map((warning) => (
-                        <div key={warning} className="text-amber-300">⚠ {warning}</div>
-                    ))}
-                    {latestSceneSnapshot.Errors?.map((err) => (
-                        <div key={err} className="text-red-300">⛔ {err}</div>
-                    ))}
+                    {latestSceneSnapshot.HistoryConfig && (
+                        <div className="text-[11px] text-gray-500">
+                            History config: wait ≤ {latestSceneSnapshot.HistoryConfig.MaxWaitSeconds ?? 'n/a'}s · interval {latestSceneSnapshot.HistoryConfig.PollIntervalSeconds ?? 'n/a'}s · post-exec{' '}
+                            {latestSceneSnapshot.HistoryConfig.PostExecutionTimeoutSeconds ?? 'n/a'}s
+                        </div>
+                    )}
+                    {latestGpu && (
+                        <div className="text-[11px] text-gray-400">
+                            GPU: {latestGpu.Name ?? 'n/a'} · Free before {latestGpu.VramBeforeMB ?? 'n/a'}MB · after {latestGpu.VramAfterMB ?? 'n/a'}MB (Δ {latestGpu.VramDeltaMB ?? 'n/a'}MB)
+                        </div>
+                    )}
+                    {latestSceneInsights && (
+                        <div className="text-[11px] text-gray-400 bg-gray-900/40 border border-gray-700/40 rounded px-2 py-1.5 space-y-1">
+                            <p className="text-gray-500 uppercase tracking-wide text-[10px]">Poll History</p>
+                            <p>Polls: {latestSceneInsights.pollLogCount} · Limit: {latestSceneInsights.pollLimit} · Last status: {latestSceneInsights.lastPollStatus}</p>
+                            {latestSceneInsights.historyConfig && (
+                                <p className="text-gray-500">
+                                    Config: {latestSceneInsights.historyConfig.MaxWaitSeconds}s wait, {latestSceneInsights.historyConfig.PollIntervalSeconds}s interval, {latestSceneInsights.historyConfig.PostExecutionTimeoutSeconds}s post-exec
+                                </p>
+                            )}
+                        </div>
+                    )}
+                    {latestFallbackNotes.length > 0 && (
+                        <div className="text-[11px] text-amber-200">Fallback: {latestFallbackNotes.join('; ')}</div>
+                    )}
+                    <div className="grid gap-3 text-[11px] text-gray-400 sm:grid-cols-2">
+                        <div className="space-y-0.5">
+                            <p className="text-gray-500 uppercase tracking-wide text-[10px]">LLM metadata</p>
+                            <p className="text-sm text-gray-100 truncate">{llmMetadata?.providerUrl ?? 'n/a'}</p>
+                            <p>Model: {llmMetadata?.model ?? 'n/a'} · Format: {llmMetadata?.requestFormat ?? 'n/a'}</p>
+                            <p>Seed: {llmMetadata?.seed ?? 'n/a'} · Duration: {llmMetadata?.durationMs ?? 'n/a'}ms</p>
+                            {llmMetadata?.error && <p className="text-amber-300">Error: {llmMetadata.error}</p>}
+                        </div>
+                        <div className="space-y-0.5">
+                            <p className="text-gray-500 uppercase tracking-wide text-[10px]">Health check</p>
+                            <p className="text-sm text-gray-100">{healthCheck?.Status ?? 'not requested'}</p>
+                            {healthCheck?.Url && <p className="text-gray-100">Endpoint: {healthCheck.Url}</p>}
+                            {healthCheck?.Override && <p>Override: {healthCheck.Override}</p>}
+                            {healthCheck?.Models != null && <p>Models: {healthCheck.Models}</p>}
+                            {healthCheck?.SkipReason && <p>Skip reason: {healthCheck.SkipReason}</p>}
+                            {healthCheck?.Error && (
+                                <p className="text-amber-300 text-[11px]">Health error: {healthCheck.Error}</p>
+                            )}
+                        </div>
+                    </div>
+                    {latestArtifact?.Archive && (
+                        <div className="text-[11px] text-gray-400">Archive: {latestArtifact.Archive}</div>
+                    )}
+                    {latestSceneSnapshot.Warnings?.length > 0 && (
+                        <div className="bg-amber-500/10 border border-amber-400/30 rounded-lg px-3 py-2 text-[11px] text-amber-200 space-y-1">
+                            {latestSceneSnapshot.Warnings.map((warning) => (
+                                <div key={warning}>⚠ {warning}</div>
+                            ))}
+                        </div>
+                    )}
+                    {latestSceneSnapshot.Errors?.length > 0 && (
+                        <div className="bg-red-500/10 border border-red-400/30 rounded-lg px-3 py-2 text-[11px] text-red-200 space-y-1">
+                            {latestSceneSnapshot.Errors.map((err) => (
+                                <div key={err}>⛔ {err}</div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
-
             {timeline.shots.length === 0 && (
                 <GuidedAction
                     title="Your Scene is an Empty Canvas"

@@ -315,57 +315,154 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
     };
 }
 
+export interface QueueConfig {
+    SceneRetryBudget?: number;
+    HistoryMaxWaitSeconds?: number;
+    HistoryPollIntervalSeconds?: number;
+    HistoryMaxAttempts?: number;
+    PostExecutionTimeoutSeconds?: number;
+}
+
+export interface SceneGPUUsage {
+    Name?: string;
+    Type?: string;
+    Index?: number;
+    VramFreeBefore?: number;
+    VramFreeAfter?: number;
+    VramTotal?: number;
+    VramDelta?: number;
+    VramBeforeMB?: number;
+    VramAfterMB?: number;
+    VramDeltaMB?: number;
+}
+
 export interface SceneTelemetryMetadata {
+    QueueStart?: string;
+    QueueEnd?: string;
     DurationSeconds?: number;
     MaxWaitSeconds?: number;
     PollIntervalSeconds?: number;
+    PostExecutionTimeoutSeconds?: number;
+    ExecutionSuccessDetected?: boolean;
+    ExecutionSuccessAt?: string;
+    HistoryExitReason?: string;
+    HistoryPostExecutionTimeoutReached?: boolean;
     HistoryAttempts?: number;
-    GPU?: {
-        Name?: string;
-        Type?: string;
-        Index?: number;
-        VramFreeBefore?: string | number;
-        VramFreeAfter?: string | number;
-        VramTotal?: string | number;
+    HistoryAttemptLimit?: number;
+    PollLimit?: number | 'unbounded';
+    SceneRetryBudget?: number;
+    GPU?: SceneGPUUsage;
+    System?: {
+        Before?: unknown;
+        After?: unknown;
+        FallbackNotes?: string[] | null;
     };
+}
+
+export interface SceneHistoryLogEntry {
+    Attempt: number;
+    Timestamp: string;
+    Status: string;
+    Message?: string;
+}
+
+export interface SceneAttemptSummary {
+    Attempt: number;
+    Timestamp: string;
+    FrameCount: number;
+    DurationSeconds: number;
+    Success: boolean;
+    MeetsFrameFloor: boolean;
+    HistoryRetrieved: boolean;
+    Warnings?: string[];
+    Errors?: string[];
+}
+
+export interface SceneHistoryConfig {
+    MaxWaitSeconds?: number;
+    PollIntervalSeconds?: number;
+    MaxAttempts?: number;
+    PostExecutionTimeoutSeconds?: number;
+}
+
+export interface LLMHealthCheckMetadata {
+    Url?: string;
+    Override?: string;
+    Status?: 'success' | 'failed' | 'skipped' | 'not requested';
+    Models?: number;
+    Error?: string;
+    Timestamp?: string;
+    Skipped?: boolean;
+    SkipReason?: string;
+}
+
+export interface StoryLLMMetadata {
+    status?: string;
+    providerUrl?: string;
+    seed?: string;
+    durationMs?: number;
+    error?: string;
+    model?: string;
+    requestFormat?: string;
+    temperature?: number;
+    scenesRequested?: number;
+    scenesReceived?: number;
+}
+
+export interface VitestSuiteMetadata {
+    Suite: string;
+    ExitCode: number;
+    DurationMs: number;
+    LogPath?: string;
+    StartedAt?: string;
+}
+
+export interface VitestSummaryMetadata {
+    comfyExit?: number;
+    e2eExit?: number;
+    scriptsExit?: number;
+    comfyLog?: string;
+    e2eLog?: string;
+    scriptsLog?: string;
+    runDir?: string;
+    timestamp?: string;
+    suites?: VitestSuiteMetadata[];
 }
 
 export interface ArtifactSceneMetadata {
     SceneId: string;
-    SceneTitle?: string;
-    SceneSummary?: string;
-    StoryMood?: string;
-    StoryExpectedFrames?: number;
-    FrameCount: number;
+    Prompt: string;
+    NegativePrompt: string;
     FrameFloor: number;
+    FrameCount: number;
+    DurationSeconds: number;
+    FramePrefix: string;
+    HistoryPath: string;
+    HistoryRetrievedAt?: string;
+    HistoryPollLog?: SceneHistoryLogEntry[];
+    HistoryErrors?: string[];
+    Success: boolean;
+    MeetsFrameFloor: boolean;
     HistoryRetrieved: boolean;
     HistoryAttempts?: number;
+    HistoryError?: string;
     Warnings?: string[];
     Errors?: string[];
-    Telemetry?: SceneTelemetryMetadata;
-    HistoryPath?: string;
-    HistoryRetrievedAt?: string;
-    HistoryPollLog?: {
-        Attempt: number;
-        Timestamp: string;
-        Status: string;
-        Message?: string;
-    }[];
-    HistoryErrors?: string[];
-    Success?: boolean;
-    MeetsFrameFloor?: boolean;
+    AttemptsRun?: number;
+    Requeued?: boolean;
+    AttemptSummaries?: SceneAttemptSummary[];
     GeneratedFramesDir?: string;
     KeyframeSource?: string;
-    AttemptSummaries?: {
-        Attempt: number;
-        Timestamp: string;
-        FrameCount: number;
-        Success: boolean;
-        MeetsFrameFloor: boolean;
-        HistoryRetrieved: boolean;
-        Warnings?: string[];
-        Errors?: string[];
-    }[];
+    StoryTitle?: string;
+    StorySummary?: string;
+    StoryMood?: string;
+    StoryExpectedFrames?: number;
+    StoryCameraMovement?: string;
+    Telemetry?: SceneTelemetryMetadata;
+    HistoryAttemptLimit?: number;
+    SceneRetryBudget?: number;
+    HistoryConfig?: SceneHistoryConfig;
+    SceneKeyframe?: string;
 }
 
 export interface ArtifactMetadata {
@@ -376,17 +473,22 @@ export interface ArtifactMetadata {
         Id: string;
         Logline: string;
         DirectorsVision: string;
-        Generator: string;
-        LLM?: Record<string, unknown>;
+        Generator?: string;
+        File?: string;
+        StoryDir?: string;
+        LLM?: StoryLLMMetadata;
+        HealthCheck?: LLMHealthCheckMetadata;
         Warnings?: string[];
     };
     Scenes: ArtifactSceneMetadata[];
+    QueueConfig?: QueueConfig;
     VitestLogs: {
         ComfyUI: string;
         E2E: string;
         Scripts: string;
         ResultsJson?: string | null;
     };
+    VitestSummary?: VitestSummaryMetadata;
     Archive: string;
 }
 
@@ -403,14 +505,26 @@ export function useArtifactMetadata(autoRefreshMs = 0): ArtifactMetadataState {
     const [error, setError] = useState<string | null>(null);
 
     const fetchMetadata = useCallback(async () => {
+        const paths = ['/artifact-metadata.json', '/artifacts/latest-run.json'];
         try {
             setLoading(true);
             setError(null);
-            const response = await fetch(`/artifacts/latest-run.json?t=${Date.now()}`);
-            if (!response.ok) {
-                throw new Error(`Unable to load artifact data (${response.status})`);
+            let payload: ArtifactMetadata | null = null;
+            for (const relativePath of paths) {
+                try {
+                    const response = await fetch(`${relativePath}?t=${Date.now()}`);
+                    if (!response.ok) {
+                        continue;
+                    }
+                    payload = (await response.json()) as ArtifactMetadata;
+                    break;
+                } catch {
+                    continue;
+                }
             }
-            const payload = (await response.json()) as ArtifactMetadata;
+            if (!payload) {
+                throw new Error('Unable to load artifact metadata from any known endpoint.');
+            }
             setArtifact(payload);
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));

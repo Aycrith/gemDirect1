@@ -4,7 +4,13 @@ import crypto from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
 import { fetchLocalStory } from './localStoryProvider.ts';
-import { type LLMScenePayload, type LLMStoryRequest, type LLMStoryResponse, type LLMProviderMetadata } from './types/storyTypes.ts';
+import {
+    type LLMScenePayload,
+    type LLMStoryRequest,
+    type LLMStoryResponse,
+    type LLMProviderMetadata,
+    type LLMRequestFormat,
+} from './types/storyTypes.ts';
 
 export interface CliOptions {
     outputDir: string;
@@ -14,6 +20,9 @@ export interface CliOptions {
     localLLMSeed?: string;
     providerUrl?: string;
     llmTimeoutMs?: number;
+    localLLMModel?: string;
+    localLLMTemperature?: number;
+    llmRequestFormat?: LLMRequestFormat;
 }
 
 export interface GeneratedScene {
@@ -37,10 +46,38 @@ export interface StoryGenerationWarning {
 export const DEFAULT_NEGATIVE_PROMPT =
     'blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, oversaturated, undersaturated, motion blur';
 
+const normalizeNegativePrompt = (value: unknown): string => {
+    if (Array.isArray(value)) {
+        return value
+            .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+            .filter(Boolean)
+            .join(', ');
+    }
+    if (typeof value === 'string' && value.trim().length > 0) {
+        return value;
+    }
+    return DEFAULT_NEGATIVE_PROMPT;
+};
+
+const DEFAULT_CHAT_MODEL = 'mistralai/mistral-7b-instruct-v0.3';
+const DEFAULT_REQUEST_FORMAT: LLMRequestFormat = 'direct-json';
+
+const inferRequestFormat = (providerUrl?: string, requested?: LLMRequestFormat): LLMRequestFormat => {
+    if (requested) return requested;
+    if (!providerUrl) return DEFAULT_REQUEST_FORMAT;
+    if (/\/v1\/chat/i.test(providerUrl) || /\/chat\/completions/i.test(providerUrl)) {
+        return 'openai-chat';
+    }
+    return DEFAULT_REQUEST_FORMAT;
+};
+
 const createLLMMetadata = (options: CliOptions): LLMProviderMetadata => ({
     enabled: Boolean(options.useLocalLLM),
     providerUrl: options.providerUrl,
     seed: options.localLLMSeed,
+    model: options.localLLMModel,
+    requestFormat: options.llmRequestFormat,
+    temperature: options.localLLMTemperature,
     status: options.useLocalLLM ? 'skipped' : 'skipped',
     scenesRequested: options.sceneCount,
 });
@@ -128,7 +165,7 @@ export const buildGeneratedScene = async (
         mood: template.mood ?? 'Unspecified',
         keyframePath,
         expectedFrames: template.expectedFrames ?? 25,
-        negativePrompt: template.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT,
+        negativePrompt: normalizeNegativePrompt(template.negativePrompt),
         cameraMovement: template.cameraMovement,
         palette: template.palette,
     };
@@ -190,6 +227,11 @@ export const generateStoryAssets = async (options: CliOptions) => {
     let llmResponse: LLMStoryResponse | null = null;
     const warnings: StoryGenerationWarning[] = [];
     const llmMetadata = createLLMMetadata(resolvedOptions);
+    const resolvedRequestFormat = inferRequestFormat(resolvedOptions.providerUrl, resolvedOptions.llmRequestFormat);
+    llmMetadata.requestFormat = resolvedRequestFormat;
+    if (!llmMetadata.model && resolvedRequestFormat === 'openai-chat') {
+        llmMetadata.model = DEFAULT_CHAT_MODEL;
+    }
 
     if (llmMetadata.enabled) {
         if (!llmMetadata.providerUrl) {
@@ -206,9 +248,22 @@ export const generateStoryAssets = async (options: CliOptions) => {
                 const request: LLMStoryRequest = {
                     sceneCount: resolvedOptions.sceneCount,
                     seed: resolvedOptions.localLLMSeed,
+                    format: resolvedRequestFormat,
                 };
+                const resolvedModel =
+                    resolvedOptions.localLLMModel ??
+                    (resolvedRequestFormat === 'openai-chat' ? DEFAULT_CHAT_MODEL : undefined);
+                if (resolvedModel) {
+                    llmMetadata.model = resolvedModel;
+                }
+                if (resolvedOptions.localLLMTemperature !== undefined) {
+                    llmMetadata.temperature = resolvedOptions.localLLMTemperature;
+                }
                 llmResponse = await fetchLocalStory(llmMetadata.providerUrl, request, {
                     timeoutMs: resolvedOptions.llmTimeoutMs,
+                    format: resolvedRequestFormat,
+                    model: resolvedModel,
+                    temperature: resolvedOptions.localLLMTemperature,
                 });
                 llmMetadata.status = 'success';
                 llmMetadata.scenesReceived = llmResponse?.scenes?.length ?? 0;

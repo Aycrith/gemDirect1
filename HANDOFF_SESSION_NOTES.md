@@ -5,12 +5,28 @@
 **Current Status**: Workflow fixed and ready for testing  
 **Next Steps**: Test workflow, then integrate into components
 
+## Decisions & Actions
+- Health-check first: `scripts/run-comfyui-e2e.ps1` now probes LM Studio’s `/v1/models` endpoint (override target via `LOCAL_LLM_HEALTHCHECK_URL`, skip with `LOCAL_LLM_SKIP_HEALTHCHECK=1`) so we fail fast on dead LLMs before the ComfyUI workflow loads.
+- Queue knobs + telemetry: Exposed `SceneMaxWaitSeconds`, `SceneHistoryMaxAttempts`, `SceneHistoryPollIntervalSeconds`, and `ScenePostExecutionTimeoutSeconds` (plus matching `SCENE_*` env vars) so `QueueConfig` and per-scene `HistoryConfig`/`SceneRetryBudget` are recorded in `artifact-metadata.json`; the validator + Vitest harness now require `DurationSeconds`, `MaxWaitSeconds`, `PollIntervalSeconds`, `HistoryAttempts`, `HistoryAttemptLimit`, GPU name, and VRAM before/after plus the poll-limit string in `[Scene …] Telemetry` lines.
+- Artifact Snapshot / Timeline alignment: The new metadata feeds the React viewers so the queue policy card, telemetry summary, GPU/VRAM delta badges, fallback notes, warnings-only filter, poll log counts, and archive references render without opening raw JSON; the statuses mirror ComfyUI’s `/history` flow from `websockets_api_example.py`.
+
 ## ✅ November 2025 Refresh Highlights
 
 - The ComfyUI helper now auto-retries each scene once when history polling fails, no frames are copied, or the frame floor is missed. Every attempt is logged as `[Scene …][Attempt n] …` plus explicit `HISTORY WARNING/ERROR` and `Requeue requested … reason: …` lines so downstream agents know exactly what happened.
 - `scripts/queue-real-workflow.ps1` captures a `HistoryPollLog` (timestamp, status, error) and `HistoryErrors` array for each attempt. These details flow into `logs/<ts>/artifact-metadata.json` and `public/artifacts/latest-run.json`, letting the in-app Artifact Snapshot panel display prompts, keyframes, warnings, history timelines, and Vitest log locations without digging through Explorer.
 - `scripts/run-vitests.ps1` now drives three suites (comfyUI service, e2e glue, and `scripts/__tests__`) via `npm exec vitest`, writing `vitest-comfyui.log`, `vitest-e2e.log`, `vitest-scripts.log`, and a machine-readable `vitest-results.json`. The helper imports those paths into `run-summary.txt` + artifact metadata, and CI (Node 22) still publishes `vitest-report.json`.
 - `scripts/validate-run-summary.ps1` cross-checks `run-summary.txt` with `artifact-metadata.json` to ensure every history failure or low-frame scenario recorded in the metadata has a matching `HISTORY WARNING/ERROR` / `WARNING: Frame count below floor` entry in the summary. If you edit the log manually, rerun the validator so the pipeline stays auditable.
+
+## Telemetry & Queue Policy Requirements
+1. **LM Studio health check**: `scripts/run-comfyui-e2e.ps1` probes `/v1/models` before ComfyUI starts, records override/skip notes (`LOCAL_LLM_HEALTHCHECK_URL`/`LOCAL_LLM_SKIP_HEALTHCHECK=1`), and surfaces warnings in the summary/metadata so future agents can decide whether to retry or point at another provider before launching the workflow.[lm-health]
+2. **Queue knobs & metadata flows**: `SceneMaxWaitSeconds`, `SceneHistoryPollIntervalSeconds`, `SceneHistoryMaxAttempts`, `ScenePostExecutionTimeoutSeconds`, and `SceneRetryBudget` (and their `SCENE_*` env equivalents) appear inside `QueueConfig`, each scene’s `HistoryConfig`, and `SceneRetryBudget` lines written to `run-summary.txt`, `artifact-metadata.json`, and `public/artifacts/latest-run.json`, while the Artifact Snapshot policy card and Timeline Editor display those knobs so reviewers can see how the poller, retry, and post-exec budgets were configured.
+3. **Telemetry enforcement policy**: Each scene attempt must log `DurationSeconds`, `MaxWaitSeconds`, `PollIntervalSeconds`, `HistoryAttempts`, `HistoryAttemptLimit`, `pollLimit` (the summary string must match the metadata value), `HistoryExitReason` (maxWait/attemptLimit/postExecution/success), `ExecutionSuccessDetected`, `ExecutionSuccessAt`, `PostExecutionTimeoutSeconds`, `postExecTimeoutReached`, GPU `Name`, `VRAMBeforeMB`, `VRAMAfterMB`, `VRAMDeltaMB`, and fallback notes (e.g., `/system_stats` failure that forces a `nvidia-smi` fallback). `validate-run-summary.ps1`, Vitest, and the UI treat missing telemetry as failure, and we honor ComfyUI's `/history` states (`execution_success`, `status_str`, `exitReason`) as success indicators per [`websocket_api_example.py`][comfy-history].
+4. **Artifact snapshot expectations**: The queue policy card, telemetry badges (DurationSeconds, MaxWaitSeconds, PollIntervalSeconds, `pollLimit`, `HistoryExitReason`, `postExec` timeout state, `ExecutionSuccessAt`), poll log counts/warnings-only filter, GPU info + VRAM delta, fallback warnings, archive links (Vitest logs + `artifacts/comfyui-e2e-<ts>.zip`), and LLM metadata (provider, model, request format, seed, duration, errors) must all be present inside the Artifact Snapshot/Timeline UI so telemetry matches what the logs show.
+-5. **Docs-first guardrail**: Before modifying scripts or UI, read README.md, DOCUMENTATION_INDEX_20251111.md (the “Required Telemetry & Queue Policy Orientation” block), STORY_TO_VIDEO_PIPELINE_PLAN.md, STORY_TO_VIDEO_TEST_CHECKLIST.md, WORKFLOW_FIX_GUIDE.md, QUICK_START_E2E_TODAY.md, REFERENCE_CARD_QUICK.md, WINDOWS_AGENT_TEST_ITERATION_PLAN.md, and notes/codex-agent-notes-20251111.md so the LM Studio health check, queue knobs, telemetry enforcement, and artifact expectations are clear.
+-6. **UI metadata handshake**: Artifact Snapshot/Timeline panels mirror logs/<ts>/artifact-metadata.json and public/artifacts/latest-run.json, so their queue policy card, telemetry badges, GPU stats, fallback warnings, Vitest logs, and archive references must line up with what the helper logs and the validator enforces.
+
+[lm-health]: https://lmstudio.ai/docs/api#health-checks
+[comfy-history]: https://github.com/comfyanonymous/ComfyUI/blob/master/examples/websocket_api_example.py
 
 ---
 
@@ -475,6 +491,11 @@ Before continuing development:
 3. No upscaling in simplified workflow (can add later)
 4. No error recovery between shots (can add later)
 
+### 2025-11-11 Updates
+- Latest full run: `logs/20251111-210711` (75 frames, 3 scenes, Vitest suites green). Archive: `artifacts/comfyui-e2e-20251111-210711.zip`.
+- Story prompts now come from LM Studio (`LOCAL_STORY_PROVIDER_URL=http://192.168.50.192:1234/v1/chat/completions`) with `LOCAL_LLM_MODEL=mistralai/mistral-7b-instruct-v0.3` and a 120 000 ms timeout. Keep those env vars exported before every helper run.
+- `[Scene …] Telemetry:` lines now show GPU + VRAM stats; missing telemetry causes `scripts/validate-run-summary.ps1` to fail. If `/system_stats` is flaky, confirm `nvidia-smi` is installed—the helper falls back to it automatically.
+
 ### Quick Commands for Next Session
 
 ```powershell
@@ -508,3 +529,10 @@ ffmpeg -framerate 24 -i "C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\output\gemd
 **Last Updated**: November 9, 2025  
 **Status**: Ready for next session  
 **Confidence**: High (workflow tested and fixed)
+---
+
+### 2025-11-12 session delta
+- Added an automatic LM Studio /v1/models health check ahead of ComfyUI startup (configurable via LOCAL_LLM_HEALTHCHECK_URL / LOCAL_LLM_SKIP_HEALTHCHECK).
+- Surfaced queue knobs (-SceneMaxWaitSeconds, -SceneHistoryMaxAttempts, -SceneHistoryPollIntervalSeconds, and the matching SCENE_* env vars) so retry budgets can be tuned per run without editing scripts and are now logged in run summaries + metadata.
+- Hardened telemetry with nvidia-smi fallback, [Scene …] Telemetry enforcement, and a Vitest wrapper around scripts/validate-run-summary.ps1; runs fail immediately if GPU/VRAM/poll data is missing.
+- React Artifact Snapshot + Timeline now render poll configs, GPU deltas, warnings, and archive info pulled from rtifact-metadata.json so operators can triage without digging through JSON.

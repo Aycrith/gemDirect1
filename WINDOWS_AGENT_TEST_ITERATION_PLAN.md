@@ -9,6 +9,8 @@
 ## 1. Environment Verification Checklist ✓
 > **Update:** Before every run, confirm the helper prints `Story LLM status: ...` and `[Scene ...] Telemetry:` lines—`validate-run-summary.ps1` now enforces both so GPU/VRAM stats stay in sync with `public/artifacts/latest-run.json` and the Artifact Snapshot / Timeline UI.
 
+> **2025-11-12 addition:** `scripts/run-comfyui-e2e.ps1` also probes LM Studio’s `/v1/models` endpoint (override via `LOCAL_LLM_HEALTHCHECK_URL`, skip with `LOCAL_LLM_SKIP_HEALTHCHECK=1`), exposes `SceneMaxWaitSeconds`, `SceneHistoryMaxAttempts`, `SceneHistoryPollIntervalSeconds`, and `ScenePostExecutionTimeoutSeconds` (or `SCENE_*` env vars) so `QueueConfig`/`HistoryConfig` and the Artifact Snapshot/TI cards report the resolved poll budget, post-exec timeout, and `pollLimit` text; the validator plus Vitest harness now require Duration, MaxWait, PollInterval, HistoryAttempts, HistoryAttemptLimit, GPU name, VRAM before/after, exit reason, and fallback notes before the run can archive, mirroring ComfyUI’s `/history` statuses from `websockets_api_example.py`.
+
 
 ### 1.1 Node Version
 - **Required**: ≥ 22.19.0
@@ -49,6 +51,15 @@
   - LORAS: `models\loras\` ✓ (updated Nov 11)
 
 ---
+
+
+## ?? Telemetry & Queue Policy Requirements
+1. **LM Studio health check**: `scripts/run-comfyui-e2e.ps1` probes `/v1/models` before ComfyUI launches, logs override/skip notes via `LOCAL_LLM_HEALTHCHECK_URL`/`LOCAL_LLM_SKIP_HEALTHCHECK=1`, and surfaces warnings inside `run-summary.txt`/`artifact-metadata.json` so you can reroute to a healthy LLM before the heavy workflow starts.[lm-health]
+2. **Queue knobs + metadata**: `SceneMaxWaitSeconds`, `SceneHistoryPollIntervalSeconds`, `SceneHistoryMaxAttempts`, `ScenePostExecutionTimeoutSeconds`, and `SceneRetryBudget` (plus the matching `SCENE_*` env vars) flow into `QueueConfig`, per-scene `HistoryConfig`, and `SceneRetryBudget` entries inside every artifact plus the React Artifact Snapshot/Timeline UI.
+3. **Telemetry enforcement policy**: Each `[Scene .] Telemetry:` line must include `DurationSeconds`, `MaxWaitSeconds`, `PollIntervalSeconds`, `HistoryAttempts`, `HistoryAttemptLimit`, `pollLimit` (text matches metadata), `HistoryExitReason` (maxWait/attemptLimit/postExecution/success), `ExecutionSuccessDetected`, `ExecutionSuccessAt`, `PostExecutionTimeoutSeconds`, `postExecTimeoutReached`, GPU `Name`, `VRAMBeforeMB`, `VRAMAfterMB`, `VRAMDeltaMB`, fallback notes (e.g., `/system_stats` failure triggering the `nvidia-smi` fallback), and `SceneRetryBudget`. Missing telemetry or mismatched `pollLimit` fails `scripts/validate-run-summary.ps1`/Vitest, and the queue waits until the `execution_success`/`exitReason` values described in [`websocket_api_example.py`][comfy-history].
+4. **Artifact snapshot expectations**: The Artifact Snapshot/Timeline view must present the queue policy card, telemetry badges (DurationSeconds, MaxWaitSeconds, PollIntervalSeconds, `pollLimit`, `HistoryExitReason`, `postExec` timeout state, `ExecutionSuccessAt`), poll log counts/warnings filter, GPU info + VRAM delta, fallback warnings, archive links (Vitest logs + `artifacts/comfyui-e2e-<ts>.zip`), and LLM metadata (provider, model, request format, seed, duration, errors).
+5. **Docs-first guardrail**: Always re-read README.md, DOCUMENTATION_INDEX_20251111.md, STORY_TO_VIDEO_PIPELINE_PLAN.md, STORY_TO_VIDEO_TEST_CHECKLIST.md, WORKFLOW_FIX_GUIDE.md, HANDOFF_SESSION_NOTES.md, QUICK_START_E2E_TODAY.md, REFERENCE_CARD_QUICK.md, WINDOWS_AGENT_TEST_ITERATION_PLAN.md, and notes/codex-agent-notes-20251111.md before touching scripts or UI so the LM Studio health check, queue knobs, telemetry enforcement, and artifact expectations are fresh.
+6. **UI metadata safeguard**: Keep the Artifact Snapshot/Timeline cards in sync with logs/<ts>/artifact-metadata.json and public/artifacts/latest-run.json so the queue policy card, telemetry badges, GPU stats, fallback warnings, Vitest logs, and archives reflect the validator-approved data.
 
 ## 2. Critical Blocker: SVD Model Missing ⚠️
 
@@ -596,3 +607,12 @@ C:\ComfyUI\ComfyUI_windows_portable\
 
 **Report Generated**: November 11, 2025 | **Next Review**: After SVD model download + E2E test execution
 
+---
+
+### 2025-11-12 operator reminders
+- Keep LM Studio healthy: the helper now probes /v1/models before ComfyUI starts and will exit early if the call fails (override with LOCAL_LLM_HEALTHCHECK_URL or LOCAL_LLM_SKIP_HEALTHCHECK=1).
+- Tune history polling via -SceneMaxWaitSeconds, -SceneHistoryMaxAttempts, and -SceneHistoryPollIntervalSeconds (or SCENE_* env vars) instead of editing scripts; the resolved settings are logged automatically for audit trails.
+- Telemetry completeness is enforced by scripts/validate-run-summary.ps1 and a Vitest wrapper—GPU/VRAM deltas, poll limits, and [Scene …] Telemetry lines are now hard requirements.
+
+[lm-health]: https://lmstudio.ai/docs/api#health-checks
+[comfy-history]: https://github.com/comfyanonymous/ComfyUI/blob/master/examples/websocket_api_example.py

@@ -1,0 +1,36 @@
+{
+  "storyId": "story-b8240ef0-4d36-4d17-824f-b734854f239d",
+  "generatedAt": "2025-11-12T03:11:24.772Z",
+  "logline": "An exhausted courier discovers that their encoded deliveries are rewriting the future of the skyline.",
+  "directorsVision": "Analog-inspired futurism with bold silhouettes, rain-bent reflections, and saturated bioluminescent accents. Camera work should feel like a patient steadicam with occasional handheld breathing.",
+  "scenes": [
+    {
+      "id": "scene-001",
+      "title": "Signal in the Mist",
+      "summary": "A lone courier crosses a suspended rail bridge as aurora storm clouds simmer below.",
+      "prompt": "Ultra-wide cinematic shot of a courier silhouetted on a floating rail bridge, vaporous aurora and neon mist swirling beneath, volumetric lighting, shallow haze, 1970s film grain",
+      "mood": "Resolute, breathless",
+      "keyframePath": "C:\\Dev\\gemDirect1\\test-story\\keyframes\\scene-001.png",
+      "expectedFrames": 25,
+      "negativePrompt": "blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, oversaturated, undersaturated, motion blur",
+      "cameraMovement": "Slow, deliberate dolly forward across the bridge line"
+    }
+  ],
+  "generator": "scripts/generate-story-scenes.ts",
+  "llm": {
+    "enabled": true,
+    "providerUrl": "http://192.168.50.192:1234/v1/chat/completions",
+    "seed": "42",
+    "model": "mistralai/mistral-7b-instruct-v0.3",
+    "requestFormat": "openai-chat",
+    "status": "error",
+    "scenesRequested": 1,
+    "startedAt": "2025-11-12T03:11:16.753Z",
+    "error": "This operation was aborted",
+    "completedAt": "2025-11-12T03:11:24.765Z",
+    "durationMs": 8011
+  },
+  "warnings": [
+    "Local LLM request failed (This operation was aborted). Using deterministic fallback scenes."
+  ]
+}

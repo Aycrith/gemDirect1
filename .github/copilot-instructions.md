@@ -137,6 +137,92 @@ Be mindful of Gemini API rate limits:
 
 The `withRetry` function handles rate limiting automatically, but for batch operations, consider implementing request throttling to stay within limits.
 
+### Terminal Safety (CRITICAL FOR AI AGENTS)
+**IMPORTANT**: This project runs background processes (ComfyUI server, Dev server) that must NOT be interrupted by terminal commands.
+
+⚠️ **NEVER use these commands directly**:
+- `Stop-Process` or any process termination
+- `Get-Process | Where { ... } | Stop-Process`
+- Commands that might kill background tasks
+
+**Why**: Each terminal command execution can kill the background ComfyUI/Dev server if not isolated properly.
+
+**SAFE APPROACH** for all agent terminal interactions:
+```powershell
+# Use isolated script execution that won't affect background processes
+# Example 1: Simple status check
+& 'C:\Dev\gemDirect1\scripts\safe-terminal.ps1' -Command 'Invoke-RestMethod http://127.0.0.1:8188/system_stats'
+
+# Example 2: Run tests (won't kill background server)
+& 'C:\Dev\gemDirect1\scripts\safe-terminal.ps1' -Command 'npm run test' -WorkingDirectory 'C:\Dev\gemDirect1'
+
+# Example 3: Multiple commands
+& 'C:\Dev\gemDirect1\scripts\safe-terminal.ps1' -Command 'Get-ChildItem; Write-Host "Done"'
+```
+
+**Key Rules**:
+1. ✅ DO: Use `safe-terminal.ps1` wrapper for ALL terminal commands in agent sessions
+2. ✅ DO: Keep `ComfyUI Server` task running in background (never stop it via terminal)
+3. ✅ DO: Let background tasks run continuously during testing
+4. ❌ DON'T: Use `Stop-Process` or similar commands without explicit isolation
+5. ❌ DON'T: Run process management commands in regular terminal sessions
+
+**Implementation** (`safe-terminal.ps1`):
+- Executes all commands in isolated PowerShell process
+- Creates temporary script files
+- Cleans up automatically
+- Returns exit codes properly
+- Prevents interference with background tasks
+
+This ensures ComfyUI and other critical services remain available throughout testing and development.
+
+### Optimized E2E Testing (Persistent Session)
+For faster iterative testing, use persistent ComfyUI session instead of restarting for each test:
+
+```powershell
+# Start persistent session (ComfyUI runs once, stays running)
+.\scripts\persistent-e2e.ps1 -Action start
+
+# Run multiple tests (each completes in 60-120s instead of 15-20s startup overhead)
+.\scripts\persistent-e2e.ps1 -Action run -MaxWaitSeconds 180
+.\scripts\persistent-e2e.ps1 -Action run -MaxWaitSeconds 180
+.\scripts\persistent-e2e.ps1 -Action run -MaxWaitSeconds 180
+
+# Check status anytime
+.\scripts\persistent-e2e.ps1 -Action status
+
+# Stop when done
+.\scripts\persistent-e2e.ps1 -Action stop
+```
+
+**Benefits**:
+- Eliminates 15-20 second ComfyUI startup per test run
+- Reuses CUDA model cache (faster subsequent runs)
+- Reduces registry fetching overhead
+- Better for rapid iteration and debugging
+
+### Coordinated Multi-Test Runs (Prevents Agent Loop)
+Use test coordinator to avoid repeated tool calls and track progress:
+
+```powershell
+# Initialize coordinated test run for 3 iterations
+.\scripts\test-coordinator.ps1 -Operation init -TestCount 3
+
+# For each test:
+.\scripts\test-coordinator.ps1 -Operation next
+# ... run actual test ...
+.\scripts\test-coordinator.ps1 -Operation checkpoint -Result success
+
+# Get summary report
+.\scripts\test-coordinator.ps1 -Operation report
+```
+
+**Features**:
+- Tracks test state persistently (no agent memory needed)
+- Circuit breaker stops after 3 consecutive failures
+- Prevents infinite retry loops
+- Generates summary reports instead of raw output
+
 ## Common Patterns
 
 ### Adding New Suggestion Types

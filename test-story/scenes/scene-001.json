@@ -1,0 +1,11 @@
+{
+  "id": "scene-001",
+  "title": "Signal in the Mist",
+  "summary": "A lone courier crosses a suspended rail bridge as aurora storm clouds simmer below.",
+  "prompt": "Ultra-wide cinematic shot of a courier silhouetted on a floating rail bridge, vaporous aurora and neon mist swirling beneath, volumetric lighting, shallow haze, 1970s film grain",
+  "mood": "Resolute, breathless",
+  "keyframePath": "C:\\Dev\\gemDirect1\\test-story\\keyframes\\scene-001.png",
+  "expectedFrames": 25,
+  "negativePrompt": "blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, oversaturated, undersaturated, motion blur",
+  "cameraMovement": "Slow, deliberate dolly forward across the bridge line"
+}

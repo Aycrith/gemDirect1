@@ -1,10 +1,21 @@
 param(
     # Allows operators to tune the automatic requeue budget without editing the script.
-    [int] $MaxSceneRetries = 1,
+    [Alias('MaxSceneRetries')]
+    [int] $SceneRetryBudget = 1,
     [switch] $UseLocalLLM,
     [string] $LocalLLMProviderUrl,
     [string] $LocalLLMSeed,
-    [int] $LocalLLMTimeoutMs = 8000
+    [int] $LocalLLMTimeoutMs = 8000,
+    [string] $LocalLLMModel,
+    [Nullable[Double]] $LocalLLMTemperature,
+    [string] $LocalLLMRequestFormat,
+    [string] $LocalLLMHealthcheckUrl,
+    [int] $SceneMaxWaitSeconds = 600,
+    [int] $SceneHistoryMaxAttempts = 0,
+    [int] $SceneHistoryPollIntervalSeconds = 2,
+    [int] $ScenePostExecutionTimeoutSeconds = 30,
+    [switch] $FastIteration,
+    [switch] $SkipLLMHealthCheck
 )
 
 # CRITICAL FIX: Force UTF-8 encoding on Windows to prevent tqdm Unicode errors
@@ -42,6 +53,58 @@ function Assert-NodeVersion {
 
 Assert-NodeVersion -MinimumVersion $MinimumNodeVersion
 
+function Resolve-LlmHealthUrl {
+    param(
+        [string] $ProviderUrl,
+        [string] $Override
+    )
+
+    # Follow the LM Studio health-check URL pattern documented at https://lmstudio.ai/docs/api#health-checks
+    if (-not [string]::IsNullOrWhiteSpace($Override)) {
+        return $Override
+    }
+    if ([string]::IsNullOrWhiteSpace($ProviderUrl)) {
+        return $null
+    }
+    try {
+        $uri = [Uri]$ProviderUrl
+        $builder = [System.UriBuilder]::new($uri)
+        $path = $builder.Path.TrimEnd('/')
+        if ($path -match '/v1/chat/completions$') {
+            $builder.Path = $path -replace '/chat/completions$', '/models'
+        } elseif ($path -match '/v1$') {
+            $builder.Path = "$path/models"
+        } else {
+            $builder.Path = '/v1/models'
+        }
+        $builder.Query = ''
+        return $builder.Uri.AbsoluteUri
+    } catch {
+        throw "Unable to derive LLM health check URL from $ProviderUrl ($($_.Exception.Message))"
+    }
+}
+
+function Invoke-LlmHealthCheck {
+    param(
+        [string] $HealthUrl,
+        [int] $TimeoutSeconds = 5
+    )
+
+    if ([string]::IsNullOrWhiteSpace($HealthUrl)) {
+        return [ordered]@{ Status = 'skipped'; Message = 'No health-check URL resolved' }
+    }
+
+    Write-Host "Step 2a: Probing local LLM health at $HealthUrl ..."
+    try {
+        $response = Invoke-RestMethod -Uri $HealthUrl -UseBasicParsing -TimeoutSec $TimeoutSeconds -ErrorAction Stop
+        $modelCount = if ($response.data) { $response.data.Count } elseif ($response.models) { $response.models.Count } else { $null }
+        return [ordered]@{ Status = 'success'; Models = $modelCount }
+    } catch {
+        $errorMessage = $_.Exception.Message
+        return [ordered]@{ Status = 'failed'; Error = $errorMessage }
+    }
+}
+
 $ProjectRoot = 'C:\Dev\gemDirect1'
 $ResolvedLocalLLMProvider = if ($LocalLLMProviderUrl) { $LocalLLMProviderUrl } elseif ($env:LOCAL_STORY_PROVIDER_URL) { $env:LOCAL_STORY_PROVIDER_URL } else { $null }
 if (-not $LocalLLMSeed -and $env:LOCAL_LLM_SEED) {
@@ -50,7 +113,56 @@ if (-not $LocalLLMSeed -and $env:LOCAL_LLM_SEED) {
 if (-not $PSBoundParameters.ContainsKey('LocalLLMTimeoutMs') -and $env:LOCAL_LLM_TIMEOUT_MS) {
     [int]$LocalLLMTimeoutMs = [int]$env:LOCAL_LLM_TIMEOUT_MS
 }
+if (-not $LocalLLMModel -and $env:LOCAL_LLM_MODEL) {
+    $LocalLLMModel = $env:LOCAL_LLM_MODEL
+}
+if (-not $PSBoundParameters.ContainsKey('LocalLLMTemperature') -and $env:LOCAL_LLM_TEMPERATURE) {
+    [Nullable[Double]]$LocalLLMTemperature = [double]$env:LOCAL_LLM_TEMPERATURE
+}
+if (-not $LocalLLMRequestFormat -and $env:LOCAL_LLM_REQUEST_FORMAT) {
+    $LocalLLMRequestFormat = $env:LOCAL_LLM_REQUEST_FORMAT
+}
+$healthOverride = if ($LocalLLMHealthcheckUrl) { $LocalLLMHealthcheckUrl } elseif ($env:LOCAL_LLM_HEALTHCHECK_URL) { $env:LOCAL_LLM_HEALTHCHECK_URL } else { $null }
+if (-not $PSBoundParameters.ContainsKey('SceneMaxWaitSeconds') -and $env:SCENE_MAX_WAIT_SECONDS) {
+    [int]$SceneMaxWaitSeconds = [int]$env:SCENE_MAX_WAIT_SECONDS
+}
+if (-not $PSBoundParameters.ContainsKey('SceneHistoryMaxAttempts') -and $env:SCENE_HISTORY_MAX_ATTEMPTS) {
+    [int]$SceneHistoryMaxAttempts = [int]$env:SCENE_HISTORY_MAX_ATTEMPTS
+}
+if (-not $PSBoundParameters.ContainsKey('SceneHistoryPollIntervalSeconds') -and $env:SCENE_HISTORY_POLL_INTERVAL_SECONDS) {
+    [int]$SceneHistoryPollIntervalSeconds = [int]$env:SCENE_HISTORY_POLL_INTERVAL_SECONDS
+}
+if (-not $PSBoundParameters.ContainsKey('ScenePostExecutionTimeoutSeconds') -and $env:SCENE_POST_EXECUTION_TIMEOUT_SECONDS) {
+    [int]$ScenePostExecutionTimeoutSeconds = [int]$env:SCENE_POST_EXECUTION_TIMEOUT_SECONDS
+}
+if (-not $PSBoundParameters.ContainsKey('SceneRetryBudget') -and $env:SCENE_RETRY_BUDGET) {
+    [int]$SceneRetryBudget = [int]$env:SCENE_RETRY_BUDGET
+}
+if ($SceneMaxWaitSeconds -le 0) {
+    throw "SceneMaxWaitSeconds must be greater than zero."
+}
+if ($SceneHistoryPollIntervalSeconds -lt 1) {
+    throw "SceneHistoryPollIntervalSeconds must be at least 1."
+}
+if ($SceneHistoryMaxAttempts -lt 0) {
+    throw "SceneHistoryMaxAttempts cannot be negative."
+}
+if ($SceneRetryBudget -lt 0) {
+    throw "SceneRetryBudget cannot be negative."
+}
 $ResolvedUseLocalLLM = $UseLocalLLM.IsPresent -or -not [string]::IsNullOrWhiteSpace($ResolvedLocalLLMProvider)
+$ResolvedSkipHealthCheck = $SkipLLMHealthCheck.IsPresent -or ($env:LOCAL_LLM_SKIP_HEALTHCHECK -eq '1')
+
+$LLMHealthInfo = [ordered]@{
+    Url = $null
+    Override = $healthOverride
+    Status = 'not requested'
+    Models = $null
+    Error = $null
+    Timestamp = (Get-Date).ToString('o')
+    Skipped = $ResolvedSkipHealthCheck
+    SkipReason = $null
+}
 
 $Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $RunDir = "$ProjectRoot\logs\$Timestamp"
@@ -81,9 +193,14 @@ function Get-SceneRetryReason {
     if (-not $Result.MeetsFrameFloor) {
         return ("frame count below floor ({0}/{1})" -f $Result.FrameCount, $Result.FrameFloor)
     }
-    if (-not $Result.HistoryRetrieved) {
-        return 'history missing'
-    }
+
+    # If we have sufficient frames for the scene (MeetsFrameFloor == true),
+    # prefer the locally-copied frames even if ComfyUI's history endpoint has
+    # not yet populated. Requeueing solely because history is missing produced
+    # repeated attempts that subsequently found zero frames (race between
+    # execution and history population). Therefore do NOT request a requeue for
+    # "history missing" when the frame floor has been met; instead let the
+    # caller surface a warning.
     return $null
 }
 
@@ -99,7 +216,9 @@ $SampleKeyframe = Join-Path $ProjectRoot 'sample_frame_start.png'
 $SceneTargetCount = 3
 if ($ResolvedUseLocalLLM) {
     $providerSummary = if ($ResolvedLocalLLMProvider) { $ResolvedLocalLLMProvider } else { 'custom provider' }
-    Write-Host "  Using local LLM provider: $providerSummary (seed=${LocalLLMSeed ?? 'n/a'})"
+    $modelSummary = if ($LocalLLMModel) { "model=$LocalLLMModel" } else { 'model=default' }
+    $formatSummary = if ($LocalLLMRequestFormat) { "format=$LocalLLMRequestFormat" } else { 'format=auto' }
+    Write-Host "  Using local LLM provider: $providerSummary ($modelSummary | seed=${LocalLLMSeed ?? 'n/a'} | $formatSummary)"
 }
 $storyArgs = @('--loader', 'ts-node/esm', $StoryScript, '--output', $StoryDir, '--scenes', $SceneTargetCount.ToString(), '--sampleKeyframe', $SampleKeyframe)
 if ($ResolvedUseLocalLLM) {
@@ -113,6 +232,15 @@ if ($LocalLLMSeed) {
 }
 if ($LocalLLMTimeoutMs -gt 0) {
     $storyArgs += @('--llmTimeoutMs', $LocalLLMTimeoutMs.ToString())
+}
+if ($LocalLLMModel) {
+    $storyArgs += @('--localLLMModel', $LocalLLMModel)
+}
+if ($null -ne $LocalLLMTemperature) {
+    $storyArgs += @('--localLLMTemperature', $LocalLLMTemperature.ToString())
+}
+if ($LocalLLMRequestFormat) {
+    $storyArgs += @('--llmRequestFormat', $LocalLLMRequestFormat)
 }
 Push-Location $ProjectRoot
 try {
@@ -154,30 +282,102 @@ if ($StoryData.warnings) {
         Add-RunSummary ("[Story] WARNING: {0}" -f $storyWarning)
     }
 }
+$historyAttemptDisplay = if ($SceneHistoryMaxAttempts -gt 0) { $SceneHistoryMaxAttempts } else { 'unbounded' }
+
+# Fast iteration mode: reduce timeouts and poll intervals to speed up dev cycles.
+if ($FastIteration.IsPresent) {
+    Write-Host "FastIteration enabled: reducing poll intervals and timeouts for quicker feedback"
+    # Keep HistoryPollInterval at minimum allowed (1s)
+    $SceneHistoryPollIntervalSeconds = 1
+    # Reduce post-execution timeout for quick experiments
+    $ScenePostExecutionTimeoutSeconds = [int]15
+    $SentinelScanIntervalSeconds = 0.5
+    $SentinelStableSeconds = 1
+    $QueueStabilitySeconds = 1
+    $QueueStabilityRetries = 2
+} else {
+    $SentinelScanIntervalSeconds = 2
+    $SentinelStableSeconds = 3
+    $QueueStabilitySeconds = 5
+    $QueueStabilityRetries = 3
+}
+
+Add-RunSummary ("Queue policy: sceneRetries={0}, historyMaxWait={1}s, historyPollInterval={2}s, historyMaxAttempts={3}, postExecutionTimeout={4}s" -f $SceneRetryBudget, $SceneMaxWaitSeconds, $SceneHistoryPollIntervalSeconds, $historyAttemptDisplay, $ScenePostExecutionTimeoutSeconds)
+
+if ($ResolvedUseLocalLLM -and $ResolvedLocalLLMProvider -and -not $ResolvedSkipHealthCheck) {
+    $llmHealthUrl = Resolve-LlmHealthUrl -ProviderUrl $ResolvedLocalLLMProvider -Override $healthOverride
+    $LLMHealthInfo.Url = $llmHealthUrl
+    $healthResult = Invoke-LlmHealthCheck -HealthUrl $llmHealthUrl
+    $LLMHealthInfo.Status = $healthResult.Status
+    if ($healthResult.Models) {
+        $LLMHealthInfo.Models = $healthResult.Models
+    }
+    if ($healthResult.Error) {
+        $LLMHealthInfo.Error = $healthResult.Error
+    }
+    $modelDisplay = if ($healthResult.Models) { $healthResult.Models } else { 'n/a' }
+    $overrideDisplay = if ($healthOverride) { $healthOverride } else { 'default' }
+    if ($healthResult.Status -eq 'success') {
+        Add-RunSummary ("[LLM] Health check: success (url={0}, models={1}, override={2})" -f $llmHealthUrl, $modelDisplay, $overrideDisplay)
+    } else {
+        Add-RunSummary ("[LLM] Health check failed: {0} (url={1}, override={2})" -f $LLMHealthInfo.Error, $llmHealthUrl, $overrideDisplay)
+        throw "Local LLM health check failed: $($LLMHealthInfo.Error)"
+    }
+} elseif ($ResolvedSkipHealthCheck) {
+    $LLMHealthInfo.Status = 'skipped'
+    $LLMHealthInfo.SkipReason = 'operator requested skip'
+    Add-RunSummary "[LLM] Health check skipped by operator request"
+} elseif (-not $ResolvedUseLocalLLM -or -not $ResolvedLocalLLMProvider) {
+    $LLMHealthInfo.Status = 'not requested'
+    $LLMHealthInfo.SkipReason = 'no local provider configured'
+    Add-RunSummary "[LLM] Health check skipped (no local provider configured)"
+}
 
 # Step 2: Clean lingering processes
 Write-Host "Step 2: Cleaning up lingering processes..."
-Get-Process | Where-Object { $_.ProcessName -match 'node|npm|python' } | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
+# If ComfyUI is already running and responsive, prefer to reuse it rather than
+# killing processes and starting a new instance. This avoids race conditions and
+# accidental termination of an in-use ComfyUI server which can make runs appear
+# hung. Probe the /system_stats endpoint to determine reachability.
+$comfyAlreadyRunning = $false
+try {
+    $probe = Invoke-RestMethod -Uri 'http://127.0.0.1:8188/system_stats' -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+    if ($probe) { $comfyAlreadyRunning = $true }
+} catch {
+    $comfyAlreadyRunning = $false
+}
 
-# Step 3: Start ComfyUI
-Write-Host "Step 3: Starting ComfyUI..."
-$ComfyPython = 'C:\ComfyUI\ComfyUI_windows_portable\python_embeded\python.exe'
-$ComfyMain = 'C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\main.py'
-$ComfyProc = Start-Process -FilePath $ComfyPython `
-    -ArgumentList @('-s', $ComfyMain, '--windows-standalone-build', '--listen', '0.0.0.0', '--port', '8188', '--enable-cors-header', '*') `
-    -WorkingDirectory 'C:\ComfyUI\ComfyUI_windows_portable' `
-    -NoNewWindow `
-    -PassThru
+if (-not $comfyAlreadyRunning) {
+    Get-Process | Where-Object { $_.ProcessName -match 'node|npm|python' } | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+} else {
+    Add-RunSummary "ComfyUI already running and reachable; skipping process cleanup/start to avoid interruptions"
+}
 
-Write-Host "  ComfyUI PID: $($ComfyProc.Id)"
-Add-RunSummary "ComfyUI started with PID $($ComfyProc.Id)"
+# Step 3: Start ComfyUI (only if not already running)
+if (-not $comfyAlreadyRunning) {
+    Write-Host "Step 3: Starting ComfyUI..."
+    $ComfyPython = 'C:\ComfyUI\ComfyUI_windows_portable\python_embeded\python.exe'
+    $ComfyMain = 'C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\main.py'
+    $ComfyProc = Start-Process -FilePath $ComfyPython `
+        -ArgumentList @('-s', $ComfyMain, '--windows-standalone-build', '--listen', '0.0.0.0', '--port', '8188', '--enable-cors-header', '*') `
+        -WorkingDirectory 'C:\ComfyUI\ComfyUI_windows_portable' `
+        -NoNewWindow `
+        -PassThru
+
+    Write-Host "  ComfyUI PID: $($ComfyProc.Id)"
+    Add-RunSummary "ComfyUI started with PID $($ComfyProc.Id)"
+} else {
+    Write-Host "Step 3: ComfyUI already running; skipping start"
+    Add-RunSummary "Step 3: ComfyUI already running; skipping start"
+    $ComfyProc = $null
+}
 
 # Step 4: Wait for ComfyUI readiness
 Write-Host "Step 4: Waiting for ComfyUI to be ready..."
 $ready = $false
 for ($i = 0; $i -lt 60; $i++) {
-    if ($ComfyProc.HasExited) {
+    if ($ComfyProc -and $ComfyProc.HasExited) {
         throw "ComfyUI process exited unexpectedly (code $($ComfyProc.ExitCode))"
     }
     try {
@@ -195,6 +395,29 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 if (-not $ready) {
     throw "ComfyUI never became ready"
+}
+
+# Start optional done-marker sentinel to produce producer-side .done markers
+# that consumer scripts can wait on. We prefer to reuse an existing job if one
+# is already running, otherwise start a short-lived background job that runs
+# the sentinel script. We will stop it later if we started it here.
+$StartedDoneSentinel = $false
+$SentinelJobName = 'comfyui-done-sentinel'
+try {
+    $existingJob = Get-Job -Name $SentinelJobName -State Running -ErrorAction SilentlyContinue
+} catch {
+    $existingJob = $null
+}
+if (-not $existingJob) {
+    Write-Host "Starting done-marker sentinel job ($SentinelJobName)"
+    Start-Job -Name $SentinelJobName -ScriptBlock {
+        param($scan, $stable, $url)
+        & 'C:\Dev\gemDirect1\scripts\generate-done-markers.ps1' -ScanIntervalSeconds $scan -StableSeconds $stable -ComfyUrl $url
+    } -ArgumentList $SentinelScanIntervalSeconds, $SentinelStableSeconds, 'http://127.0.0.1:8188' | Out-Null
+    $StartedDoneSentinel = $true
+    Add-RunSummary "Started done-marker sentinel job ($SentinelJobName)"
+} else {
+    Add-RunSummary "Done-marker sentinel job already running; reusing existing job"
 }
 
 # Step 5: Queue each scene
@@ -233,13 +456,12 @@ foreach ($scene in $SceneDefinitions) {
 
     $attemptResults = @()
     $attemptSummariesList = @()
-    $maxAttempts = [Math]::Max(1, $MaxSceneRetries + 1)
+    $maxAttempts = [Math]::Max(1, $SceneRetryBudget + 1)
 
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         $attemptTimestamp = (Get-Date).ToString('o')
         $result = $null
         try {
-            $sceneMaxWait = 600
             $result = & $RealWorkflowScript `
                 -SceneId $sceneId `
                 -Prompt $scene.prompt `
@@ -247,7 +469,16 @@ foreach ($scene in $SceneDefinitions) {
                 -KeyframePath $sceneKeyframePath `
                 -SceneOutputDir $sceneLogDir `
                 -FrameFloor $frameFloorValue `
-                -MaxWaitSeconds $sceneMaxWait
+                -MaxWaitSeconds $SceneMaxWaitSeconds `
+                -MaxAttemptCount $SceneHistoryMaxAttempts `
+                -HistoryPollIntervalSeconds $SceneHistoryPollIntervalSeconds `
+                -PostExecutionTimeoutSeconds $ScenePostExecutionTimeoutSeconds `
+                    -SceneRetryBudget $SceneRetryBudget `
+                    -AttemptNumber $attempt `
+                    -WaitForDoneMarker $true `
+                    -DoneMarkerTimeoutSeconds $ScenePostExecutionTimeoutSeconds `
+                    -StabilitySeconds $QueueStabilitySeconds `
+                    -StabilityRetries $QueueStabilityRetries
         } catch {
             $err = $_.Exception.Message
             Write-Warning "[Scene $sceneId] Attempt $attempt failed: $err"
@@ -278,6 +509,30 @@ foreach ($scene in $SceneDefinitions) {
                 HistoryError       = $err
                 Warnings           = @()
                 Errors             = @($err)
+            }
+        }
+
+        # Guard against null result from queue script IMMEDIATELY after invocation
+        if (-not $result) {
+            Write-Host "ERROR: queue-real-workflow.ps1 returned null for scene $sceneId" -ForegroundColor Red
+            Add-RunSummary ("[Scene $sceneId] ERROR: Queue script returned null")
+            $result = [pscustomobject]@{
+                SceneId = $sceneId
+                FrameCount = 0
+                DurationSeconds = 0
+                FramePrefix = ""
+                HistoryRetrieved = $false
+                HistoryError = "Queue script returned null"
+                HistoryErrors = @("Queue script returned null")
+                HistoryAttempts = 0
+                HistoryPollLog = @()
+                HistoryRetrievedAt = $null
+                Warnings = @()
+                Errors = @("Queue script returned null")
+                Telemetry = $null
+                HistoryPath = $null
+                Success = $false
+                MeetsFrameFloor = $false
             }
         }
 
@@ -313,7 +568,12 @@ foreach ($scene in $SceneDefinitions) {
 
         $historyIssues = @()
         if (-not $result.HistoryRetrieved) {
-            $historyIssues += (if ($result.HistoryError) { $result.HistoryError } else { 'Unknown history failure' })
+            # Fixed: Replace inline if with explicit conditional to avoid PowerShell parser issues
+            if ($result.HistoryError) {
+                $historyIssues += $result.HistoryError
+            } else {
+                $historyIssues += 'Unknown history failure'
+            }
         }
         if ($result.HistoryErrors -and $result.HistoryErrors.Count -gt 0) {
             $historyIssues += $result.HistoryErrors
@@ -332,21 +592,58 @@ foreach ($scene in $SceneDefinitions) {
         if ($result.Telemetry) {
             $telemetrySummaryParts = @()
             $telemetryDuration = if ($null -ne $result.Telemetry.DurationSeconds) { [Math]::Round([double]$result.Telemetry.DurationSeconds, 1) } else { $durationValue }
-            $telemetrySummaryParts += "duration=${telemetryDuration}s"
-            if ($result.Telemetry.MaxWaitSeconds) {
-                $telemetrySummaryParts += "maxWait=$($result.Telemetry.MaxWaitSeconds)s"
+            $telemetrySummaryParts += "DurationSeconds=${telemetryDuration}s"
+            if ($null -ne $result.Telemetry.MaxWaitSeconds) {
+                $telemetrySummaryParts += "MaxWaitSeconds=${($result.Telemetry.MaxWaitSeconds)}s"
             }
-            if ($result.Telemetry.PollIntervalSeconds) {
-                $telemetrySummaryParts += "pollInterval=$($result.Telemetry.PollIntervalSeconds)s"
+            if ($null -ne $result.Telemetry.PollIntervalSeconds) {
+                $telemetrySummaryParts += "PollIntervalSeconds=${($result.Telemetry.PollIntervalSeconds)}s"
             }
-            if ($result.Telemetry.HistoryAttempts) {
-                $telemetrySummaryParts += "historyAttempts=$($result.Telemetry.HistoryAttempts)"
+            if ($null -ne $result.Telemetry.HistoryAttempts) {
+                $telemetrySummaryParts += "HistoryAttempts=$($result.Telemetry.HistoryAttempts)"
+            }
+            $pollLimitValue = if ($result.Telemetry.HistoryAttemptLimit -gt 0) { $result.Telemetry.HistoryAttemptLimit } else { 'unbounded' }
+            $telemetrySummaryParts += "pollLimit=$pollLimitValue"
+            $retryBudgetValue = if ($null -ne $result.Telemetry.SceneRetryBudget -and $result.Telemetry.SceneRetryBudget -gt 0) { $result.Telemetry.SceneRetryBudget } else { 'unbounded' }
+            $telemetrySummaryParts += "SceneRetryBudget=$retryBudgetValue"
+            if ($null -ne $result.Telemetry.PostExecutionTimeoutSeconds) {
+                $telemetrySummaryParts += "PostExecutionTimeoutSeconds=${($result.Telemetry.PostExecutionTimeoutSeconds)}s"
+            }
+            if ($result.Telemetry.ExecutionSuccessDetected) {
+                $telemetrySummaryParts += 'ExecutionSuccessDetected=true'
+            }
+            if ($result.Telemetry.ExecutionSuccessAt) {
+                try {
+                    $successAt = [DateTimeOffset]::Parse($result.Telemetry.ExecutionSuccessAt).ToLocalTime().ToString('HH:mm:ss')
+                    $telemetrySummaryParts += "ExecutionSuccessAt=$successAt"
+                } catch {
+                    $telemetrySummaryParts += ("ExecutionSuccessAt={0}" -f $result.Telemetry.ExecutionSuccessAt)
+                }
+            }
+            if ($result.Telemetry.HistoryExitReason) {
+                $telemetrySummaryParts += "HistoryExitReason=$($result.Telemetry.HistoryExitReason)"
+            }
+            if ($result.Telemetry.HistoryPostExecutionTimeoutReached) {
+                $telemetrySummaryParts += 'HistoryPostExecutionTimeoutReached=true'
             }
             if ($result.Telemetry.GPU) {
                 $gpuName = if ($result.Telemetry.GPU.Name) { $result.Telemetry.GPU.Name } else { 'n/a' }
-                $vramBefore = if ($result.Telemetry.GPU.VramFreeBefore) { $result.Telemetry.GPU.VramFreeBefore } else { 'n/a' }
-                $vramAfter = if ($result.Telemetry.GPU.VramFreeAfter) { $result.Telemetry.GPU.VramFreeAfter } else { 'n/a' }
-                $telemetrySummaryParts += "gpu=$gpuName vram=${vramBefore}/${vramAfter}"
+                $telemetrySummaryParts += "GPU={$gpuName}"
+                if ($result.Telemetry.GPU.VramBeforeMB -ne $null) {
+                    $telemetrySummaryParts += ("VRAMBeforeMB={0}MB" -f $result.Telemetry.GPU.VramBeforeMB)
+                }
+                if ($result.Telemetry.GPU.VramAfterMB -ne $null) {
+                    $telemetrySummaryParts += ("VRAMAfterMB={0}MB" -f $result.Telemetry.GPU.VramAfterMB)
+                }
+                if ($result.Telemetry.GPU.VramDeltaMB -ne $null) {
+                    $telemetrySummaryParts += ("VRAMDeltaMB={0}MB" -f $result.Telemetry.GPU.VramDeltaMB)
+                }
+            }
+            if ($result.Telemetry.System -and $result.Telemetry.System.FallbackNotes) {
+                $fallbackNotes = $result.Telemetry.System.FallbackNotes | Where-Object { $_ } | ForEach-Object { $_.ToString() }
+                if ($fallbackNotes.Count -gt 0) {
+                    $telemetrySummaryParts += ("fallback={0}" -f ($fallbackNotes -join '; '))
+                }
             }
             Add-RunSummary ("[Scene $sceneId] Telemetry: {0}" -f ($telemetrySummaryParts -join ' | '))
         }
@@ -361,11 +658,49 @@ foreach ($scene in $SceneDefinitions) {
         break
     }
 
+    # Choose final result object. By default take the last attempt, but preserve the
+    # best observed frame count across attempts so the artifact metadata reflects
+    # the successful work even if a subsequent requeue returned no frames.
     $finalResult = $attemptResults[-1]
+    try {
+        $bestAttempt = $attemptResults | Sort-Object -Property @{Expression = { if ($null -ne $_.FrameCount) { [int]$_.FrameCount } else { 0 } } } -Descending | Select-Object -First 1
+        if ($bestAttempt -and ($bestAttempt.FrameCount -gt 0)) {
+            # Update finalResult to reflect the best observed frame-count and success status
+            $finalResult.FrameCount = $bestAttempt.FrameCount
+            $finalResult.Success = if ($bestAttempt.FrameCount -gt 0) { $true } else { $false }
+            $finalResult.MeetsFrameFloor = if ($bestAttempt.MeetsFrameFloor) { $true } else { $false }
+            if ($bestAttempt.GeneratedFramesDir) { $finalResult.GeneratedFramesDir = $bestAttempt.GeneratedFramesDir }
+            # Align top-level warnings/errors/history/telemetry with the best attempt so
+            # the artifact metadata and validators see a consistent snapshot of the
+            # chosen (best) output rather than mixing fields from a later empty attempt.
+            try {
+                if ($bestAttempt.PSObject.Properties.Name -contains 'Warnings') { $finalResult.Warnings = $bestAttempt.Warnings }
+                if ($bestAttempt.PSObject.Properties.Name -contains 'Errors') { $finalResult.Errors = $bestAttempt.Errors }
+                if ($bestAttempt.PSObject.Properties.Name -contains 'HistoryRetrieved') { $finalResult.HistoryRetrieved = $bestAttempt.HistoryRetrieved }
+                if ($bestAttempt.PSObject.Properties.Name -contains 'HistoryRetrievedAt') { $finalResult.HistoryRetrievedAt = $bestAttempt.HistoryRetrievedAt }
+                if ($bestAttempt.PSObject.Properties.Name -contains 'HistoryPath') { $finalResult.HistoryPath = $bestAttempt.HistoryPath }
+                if ($bestAttempt.PSObject.Properties.Name -contains 'Telemetry') { $finalResult.Telemetry = $bestAttempt.Telemetry }
+            } catch {
+                # best-effort alignment; if any of these properties are missing or
+                # assignment fails, continue using the partially-updated finalResult
+            }
+            # Preserve attempt-level telemetry in AttemptSummaries; the top-level fields now
+            # reflect the most useful result (highest frame count) for validators and UI.
+        }
+    } catch {
+        # Best-effort; if this fails, continue using the last attempt as-is
+    }
     $sceneAttemptMetadata[$sceneId] = @{
         AttemptsRun = $attemptResults.Count
         Requeued = ($attemptResults.Count -gt 1)
         AttemptSummaries = $attemptSummariesList
+        HistoryConfig = @{
+            MaxWaitSeconds = $SceneMaxWaitSeconds
+            MaxAttempts = $SceneHistoryMaxAttempts
+            PollIntervalSeconds = $SceneHistoryPollIntervalSeconds
+            PostExecutionTimeoutSeconds = $ScenePostExecutionTimeoutSeconds
+        }
+        SceneRetryBudget = $SceneRetryBudget
     }
     $finalResult | Add-Member -NotePropertyName AttemptsRun -NotePropertyValue $sceneAttemptMetadata[$sceneId].AttemptsRun -Force
     $finalResult | Add-Member -NotePropertyName Requeued -NotePropertyValue $sceneAttemptMetadata[$sceneId].Requeued -Force
@@ -414,7 +749,11 @@ $RunVitestsScript = Join-Path (Split-Path $MyInvocation.MyCommand.Definition) 'r
 Write-Host "Step 6-8: Running Vitest suites using $RunVitestsScript"
 
 # Call helper and point it at the current run directory so logs and timings are colocated
-& pwsh -NoLogo -ExecutionPolicy Bypass -File $RunVitestsScript -ProjectRoot $ProjectRoot -RunDir $RunDir
+if ($FastIteration.IsPresent) {
+    & pwsh -NoLogo -ExecutionPolicy Bypass -File $RunVitestsScript -ProjectRoot $ProjectRoot -RunDir $RunDir -Quick
+} else {
+    & pwsh -NoLogo -ExecutionPolicy Bypass -File $RunVitestsScript -ProjectRoot $ProjectRoot -RunDir $RunDir
+}
 $vitestHelperExit = $LASTEXITCODE
 
 # Prefer reading machine-readable vitest results produced by the helper
@@ -425,6 +764,7 @@ $ScriptsTestLog = Join-Path $RunDir 'vitest-scripts.log'
 $comfyExit = 1
 $e2eExit = 1
 $scriptsExit = 1
+$VitestResultPayload = $null
 if (Test-Path $ResultJsonPath) {
     try {
         $r = Get-Content -Path $ResultJsonPath -Raw | ConvertFrom-Json
@@ -434,6 +774,7 @@ if (Test-Path $ResultJsonPath) {
         if ($r.comfyLog) { $ComfyTestLog = $r.comfyLog }
         if ($r.e2eLog) { $E2eTestLog = $r.e2eLog }
         if ($r.scriptsLog) { $ScriptsTestLog = $r.scriptsLog }
+        $VitestResultPayload = $r
         Add-RunSummary ("Vitest results read from JSON: {0}" -f $ResultJsonPath)
     } catch {
         Add-RunSummary ("Failed to read vitest results JSON: {0}" -f $_.Exception.Message)
@@ -460,9 +801,32 @@ Add-RunSummary ("Step 8: Vitest scripts suite completed (code {0})" -f $scriptsE
 # Step 9: Stop ComfyUI
 Write-Host "Step 9: Stopping ComfyUI..."
 if ($ComfyProc -and -not $ComfyProc.HasExited) {
-    Stop-Process -Id $ComfyProc.Id -Force
-    Write-Host "  ComfyUI stopped"
-    Add-RunSummary "ComfyUI stopped"
+    # Safety guard: verify the process path matches the expected ComfyUI embedded
+    # python executable before calling Stop-Process. This prevents accidentally
+    # killing unrelated processes if PIDs have been recycled or something else
+    # has taken the same PID. If we cannot determine the path, skip stopping
+    # for safety.
+    $expectedComfyPython = 'C:\ComfyUI\ComfyUI_windows_portable\python_embeded\python.exe'
+    try {
+        $proc = Get-Process -Id $ComfyProc.Id -ErrorAction Stop
+        $procPath = $null
+        try { $procPath = $proc.Path } catch { $procPath = $null }
+        if ($procPath) {
+            if ($procPath -ieq $expectedComfyPython) {
+                Stop-Process -Id $ComfyProc.Id -Force
+                Write-Host "  ComfyUI stopped"
+                Add-RunSummary "ComfyUI stopped"
+            } else {
+                Write-Warning "ComfyUI stop skipped: PID $($ComfyProc.Id) path mismatch ($procPath != $expectedComfyPython)"
+                Add-RunSummary ("ComfyUI stop skipped for PID {0} due to path mismatch: {1}" -f $ComfyProc.Id, $procPath)
+            }
+        } else {
+            Write-Warning "ComfyUI stop skipped: unable to determine process path for PID $($ComfyProc.Id)"
+            Add-RunSummary ("ComfyUI stop skipped: unable to determine process path for PID {0}" -f $ComfyProc.Id)
+        }
+    } catch {
+        Write-Host "ComfyUI process $($ComfyProc.Id) not found or already exited."
+    }
 }
 
 # Step 10: Archive logs
@@ -472,6 +836,16 @@ mkdir -Path (Split-Path $ZipPath) -Force | Out-Null
 Compress-Archive -Path "$RunDir\*" -DestinationPath $ZipPath -Force
 Write-Host "  Archived to: $ZipPath"
 Add-RunSummary "Archived to: $ZipPath"
+# Stop the sentinel job if we started it
+if ($StartedDoneSentinel) {
+    try {
+        Stop-Job -Name $SentinelJobName -Force -ErrorAction SilentlyContinue
+        Remove-Job -Name $SentinelJobName -Force -ErrorAction SilentlyContinue
+        Add-RunSummary "Stopped done-marker sentinel job ($SentinelJobName)"
+    } catch {
+        Add-RunSummary ("Failed to stop sentinel job: {0}" -f $_.Exception.Message)
+    }
+}
 
 $ComfyTestLog = Join-Path $RunDir 'vitest-comfyui.log'
 $E2eTestLog = Join-Path $RunDir 'vitest-e2e.log'
@@ -504,10 +878,11 @@ $artifactMetadata = @{
         SceneCount = $SceneDefinitions.Count
         StoryDir = $StoryDir
         LLM = $StoryData.llm
+        HealthCheck = $LLMHealthInfo
         Warnings = $StoryData.warnings
     }
     Scenes = $sceneResults | ForEach-Object {
-        $sceneInfo = if ($sceneAttemptMetadata.ContainsKey($_.SceneId)) { $sceneAttemptMetadata[$_.SceneId] } else { @{ AttemptsRun = $null; Requeued = $null; AttemptSummaries = $null } }
+        $sceneInfo = if ($sceneAttemptMetadata.ContainsKey($_.SceneId)) { $sceneAttemptMetadata[$_.SceneId] } else { @{ AttemptsRun = $null; Requeued = $null; AttemptSummaries = $null; HistoryConfig = $null; SceneRetryBudget = $null } }
         $storyScene = if ($SceneDefinitionMap.ContainsKey($_.SceneId)) { $SceneDefinitionMap[$_.SceneId] } else { $null }
         @{
             SceneId = $_.SceneId
@@ -541,6 +916,9 @@ $artifactMetadata = @{
             StoryCameraMovement = $_.StoryCameraMovement
             Telemetry = $_.Telemetry
             StoryKeyframe = if ($storyScene) { $storyScene.keyframePath } else { $null }
+            HistoryAttemptLimit = $_.HistoryAttemptLimit
+            SceneRetryBudget = $sceneInfo.SceneRetryBudget
+            HistoryConfig = $sceneInfo.HistoryConfig
         }
     }
     VitestLogs = @{
@@ -549,7 +927,15 @@ $artifactMetadata = @{
         Scripts = $ScriptsTestLog
         ResultsJson = $VitestResultsPath
     }
+    VitestSummary = $VitestResultPayload
     Archive = $ZipPath
+    QueueConfig = @{
+        SceneRetryBudget = $SceneRetryBudget
+        HistoryMaxWaitSeconds = $SceneMaxWaitSeconds
+        HistoryPollIntervalSeconds = $SceneHistoryPollIntervalSeconds
+        HistoryMaxAttempts = $SceneHistoryMaxAttempts
+        PostExecutionTimeoutSeconds = $ScenePostExecutionTimeoutSeconds
+    }
 }
 $artifactMetadataJson = $artifactMetadata | ConvertTo-Json -Depth 6
 $artifactMetaPath = Join-Path $RunDir 'artifact-metadata.json'

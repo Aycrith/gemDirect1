@@ -31,6 +31,15 @@
 - `scripts/validate-run-summary.ps1` cross-checks `run-summary.txt` against `artifact-metadata.json`. If metadata says a scene failed history or fell below the frame floor, the validator expects matching `[Scene …] HISTORY …` / `WARNING: Frame count below floor` lines so CI reviewers can trust every run log.
 - All helper scripts now verify `node -v` (minimum 22.19.0) before doing work, and Vitest is invoked directly via `node ./node_modules/vitest/vitest.mjs` to avoid npm shim issues.
 
+## Telemetry & Queue Policy Requirements
+1. **LM Studio health check**: `scripts/run-comfyui-e2e.ps1` hits `/v1/models` before ComfyUI launches and records override/skip notes via `LOCAL_LLM_HEALTHCHECK_URL` or `LOCAL_LLM_SKIP_HEALTHCHECK=1` so failed LLMs are signaled before the workflow starts, surfacing the result inside `run-summary.txt`, `artifact-metadata.json`, and the UI warnings (see [LM Studio health checks][lm-health]).
+2. **Queue knobs + metadata surfaces**: `SceneMaxWaitSeconds`, `SceneHistoryPollIntervalSeconds`, `SceneHistoryMaxAttempts`, `ScenePostExecutionTimeoutSeconds`, and `SceneRetryBudget` (including their `SCENE_*` env equivalents) feed into `QueueConfig`, each scene's `HistoryConfig`, and the `SceneRetryBudget` counters written to `run-summary.txt`, `artifact-metadata.json`, and `public/artifacts/latest-run.json`, and the Artifact Snapshot policy card/Timeline Editor replicate them so downstream agents always know the configured poller aggressiveness.
+3. **Telemetry enforcement policy**: Each scene attempt must include `DurationSeconds`, `MaxWaitSeconds`, `PollIntervalSeconds`, `HistoryAttempts`, `HistoryAttemptLimit`, `pollLimit` (text matches metadata), `HistoryExitReason` (maxWait/attemptLimit/postExecution/success), `ExecutionSuccessDetected`, `ExecutionSuccessAt`, `PostExecutionTimeoutSeconds`, `postExecTimeoutReached`, GPU `Name`, `VRAMBeforeMB`, `VRAMAfterMB`, `VRAMDeltaMB`, plus fallback notes (e.g., `/system_stats` failure and the `nvidia-smi` fallback). Validator, Vitest, and the UI treat missing telemetry as failures, and poll loops continue until success or one of the configured exit reasons occurs per the `/history` message structure shown in [`websocket_api_example.py`][comfy-history].
+4. **Artifact snapshot expectations**: The UI must display the queue policy card, telemetry badges (DurationSeconds, MaxWaitSeconds, PollIntervalSeconds, `pollLimit`, `HistoryExitReason`, `postExec` timeout state, `ExecutionSuccessAt`), poll log counts/warnings-only filter, GPU info with VRAM deltas, fallback warnings, archive links (Vitest logs + `artifacts/comfyui-e2e-<ts>.zip`), and LLM metadata (provider, model, request format, seed, duration, and errors) so every artifact tells the same story as the logs and metadata.
+
+[lm-health]: https://lmstudio.ai/docs/api#health-checks
+[comfy-history]: https://github.com/comfyanonymous/ComfyUI/blob/master/examples/websocket_api_example.py
+
 ## ✅ Updated Workflow
 
 The workflow has been **simplified to use only core ComfyUI nodes** that are guaranteed to work.
@@ -307,3 +316,16 @@ ffmpeg -framerate 24 -i $inputPattern -c:v libx264 -pix_fmt yuv420p -crf 23 $out
 **Status**: ✅ Workflow Fixed | ⏳ Ready for Testing | 🚀 Ready for Production Integration
 
 
+
+### Latest reliability updates
+- `scripts/run-comfyui-e2e.ps1` now enforces Node >= 22.19.0, configures the LM Studio chat endpoint via the `LOCAL_LLM_*` env vars, and pings `/v1/models` (override with `LOCAL_LLM_HEALTHCHECK_URL` or skip with `LOCAL_LLM_SKIP_HEALTHCHECK=1`) so the helper aborts quickly when the local LLM is offline; see https://lmstudio.ai/docs/api#health-checks for the probe contract.
+- `scripts/queue-real-workflow.ps1` records GPU telemetry even if `/system_stats` fails by falling back to `nvidia-smi --query-gpu`. Each attempt now returns `Telemetry` (DurationSeconds, MaxWaitSeconds, PollIntervalSeconds, HistoryAttempts, HistoryAttemptLimit, GPU, ExecutionSuccess* data, HistoryExitReason, HistoryPostExecutionTimeoutReached, System.FallbackNotes), and `[Scene …] Telemetry:` lines include `gpu=<name> vram=<before>/<after>` plus fallback text so the validator rejects runs that drop GPU/me gan data from `artifact-metadata.json`.
+
+---
+
+### 2025-11-12 telemetry & queue updates
+- `scripts/run-comfyui-e2e.ps1` now refuses to launch ComfyUI unless the LM Studio `/v1/models` probe succeeds; override the endpoint with `LOCAL_LLM_HEALTHCHECK_URL` or skip the check with `LOCAL_LLM_SKIP_HEALTHCHECK=1` if you intentionally bypass the probe.
+- Queue tuning no longer requires editing scripts: use `-SceneMaxWaitSeconds`, `-SceneHistoryMaxAttempts`, `-SceneHistoryPollIntervalSeconds`, and `-ScenePostExecutionTimeoutSeconds` (or the matching `SCENE_*` env vars) to configure `HistoryConfig`, `SceneRetryBudget`, and `QueueConfig`; every resolved policy is emitted to `run-summary.txt`, `artifact-metadata.json`, `public/artifacts/latest-run.json`, and the React artifact/timeline cards (see ComfyUI’s `websockets_api_example.py` history status flow).
+- Telemetry is enforced end-to-end (`nvidia-smi` fallback, `[Scene …] Telemetry` lines, `validate-run-summary.ps1`, and the Vitest harness in `scripts/run-vitests.ps1`/`scripts/__tests__/validateRunSummary.test.ts`) so runs fail fast when GPU/VRAM/poll fields disappear or the `pollLimit` text doesn’t match the metadata.
+- Before touching scripts or UI, read README.md, DOCUMENTATION_INDEX_20251111.md (especially the Required Telemetry & Queue Policy Orientation block), STORY_TO_VIDEO_PIPELINE_PLAN.md, STORY_TO_VIDEO_TEST_CHECKLIST.md, HANDOFF_SESSION_NOTES.md, QUICK_START_E2E_TODAY.md, REFERENCE_CARD_QUICK.md, WINDOWS_AGENT_TEST_ITERATION_PLAN.md, and notes/codex-agent-notes-20251111.md so the LM Studio health check, queue knobs, telemetry enforcement, and artifact expectations stay top of mind.
+- The Artifact Snapshot/Timeline panels mirror logs/<ts>/artifact-metadata.json and public/artifacts/latest-run.json, so their queue policy card, telemetry badges, GPU stats, fallback warnings, Vitest logs, and archive references must always agree with what the helper logs and the validator enforces.
