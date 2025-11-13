@@ -1,0 +1,12 @@
+E2E Story-to-Video Run: test
+[12:00:00] Story ready: story-123 (scenes=1)
+[12:00:00] Director''s vision: Vision
+[12:00:00] Story logline: Logline
+[12:00:01] Queue policy: sceneRetries=1, historyMaxWait=600s, historyPollInterval=2s, historyMaxAttempts=unbounded, postExecutionTimeout=30s
+[12:00:05] [Scene scene-001][Attempt 1] Frames=25 Duration=10s Prefix=gemdirect1_scene-001
+[12:00:05] [Scene scene-001] Telemetry: DurationSeconds=10s | MaxWaitSeconds=600s | PollIntervalSeconds=2s | HistoryAttempts=3 | pollLimit=3 | SceneRetryBudget=1 | PostExecutionTimeoutSeconds=30s | ExecutionSuccessDetected=true | ExecutionSuccessAt=12:00:05 | HistoryExitReason=success | VRAMBeforeMB=10240MB | VRAMAfterMB=9664MB | VRAMDeltaMB=-576MB | gpu=NVIDIA GeForce RTX 3090
+[12:00:05] Vitest comfyUI exitCode=0
+[12:00:05] Vitest e2e exitCode=0
+[12:00:05] Vitest scripts exitCode=0
+## Artifact Index
+Total frames copied: 25

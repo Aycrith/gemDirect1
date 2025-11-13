@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationSettings, LocalGenerationStatus, SceneContinuityData } from './types';
+import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationStatus, SceneContinuityData } from './types';
 import { useProjectData, usePersistentState } from './utils/hooks';
-import { updateSceneSummaryWithRefinements, generateNextSceneFromContinuity } from './services/geminiService';
 import { ApiStatusProvider, useApiStatus } from './contexts/ApiStatusContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
 import { saveProjectToFile, loadProjectFromFile } from './utils/projectUtils';
+import { PlanExpansionStrategyProvider, usePlanExpansionActions } from './contexts/PlanExpansionStrategyContext';
+import { MediaGenerationProviderProvider } from './contexts/MediaGenerationProviderContext';
+import { LocalGenerationSettingsProvider, useLocalGenerationSettings } from './contexts/LocalGenerationSettingsContext';
 
 import StoryIdeaForm from './components/StoryIdeaForm';
 import StoryBibleEditor from './components/StoryBibleEditor';
@@ -12,6 +14,7 @@ import DirectorsVisionForm from './components/DirectorsVisionForm';
 import SceneNavigator from './components/SceneNavigator';
 import TimelineEditor from './components/TimelineEditor';
 import WorkflowTracker from './components/WorkflowTracker';
+import ArtifactViewer from './components/ArtifactViewer';
 import Toast from './components/Toast';
 import ApiStatusIndicator from './components/ApiStatusIndicator';
 import UsageDashboard from './components/UsageDashboard';
@@ -44,7 +47,7 @@ const AppContent: React.FC = () => {
     const [isExtending, setIsExtending] = useState(false);
     const [hasSeenWelcome, setHasSeenWelcome] = usePersistentState('hasSeenWelcome', false);
 
-    const [localGenSettings, setLocalGenSettings] = usePersistentState<LocalGenerationSettings>('localGenSettings', { comfyUIUrl: '', comfyUIClientId: '', workflowJson: '', mapping: {} });
+    const { settings: localGenSettings, setSettings: setLocalGenSettings } = useLocalGenerationSettings();
     const [generatedImages, setGeneratedImages] = usePersistentState<Record<string, string>>('generatedImages', {});
     const [generatedShotImages, setGeneratedShotImages] = usePersistentState<Record<string, string>>('generatedShotImages', {});
     const [continuityData, setContinuityData] = usePersistentState<Record<string, SceneContinuityData>>('continuityData', {});
@@ -53,6 +56,7 @@ const AppContent: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
+    const planActions = usePlanExpansionActions();
 
     const shouldShowWelcome = !hasSeenWelcome && !storyBible;
 
@@ -121,7 +125,7 @@ const AppContent: React.FC = () => {
             return false;
         }
         try {
-            const newSummary = await updateSceneSummaryWithRefinements(scene.summary, scene.timeline, logApiCall, updateApiStatus);
+            const newSummary = await planActions.updateSceneSummaryWithRefinements(scene.summary, scene.timeline, logApiCall, updateApiStatus);
             const updatedScenes = scenes.map(s => s.id === sceneId ? { ...s, summary: newSummary } : s);
             setScenes(updatedScenes);
             setRefinedSceneIds(prev => {
@@ -136,6 +140,10 @@ const AppContent: React.FC = () => {
             return false;
         }
     };
+
+    const handleSceneKeyframeGenerated = useCallback((sceneId: string, base64Image: string) => {
+        setGeneratedImages(prev => ({ ...prev, [sceneId]: base64Image }));
+    }, [setGeneratedImages]);
     
     const handleExtendTimeline = (sceneId: string, lastFrame: string) => {
         setContinuityModal({ sceneId, lastFrame });
@@ -248,6 +256,7 @@ const AppContent: React.FC = () => {
                                 generatedImages={generatedImages}
                                 generatedShotImages={generatedShotImages}
                                 setGeneratedShotImages={setGeneratedShotImages}
+                                onSceneKeyframeGenerated={handleSceneKeyframeGenerated}
                                 localGenSettings={localGenSettings}
                                 localGenStatus={localGenStatus}
                                 setLocalGenStatus={setLocalGenStatus}
@@ -309,6 +318,7 @@ const AppContent: React.FC = () => {
             <main className="py-8 sm:py-12">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
+                    <ArtifactViewer />
                     {generationProgress.total > 0 && (
                         <ProgressBar
                             current={generationProgress.current}
@@ -328,7 +338,10 @@ const AppContent: React.FC = () => {
                 onClose={() => setIsSettingsModalOpen(false)}
                 settings={localGenSettings}
                 onSave={(newSettings) => {
+                    console.log('[App] onSave received newSettings:', JSON.stringify(newSettings, null, 2));
+                    console.log('[App] Calling setLocalGenSettings...');
                     setLocalGenSettings(newSettings);
+                    console.log('[App] setLocalGenSettings called');
                     addToast('Settings saved!', 'success');
                 }}
                 addToast={addToast}
@@ -344,7 +357,7 @@ const AppContent: React.FC = () => {
                             const lastScene = scenes.find(s => s.id === continuityModal.sceneId);
                             if (!storyBible || !lastScene) throw new Error("Missing context for scene generation.");
                             
-                            const newSceneData = await generateNextSceneFromContinuity(
+                            const newSceneData = await planActions.generateNextSceneFromContinuity(
                                 storyBible,
                                 directorsVision,
                                 lastScene.summary,
@@ -391,7 +404,13 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => (
     <UsageProvider>
         <ApiStatusProvider>
-            <AppContent />
+            <PlanExpansionStrategyProvider>
+                <LocalGenerationSettingsProvider>
+                    <MediaGenerationProviderProvider>
+                        <AppContent />
+                    </MediaGenerationProviderProvider>
+                </LocalGenerationSettingsProvider>
+            </PlanExpansionStrategyProvider>
         </ApiStatusProvider>
     </UsageProvider>
 );

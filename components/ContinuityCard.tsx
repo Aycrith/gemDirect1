@@ -1,7 +1,6 @@
 import React from 'react';
 import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
-import { analyzeVideoFrames, getPrunedContextForContinuity, scoreContinuity } from '../services/geminiService';
 
 import FileUpload from './FileUpload';
 import VideoPlayer from './VideoPlayer';
@@ -12,6 +11,7 @@ import FilmIcon from './icons/FilmIcon';
 import ImageIcon from './icons/ImageIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
 import BookOpenIcon from './icons/BookOpenIcon';
+import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 
 interface ContinuityCardProps {
   scene: Scene;
@@ -80,6 +80,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   onUpdateSceneSummary,
   onExtendTimeline
 }) => {
+    const { analyzeVideoFrames, getPrunedContextForContinuity, scoreContinuity } = usePlanExpansionActions();
   const handleAnalysis = async (file: File) => {
     try {
       setContinuityData(prev => ({ 
@@ -96,8 +97,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
       const frames = await extractFramesFromVideo(file, 1);
       if (frames.length === 0) throw new Error("Could not extract frames. Video might be invalid or in an unsupported format.");
       setContinuityData(prev => ({ ...prev, frames }));
-
-      const analysis = await analyzeVideoFrames(frames, onApiLog, onApiStateChange);
+    const analysis = await analyzeVideoFrames(frames, onApiLog, onApiStateChange);
       setContinuityData(prev => ({ ...prev, videoAnalysis: analysis, status: 'scoring' }));
 
       const context = await getPrunedContextForContinuity(storyBible, narrativeContext, scene, directorsVision, onApiLog, onApiStateChange);

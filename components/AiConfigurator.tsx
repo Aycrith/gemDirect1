@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { LocalGenerationSettings, WorkflowMapping } from '../types';
-import { generateWorkflowMapping } from '../services/geminiService';
 import { useApiStatus } from '../contexts/ApiStatusContext';
 import { useUsage } from '../contexts/UsageContext';
 import SparklesIcon from './icons/SparklesIcon';
+import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 
 interface AiConfiguratorProps {
     settings: LocalGenerationSettings;
@@ -15,6 +15,7 @@ const AiConfigurator: React.FC<AiConfiguratorProps> = ({ settings, onUpdateSetti
     const [isLoading, setIsLoading] = useState(false);
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
+    const planActions = usePlanExpansionActions();
 
     const handleAiConfigure = async () => {
         if (!settings.comfyUIUrl) {
@@ -23,18 +24,27 @@ const AiConfigurator: React.FC<AiConfiguratorProps> = ({ settings, onUpdateSetti
         }
         setIsLoading(true);
         try {
-            // Step 1: Fetch workflow from server
+            // Step 1: Fetch workflow from server (using history endpoint)
             updateApiStatus('loading', 'Syncing workflow from server...');
-            const url = settings.comfyUIUrl.endsWith('/') ? `${settings.comfyUIUrl}workflow` : `${settings.comfyUIUrl}/workflow`;
-            const response = await fetch(url);
+            const baseUrl = settings.comfyUIUrl.replace(/\/+$/, '');
+            const historyUrl = `${baseUrl}/history`;
+            const response = await fetch(historyUrl);
             if (!response.ok) throw new Error(`Server responded with status ${response.status}`);
-            const workflowJson = await response.text();
+            
+            const history = await response.json();
+            const historyEntries = Object.values(history);
+            if (historyEntries.length === 0) {
+                throw new Error("No workflow history found. Please execute a workflow in ComfyUI first.");
+            }
+            
+            const latestEntry: any = historyEntries[historyEntries.length - 1];
+            const workflowJson = JSON.stringify(latestEntry.prompt[2], null, 2);
 
             onUpdateSettings(prev => ({ ...prev, workflowJson }));
 
             // Step 2: Send to Gemini for mapping
             updateApiStatus('loading', 'AI is analyzing your workflow...');
-            const mapping: WorkflowMapping = await generateWorkflowMapping(workflowJson, logApiCall, updateApiStatus);
+            const mapping: WorkflowMapping = await planActions.generateWorkflowMapping(workflowJson, logApiCall, updateApiStatus);
 
             if (Object.keys(mapping).length === 0) {
                 throw new Error("AI analysis could not determine any valid mappings. Please check your workflow.");

@@ -1,0 +1,180 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "SVD\\svd_xt.safetensors"
+    },
+    "class_type": "ImageOnlyCheckpointLoader",
+    "_meta": {
+      "title": "Load SVD Model (Image Only)"
+    },
+    "widgets_values": [
+      "svd.safetensors"
+    ]
+  },
+  "2": {
+    "inputs": {
+      "image": "__KEYFRAME_IMAGE__"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Keyframe"
+    },
+    "widgets_values": [
+      "__KEYFRAME_IMAGE__",
+      "image"
+    ]
+  },
+  "3": {
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "min_cfg": 1
+    },
+    "class_type": "VideoLinearCFGGuidance",
+    "_meta": {
+      "title": "Video CFG Guidance"
+    },
+    "widgets_values": [
+      1
+    ]
+  },
+  "4": {
+    "inputs": {
+      "clip_vision": [
+        "1",
+        1
+      ],
+      "init_image": [
+        "2",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ],
+      "width": 576,
+      "height": 1024,
+      "video_frames": 25,
+      "motion_bucket_id": 127,
+      "fps": 24,
+      "augmentation_level": 0
+    },
+    "class_type": "SVD_img2vid_Conditioning",
+    "_meta": {
+      "title": "SVD Conditioning"
+    },
+    "widgets_values": [
+      576,
+      1024,
+      25,
+      127,
+      24,
+      0
+    ]
+  },
+  "5": {
+    "inputs": {
+      "model": [
+        "3",
+        0
+      ],
+      "seed": 0,
+      "steps": 30,
+      "cfg": 4.5,
+      "sampler_name": "euler_ancestral",
+      "scheduler": "karras",
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "4",
+        1
+      ],
+      "latent_image": [
+        "4",
+        2
+      ],
+      "denoise": 1
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Video Sampler"
+    },
+    "widgets_values": [
+      2389290561623,
+      "randomize",
+      30,
+      4.5,
+      "euler_ancestral",
+      "karras",
+      1
+    ]
+  },
+  "6": {
+    "inputs": {
+      "samples": [
+        "5",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "7": {
+    "inputs": {
+      "images": [
+        "6",
+        0
+      ],
+      "filename_prefix": "__SCENE_PREFIX__",
+      "format": "image/png"
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Frames",
+      "scene_prompt": "__SCENE_PROMPT__",
+      "negative_prompt": "__NEGATIVE_PROMPT__"
+    }
+  },
+  "8": {
+    "inputs": {
+      "input": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "ReroutePrimitive|pysssss",
+    "_meta": {
+      "title": "Complete Signal"
+    }
+  }
+  ,
+  "9": {
+    "inputs": {
+      "input": [
+        "7",
+        0
+      ],
+      "scene_prefix": "__SCENE_PREFIX__"
+    },
+    "class_type": "WriteDoneMarker|pysssss",
+    "_meta": {
+      "title": "Write Done Marker (producer)",
+      "atomic_tmp_write": true,
+      "tmp_extension": ".tmp",
+      "notes": "Writes <prefix>.done.tmp and renames atomically to <prefix>.done; includes Timestamp, FrameCount, Latest fields"
+    },
+    "widgets_values": [
+      "__SCENE_PREFIX__"
+    ]
+  }
+}

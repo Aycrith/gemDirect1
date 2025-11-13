@@ -1,0 +1,75 @@
+{
+  "comfyui_server": {
+    "url": "http://127.0.0.1:8188",
+    "client_id": "gemdirect1",
+    "connection_timeout_ms": 3000,
+    "generation_timeout_ms": 300000
+  },
+  "workflow": {
+    "type": "text_to_video",
+    "path": "workflows/text-to-video.json",
+    "description": "SVD-based text-to-video workflow with upscaling",
+    "supports_keyframe": true,
+    "supports_controlnet": false
+  },
+  "models": {
+    "video_generation": "svd_xt.safetensors",
+    "upscaler": "4x-UltraSharp.pth",
+    "text_encoder": "clip-vit-large-patch14",
+    "vae": "default"
+  },
+  "video_settings": {
+    "width": 576,
+    "height": 1024,
+    "frames": 25,
+    "fps": 24,
+    "duration_seconds": 1.04,
+    "format": "mp4",
+    "codec": "h264",
+    "bitrate": "25000k",
+    "quality": 95
+  },
+  "generation_presets": {
+    "fast": {
+      "steps": 20,
+      "cfg_scale": 7.0,
+      "estimated_time_seconds": 25,
+      "quality": "standard"
+    },
+    "balanced": {
+      "steps": 30,
+      "cfg_scale": 7.5,
+      "estimated_time_seconds": 40,
+      "quality": "high"
+    },
+    "quality": {
+      "steps": 50,
+      "cfg_scale": 8.0,
+      "estimated_time_seconds": 70,
+      "quality": "ultra"
+    }
+  },
+  "node_mappings": {
+    "positive_prompt": "3:text",
+    "negative_prompt": "4:text",
+    "keyframe_image": "2:image",
+    "model_loader": "1",
+    "clip_vision": "5:clip_name",
+    "video_generator": "6",
+    "sampler": "7",
+    "vae_decode": "8",
+    "video_output": "9"
+  },
+  "scene_composition": {
+    "transition_types": ["fade", "dissolve", "cut", "wipe", "crossfade"],
+    "default_transition": "fade",
+    "transition_duration_frames": 12,
+    "combine_audio": false
+  },
+  "output": {
+    "base_directory": "C:/ComfyUI/ComfyUI_windows_portable/ComfyUI/outputs/gemdirect1",
+    "organize_by_scene": true,
+    "auto_cleanup_old_files": false,
+    "retention_days": 30
+  }
+}

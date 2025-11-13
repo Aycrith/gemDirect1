@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { StoryBible } from '../types';
 import { marked } from 'marked';
-import { refineStoryBibleSection, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
+import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import BookOpenIcon from './icons/BookOpenIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import SaveIcon from './icons/SaveIcon';
@@ -9,6 +9,7 @@ import ClapperboardIcon from './icons/ClapperboardIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
 import { useInteractiveSpotlight } from '../utils/hooks';
 import GuideCard from './GuideCard';
+import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 
 interface StoryBibleEditorProps {
     storyBible: StoryBible;
@@ -65,6 +66,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
 
     const [previewContent, setPreviewContent] = useState({ characters: '', plotOutline: '' });
     const [isPreviewLoading, setIsPreviewLoading] = useState({ characters: false, plotOutline: false });
+    const planActions = usePlanExpansionActions();
 
     const handleFieldChange = (field: keyof StoryBible, value: string) => {
         setEditableBible(prev => ({ ...prev, [field]: value }));
@@ -84,7 +86,7 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
         setIsPreviewLoading(prev => ({ ...prev, [section]: true }));
         setPreviewContent(prev => ({ ...prev, [section]: '' })); // Clear previous preview
         try {
-            const refinedText = await refineStoryBibleSection(
+            const refinedText = await planActions.refineStoryBibleSection(
                 section,
                 currentContent,
                 { logline: editableBible.logline },

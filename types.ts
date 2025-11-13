@@ -52,6 +52,30 @@ export interface ToastMessage {
   type: ToastType;
 }
 
+export interface PlanExpansionStrategy {
+  id: string;
+  label: string;
+  description?: string;
+  isAvailable: boolean;
+  isDefault?: boolean;
+  disabledReason?: string;
+}
+
+export interface MediaGenerationProviderCapabilities {
+  images: boolean;
+  video: boolean;
+}
+
+export interface MediaGenerationProvider {
+  id: string;
+  label: string;
+  description?: string;
+  isAvailable: boolean;
+  isDefault?: boolean;
+  disabledReason?: string;
+  capabilities: MediaGenerationProviderCapabilities;
+}
+
 export interface ControlSectionConfig {
     id: keyof Omit<CreativeEnhancers, 'transitions' | 'plotEnhancements'>;
     title: string;
@@ -151,11 +175,23 @@ export interface LocalGenerationSettings {
     mapping: WorkflowMapping;
 }
 
+export interface LocalGenerationAsset {
+    type: 'image' | 'video';
+    data: string;
+    filename: string;
+}
+
+export interface LocalGenerationOutput extends LocalGenerationAsset {
+    images?: string[];
+    videos?: string[];
+    assets?: LocalGenerationAsset[];
+}
+
 export interface LocalGenerationStatus {
     status: 'idle' | 'queued' | 'running' | 'complete' | 'error';
     message: string;
     progress: number; // 0-100
     queue_position?: number;
     node_title?: string;
-    final_output?: { type: 'image' | 'video', data: string, filename: string };
+    final_output?: LocalGenerationOutput;
 }

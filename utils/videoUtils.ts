@@ -19,13 +19,31 @@ export const blobToBase64 = (blob: Blob): Promise<string> => {
 
 // A utility to convert a base64 string to a Blob
 export const base64ToBlob = (base64: string, mimeType: string): Blob => {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    if (!base64) {
+        throw new Error('No base64 data supplied for blob conversion.');
     }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: mimeType });
+
+    const normalized = base64.includes(',') ? base64.split(',')[1] : base64;
+    const cleaned = normalized.replace(/\s/g, '');
+    const chunkSize = 8192; // multiple of 4 to avoid breaking base64 groups
+    const parts: BlobPart[] = [];
+
+    try {
+        for (let offset = 0; offset < cleaned.length; offset += chunkSize) {
+            const chunk = cleaned.slice(offset, offset + chunkSize);
+            const decoded = atob(chunk);
+            const byteArray = new Uint8Array(decoded.length);
+            for (let i = 0; i < decoded.length; i++) {
+                byteArray[i] = decoded.charCodeAt(i);
+            }
+            parts.push(byteArray);
+        }
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to decode base64 payload (${reason}).`);
+    }
+
+    return new Blob(parts, { type: mimeType });
 };
 
 // Extracts frames from a video file.

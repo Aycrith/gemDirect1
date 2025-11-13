@@ -3,7 +3,7 @@ import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from
 import ContinuityCard from './ContinuityCard';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import GuideCard from './GuideCard';
-import { ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
+import { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 
 interface ContinuityDirectorProps {
   scenes: Scene[];

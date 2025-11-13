@@ -1,0 +1,81 @@
+{
+  "RunId": "test",
+  "Timestamp": "2025-11-12T12:00:00.000Z",
+  "RunDir": "C:\\Dev\\gemDirect1\\logs\\test",
+  "Story": {
+    "Id": "story-123",
+    "Logline": "Logline",
+    "DirectorsVision": "Vision",
+    "Generator": "local-llm",
+    "File": "story.json",
+    "StoryDir": "story"
+  },
+  "Scenes": [
+    {
+      "SceneId": "scene-001",
+      "Prompt": "Prompt",
+      "NegativePrompt": "neg",
+      "FrameFloor": 25,
+      "FrameCount": 25,
+      "DurationSeconds": 10,
+      "FramePrefix": "gemdirect1_scene-001",
+      "HistoryPath": "history.json",
+      "HistoryRetrievedAt": "2025-11-12T12:00:05.000Z",
+      "HistoryPollLog": [],
+      "HistoryErrors": [],
+      "Success": true,
+      "MeetsFrameFloor": true,
+      "HistoryRetrieved": true,
+      "HistoryAttempts": 3,
+      "Warnings": [],
+      "Errors": [],
+      "AttemptsRun": 1,
+      "Requeued": false,
+      "AttemptSummaries": [],
+      "GeneratedFramesDir": "frames",
+      "KeyframeSource": "keyframe.png",
+      "Telemetry": {
+        "DurationSeconds": 10,
+        "MaxWaitSeconds": 600,
+        "PollIntervalSeconds": 2,
+        "HistoryAttempts": 3,
+        "HistoryAttemptLimit": 3,
+        "HistoryExitReason": "success",
+        "HistoryPostExecutionTimeoutReached": false,
+        "PostExecutionTimeoutSeconds": 30,
+        "ExecutionSuccessDetected": true,
+        "ExecutionSuccessAt": "2025-11-12T12:00:05.000Z",
+        "SceneRetryBudget": 1,
+        "GPU": {
+          "Name": "NVIDIA GeForce RTX 3090",
+          "VramFreeBefore": 10737418240,
+          "VramFreeAfter": 10133438464,
+          "VramDelta": -603979776,
+          "VramBeforeMB": 10240,
+          "VramAfterMB": 9664,
+          "VramDeltaMB": -576
+        },
+        "System": {
+          "FallbackNotes": []
+        }
+      },
+      "HistoryAttemptLimit": 3,
+      "SceneRetryBudget": 1,
+      "HistoryConfig": null
+    }
+  ],
+  "QueueConfig": {
+    "SceneRetryBudget": 1,
+    "HistoryMaxWaitSeconds": 600,
+    "HistoryPollIntervalSeconds": 2,
+    "HistoryMaxAttempts": 0,
+    "PostExecutionTimeoutSeconds": 30
+  },
+  "VitestLogs": {
+    "ComfyUI": "vitest-comfyui.log",
+    "E2E": "vitest-e2e.log",
+    "Scripts": "vitest-scripts.log",
+    "ResultsJson": "vitest-results.json"
+  },
+  "Archive": "artifact.zip"
+}

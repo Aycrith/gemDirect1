@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import PaintBrushIcon from './icons/PaintBrushIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { suggestDirectorsVisions, refineDirectorsVision, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
+import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import { StoryBible } from '../types';
 import { useInteractiveSpotlight } from '../utils/hooks';
 import ThematicLoader from './ThematicLoader';
 import GuideCard from './GuideCard';
+import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 
 interface DirectorsVisionFormProps {
     onSubmit: (vision: string) => void;
@@ -21,6 +22,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
     const [isSuggesting, setIsSuggesting] = useState(false);
     const [isEnhancing, setIsEnhancing] = useState(false);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
+    const planActions = usePlanExpansionActions();
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -33,7 +35,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
         setIsSuggesting(true);
         setSuggestions([]);
         try {
-            const result = await suggestDirectorsVisions(storyBible, onApiLog, onApiStateChange);
+            const result = await planActions.suggestDirectorsVisions(storyBible, onApiLog, onApiStateChange);
             setSuggestions(result);
         } catch (e) {
             console.error(e);
@@ -46,14 +48,14 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
         if (!vision.trim()) return;
         setIsEnhancing(true);
         try {
-            const enhancedVision = await refineDirectorsVision(vision, storyBible, onApiLog, onApiStateChange);
+            const enhancedVision = await planActions.refineDirectorsVision(vision, storyBible, onApiLog, onApiStateChange);
             setVision(enhancedVision);
         } catch(e) {
             console.error(e);
         } finally {
             setIsEnhancing(false);
         }
-    }, [vision, storyBible, onApiLog, onApiStateChange]);
+    }, [vision, storyBible, onApiLog, onApiStateChange, planActions]);
 
     return (
         <div ref={spotlightRef} className="max-w-3xl mx-auto text-center glass-card p-8 rounded-xl shadow-2xl shadow-black/30 interactive-spotlight">

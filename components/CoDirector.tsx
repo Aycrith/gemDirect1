@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import { CoDirectorResult, Suggestion, StoryBible, Scene } from '../types';
-import { suggestCoDirectorObjectives, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
+import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import LightbulbIcon from './icons/LightbulbIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import { marked } from 'marked';
+import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 
 interface CoDirectorProps {
   onGetSuggestions: (objective: string) => Promise<void>;
@@ -109,6 +110,7 @@ const CoDirector: React.FC<CoDirectorProps> = ({
     const [objective, setObjective] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
+    const planActions = usePlanExpansionActions();
 
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();
@@ -127,7 +129,7 @@ const CoDirector: React.FC<CoDirectorProps> = ({
         setIsProcessing(true);
         setSuggestions([]);
         try {
-            const result = await suggestCoDirectorObjectives(
+            const result = await planActions.suggestCoDirectorObjectives(
                 storyBible.logline,
                 scene.summary,
                 directorsVision,
@@ -142,7 +144,7 @@ const CoDirector: React.FC<CoDirectorProps> = ({
         } finally {
             setIsProcessing(false);
         }
-    }, [storyBible, scene, directorsVision, onApiLog, onApiStateChange]);
+    }, [storyBible, scene, directorsVision, onApiLog, onApiStateChange, planActions]);
 
     const isAnyActionLoading = isLoading || isProcessing;
 

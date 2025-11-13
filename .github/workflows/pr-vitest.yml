@@ -1,0 +1,69 @@
+name: PR Unit Tests (Vitest)
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      runFullE2E:
+        description: 'Run the full ComfyUI e2e helper (requires ComfyUI installed).'
+        required: false
+        default: 'false'
+
+jobs:
+  vitest:
+    name: Run Vitest on Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+        shell: pwsh
+
+      - name: Run unit tests (Vitest)
+        run: |
+          # Use npm exec to ensure local vitest is used
+          npm exec vitest -- run --reporter json --outputFile vitest-report.json
+        shell: pwsh
+
+      - name: Upload vitest JSON report
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-report
+          path: vitest-report.json
+
+  full-e2e:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.runFullE2E == 'true' }}
+    name: Optional E2E helper run
+    runs-on: windows-latest
+    needs: vitest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+        shell: pwsh
+
+      - name: Run ComfyUI E2E helper
+        run: |
+          pwsh -NoLogo -ExecutionPolicy Bypass -File .\scripts\run-comfyui-e2e.ps1
+        shell: pwsh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: comfyui-e2e-logs
+          path: artifacts/comfyui-e2e-*.zip
+

@@ -3,7 +3,15 @@ import * as db from './database';
 import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot } from '../types';
 import { useApiStatus } from '../contexts/ApiStatusContext';
 import { useUsage } from '../contexts/UsageContext';
-import { generateStoryBible, generateSceneList, generateKeyframeForScene } from '../services/geminiService';
+import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
+import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
+
+const persistentStateDebugEnabled = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_DEBUG_PERSISTENT_STATE ?? 'false') === 'true';
+const debugPersistentState = (...args: unknown[]) => {
+    if (persistentStateDebugEnabled) {
+        console.debug(...args);
+    }
+};
 
 /**
  * A custom hook that syncs a state with IndexedDB.
@@ -14,6 +22,7 @@ import { generateStoryBible, generateSceneList, generateKeyframeForScene } from 
 export function usePersistentState<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
     const [state, setState] = useState<T>(initialValue);
     const [isLoaded, setIsLoaded] = useState(false);
+    const prevStateRef = useRef<T>(initialValue);
 
     // Load initial data from DB on mount
     useEffect(() => {
@@ -23,9 +32,12 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
             if (isMounted && data !== undefined && data !== null) {
                 // Handle Set deserialization
                 if (initialValue instanceof Set && Array.isArray(data)) {
-                    setState(new Set(data) as T);
+                    const newSet = new Set(data) as T;
+                    setState(newSet);
+                    prevStateRef.current = newSet;
                 } else {
                     setState(data);
+                    prevStateRef.current = data;
                 }
             }
             setIsLoaded(true);
@@ -34,16 +46,47 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
         return () => { isMounted = false; };
     }, [key, initialValue]);
 
-    // Save data to DB whenever state changes
+    // Save data to DB whenever state changes (with Set-aware comparison)
     useEffect(() => {
-        if (isLoaded) {
-             // Handle Set serialization
-            if (state instanceof Set) {
-                db.saveData(key, Array.from(state));
-            } else {
-                db.saveData(key, state);
-            }
+        if (!isLoaded) {
+            debugPersistentState(`[usePersistentState(${key})] NOT saving because isLoaded is false`);
+            return;
         }
+
+        // For Sets, compare contents to avoid infinite loops
+        if (state instanceof Set && prevStateRef.current instanceof Set) {
+            const stateArray = Array.from(state).sort();
+            const prevArray = Array.from(prevStateRef.current as Set<any>).sort();
+            const isSame = stateArray.length === prevArray.length && 
+                          stateArray.every((val, idx) => val === prevArray[idx]);
+            
+            if (isSame) {
+                debugPersistentState(`[usePersistentState(${key})] Set unchanged, skipping save`);
+                return;
+            }
+        } else if (state === prevStateRef.current) {
+            debugPersistentState(`[usePersistentState(${key})] State unchanged, skipping save`);
+            return;
+        }
+
+        if (persistentStateDebugEnabled) {
+            debugPersistentState(`[usePersistentState(${key})] Save effect triggered. isLoaded:`, isLoaded, 'state:', JSON.stringify(state));
+        }
+        
+        // Handle Set serialization
+        if (state instanceof Set) {
+            if (persistentStateDebugEnabled) {
+                debugPersistentState(`[usePersistentState(${key})] Saving Set to DB:`, Array.from(state));
+            }
+            db.saveData(key, Array.from(state));
+        } else {
+            if (persistentStateDebugEnabled) {
+                debugPersistentState(`[usePersistentState(${key})] Saving to DB:`, JSON.stringify(state));
+            }
+            db.saveData(key, state);
+        }
+
+        prevStateRef.current = state;
     }, [key, state, isLoaded]);
 
     return [state, setState];
@@ -62,6 +105,8 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
 
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
+    const planActions = usePlanExpansionActions();
+    const mediaActions = useMediaGenerationActions();
 
     // Initial data load
     useEffect(() => {
@@ -108,7 +153,7 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
     const handleGenerateStoryBible = useCallback(async (idea: string, addToast: (message: string, type: ToastMessage['type']) => void) => {
         setIsLoading(true);
         try {
-            const bible = await generateStoryBible(idea, logApiCall, updateApiStatus);
+            const bible = await planActions.generateStoryBible(idea, logApiCall, updateApiStatus);
             setStoryBible(bible);
             setWorkflowStage('bible');
             addToast('Story Bible generated successfully!', 'success');
@@ -125,7 +170,7 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         setIsLoading(true);
         setDirectorsVision(vision);
         try {
-            const sceneList = await generateSceneList(storyBible.plotOutline, vision, logApiCall, updateApiStatus);
+            const sceneList = await planActions.generateSceneList(storyBible.plotOutline, vision, logApiCall, updateApiStatus);
             const newScenes: Scene[] = sceneList.map(s => ({
                 id: `scene_${Date.now()}_${Math.random()}`,
                 title: s.title,
@@ -144,7 +189,7 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                     const taskMessage = `Generating keyframe for scene: "${scene.title}"`;
                     setGenerationProgress(prev => ({ ...prev, current: i + 1, task: taskMessage }));
                     
-                    const image = await generateKeyframeForScene(vision, scene.summary, logApiCall, updateApiStatus);
+                    const image = await mediaActions.generateKeyframeForScene(vision, scene.summary, logApiCall, updateApiStatus);
                     
                     setGeneratedImages(prev => ({ ...prev, [scene.id]: image }));
                     successes++;
@@ -174,7 +219,7 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
             setIsLoading(false);
             setGenerationProgress({ current: 0, total: 0, task: '' });
         }
-    }, [storyBible, logApiCall, updateApiStatus, setGenerationProgress]);
+    }, [storyBible, logApiCall, updateApiStatus, setGenerationProgress, planActions, mediaActions]);
 
 
     const applySuggestions = useCallback((suggestions: Suggestion[], sceneIdToUpdate?: string, addToast?: (message: string, type: ToastMessage['type']) => void) => {
@@ -268,6 +313,237 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         handleGenerateScenes,
         applySuggestions,
     };
+}
+
+export interface QueueConfig {
+    SceneRetryBudget?: number;
+    HistoryMaxWaitSeconds?: number;
+    HistoryPollIntervalSeconds?: number;
+    HistoryMaxAttempts?: number;
+    PostExecutionTimeoutSeconds?: number;
+}
+
+export interface SceneGPUUsage {
+    Name?: string;
+    Type?: string;
+    Index?: number;
+    VramFreeBefore?: number;
+    VramFreeAfter?: number;
+    VramTotal?: number;
+    VramDelta?: number;
+    VramBeforeMB?: number;
+    VramAfterMB?: number;
+    VramDeltaMB?: number;
+}
+
+export interface SceneTelemetryMetadata {
+    QueueStart?: string;
+    QueueEnd?: string;
+    DurationSeconds?: number;
+    MaxWaitSeconds?: number;
+    PollIntervalSeconds?: number;
+    PostExecutionTimeoutSeconds?: number;
+    ExecutionSuccessDetected?: boolean;
+    ExecutionSuccessAt?: string;
+    HistoryExitReason?: string;
+    HistoryPostExecutionTimeoutReached?: boolean;
+    HistoryAttempts?: number;
+    HistoryAttemptLimit?: number;
+    PollLimit?: number | 'unbounded';
+    SceneRetryBudget?: number;
+    GPU?: SceneGPUUsage;
+    System?: {
+        Before?: unknown;
+        After?: unknown;
+        FallbackNotes?: string[] | null;
+    };
+}
+
+export interface SceneHistoryLogEntry {
+    Attempt: number;
+    Timestamp: string;
+    Status: string;
+    Message?: string;
+}
+
+export interface SceneAttemptSummary {
+    Attempt: number;
+    Timestamp: string;
+    FrameCount: number;
+    DurationSeconds: number;
+    Success: boolean;
+    MeetsFrameFloor: boolean;
+    HistoryRetrieved: boolean;
+    Warnings?: string[];
+    Errors?: string[];
+}
+
+export interface SceneHistoryConfig {
+    MaxWaitSeconds?: number;
+    PollIntervalSeconds?: number;
+    MaxAttempts?: number;
+    PostExecutionTimeoutSeconds?: number;
+}
+
+export interface LLMHealthCheckMetadata {
+    Url?: string;
+    Override?: string;
+    Status?: 'success' | 'failed' | 'skipped' | 'not requested';
+    Models?: number;
+    Error?: string;
+    Timestamp?: string;
+    Skipped?: boolean;
+    SkipReason?: string;
+}
+
+export interface StoryLLMMetadata {
+    status?: string;
+    providerUrl?: string;
+    seed?: string;
+    durationMs?: number;
+    error?: string;
+    model?: string;
+    requestFormat?: string;
+    temperature?: number;
+    scenesRequested?: number;
+    scenesReceived?: number;
+}
+
+export interface VitestSuiteMetadata {
+    Suite: string;
+    ExitCode: number;
+    DurationMs: number;
+    LogPath?: string;
+    StartedAt?: string;
+}
+
+export interface VitestSummaryMetadata {
+    comfyExit?: number;
+    e2eExit?: number;
+    scriptsExit?: number;
+    comfyLog?: string;
+    e2eLog?: string;
+    scriptsLog?: string;
+    runDir?: string;
+    timestamp?: string;
+    suites?: VitestSuiteMetadata[];
+}
+
+export interface ArtifactSceneMetadata {
+    SceneId: string;
+    Prompt: string;
+    NegativePrompt: string;
+    FrameFloor: number;
+    FrameCount: number;
+    DurationSeconds: number;
+    FramePrefix: string;
+    HistoryPath: string;
+    HistoryRetrievedAt?: string;
+    HistoryPollLog?: SceneHistoryLogEntry[];
+    HistoryErrors?: string[];
+    Success: boolean;
+    MeetsFrameFloor: boolean;
+    HistoryRetrieved: boolean;
+    HistoryAttempts?: number;
+    HistoryError?: string;
+    Warnings?: string[];
+    Errors?: string[];
+    AttemptsRun?: number;
+    Requeued?: boolean;
+    AttemptSummaries?: SceneAttemptSummary[];
+    GeneratedFramesDir?: string;
+    KeyframeSource?: string;
+    StoryTitle?: string;
+    StorySummary?: string;
+    StoryMood?: string;
+    StoryExpectedFrames?: number;
+    StoryCameraMovement?: string;
+    Telemetry?: SceneTelemetryMetadata;
+    HistoryAttemptLimit?: number;
+    SceneRetryBudget?: number;
+    HistoryConfig?: SceneHistoryConfig;
+    SceneKeyframe?: string;
+}
+
+export interface ArtifactMetadata {
+    RunId: string;
+    Timestamp: string;
+    RunDir: string;
+    Story: {
+        Id: string;
+        Logline: string;
+        DirectorsVision: string;
+        Generator?: string;
+        File?: string;
+        StoryDir?: string;
+        LLM?: StoryLLMMetadata;
+        HealthCheck?: LLMHealthCheckMetadata;
+        Warnings?: string[];
+    };
+    Scenes: ArtifactSceneMetadata[];
+    QueueConfig?: QueueConfig;
+    VitestLogs: {
+        ComfyUI: string;
+        E2E: string;
+        Scripts: string;
+        ResultsJson?: string | null;
+    };
+    VitestSummary?: VitestSummaryMetadata;
+    Archive: string;
+}
+
+export interface ArtifactMetadataState {
+    artifact: ArtifactMetadata | null;
+    loading: boolean;
+    error: string | null;
+    refresh: () => void;
+}
+
+export function useArtifactMetadata(autoRefreshMs = 0): ArtifactMetadataState {
+    const [artifact, setArtifact] = useState<ArtifactMetadata | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchMetadata = useCallback(async () => {
+        const paths = ['/artifact-metadata.json', '/artifacts/latest-run.json'];
+        try {
+            setLoading(true);
+            setError(null);
+            let payload: ArtifactMetadata | null = null;
+            for (const relativePath of paths) {
+                try {
+                    const response = await fetch(`${relativePath}?t=${Date.now()}`);
+                    if (!response.ok) {
+                        continue;
+                    }
+                    payload = (await response.json()) as ArtifactMetadata;
+                    break;
+                } catch {
+                    continue;
+                }
+            }
+            if (!payload) {
+                throw new Error('Unable to load artifact metadata from any known endpoint.');
+            }
+            setArtifact(payload);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+            setArtifact(null);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchMetadata();
+        if (autoRefreshMs > 0) {
+            const intervalId = window.setInterval(fetchMetadata, autoRefreshMs);
+            return () => window.clearInterval(intervalId);
+        }
+        return undefined;
+    }, [autoRefreshMs, fetchMetadata]);
+
+    return { artifact, loading, error, refresh: fetchMetadata };
 }
 
 /**

@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import SparklesIcon from './icons/SparklesIcon';
-import { suggestStoryIdeas, ApiStateChangeCallback, ApiLogCallback } from '../services/geminiService';
+import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import { useInteractiveSpotlight } from '../utils/hooks';
 import ThematicLoader from './ThematicLoader';
 import GuideCard from './GuideCard';
+import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 
 interface StoryIdeaFormProps {
     onSubmit: (idea: string) => void;
@@ -17,6 +18,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
+    const planActions = usePlanExpansionActions();
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -29,7 +31,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
         setIsSuggesting(true);
         setSuggestions([]);
         try {
-            const result = await suggestStoryIdeas(onApiLog, onApiStateChange);
+            const result = await planActions.suggestStoryIdeas(onApiLog, onApiStateChange);
             setSuggestions(result);
         } catch (e) {
             console.error(e);
@@ -37,7 +39,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
         } finally {
             setIsSuggesting(false);
         }
-    }, [onApiStateChange, onApiLog]);
+    }, [onApiStateChange, onApiLog, planActions]);
 
     return (
         <div ref={spotlightRef} className="max-w-3xl mx-auto glass-card p-8 rounded-xl shadow-2xl shadow-black/30 interactive-spotlight">
