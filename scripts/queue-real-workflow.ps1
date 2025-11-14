@@ -412,7 +412,7 @@ if ($historyData) {
 # After history timeout, continue waiting for frames to be written to disk
 # ComfyUI may still be generating/saving frames even if history endpoint hasn't populated yet
 $frameWaitStart = Get-Date
-$frameWaitTimeout = 180  # Additional 180 seconds (3 minutes) to wait for frames after history timeout
+$frameWaitTimeout = 300  # Additional 300 seconds (5 minutes) to wait for frames after history timeout
 $framesFound = $false
 $noFrameCount = 0
 $sceneFrames = @()

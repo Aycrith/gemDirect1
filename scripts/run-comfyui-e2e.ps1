@@ -287,6 +287,8 @@ $historyAttemptDisplay = if ($SceneHistoryMaxAttempts -gt 0) { $SceneHistoryMaxA
 # Fast iteration mode: reduce timeouts and poll intervals to speed up dev cycles.
 if ($FastIteration.IsPresent) {
     Write-Host "FastIteration enabled: reducing poll intervals and timeouts for quicker feedback"
+    # Reduce history wait timeout for quick feedback (30s instead of 600s)
+    $SceneMaxWaitSeconds = [int]30
     # Keep HistoryPollInterval at minimum allowed (1s)
     $SceneHistoryPollIntervalSeconds = 1
     # Reduce post-execution timeout for quick experiments
@@ -295,7 +297,7 @@ if ($FastIteration.IsPresent) {
     $SentinelStableSeconds = 1
     $QueueStabilitySeconds = 1
     $QueueStabilityRetries = 2
-    Add-RunSummary ("FastIteration mode enabled: historyPollInterval={0}s postExecTimeout={1}s sentinelScan={2}s sentinelStable={3}s queueStability={4}s stabilityRetries={5}" -f $SceneHistoryPollIntervalSeconds, $ScenePostExecutionTimeoutSeconds, $SentinelScanIntervalSeconds, $SentinelStableSeconds, $QueueStabilitySeconds, $QueueStabilityRetries)
+    Add-RunSummary ("FastIteration mode enabled: historyMaxWait={0}s historyPollInterval={1}s postExecTimeout={2}s sentinelScan={3}s sentinelStable={4}s queueStability={5}s stabilityRetries={6}" -f $SceneMaxWaitSeconds, $SceneHistoryPollIntervalSeconds, $ScenePostExecutionTimeoutSeconds, $SentinelScanIntervalSeconds, $SentinelStableSeconds, $QueueStabilitySeconds, $QueueStabilityRetries)
 } else {
     $SentinelScanIntervalSeconds = 2
     $SentinelStableSeconds = 3
