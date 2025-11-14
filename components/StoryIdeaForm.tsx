@@ -7,7 +7,7 @@ import GuideCard from './GuideCard';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 
 interface StoryIdeaFormProps {
-    onSubmit: (idea: string) => void;
+    onSubmit: (idea: string, genre?: string) => void;
     isLoading: boolean;
     onApiStateChange: ApiStateChangeCallback;
     onApiLog: ApiLogCallback;
@@ -15,6 +15,7 @@ interface StoryIdeaFormProps {
 
 const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onApiStateChange, onApiLog }) => {
     const [idea, setIdea] = useState('');
+    const [genre, setGenre] = useState<string>('sci-fi');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
@@ -23,7 +24,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (idea.trim()) {
-            onSubmit(idea);
+            onSubmit(idea, genre);
         }
     };
     
@@ -51,6 +52,22 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
             </GuideCard>
 
             <form onSubmit={handleSubmit} className="mt-6">
+                <div className="mb-4">
+                    <label htmlFor="genre-select" className="block text-sm font-medium text-gray-300 mb-2">
+                        Genre (Optional - Applied as Template Guide)
+                    </label>
+                    <select
+                        id="genre-select"
+                        value={genre}
+                        onChange={(e) => setGenre(e.target.value)}
+                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+                    >
+                        <option value="sci-fi">Science Fiction</option>
+                        <option value="drama">Drama</option>
+                        <option value="thriller">Thriller</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Template guidance will enhance your story's narrative coherence.</p>
+                </div>
                 <textarea
                     value={idea}
                     onChange={(e) => setIdea(e.target.value)}

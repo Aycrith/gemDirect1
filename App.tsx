@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationStatus, SceneContinuityData } from './types';
-import { useProjectData, usePersistentState } from './utils/hooks';
+import { useProjectData, usePersistentState, useSceneGenerationWatcher } from './utils/hooks';
 import { ApiStatusProvider, useApiStatus } from './contexts/ApiStatusContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
+import { TemplateContextProvider } from './contexts/TemplateContext';
 import { saveProjectToFile, loadProjectFromFile } from './utils/projectUtils';
 import { PlanExpansionStrategyProvider, usePlanExpansionActions } from './contexts/PlanExpansionStrategyContext';
 import { MediaGenerationProviderProvider } from './contexts/MediaGenerationProviderContext';
@@ -28,6 +29,7 @@ import SaveIcon from './components/icons/SaveIcon';
 import UploadCloudIcon from './components/icons/UploadCloudIcon';
 import ProgressBar from './components/ProgressBar';
 import WelcomeGuideModal from './components/WelcomeGuideModal';
+import ComfyUICallbackProvider from './components/ComfyUICallbackProvider';
 
 const AppContent: React.FC = () => {
     const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0, task: '' });
@@ -46,6 +48,8 @@ const AppContent: React.FC = () => {
     const [continuityModal, setContinuityModal] = useState<{ sceneId: string, lastFrame: string } | null>(null);
     const [isExtending, setIsExtending] = useState(false);
     const [hasSeenWelcome, setHasSeenWelcome] = usePersistentState('hasSeenWelcome', false);
+
+    const { sceneStatuses, updateSceneStatus } = useSceneGenerationWatcher(scenes);
 
     const { settings: localGenSettings, setSettings: setLocalGenSettings } = useLocalGenerationSettings();
     const [generatedImages, setGeneratedImages] = usePersistentState<Record<string, string>>('generatedImages', {});
@@ -226,18 +230,18 @@ const AppContent: React.FC = () => {
                                 Transform your ideas into fully-realized cinematic stories, from high-level plot to shot-by-shot details, all with the power of AI.
                             </p>
                         </div>
-                        <StoryIdeaForm onSubmit={(idea) => handleGenerateStoryBible(idea, addToast)} isLoading={isProjectLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />
+                        <StoryIdeaForm onSubmit={(idea, genre) => handleGenerateStoryBible(idea, genre || 'sci-fi', addToast)} isLoading={isProjectLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />
                     </>
                 )
             case 'bible':
                 return storyBible && <StoryBibleEditor storyBible={storyBible} onUpdate={setStoryBible} onGenerateScenes={() => setWorkflowStage('vision')} isLoading={isProjectLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
             case 'vision':
-                return storyBible && <DirectorsVisionForm onSubmit={(vision) => handleGenerateScenes(vision, addToast, setGeneratedImages)} isLoading={isProjectLoading} storyBible={storyBible} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
+                return storyBible && <DirectorsVisionForm onSubmit={(vision) => handleGenerateScenes(vision, addToast, setGeneratedImages, updateSceneStatus)} isLoading={isProjectLoading} storyBible={storyBible} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
             case 'director':
                 return (
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         <div className="lg:col-span-1">
-                            <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} scenesToReview={scenesToReview} />
+                            <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} scenesToReview={scenesToReview} sceneStatuses={sceneStatuses} />
                         </div>
                         <div className="lg:col-span-3">
                             {activeScene ? <TimelineEditor 
@@ -407,7 +411,11 @@ const App: React.FC = () => (
             <PlanExpansionStrategyProvider>
                 <LocalGenerationSettingsProvider>
                     <MediaGenerationProviderProvider>
-                        <AppContent />
+                        <TemplateContextProvider>
+                            <ComfyUICallbackProvider>
+                                <AppContent />
+                            </ComfyUICallbackProvider>
+                        </TemplateContextProvider>
                     </MediaGenerationProviderProvider>
                 </LocalGenerationSettingsProvider>
             </PlanExpansionStrategyProvider>

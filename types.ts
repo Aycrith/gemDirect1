@@ -195,3 +195,15 @@ export interface LocalGenerationStatus {
     node_title?: string;
     final_output?: LocalGenerationOutput;
 }
+
+export type SceneGenerationStatus = 'pending' | 'generating' | 'complete' | 'failed';
+
+export interface SceneStatus {
+  sceneId: string;
+  title: string;
+  status: SceneGenerationStatus;
+  progress: number; // 0-100
+  error?: string;
+  startTime?: number;
+  endTime?: number;
+}

@@ -1,0 +1,162 @@
+{
+  "manifest_version": "1.0",
+  "created_date": "2025-11-13T22:30:00Z",
+  "updated_date": "2025-11-13T22:30:00Z",
+  "templates": [
+    {
+      "id": "story-sci-fi",
+      "name": "Science Fiction",
+      "version": "1.0",
+      "created": "2025-11-13",
+      "author": "gemDirect1 System",
+      "path": "v1.0/story-sci-fi.txt",
+      "status": "active",
+      "description": "Sci-fi narratives with futuristic settings, advanced technology, and non-human characters",
+      "genre": "science-fiction",
+      "tone": "Futuristic, technological, wonder-struck yet grounded",
+      "visual_density": "HIGH",
+      "context_length_tokens": 2048,
+      "token_limit": 1500,
+      "mandatory_elements_count": 5,
+      "mandatory_elements": [
+        "Advanced technology (AI, VR, nanotech, quantum computing, genetic engineering, etc.)",
+        "Space/alien element (starfield, alien creature, exoplanet, dimensional rift, etc.)",
+        "Non-human character or post-human being (android, AI, uplifted animal, etc.)",
+        "Scientific principle applied in speculative way (time dilation, parallel universe, etc.)",
+        "Futuristic architecture or landscape (megacity, O'Neill cylinder, underwater dome, etc.)"
+      ],
+      "character_archetypes": [
+        "Weary spacefarer",
+        "Brilliant researcher",
+        "Rogue AI",
+        "Alien contact",
+        "Resistance fighter"
+      ],
+      "color_palette": "Cool blues, electric purples, metallic silvers",
+      "quality_thresholds": {
+        "coherence_min": 4.0,
+        "diversity_entropy_min": 2.0,
+        "similarity_alignment_min": 0.75
+      },
+      "usage_count": 0,
+      "last_used": null,
+      "notes": "Best for space exploration, AI narratives, dystopian futures, first-contact scenarios"
+    },
+    {
+      "id": "story-drama",
+      "name": "Drama",
+      "version": "1.0",
+      "created": "2025-11-13",
+      "author": "gemDirect1 System",
+      "path": "v1.0/story-drama.txt",
+      "status": "active",
+      "description": "Character-driven narratives with emotional authenticity and relationship dynamics",
+      "genre": "drama",
+      "tone": "Intimate, emotionally authentic, grounded in character",
+      "visual_density": "MEDIUM",
+      "context_length_tokens": 2048,
+      "token_limit": 1500,
+      "mandatory_elements_count": 5,
+      "mandatory_elements": [
+        "Character's internal conflict made visible (pacing, fidgeting, expression, stillness)",
+        "Relationship dynamic (two+ characters navigating tension, affection, or estrangement)",
+        "Physical space that reflects emotional state (messy room, sterile office, rain-soaked street)",
+        "Dialogue that reveals character rather than explains plot",
+        "Moment of vulnerability (character admits fear, desire, regret, or hope)"
+      ],
+      "character_archetypes": [
+        "Protective caregiver",
+        "Conflicted professional",
+        "Seeker of redemption",
+        "Generational bridge",
+        "Truth-teller"
+      ],
+      "color_palette": "Warm naturals, muted earth tones, dramatic shadows",
+      "quality_thresholds": {
+        "coherence_min": 4.0,
+        "diversity_entropy_min": 2.0,
+        "similarity_alignment_min": 0.75
+      },
+      "usage_count": 0,
+      "last_used": null,
+      "notes": "Best for character-driven narratives, relationship conflicts, moral dilemmas, personal growth"
+    },
+    {
+      "id": "story-thriller",
+      "name": "Thriller",
+      "version": "1.0",
+      "created": "2025-11-13",
+      "author": "gemDirect1 System",
+      "path": "v1.0/story-thriller.txt",
+      "status": "active",
+      "description": "High-stakes action narratives with suspense, time pressure, and forced choices",
+      "genre": "thriller",
+      "tone": "Tense, relentless, unpredictable danger lurking",
+      "visual_density": "HIGH",
+      "context_length_tokens": 2048,
+      "token_limit": 1500,
+      "mandatory_elements_count": 4,
+      "mandatory_elements": [
+        "Countdown/time pressure (timer ticking, deadline passing, window closing)",
+        "Physical danger (pursuit, entrapment, weapon threat, environmental hazard)",
+        "Information asymmetry (character doesn't know what audience knows or vice versa)",
+        "Forced choice with bad consequences either way",
+        "Betrayal or revelation that upends assumptions",
+        "Object/clue that becomes plot-critical later"
+      ],
+      "character_archetypes": [
+        "Reluctant hero",
+        "Moral avenger",
+        "Protector",
+        "Double agent",
+        "Conspiracy target"
+      ],
+      "color_palette": "Shadows and highlights, desaturated with color pops, asymmetric framing",
+      "threat_taxonomy": [
+        "Physical: Pursuit, combat, environmental hazard",
+        "Psychological: Paranoia, loss of trust, guilt, fear of failure",
+        "Social: Reputation at stake, ally becomes enemy, isolation from help",
+        "Informational: Wrong people know wrong secrets, misinformation",
+        "Moral: Must do something unethical to survive, sacrificing principles"
+      ],
+      "quality_thresholds": {
+        "coherence_min": 4.0,
+        "diversity_entropy_min": 2.0,
+        "similarity_alignment_min": 0.75
+      },
+      "usage_count": 0,
+      "last_used": null,
+      "notes": "Best for high-stakes action, suspense narratives, cat-and-mouse games, moral traps"
+    }
+  ],
+  "metadata": {
+    "total_templates": 3,
+    "active_templates": 3,
+    "default_template": "story-sci-fi",
+    "fallback_template": "story-drama",
+    "quality_enforcement": {
+      "enabled": true,
+      "validators": [
+        "coherence-check.py",
+        "diversity-check.py",
+        "similarity-check.py"
+      ],
+      "orchestrator": "run-quality-checks.ps1"
+    },
+    "constraints": {
+      "max_context_tokens": 2048,
+      "max_generated_tokens": 1500,
+      "min_quality_coherence": 4.0,
+      "min_quality_entropy": 2.0,
+      "min_quality_alignment": 0.75
+    }
+  },
+  "version_history": [
+    {
+      "version": "1.0",
+      "date": "2025-11-13",
+      "changes": "Initial release with sci-fi, drama, thriller templates",
+      "templates_added": ["story-sci-fi", "story-drama", "story-thriller"]
+    }
+  ]
+}

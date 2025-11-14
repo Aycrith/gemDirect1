@@ -1,0 +1,101 @@
+GENRE TEMPLATE: Thriller
+VERSION: 1.0
+CREATED: 2025-11-13
+AUTHOR: gemDirect1 System
+CONTEXT_LENGTH: 2048 tokens
+TOKEN_LIMIT: 1500 tokens for generated scene
+
+=== TONE & PACING ===
+- Tone: Tense, relentless, unpredictable danger lurking
+- Pacing: Fast-cut action with mounting pressure, NO safe moments
+- Visual density: HIGH (multiple simultaneous threats/clues visible)
+- Color palette: Shadows and highlights, desaturated with sudden color pops, asymmetric framing
+
+=== SCENE STRUCTURE ===
+Each generated scene should follow:
+
+1. ESTABLISH (0-10% of scene):
+   - IMMEDIATELY introduce threat or high stakes
+   - No leisurely setup; danger is NOW
+   - Example keywords: pursuit, discovery, time pressure, narrow escape
+
+2. DEVELOP (10-80% of scene):
+   - Escalate stakes through complications (plan fails, ally betrays, new threat emerges)
+   - Character is REACTIVE initially, then PROACTIVE (learns to fight back)
+   - Layer multiple simultaneous threats (physical danger + emotional stakes + moral choice)
+   - Keep audience one step ahead of protagonist (we see danger they don't yet)
+
+3. RESOLVE (80-100% of scene):
+   - Temporary victory, but hint of larger threat
+   - Cliff-hanger OR twist that reframes understanding
+   - Scene ends with question: "What happens next?" or "Who can be trusted?"
+
+=== MANDATORY ELEMENTS ===
+Include at least 4 of these per scene:
+[ ] Countdown/time pressure (timer ticking, deadline passing, window closing)
+[ ] Physical danger (pursuit, entrapment, weapon threat, environmental hazard)
+[ ] Information asymmetry (character doesn't know what audience knows or vice versa)
+[ ] Forced choice with bad consequences either way
+[ ] Betrayal or revelation that upends assumptions
+[ ] Object/clue that becomes plot-critical later
+
+=== PROHIBITED ELEMENTS ===
+- Gratuitous gore or torture (thriller is about *threat*, not spectacle)
+- Unrealistic escapes without consequence (protagonist injured, exhausted, traumatized)
+- Villain monologue explaining their plan (show through action, not exposition)
+- Safe harbor/rest scenes mid-act (keep pressure relentless)
+- Dialogue that pauses action for explanation
+
+=== PACING IMPERATIVE ===
+Thriller thrives on rhythm:
+- Action sequence (chase, fight, sabotage)
+- Micro-rest moment (character catches breath)
+- IMMEDIATE new threat (no recovery allowed)
+- Repeat with escalating intensity
+
+=== CHARACTER ARCHETYPES ===
+Pick 1-2 per scene:
+- Reluctant hero: Ordinary person forced into extraordinary danger
+- Moral avenger: Hunting someone who wronged them; danger is personal
+- Protector: Must keep someone safe despite overwhelming odds
+- Double agent: Deceiving both sides, exposed at worst moment
+- Conspiracy target: Hunted for knowledge they barely possess
+
+=== THREAT TAXONOMY ===
+Mix multiple threat types (not just physical danger):
+- **Physical**: Pursuit, combat, environmental hazard
+- **Psychological**: Paranoia, loss of trust, guilt, fear of failure
+- **Social**: Reputation at stake, ally becomes enemy, isolation from help
+- **Informational**: Wrong people know wrong secrets, misinformation
+- **Moral**: Must do something unethical to survive, sacrificing principles
+
+=== ACTION WRITING ===
+For action sequences:
+- Specificity over generic: not "they fought" but "He blocked left, she swept right, he stumbled on debris"
+- Sensory detail: Sound (metallic clang), smell (sweat/cordite), touch (impact). Not just visual
+- Consequence: Every action has cost (energy, injury, emotional toll, reveal location)
+- Logic: Action flows from character skill/limitation, not just plot need
+- Example: "The lockpick snapped. Three seconds before footsteps arrived." (shows time pressure + failure)
+
+=== DIALOGUE IN PERIL ===
+When characters speak mid-threat:
+- Brevity is power: "Run." / "Now." / "Go!" (panic shortens speech)
+- Subtext shifts: Old relationships surface under stress (anger, affection, resentment)
+- Deception thickens: Character may lie to protect ally or buy time
+- Avoid: Long exposition or emotional speeches in active danger
+
+=== TWIST REQUIREMENT ===
+End-of-scene twist must:
+- Be earned by clues visible in scene
+- Reframe what came before (character understands their error, or we do)
+- Raise stakes rather than resolve them
+- Create new question, not answer old ones
+- NOT rely on information character couldn't know
+
+=== USAGE IN PIPELINE ===
+1. System selects this template when genre="thriller" is detected
+2. Template values override defaults in prompt builder
+3. Protagonist/threat details from user input fill the blanks
+4. Generated scene validated against MANDATORY ELEMENTS before queueing
+5. Quality check: coherence ≥4.0/5, diversity entropy ≥2.0, similarity ≥0.75
+6. Verification: At least 2 threat types present; twist earned by visible clues

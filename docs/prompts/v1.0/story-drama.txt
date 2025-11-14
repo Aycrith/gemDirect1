@@ -1,0 +1,83 @@
+GENRE TEMPLATE: Drama
+VERSION: 1.0
+CREATED: 2025-11-13
+AUTHOR: gemDirect1 System
+CONTEXT_LENGTH: 2048 tokens
+TOKEN_LIMIT: 1500 tokens for generated scene
+
+=== TONE & PACING ===
+- Tone: Intimate, emotionally authentic, grounded in character
+- Pacing: Slower buildup with internal/external conflict
+- Visual density: MEDIUM (focus on character faces and emotional reactions)
+- Color palette: Warm naturals, muted earth tones, dramatic shadows
+
+=== SCENE STRUCTURE ===
+Each generated scene should follow:
+
+1. ESTABLISH (0-15% of scene):
+   - Introduce location with emotional resonance (apartment, office, family home, public place)
+   - Establish character physical/emotional state through visual details
+   - Example keywords: weary, contemplative, tense, vulnerable, conflicted
+
+2. DEVELOP (15-70% of scene):
+   - Present core conflict (internal struggle, interpersonal tension, moral dilemma)
+   - Layer character motivation and backstory through action/dialogue
+   - Allow scene to "breathe" - moments of silence/pause matter
+   - Build emotional stakes incrementally
+
+3. RESOLVE (70-100% of scene):
+   - Character makes choice, realizes truth, or faces consequence
+   - Emotional impact primary (physical action secondary)
+   - Scene lingers on reaction/aftermath, not just resolution event
+
+=== MANDATORY ELEMENTS ===
+Include at least 3 of these per scene:
+[ ] Character's internal conflict made visible (pacing, fidgeting, expression, stillness)
+[ ] Relationship dynamic (two+ characters navigating tension, affection, or estrangement)
+[ ] Physical space that reflects emotional state (messy room, sterile office, rain-soaked street)
+[ ] Dialogue that reveals character rather than explains plot
+[ ] Moment of vulnerability (character admits fear, desire, regret, or hope)
+
+=== PROHIBITED ELEMENTS ===
+- Melodramatic overacting or soap opera tropes
+- Heavy-handed symbolism (character throws plate = ANGRY; uses flower = HOPE)
+- Clichéd emotional beats without earned motivation
+- Rapid-fire plot twists; prioritize emotional authenticity over surprise
+- Violence for shock value rather than consequence
+
+=== CHARACTER ARCHETYPES ===
+Pick 1-2 per scene:
+- Protective caregiver: Shouldering burden for others, fear of failure
+- Conflicted professional: Career vs. personal values/relationships
+- Seeker of redemption: Past mistakes haunting present decisions
+- Generational bridge: Mediating between parent/child, old/new ways
+- Truth-teller: Refusing comfortable lies, consequences uncertain
+
+=== DIALOGUE GUIDANCE ===
+If dialogue is included:
+- Real people interrupt, stumble, leave sentences unfinished
+- Subtext matters more than what's explicitly said ("That's nice" can mean rejection)
+- Conflict in drama is often *verbal* - tension through words, not action
+- Use silence/pauses as powerfully as words
+- Example: "I don't... you don't understand." (trailing off reveals more than complete statement)
+
+=== EMOTIONAL SPECIFICITY ===
+For emotional scenes:
+- Name specific emotion (not "sad" but "grief," "jealousy," "shame," "longing")
+- Show physical manifestation (tears, stillness, restlessness, averted gaze)
+- Avoid generic sentiment; ground in particular details (not "family dinner," but "Mom's china, never used")
+- Allow contradictions (character laughs AND cries; is angry AND afraid)
+
+=== RELATIONSHIP TEXTURE REQUIRED ===
+Even in solo character scenes, reference relationship that shapes moment:
+- What did someone else say that stings?
+- What decision about another person is being made?
+- What fear about abandonment/connection is surfacing?
+- What hope about relationship is fragile/endangered?
+
+=== USAGE IN PIPELINE ===
+1. System selects this template when genre="drama" is detected
+2. Template values override defaults in prompt builder
+3. Character/relationship details from user input fill the blanks
+4. Generated scene validated against MANDATORY ELEMENTS before queueing
+5. Quality check: coherence ≥4.0/5, diversity entropy ≥2.0, similarity ≥0.75

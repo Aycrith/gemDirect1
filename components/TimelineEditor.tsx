@@ -103,8 +103,11 @@ import GuidedAction from './GuidedAction';
 import GuideCard from './GuideCard';
 import CompassIcon from './icons/CompassIcon';
 import NegativePromptSuggestions from './NegativePromptSuggestions';
+import TemplateGuidancePanel from './TemplateGuidancePanel';
+import MandatoryElementsChecklist from './MandatoryElementsChecklist';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
+import { useTemplateContext } from '../contexts/TemplateContext';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 
 interface TimelineEditorProps {
@@ -219,7 +222,11 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
     const [isBatchProcessing, setIsBatchProcessing] = useState<false | 'description' | 'enhancers'>(false);
-    const { artifact: latestArtifact } = useArtifactMetadata();
+    const [isTemplateGuidanceOpen, setIsTemplateGuidanceOpen] = useState(false);
+    
+    const templateContext = useTemplateContext();
+    const { updateCoveredElements } = templateContext;
+    const latestArtifact = undefined; // No artifact in this context
     const queuePolicy = latestArtifact?.QueueConfig;
     const llmMetadata = latestArtifact?.Story.LLM as
         | {
@@ -330,6 +337,20 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setHasChanges(false);
         setSaveStatus('saved');
     }, [scene]);
+
+    // Update template coverage when scene content changes
+    useEffect(() => {
+        if (templateContext.selectedTemplate) {
+            const sceneContent = [
+                scene.title,
+                scene.summary,
+                ...timeline.shots.map(s => s.description),
+                timeline.transitions.join(' '),
+            ].join(' ');
+            
+            templateContext.updateCoveredElements(sceneContent);
+        }
+    }, [scene, timeline, templateContext]);
 
     // Auto-save effect
     useEffect(() => {
@@ -828,6 +849,26 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             {timeline.shots.length > 0 && (
                 <>
                      <div className="space-y-4 p-4 bg-gray-900/30 rounded-lg ring-1 ring-gray-700/50">
+                        {/* Template Guidance Section */}
+                        {templateContext.selectedTemplate && (
+                            <div className="mb-6 space-y-3 pb-4 border-b border-gray-700/50">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="text-sm font-semibold text-amber-400">Template Guidance</h3>
+                                    <button 
+                                        onClick={() => setIsTemplateGuidanceOpen(true)}
+                                        className="px-3 py-1 text-xs font-medium rounded-full bg-amber-600/30 text-amber-300 hover:bg-amber-600/50 transition-colors border border-amber-600/50"
+                                    >
+                                        View Details
+                                    </button>
+                                </div>
+                                <MandatoryElementsChecklist 
+                                    elements={templateContext.mandatoryElements}
+                                    covered={templateContext.coveredElements}
+                                    title={`${templateContext.mandatoryElements.length} Mandatory Elements`}
+                                />
+                            </div>
+                        )}
+                        
                         <div>
                             <label htmlFor="negative-prompt" className="block text-sm font-semibold text-gray-200 mb-2">Scene-Wide Negative Prompt</label>
                             <textarea
@@ -935,6 +976,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 onClose={() => setIsPromptModalOpen(false)}
                 payloads={promptsToExport}
              />
+            
+            {isTemplateGuidanceOpen && templateContext.selectedTemplate && (
+                <TemplateGuidancePanel 
+                    template={templateContext.selectedTemplate}
+                    coveredElements={templateContext.coveredElements}
+                    onClose={() => setIsTemplateGuidanceOpen(false)}
+                />
+            )}
         </div>
     );
 };

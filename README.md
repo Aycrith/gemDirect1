@@ -28,6 +28,108 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uvkkeiyDr3iI4KPyB4ICS6
 - When the probe hits a non-responsive LM Studio instance it raises an error immediately, so you can gracefully fall back to another provider or set [`LOCAL_LLM_SKIP_HEALTHCHECK=1`](https://lmstudio.ai/docs/api#health-checks) if the endpoint intentionally blocks `/models` entirely; the override is handy when the default `/v1/models` path is behind a proxy or you want to hit a different host than the story generator’s prompts.
 - Verify the endpoint before a headless run: `Invoke-WebRequest http://192.168.50.192:1234/v1/models`.
 - If LM Studio is offline, fall back to Ollama by swapping `LOCAL_STORY_PROVIDER_URL`/`LOCAL_LLM_MODEL` (keep `LOCAL_LLM_REQUEST_FORMAT=openai-chat`). Note the fallback in `run-summary.txt`.
+
+#### LLM Foundation & Health Checks
+
+**Mistral 7B Checkpoint Verification**
+
+The pipeline requires **mistralai/mistral-7b-instruct-v0.3** (GGUF Q4_K_M quantization) loaded in LM Studio before any story generation runs. Verify the checkpoint and endpoint health with:
+
+```powershell
+# 1. Check that LM Studio is responding to model list requests
+$response = Invoke-WebRequest -Uri 'http://192.168.50.192:1234/v1/models' -TimeoutSec 5
+$models = $response.Content | ConvertFrom-Json
+$mistral = $models.data | Where-Object { $_.id -like '*mistral*' }
+
+if ($mistral) {
+    Write-Host "✅ Mistral found: $($mistral.id)" -ForegroundColor Green
+} else {
+    Write-Host "❌ Mistral not loaded. Load via LM Studio UI or CLI." -ForegroundColor Red
+    exit 1
+}
+
+# 2. Test a chat completion request (validates server readiness)
+$testPayload = @{
+    model = 'mistralai/mistral-7b-instruct-v0.3'
+    messages = @(
+        @{ role = 'system'; content = 'You are a cinematic story assistant.' },
+        @{ role = 'user'; content = 'Describe a single-sentence story idea.' }
+    )
+    max_tokens = 100
+    temperature = 0.35
+} | ConvertTo-Json
+
+$response = Invoke-WebRequest -Uri 'http://192.168.50.192:1234/v1/chat/completions' `
+    -Method Post `
+    -ContentType 'application/json' `
+    -Body $testPayload `
+    -TimeoutSec 120 `
+    -ErrorAction Stop
+
+$result = $response.Content | ConvertFrom-Json
+if ($result.choices -and $result.choices[0].message.content) {
+    Write-Host "✅ Chat completion successful: $($result.choices[0].message.content.Substring(0, 80))..." -ForegroundColor Green
+} else {
+    Write-Host "❌ Chat completion returned empty response." -ForegroundColor Red
+    exit 1
+}
+
+# 3. Log server metadata (optional)
+Write-Host "Server metadata:"
+Write-Host "- Model: mistralai/mistral-7b-instruct-v0.3"
+Write-Host "- Endpoint: http://192.168.50.192:1234/v1/chat/completions"
+Write-Host "- Health check: http://192.168.50.192:1234/v1/models"
+Write-Host "- Request format: openai-chat"
+Write-Host "- Temperature: 0.35 (deterministic, storytelling-optimized)"
+Write-Host "- Timeout: 120000 ms (~90s generation time typical)"
+```
+
+**Override Health Check Targets**
+
+If your LM Studio instance is behind a proxy or on a different host:
+
+```powershell
+# Override both request and health check endpoints
+$env:LOCAL_STORY_PROVIDER_URL = 'http://<custom-host>:<port>/v1/chat/completions'
+$env:LOCAL_LLM_HEALTHCHECK_URL = 'http://<custom-host>:<port>/v1/models'
+
+# Or skip health checks entirely (NOT recommended for production)
+$env:LOCAL_LLM_SKIP_HEALTHCHECK = '1'
+```
+
+**Fallback to Ollama**
+
+If LM Studio becomes unavailable, switch to Ollama while maintaining API compatibility:
+
+```powershell
+# Ollama endpoint (assumes `ollama serve` running on localhost:11434)
+$env:LOCAL_STORY_PROVIDER_URL = 'http://localhost:11434/v1/chat/completions'
+$env:LOCAL_LLM_MODEL = 'mistral'  # or 'neural-chat', 'dolphin-mixtral', etc.
+$env:LOCAL_LLM_REQUEST_FORMAT = 'openai-chat'  # Ollama OpenAI compatibility mode
+$env:LOCAL_LLM_TEMPERATURE = '0.35'
+$env:LOCAL_LLM_TIMEOUT_MS = '120000'
+
+# Verify Ollama health check
+$response = Invoke-WebRequest -Uri 'http://localhost:11434/api/tags' -TimeoutSec 5
+$models = $response.Content | ConvertFrom-Json
+Write-Host "Available Ollama models: $($models.models.name -join ', ')"
+```
+
+**Quality Validators & Prompt Templates**
+
+After story generation, the pipeline automatically runs three quality checks:
+
+- **Coherence Check** (`scripts/quality-checks/coherence-check.py`): Validates narrative flow via named-entity and pronoun-resolution tracking. Threshold ≥4.0/5.
+- **Diversity Check** (`scripts/quality-checks/diversity-check.py`): Measures thematic richness using Shannon entropy. Threshold ≥2.0.
+- **Similarity Check** (`scripts/quality-checks/similarity-check.py`): Verifies semantic alignment between prompt intent and generated scenes using BERT. Threshold ≥0.75.
+
+Prompt templates are loaded from `docs/prompts/v1.0/` based on selected genre:
+- `story-sci-fi.txt`: Science fiction (futuristic tone, advanced tech, non-human characters)
+- `story-drama.txt`: Character-driven drama (emotional authenticity, relationships, vulnerability)
+- `story-thriller.txt`: High-stakes thriller (immediate threat, time pressure, forced choices)
+
+See `docs/prompts/PROMPT_LIBRARY.md` for template structure, integration points, and extending with new genres.
+
 ### Queue knobs, telemetry enforcement, and artifact snapshots
 - The helper resolves every queue knob (`SceneMaxWaitSeconds`, `SceneHistoryPollIntervalSeconds`, `SceneHistoryMaxAttempts`, `ScenePostExecutionTimeoutSeconds`, `SceneRetryBudget`, plus the CLI flags/`SCENE_*` env vars that mirror them) before ComfyUI spins up, surfaces them as `QueueConfig`, per-scene `HistoryConfig`, and `SceneRetryBudget` in `run-summary.txt`, `artifact-metadata.json`, and `public/artifacts/latest-run.json`, and renders the same numbers inside the Artifact Snapshot policy card and Timeline Editor banners. These knobs drive the poll loop budget, post-execution wait, and total retry allowance reported back to reviewers so every agent knows the poller aggressiveness without opening JSON.
 - Telemetry enforcement now insists on the same fields every scene attempt emits: `DurationSeconds`, `MaxWaitSeconds`, `PollIntervalSeconds`, `HistoryAttempts`, `HistoryAttemptLimit`, `pollLimit` (text and metadata value must match), `HistoryExitReason` (maxWait/attemptLimit/postExecution/success), `ExecutionSuccessDetected`, `ExecutionSuccessAt`, `PostExecutionTimeoutSeconds` (and `postExecTimeoutReached`), GPU `Name`, `VRAMBeforeMB`, `VRAMAfterMB`, `VRAMDeltaMB`, plus any fallback notes (e.g., `/system_stats` failure or `nvidia-smi` fallback). We treat `execution_success` from ComfyUI's `/history` sequence as the success signal for every attempt, so the validator, Vitest harness, and UI look for that event before closing a scene (following the `/history` message structure from [`websocket_api_example.py`][2]). Missing telemetry lines, mismatched `pollLimit`, or absent GPU/VRAM numbers fail validation before the run archives, and the queue policy card/Timeline badges use the same metadata to explain retry budgets, poll pacing, and GPU usage for reviewers.

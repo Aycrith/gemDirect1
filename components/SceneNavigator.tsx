@@ -1,17 +1,19 @@
 import React from 'react';
-import { Scene } from '../types';
+import { Scene, SceneStatus } from '../types';
 import ClapperboardIcon from './icons/ClapperboardIcon';
 import FilmIcon from './icons/FilmIcon';
 import AlertTriangleIcon from './icons/AlertTriangleIcon';
+import SceneStatusIndicator from './SceneStatusIndicator';
 
 interface SceneNavigatorProps {
     scenes: Scene[];
     activeSceneId: string | null;
     onSelectScene: (sceneId: string) => void;
     scenesToReview: Set<string>;
+    sceneStatuses?: Record<string, SceneStatus>;
 }
 
-const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, onSelectScene, scenesToReview }) => {
+const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, onSelectScene, scenesToReview, sceneStatuses = {} }) => {
     return (
         <div className="bg-gray-800/50 border border-gray-700/80 rounded-lg p-4 sticky top-24">
             <h3 className="flex items-center text-lg font-bold text-gray-100 mb-4">
@@ -19,9 +21,10 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                 Scenes
             </h3>
             {scenes.length > 0 ? (
-                <ul className="space-y-2 max-h-[75vh] overflow-y-auto pr-2 -mr-2">
+                <ul className="space-y-3 max-h-[75vh] overflow-y-auto pr-2 -mr-2">
                     {scenes.map((scene, index) => {
                         const needsReview = scenesToReview.has(scene.id);
+                        const status = sceneStatuses[scene.id];
                         return (
                             <li 
                                 key={scene.id} 
@@ -42,9 +45,19 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                                         </div>
                                     )}
                                     <FilmIcon className={`w-5 h-5 mt-0.5 shrink-0 ${activeSceneId === scene.id ? 'text-amber-200' : 'text-gray-400'}`} />
-                                    <div>
+                                    <div className="flex-1 min-w-0">
                                         <span className="font-bold">Scene {index + 1}: {scene.title}</span>
                                         <p className="text-xs mt-1 opacity-80">{scene.summary}</p>
+                                        {status && (
+                                            <div className="mt-2">
+                                                <SceneStatusIndicator 
+                                                    status={status.status}
+                                                    progress={status.progress}
+                                                    error={status.error}
+                                                    title={status.title}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 </button>
                             </li>

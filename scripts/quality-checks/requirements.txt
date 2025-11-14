@@ -1,0 +1,15 @@
+# Quality Check Validators - Python Dependencies
+
+# spaCy: Named entity recognition and pronoun tracking for coherence analysis
+spacy>=3.7.2
+# Download English model after install: python -m spacy download en_core_web_sm
+
+# sentence-transformers: BERT embeddings for semantic similarity checks  
+sentence-transformers>=2.2.2
+torch>=2.0.0  # Required by sentence-transformers
+
+# scipy: Statistical analysis for entropy calculations
+scipy>=1.11.0
+
+# numpy: Numerical computations
+numpy>=1.24.0

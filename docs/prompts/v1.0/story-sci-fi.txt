@@ -1,0 +1,80 @@
+GENRE TEMPLATE: Science Fiction
+VERSION: 1.0
+CREATED: 2025-11-13
+AUTHOR: gemDirect1 System
+CONTEXT_LENGTH: 2048 tokens
+TOKEN_LIMIT: 1500 tokens for generated scene
+
+=== TONE & PACING ===
+- Tone: Futuristic, technological, wonder-struck yet grounded
+- Pacing: Measured buildup with sudden tech reveals
+- Visual density: HIGH (multiple scifi elements per frame)
+- Color palette: Cool blues, electric purples, metallic silvers
+
+=== SCENE STRUCTURE ===
+Each generated scene should follow:
+
+1. ESTABLISH (0-20% of scene):
+   - Introduce sci-fi environment (starship, space station, cyberspace, alien world, far-future city)
+   - Ground viewer in the world through tech/architecture details
+   - Example keywords: hovering, bioluminescent, quantum, holographic, neural interface
+
+2. DEVELOP (20-70% of scene):
+   - Introduce character(s) or conflict
+   - Layer sci-fi technology as problem-solver or complication
+   - Build tension through technological stakes
+   - Example actions: hacking, piloting, discovering alien artifact, time manipulation
+
+3. RESOLVE/TRANSITION (70-100% of scene):
+   - Action consequence or emotional beat
+   - Hint at larger story implications
+   - End on forward-looking visual
+
+=== MANDATORY ELEMENTS ===
+Include at least 3 of these per scene:
+[ ] Advanced technology (AI, VR, nanotech, quantum computing, genetic engineering, etc.)
+[ ] Space/alien element (starfield, alien creature, exoplanet, dimensional rift, etc.)
+[ ] Non-human character or post-human being (android, AI, uplifted animal, etc.)
+[ ] Scientific principle applied in speculative way (time dilation, parallel universe, etc.)
+[ ] Futuristic architecture or landscape (megacity, O'Neill cylinder, underwater dome, etc.)
+
+=== PROHIBITED ELEMENTS ===
+- Medieval castles or fantasy tropes
+- Horses, peasants, or pre-industrial lifestyles
+- Magic (only sufficiently advanced technology disguised as magic)
+- Contemporary Earth settings without clear sci-fi explanation
+
+=== CHARACTER ARCHETYPES ===
+Pick 1-2 per scene:
+- Weary spacefarer: Jaded by years in deep space, cynical but competent
+- Brilliant researcher: Driven to discover, sometimes reckless
+- Rogue AI: Questioning its own existence or humanity
+- Alien contact: Mysterious, communication is challenge
+- Resistance fighter: Fighting against dystopian regime or invading force
+
+=== DIALOGUE GUIDANCE ===
+If dialogue is included:
+- Use technical jargon sparingly; prioritize clarity
+- Sci-fi dialogue should reflect future speech patterns (contractions rare, formal yet efficient)
+- Avoid excessive explanation; show don't tell
+- Example: "Shields at 40%. Reroute auxiliary power to starboard." (not "The shields are at 40%, so let me reroute...")
+
+=== TECHNICAL DEPTH ===
+For technical scenes (hacking, engineering, piloting):
+- Mention plausible-sounding subsystems (power coupling, thermal regulation, data encryption)
+- Avoid saying "futuristic computer" - be specific (neural cluster, quantum processor, biophotonic matrix)
+- Balance technical accuracy with visual interest
+
+=== EMOTIONAL BEAT REQUIRED ===
+Even in high-action sci-fi, include ONE moment of:
+- Wonder (character awestruck by phenomenon)
+- Isolation (character alone against vast cosmos)
+- Connection (unexpected understanding with alien/AI)
+- Loss (meaningful sacrifice or discovery of tragedy)
+
+=== USAGE IN PIPELINE ===
+1. System selects this template when genre="sci-fi" is detected
+2. Template values override defaults in prompt builder
+3. Character/setting details from user input fill the blanks
+4. Generated scene is validated against MANDATORY ELEMENTS before queueing
+5. Quality check: coherence ≥4.0/5, diversity entropy ≥2.0, similarity ≥0.75

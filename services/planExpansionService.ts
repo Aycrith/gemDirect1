@@ -28,7 +28,8 @@ export type PlanExpansionActions = {
     ) => Promise<string>;
     generateStoryBible: (
         idea: string,
-        logApiCall: ApiLogCallback,
+        genre?: string,
+        logApiCall?: ApiLogCallback,
         onStateChange?: ApiStateChangeCallback
     ) => Promise<StoryBible>;
     generateSceneList: (
@@ -186,7 +187,7 @@ const localActions: PlanExpansionActions = {
         logSuccess(logApiCall, 'prune context for batch processing (local)', LOCAL_STRATEGY_ID);
         return result;
     },
-    generateStoryBible: (idea, logApiCall, onStateChange) => runLocal('generate Story Bible', () => localFallback.generateStoryBible(idea), logApiCall, onStateChange),
+    generateStoryBible: (idea, genre = 'sci-fi', logApiCall, onStateChange) => runLocal('generate Story Bible', () => localFallback.generateStoryBible(idea, genre), logApiCall, onStateChange),
     generateSceneList: (plotOutline, directorsVision, logApiCall, onStateChange) => runLocal('generate scene list', () => localFallback.generateSceneList(plotOutline, directorsVision), logApiCall, onStateChange),
     generateAndDetailInitialShots: (prunedContext, logApiCall, onStateChange) => runLocal('generate and detail initial shots', () => localFallback.generateAndDetailInitialShots(prunedContext), logApiCall, onStateChange),
     suggestStoryIdeas: (logApiCall, onStateChange) => runLocal('suggest ideas', () => localFallback.suggestStoryIdeas(), logApiCall, onStateChange),

@@ -116,7 +116,7 @@ const extractProtagonist = (idea: string): string => {
     return keywords[0] || 'The Protagonist';
 };
 
-export const generateStoryBible = async (idea: string): Promise<StoryBible> => {
+export const generateStoryBible = async (idea: string, genre: string = 'sci-fi'): Promise<StoryBible> => {
     const trimmedIdea = idea.trim();
     const protagonist = extractProtagonist(trimmedIdea);
     const antagonist = pickKeywords(trimmedIdea)[1] || 'A formidable opposition';

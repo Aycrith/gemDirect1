@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion, DetailedShotResult, WorkflowMapping } from "../types";
 import { ApiStatus } from "../contexts/ApiStatusContext";
+import { loadTemplate } from "./templateLoader";
 
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 const model = 'gemini-2.5-flash';
@@ -165,8 +166,24 @@ export const getPrunedContextForBatchProcessing = async (
 
 // --- Core Story Generation ---
 
-export const generateStoryBible = async (idea: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
+export const generateStoryBible = async (idea: string, genre: string = 'sci-fi', logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
     const context = 'generate Story Bible';
+    
+    // Load and apply template enhancement
+    let templateGuidance = '';
+    try {
+        const template = await loadTemplate(genre);
+        templateGuidance = `
+
+**Template Guidance (${genre.charAt(0).toUpperCase() + genre.slice(1)} Genre):**
+The following template has been selected to enhance narrative coherence and thematic consistency. Use these elements to guide your story generation:
+
+${template.content}`;
+    } catch (e) {
+        console.warn(`[generateStoryBible] Failed to load template for genre "${genre}":`, e);
+        // Continue without template guidance if loading fails
+    }
+    
     const prompt = `You are a master storyteller and screenwriter with a deep understanding of multiple narrative structures. Your task is to analyze a user's idea and generate a "Story Bible" using the most fitting narrative framework.
 
     **Narrative Frameworks Available:**
@@ -176,7 +193,7 @@ export const generateStoryBible = async (idea: string, logApiCall: ApiLogCallbac
     - **Save the Cat:** A detailed beat sheet for commercial screenplays.
     - **Kishōtenketsu:** A four-act structure from East Asian narratives (Introduction, Development, Twist, Conclusion). Excellent for reflective stories or those with major twists.
 
-    **User Idea:** "${idea}"
+    **User Idea:** "${idea}"${templateGuidance}
 
     **Your Task:**
     1.  Analyze the user's idea to determine its genre, length, and core conflict.

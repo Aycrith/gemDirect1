@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as db from './database';
-import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot } from '../types';
+import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot, SceneStatus, SceneGenerationStatus } from '../types';
 import { useApiStatus } from '../contexts/ApiStatusContext';
 import { useUsage } from '../contexts/UsageContext';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
@@ -93,6 +93,51 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
 }
 
 /**
+ * A custom hook to track scene generation status in real-time.
+ * Provides per-scene status updates during generation.
+ */
+export function useSceneGenerationWatcher(scenes: Scene[]) {
+    const [sceneStatuses, setSceneStatuses] = useState<Record<string, SceneStatus>>({});
+    
+    // Initialize statuses when scenes change
+    useEffect(() => {
+        const newStatuses: Record<string, SceneStatus> = {};
+        scenes.forEach(scene => {
+            newStatuses[scene.id] = {
+                sceneId: scene.id,
+                title: scene.title,
+                status: 'pending' as SceneGenerationStatus,
+                progress: 0,
+            };
+        });
+        setSceneStatuses(newStatuses);
+    }, [scenes]);
+    
+    // Track scene generation lifecycle
+    const updateSceneStatus = useCallback((
+        sceneId: string, 
+        status: SceneGenerationStatus, 
+        progress?: number, 
+        error?: string
+    ) => {
+        setSceneStatuses(prev => ({
+            ...prev,
+            [sceneId]: {
+                ...prev[sceneId],
+                sceneId,
+                status,
+                progress: progress ?? prev[sceneId]?.progress ?? 0,
+                error,
+                startTime: prev[sceneId]?.startTime || Date.now(),
+                endTime: (status === 'complete' || status === 'failed') ? Date.now() : undefined,
+            }
+        }));
+    }, []);
+    
+    return { sceneStatuses, updateSceneStatus };
+}
+
+/**
  * A custom hook to manage the core project data lifecycle.
  */
 export function useProjectData(setGenerationProgress: React.Dispatch<React.SetStateAction<{ current: number, total: number, task: string }>>) {
@@ -150,10 +195,10 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         if (!isLoading) db.saveScenes(scenes);
     }, [scenes, isLoading]);
 
-    const handleGenerateStoryBible = useCallback(async (idea: string, addToast: (message: string, type: ToastMessage['type']) => void) => {
+    const handleGenerateStoryBible = useCallback(async (idea: string, genre: string = 'sci-fi', addToast: (message: string, type: ToastMessage['type']) => void) => {
         setIsLoading(true);
         try {
-            const bible = await planActions.generateStoryBible(idea, logApiCall, updateApiStatus);
+            const bible = await planActions.generateStoryBible(idea, genre, logApiCall, updateApiStatus);
             setStoryBible(bible);
             setWorkflowStage('bible');
             addToast('Story Bible generated successfully!', 'success');
@@ -165,7 +210,12 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         }
     }, [logApiCall, updateApiStatus]);
 
-    const handleGenerateScenes = useCallback(async (vision: string, addToast: (message: string, type: ToastMessage['type']) => void, setGeneratedImages: React.Dispatch<React.SetStateAction<Record<string, string>>>) => {
+    const handleGenerateScenes = useCallback(async (
+        vision: string, 
+        addToast: (message: string, type: ToastMessage['type']) => void, 
+        setGeneratedImages: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+        updateSceneStatus?: (sceneId: string, status: SceneGenerationStatus, progress?: number, error?: string) => void
+    ) => {
         if (!storyBible) return;
         setIsLoading(true);
         setDirectorsVision(vision);
@@ -178,6 +228,12 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                 timeline: { shots: [], shotEnhancers: {}, transitions: [], negativePrompt: '' },
             }));
             setScenes(newScenes);
+            
+            // Mark all scenes as pending
+            newScenes.forEach(s => {
+                updateSceneStatus?.(s.id, 'pending', 0);
+            });
+            
             addToast(`${newScenes.length} scenes generated! Now generating keyframe images.`, 'info');
             
             setGenerationProgress({ current: 0, total: newScenes.length, task: 'Generating Scene Keyframes...' });
@@ -186,15 +242,23 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
             for (let i = 0; i < newScenes.length; i++) {
                 const scene = newScenes[i];
                 try {
+                    // Mark as generating
+                    updateSceneStatus?.(scene.id, 'generating', 10);
+                    
                     const taskMessage = `Generating keyframe for scene: "${scene.title}"`;
                     setGenerationProgress(prev => ({ ...prev, current: i + 1, task: taskMessage }));
                     
                     const image = await mediaActions.generateKeyframeForScene(vision, scene.summary, logApiCall, updateApiStatus);
                     
                     setGeneratedImages(prev => ({ ...prev, [scene.id]: image }));
+                    
+                    // Mark as complete
+                    updateSceneStatus?.(scene.id, 'complete', 100);
                     successes++;
                 } catch (e) {
                     console.error(`Failed to generate keyframe for scene "${scene.title}":`, e);
+                    // Mark as failed
+                    updateSceneStatus?.(scene.id, 'failed', 0, e instanceof Error ? e.message : 'Unknown error');
                 }
 
                 // Add a delay after each request (except the last) to stay well under RPM limits.
@@ -547,6 +611,204 @@ export function useArtifactMetadata(autoRefreshMs = 0): ArtifactMetadataState {
 }
 
 /**
+ * Real-time telemetry update from WebSocket stream
+ */
+export interface RealtimeTelemetryUpdate {
+    sceneId: string;
+    timestamp: number;
+    duration?: number;
+    attempts?: number;
+    gpuVramFree?: number;
+    gpuUtilization?: number;
+    status: 'queued' | 'executing' | 'completed' | 'failed';
+    gpuName?: string;
+    vramDelta?: number;
+}
+
+/**
+ * State returned from useRealtimeTelemetry hook
+ */
+export interface UseRealtimeTelemetryState {
+    telemetry: RealtimeTelemetryUpdate | null;
+    isConnected: boolean;
+    isStreaming: boolean;
+    error: string | null;
+    lastUpdate: number | null;
+    connect: () => void;
+    disconnect: () => void;
+}
+
+/**
+ * Options for configuring real-time telemetry stream
+ */
+export interface UseRealtimeTelemetryOptions {
+    enabled?: boolean;
+    bufferMs?: number;
+    reconnectAttempts?: number;
+    reconnectDelay?: number;
+    debug?: boolean;
+}
+
+/**
+ * Custom hook for real-time telemetry streaming via WebSocket
+ * Connects to ComfyUI /telemetry endpoint and streams live telemetry updates
+ * 
+ * @param options Configuration options for the telemetry stream
+ * @returns Telemetry state with connection controls
+ */
+export function useRealtimeTelemetry(
+    options: UseRealtimeTelemetryOptions = {}
+): UseRealtimeTelemetryState {
+    const {
+        enabled = true,
+        bufferMs = 200,
+        reconnectAttempts = 5,
+        reconnectDelay = 1000,
+        debug = false
+    } = options;
+
+    const [telemetry, setTelemetry] = useState<RealtimeTelemetryUpdate | null>(null);
+    const [isConnected, setIsConnected] = useState(false);
+    const [isStreaming, setIsStreaming] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+
+    const wsRef = useRef<WebSocket | null>(null);
+    const reconnectCountRef = useRef(0);
+    const bufferTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const bufferedUpdatesRef = useRef<RealtimeTelemetryUpdate | null>(null);
+
+    const debugLog = useCallback((message: string, data?: unknown) => {
+        if (debug) {
+            console.log(`[useRealtimeTelemetry] ${message}`, data);
+        }
+    }, [debug]);
+
+    const connect = useCallback(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
+            debugLog('WebSocket already connecting/connected');
+            return;
+        }
+
+        debugLog('Attempting to connect to telemetry stream');
+        
+        try {
+            // Determine WebSocket URL based on current location
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            // Try connecting to local ComfyUI first, then fall back to current host
+            const wsUrl = `${protocol}//${host}/telemetry` || `${protocol}//127.0.0.1:8188/telemetry`;
+            
+            const ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                debugLog('WebSocket connected');
+                setIsConnected(true);
+                setError(null);
+                reconnectCountRef.current = 0;
+                setIsStreaming(true);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const update: RealtimeTelemetryUpdate = JSON.parse(event.data);
+                    debugLog('Received telemetry update', update);
+
+                    // Buffer updates to avoid excessive re-renders
+                    bufferedUpdatesRef.current = update;
+                    setLastUpdate(Date.now());
+
+                    // Clear existing timeout and set new one
+                    if (bufferTimeoutRef.current) {
+                        clearTimeout(bufferTimeoutRef.current);
+                    }
+
+                    bufferTimeoutRef.current = setTimeout(() => {
+                        if (bufferedUpdatesRef.current) {
+                            setTelemetry(bufferedUpdatesRef.current);
+                            bufferedUpdatesRef.current = null;
+                        }
+                    }, bufferMs);
+                } catch (err) {
+                    debugLog('Error parsing telemetry message', err);
+                    setError(err instanceof Error ? err.message : 'Failed to parse telemetry');
+                }
+            };
+
+            ws.onerror = (event) => {
+                debugLog('WebSocket error', event);
+                setError('WebSocket connection error');
+                setIsStreaming(false);
+            };
+
+            ws.onclose = () => {
+                debugLog('WebSocket disconnected');
+                setIsConnected(false);
+                setIsStreaming(false);
+
+                // Attempt to reconnect with exponential backoff
+                if (reconnectCountRef.current < reconnectAttempts) {
+                    reconnectCountRef.current += 1;
+                    const delayMs = reconnectDelay * Math.pow(2, reconnectCountRef.current - 1);
+                    debugLog(`Reconnecting in ${delayMs}ms (attempt ${reconnectCountRef.current}/${reconnectAttempts})`);
+                    
+                    setTimeout(() => {
+                        connect();
+                    }, delayMs);
+                } else {
+                    setError(`Failed to connect after ${reconnectAttempts} attempts`);
+                }
+            };
+
+            wsRef.current = ws;
+        } catch (err) {
+            debugLog('Error creating WebSocket', err);
+            setError(err instanceof Error ? err.message : 'Failed to create WebSocket');
+            setIsStreaming(false);
+        }
+    }, [bufferMs, reconnectAttempts, reconnectDelay, debugLog]);
+
+    const disconnect = useCallback(() => {
+        debugLog('Disconnecting from telemetry stream');
+        
+        if (bufferTimeoutRef.current) {
+            clearTimeout(bufferTimeoutRef.current);
+        }
+
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+
+        setIsConnected(false);
+        setIsStreaming(false);
+        setTelemetry(null);
+        reconnectCountRef.current = 0;
+    }, [debugLog]);
+
+    // Auto-connect on mount if enabled
+    useEffect(() => {
+        if (enabled) {
+            connect();
+        }
+
+        return () => {
+            disconnect();
+        };
+    }, [enabled, connect, disconnect]);
+
+    return {
+        telemetry,
+        isConnected,
+        isStreaming,
+        error,
+        lastUpdate,
+        connect,
+        disconnect
+    };
+}
+
+/**
  * A custom hook to apply an interactive spotlight effect to an element.
  * @returns A ref to be attached to the target HTML element.
  */
@@ -573,4 +835,379 @@ export function useInteractiveSpotlight<T extends HTMLElement>() {
     }, []);
 
     return ref;
+}
+
+/**
+ * Hook for accessing historical run data with filtering and comparison
+ */
+export function useRunHistory() {
+    const [historicalRuns, setHistoricalRuns] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const dbRef = useRef<any>(null);
+
+    // Initialize database on mount
+    useEffect(() => {
+        let isMounted = true;
+
+        const initDB = async () => {
+            try {
+                const { initializeRunHistoryDB } = await import('../services/runHistoryService');
+                dbRef.current = await initializeRunHistoryDB();
+                if (isMounted) {
+                    setError(null);
+                }
+            } catch (err) {
+                if (isMounted) {
+                    setError(err instanceof Error ? err.message : 'Failed to initialize database');
+                }
+            }
+        };
+
+        initDB();
+        return () => { isMounted = false; };
+    }, []);
+
+    // Fetch historical runs
+    const fetchRuns = useCallback(async (criteria?: any, limit = 100) => {
+        if (!dbRef.current) {
+            setError('Database not initialized');
+            return;
+        }
+
+        try {
+            setLoading(true);
+            setError(null);
+            const runs = await dbRef.current.queryRuns(criteria || {}, limit);
+            setHistoricalRuns(runs);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to fetch runs');
+            setHistoricalRuns([]);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    // Save a new run
+    const saveRun = useCallback(async (run: any) => {
+        if (!dbRef.current) {
+            setError('Database not initialized');
+            return;
+        }
+
+        try {
+            await dbRef.current.saveRun(run);
+            // Refresh historical runs
+            await fetchRuns();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to save run');
+        }
+    }, [fetchRuns]);
+
+    // Delete a run
+    const deleteRun = useCallback(async (runId: string) => {
+        if (!dbRef.current) {
+            setError('Database not initialized');
+            return;
+        }
+
+        try {
+            await dbRef.current.deleteRun(runId);
+            // Refresh historical runs
+            await fetchRuns();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to delete run');
+        }
+    }, [fetchRuns]);
+
+    // Get statistics
+    const getStatistics = useCallback(async () => {
+        if (!dbRef.current) {
+            setError('Database not initialized');
+            return null;
+        }
+
+        try {
+            return await dbRef.current.getStatistics();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to get statistics');
+            return null;
+        }
+    }, []);
+
+    // Clear old runs
+    const clearOldRuns = useCallback(async (maxAgeDays: number) => {
+        if (!dbRef.current) {
+            setError('Database not initialized');
+            return 0;
+        }
+
+        try {
+            const deletedCount = await dbRef.current.clearOldRuns(maxAgeDays);
+            // Refresh historical runs
+            await fetchRuns();
+            return deletedCount;
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to clear old runs');
+            return 0;
+        }
+    }, [fetchRuns]);
+
+    // Calculate comparison metrics
+    const compareWithHistorical = useCallback((currentRun: any) => {
+        if (historicalRuns.length === 0) return null;
+
+        // Calculate statistics from historical runs
+        const durations = historicalRuns.map(r => r.metadata.totalDuration);
+        const successRates = historicalRuns.map(r => r.metadata.successRate);
+        const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
+        const avgSuccessRate = successRates.reduce((a, b) => a + b, 0) / successRates.length;
+
+        // Calculate deltas
+        const durationDelta = currentRun.metadata.totalDuration - avgDuration;
+        const durationPercentage = (durationDelta / avgDuration) * 100;
+        const successRateDelta = currentRun.metadata.successRate - avgSuccessRate;
+        
+        // Determine trend (simplified - would need more data for accuracy)
+        let trend: 'improving' | 'degrading' | 'stable' = 'stable';
+        if (Math.abs(durationPercentage) > 20) {
+            trend = durationPercentage < 0 ? 'improving' : 'degrading';
+        }
+
+        return {
+            currentRun,
+            historicalRuns,
+            deltas: {
+                durationDelta,
+                durationPercentage,
+                successRateDelta,
+                gpuPerformanceDelta: 0,
+                trend,
+                trendConfidence: Math.min(100, historicalRuns.length * 15)
+            },
+            statistics: {
+                avgDuration,
+                minDuration: Math.min(...durations),
+                maxDuration: Math.max(...durations),
+                stdDevDuration: Math.sqrt(
+                    durations.reduce((sum, d) => sum + Math.pow(d - avgDuration, 2), 0) / durations.length
+                ),
+                avgSuccessRate,
+                avgGpuUsage: 0
+            }
+        };
+    }, [historicalRuns]);
+
+    return {
+        historicalRuns,
+        loading,
+        error,
+        fetchRuns,
+        saveRun,
+        deleteRun,
+        getStatistics,
+        clearOldRuns,
+        compareWithHistorical,
+        dbInitialized: dbRef.current !== null
+    };
+}
+
+/**
+ * Hook to manage ComfyUI callback integration and automatic data ingestion
+ * Listens for workflow completion events and populates historical data
+ */
+export function useComfyUICallbackManager() {
+    const [isInitialized, setIsInitialized] = useState(false);
+    const [subscriptionId] = useState(`subscriber-${Date.now()}`);
+    const [lastWorkflow, setLastWorkflow] = useState<any | null>(null);
+    const callbackManagerRef = useRef<any>(null);
+
+    // Initialize callback manager on mount
+    useEffect(() => {
+        let isMounted = true;
+
+        const initializeCallbackManager = async () => {
+            try {
+                const { initializeRunHistoryDB } = await import('../services/runHistoryService');
+                const { getCallbackManager } = await import('../services/comfyUICallbackService');
+                
+                const db = await initializeRunHistoryDB();
+                const manager = await getCallbackManager(db);
+                
+                if (isMounted) {
+                    callbackManagerRef.current = manager;
+                    setIsInitialized(true);
+                }
+            } catch (error) {
+                console.error('Failed to initialize ComfyUI callback manager:', error);
+            }
+        };
+
+        initializeCallbackManager();
+        return () => { isMounted = false; };
+    }, []);
+
+    // Subscribe to workflow completion events
+    useEffect(() => {
+        if (!isInitialized || !callbackManagerRef.current) return;
+
+        const handleWorkflowCompletion = (event: any) => {
+            setLastWorkflow(event);
+            // Trigger a potential UI refresh (useRunHistory will pick up the new data)
+            console.log('✓ Workflow completed and saved to historical data:', event.runId);
+        };
+
+        callbackManagerRef.current.subscribe(subscriptionId, handleWorkflowCompletion);
+
+        return () => {
+            if (callbackManagerRef.current) {
+                callbackManagerRef.current.unsubscribe(subscriptionId);
+            }
+        };
+    }, [isInitialized, subscriptionId]);
+
+    // Public method to manually trigger workflow processing (for testing)
+    const processWorkflowEvent = useCallback(async (event: any) => {
+        if (!callbackManagerRef.current) {
+            console.warn('Callback manager not initialized');
+            return;
+        }
+        await callbackManagerRef.current.processWorkflowEvent(event);
+    }, []);
+
+    // Get statistics from callback manager
+    const getStatistics = useCallback(async () => {
+        if (!callbackManagerRef.current) return null;
+        return await callbackManagerRef.current.getStatistics();
+    }, []);
+
+    return {
+        isInitialized,
+        lastWorkflow,
+        processWorkflowEvent,
+        getStatistics,
+        callbackManager: callbackManagerRef.current
+    };
+}
+
+/**
+ * useRecommendations Hook
+ * 
+ * Loads and manages performance recommendations from IndexedDB.
+ * Supports filtering, dismissal, and clearing.
+ */
+export function useRecommendations(options?: {
+  storyId?: string;
+  severity?: 'critical' | 'warning' | 'info' | 'all';
+  limit?: number;
+}) {
+  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const dbRef = useRef<any>(null);
+
+  // Initialize database on mount
+  useEffect(() => {
+    let isMounted = true;
+
+    const initDB = async () => {
+      try {
+        const { RunHistoryDatabase } = await import('../services/runHistoryService');
+        const db = new RunHistoryDatabase();
+        await db.initialize();
+        if (isMounted) {
+          dbRef.current = db;
+          setError(null);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : 'Failed to initialize database');
+        }
+      }
+    };
+
+    initDB();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Fetch recommendations
+  const fetchRecommendations = useCallback(async () => {
+    if (!dbRef.current) {
+      setError('Database not initialized');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Query all recommendations
+      const allRecs = await dbRef.current.queryRecommendations(
+        {},
+        options?.limit || 50
+      );
+
+      let filtered = Array.isArray(allRecs) ? [...allRecs] : [];
+
+      // Filter by severity
+      if (options?.severity && options.severity !== 'all') {
+        filtered = filtered.filter(r => r.severity === options.severity);
+      }
+
+      // Filter dismissed
+      filtered = filtered.filter(r => !r.dismissed);
+
+      setRecommendations(filtered);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch recommendations');
+      setRecommendations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [options?.severity, options?.limit]);
+
+  // Fetch recommendations on mount
+  useEffect(() => {
+    fetchRecommendations();
+  }, [fetchRecommendations]);
+
+  // Dismiss a recommendation
+  const dismissRecommendation = useCallback(async (id: string) => {
+    if (!dbRef.current) {
+      setError('Database not initialized');
+      return;
+    }
+
+    try {
+      await dbRef.current.dismissRecommendation(id);
+      // Refresh list
+      await fetchRecommendations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to dismiss recommendation');
+    }
+  }, [fetchRecommendations]);
+
+  // Clear all recommendations
+  const clearAllRecommendations = useCallback(async () => {
+    if (!dbRef.current) {
+      setError('Database not initialized');
+      return;
+    }
+
+    try {
+      await dbRef.current.clearRecommendations();
+      setRecommendations([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear recommendations');
+    }
+  }, []);
+
+  return {
+    recommendations,
+    loading,
+    error,
+    dismissRecommendation,
+    clearAllRecommendations,
+    refresh: fetchRecommendations,
+  };
 }

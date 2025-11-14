@@ -1,5 +1,10 @@
-import { useState, useMemo } from 'react';
-import { useArtifactMetadata, type ArtifactMetadata, type ArtifactSceneMetadata, type StoryLLMMetadata } from '../utils/hooks';
+import { useState, useMemo, useEffect } from 'react';
+import { useArtifactMetadata, type ArtifactMetadata, type ArtifactSceneMetadata, type StoryLLMMetadata, useRunHistory } from '../utils/hooks';
+import TelemetryBadges from './TelemetryBadges';
+import QueuePolicyCard from './QueuePolicyCard';
+import FallbackWarningsCard from './FallbackWarningsCard';
+import HistoricalTelemetryCard from './HistoricalTelemetryCard';
+import TelemetryComparisonChart from './TelemetryComparisonChart';
 
 type ArtifactScene = ArtifactSceneMetadata;
 
@@ -104,7 +109,20 @@ const buildTelemetrySummary = (scene: ArtifactScene): string[] => {
 
 const ArtifactViewer: React.FC = () => {
     const { artifact, error, loading, refresh } = useArtifactMetadata();
+    const { historicalRuns, compareWithHistorical, dbInitialized } = useRunHistory();
     const [showWarningsOnly, setShowWarningsOnly] = useState(false);
+    const [comparison, setComparison] = useState<any>(null);
+
+    // Calculate comparison with historical data when artifact or historicalRuns change
+    useEffect(() => {
+        if (dbInitialized && artifact && historicalRuns.length > 0 && compareWithHistorical) {
+            const comp = compareWithHistorical(artifact);
+            setComparison(comp);
+        } else {
+            setComparison(null);
+        }
+    }, [artifact, historicalRuns, dbInitialized, compareWithHistorical]);
+
     const scenesToDisplay = useMemo(() => {
         if (!artifact) {
             return [];
@@ -211,6 +229,44 @@ const ArtifactViewer: React.FC = () => {
                     ))}
                 </div>
             )}
+
+            {/* Telemetry & Queue Policy Cards - Enhanced Section */}
+            <div className="grid gap-4 md:grid-cols-2">
+                {/* Queue Policy */}
+                <div className="bg-gray-950/60 border border-emerald-500/30 rounded-lg p-4 space-y-1 text-xs text-gray-300">
+                    {queuePolicy ? (
+                        <QueuePolicyCard queueConfig={queuePolicy} title="Queue Configuration" />
+                    ) : (
+                        <div>
+                            <p className="text-[11px] uppercase tracking-wide text-emerald-300">Queue policy</p>
+                            <p className="text-gray-400">No queue configuration available</p>
+                        </div>
+                    )}
+                </div>
+
+                {/* Fallback Warnings - Per Run */}
+                <div className="bg-gray-950/60 border border-orange-500/30 rounded-lg p-4 space-y-1 text-xs text-gray-300">
+                    {artifact.Scenes && artifact.Scenes.length > 0 ? (
+                        (() => {
+                            // Aggregate warnings from all scenes
+                            const firstScene = artifact.Scenes[0];
+                            return (
+                                <FallbackWarningsCard
+                                    exitReason={firstScene.Telemetry?.HistoryExitReason}
+                                    executionSuccessDetected={firstScene.Telemetry?.ExecutionSuccessDetected}
+                                    postExecutionTimeoutReached={firstScene.Telemetry?.HistoryPostExecutionTimeoutReached}
+                                    title="Run Fallback Warnings"
+                                />
+                            );
+                        })()
+                    ) : (
+                        <div>
+                            <p className="text-[11px] uppercase tracking-wide text-orange-300">Fallback warnings</p>
+                            <p className="text-gray-400">No scenes available</p>
+                        </div>
+                    )}
+                </div>
+            </div>
 
             <div className="grid gap-4 md:grid-cols-2">
                 <div className="bg-gray-950/60 border border-emerald-500/30 rounded-lg p-4 space-y-1 text-xs text-gray-300">
@@ -402,7 +458,18 @@ const ArtifactViewer: React.FC = () => {
             </div>
 
             <div className="space-y-3 text-xs text-gray-300">
-                {artifact.Scenes.map((scene) => (
+                {artifact.Scenes.map((scene) => {
+                    const historyConfig = scene.HistoryConfig;
+                    const historyConfigAttemptsLabel =
+                        historyConfig && historyConfig.MaxAttempts && historyConfig.MaxAttempts > 0
+                            ? historyConfig.MaxAttempts
+                            : 'unbounded';
+                    const pollLogCount = scene.HistoryPollLog?.length ?? 0;
+                    const lastPollStatus =
+                        pollLogCount > 0 ? scene.HistoryPollLog?.[pollLogCount - 1]?.Status ?? 'n/a' : 'n/a';
+                    const fallbackNotes = scene.Telemetry?.System?.FallbackNotes?.filter(Boolean) ?? [];
+
+                    return (
                     <details key={`${scene.SceneId}-details`} className="bg-gray-950/50 border border-gray-800 rounded-lg p-3">
                         <summary className="cursor-pointer text-sm text-emerald-300">
                             Scene {scene.SceneId} details
@@ -472,30 +539,24 @@ const ArtifactViewer: React.FC = () => {
                                 </div>
                             )}
                             {scene.Telemetry && (
-                                <div className="text-gray-400 space-y-0.5">
-                                    <span className="text-gray-500 block">Telemetry</span>
-                                    <div>Duration: {scene.Telemetry.DurationSeconds?.toFixed(1) ?? 'n/a'}s</div>
-                                    {scene.Telemetry.GPU?.Name && (
-                                        <div>
-                                            GPU: {scene.Telemetry.GPU.Name}
-                                            {scene.Telemetry.GPU.VramTotal != null && (
-                                                <span className="text-gray-500"> · total {formatVramValue(scene.Telemetry.GPU.VramTotal)}</span>
-                                            )}
-                                        </div>
-                                    )}
-                                    {scene.Telemetry.GPU?.VramFreeBefore != null && (
-                                        <div>
-                                            VRAM free: {formatVramValue(scene.Telemetry.GPU.VramFreeBefore)} / {formatVramValue(scene.Telemetry.GPU.VramFreeAfter)}
-                                        </div>
-                                    )}
-                                    {scene.Telemetry.GPU?.VramDelta != null && (
-                                        <div>VRAM delta: {formatVramDelta(scene.Telemetry.GPU.VramDelta)}</div>
-                                    )}
+                                <div className="space-y-2 border-t border-gray-800 pt-2 mt-2">
+                                    <div className="text-gray-500 block font-semibold text-sm">Telemetry Details</div>
+                                    <TelemetryBadges
+                                        duration={scene.Telemetry.DurationSeconds}
+                                        attempts={scene.Telemetry.HistoryAttempts}
+                                        gpuName={scene.Telemetry.GPU?.Name}
+                                        vramBefore={scene.Telemetry.GPU?.VramFreeBefore}
+                                        vramAfter={scene.Telemetry.GPU?.VramFreeAfter}
+                                        vramDelta={scene.Telemetry.GPU?.VramDelta}
+                                        exitReason={scene.Telemetry.HistoryExitReason}
+                                        executionSuccessDetected={scene.Telemetry.ExecutionSuccessDetected}
+                                        postExecutionTimeoutReached={scene.Telemetry.HistoryPostExecutionTimeoutReached}
+                                    />
                                     {scene.Telemetry.QueueStart && (
-                                        <div>Queue start: {new Date(scene.Telemetry.QueueStart).toLocaleTimeString()}</div>
+                                        <div className="text-xs text-gray-400">Queue start: {new Date(scene.Telemetry.QueueStart).toLocaleTimeString()}</div>
                                     )}
                                     {scene.Telemetry.QueueEnd && (
-                                        <div>Queue end: {new Date(scene.Telemetry.QueueEnd).toLocaleTimeString()}</div>
+                                        <div className="text-xs text-gray-400">Queue end: {new Date(scene.Telemetry.QueueEnd).toLocaleTimeString()}</div>
                                     )}
                                 </div>
                             )}
@@ -558,7 +619,8 @@ const ArtifactViewer: React.FC = () => {
                             )}
                         </div>
                     </details>
-                ))}
+                    );
+                })}
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 text-xs text-gray-400">
@@ -593,6 +655,104 @@ const ArtifactViewer: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {/* Historical Telemetry Section - Wave 2 */}
+            {dbInitialized && historicalRuns.length > 0 && (
+                <div className="space-y-4 mt-6">
+                    <div className="border-t border-gray-700 pt-6">
+                        <h3 className="text-gray-400 text-[11px] uppercase tracking-wide mb-4">Historical Analysis (Wave 2)</h3>
+
+                        {/* Run-level Comparison */}
+                        <div className="mb-6">
+                            <HistoricalTelemetryCard
+                                currentDuration={artifact.Story.Telemetry?.DurationMs}
+                                currentSuccessRate={artifact.Story.Telemetry?.SuccessRate}
+                                comparison={comparison}
+                                artifact={artifact}
+                            />
+                        </div>
+
+                        {/* Duration Trend Chart */}
+                        <div className="mb-6">
+                            <div className="text-gray-500 text-[11px] uppercase tracking-wide mb-2">Duration Trend</div>
+                            <TelemetryComparisonChart
+                                data={historicalRuns}
+                                metric="duration"
+                                currentValue={artifact.Story.Telemetry?.DurationMs}
+                            />
+                        </div>
+
+                        {/* Success Rate Trend Chart */}
+                        <div className="mb-6">
+                            <div className="text-gray-500 text-[11px] uppercase tracking-wide mb-2">Success Rate Trend</div>
+                            <TelemetryComparisonChart
+                                data={historicalRuns}
+                                metric="successRate"
+                                currentValue={artifact.Story.Telemetry?.SuccessRate}
+                            />
+                        </div>
+
+                        {/* Per-Scene Historical Comparison */}
+                        {artifact.Story.Scenes && artifact.Story.Scenes.length > 0 && (
+                            <div>
+                                <div className="text-gray-500 text-[11px] uppercase tracking-wide mb-3">Per-Scene Historical Metrics</div>
+                                <div className="space-y-3">
+                                    {artifact.Story.Scenes.map((scene) => {
+                                        const sceneHistory = historicalRuns
+                                            .flatMap((run) => run.scenes || [])
+                                            .filter((s) => s.sceneId === scene.SceneId);
+
+                                        if (sceneHistory.length === 0) {
+                                            return null;
+                                        }
+
+                                        const avgDuration =
+                                            sceneHistory.reduce((sum, s) => sum + (s.durationMs || 0), 0) / sceneHistory.length;
+                                        const currentDuration = scene.Telemetry?.DurationMs;
+                                        const delta = currentDuration ? currentDuration - avgDuration : null;
+
+                                        return (
+                                            <div
+                                                key={scene.SceneId}
+                                                className="px-3 py-2 bg-gray-800 rounded text-[11px] text-gray-300"
+                                            >
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="font-semibold text-gray-200">{scene.SceneId}</span>
+                                                    {delta !== null && (
+                                                        <span
+                                                            className={`${
+                                                                delta < 0
+                                                                    ? 'text-emerald-400'
+                                                                    : delta > 0
+                                                                      ? 'text-amber-400'
+                                                                      : 'text-gray-400'
+                                                            }`}
+                                                        >
+                                                            {delta < 0 ? '📈' : delta > 0 ? '📉' : '➡️'}{' '}
+                                                            {Math.abs(delta).toFixed(0)}ms
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="text-gray-400">
+                                                    Current: {currentDuration?.toFixed(0)}ms | Avg: {avgDuration.toFixed(0)}ms | History:
+                                                    {sceneHistory.length} runs
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Empty State for Historical Data */}
+            {dbInitialized && historicalRuns.length === 0 && (
+                <div className="mt-6 pt-6 border-t border-gray-700 text-center text-gray-500 text-[11px]">
+                    <p>Historical telemetry data will appear here after additional runs are completed</p>
+                </div>
+            )}
         </section>
     );
 };
