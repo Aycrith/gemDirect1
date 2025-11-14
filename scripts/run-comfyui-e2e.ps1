@@ -293,12 +293,15 @@ if ($FastIteration.IsPresent) {
     $SceneHistoryPollIntervalSeconds = 1
     # Reduce post-execution timeout for quick experiments
     $ScenePostExecutionTimeoutSeconds = [int]15
+    # Reduce frame wait timeout in fast iteration mode (60s instead of 300s)
+    $FrameWaitTimeoutSeconds = 60
     $SentinelScanIntervalSeconds = 0.5
     $SentinelStableSeconds = 1
     $QueueStabilitySeconds = 1
     $QueueStabilityRetries = 2
-    Add-RunSummary ("FastIteration mode enabled: historyMaxWait={0}s historyPollInterval={1}s postExecTimeout={2}s sentinelScan={3}s sentinelStable={4}s queueStability={5}s stabilityRetries={6}" -f $SceneMaxWaitSeconds, $SceneHistoryPollIntervalSeconds, $ScenePostExecutionTimeoutSeconds, $SentinelScanIntervalSeconds, $SentinelStableSeconds, $QueueStabilitySeconds, $QueueStabilityRetries)
+    Add-RunSummary ("FastIteration mode enabled: historyMaxWait={0}s historyPollInterval={1}s postExecTimeout={2}s frameWaitTimeout={3}s sentinelScan={4}s sentinelStable={5}s queueStability={6}s stabilityRetries={7}" -f $SceneMaxWaitSeconds, $SceneHistoryPollIntervalSeconds, $ScenePostExecutionTimeoutSeconds, $FrameWaitTimeoutSeconds, $SentinelScanIntervalSeconds, $SentinelStableSeconds, $QueueStabilitySeconds, $QueueStabilityRetries)
 } else {
+    $FrameWaitTimeoutSeconds = 300
     $SentinelScanIntervalSeconds = 2
     $SentinelStableSeconds = 3
     $QueueStabilitySeconds = 5
@@ -481,7 +484,8 @@ foreach ($scene in $SceneDefinitions) {
                     -WaitForDoneMarker $true `
                     -DoneMarkerTimeoutSeconds $ScenePostExecutionTimeoutSeconds `
                     -StabilitySeconds $QueueStabilitySeconds `
-                    -StabilityRetries $QueueStabilityRetries
+                    -StabilityRetries $QueueStabilityRetries `
+                    -FrameWaitTimeoutSeconds $FrameWaitTimeoutSeconds
         } catch {
             $err = $_.Exception.Message
             Write-Warning "[Scene $sceneId] Attempt $attempt failed: $err"

@@ -26,6 +26,7 @@ param(
     ,[int] $DoneMarkerTimeoutSeconds = 60
     ,[int] $StabilitySeconds = 5
     ,[int] $StabilityRetries = 3
+    ,[int] $FrameWaitTimeoutSeconds = 300
 )
 
 $ErrorActionPreference = 'Stop'
@@ -412,7 +413,8 @@ if ($historyData) {
 # After history timeout, continue waiting for frames to be written to disk
 # ComfyUI may still be generating/saving frames even if history endpoint hasn't populated yet
 $frameWaitStart = Get-Date
-$frameWaitTimeout = 300  # Additional 300 seconds (5 minutes) to wait for frames after history timeout
+$frameWaitTimeout = $FrameWaitTimeoutSeconds  # Configurable timeout (default 300s, reduced in FastIteration mode)
+Write-SceneLog ("Debug: Starting frame detection loop; will wait up to {0}s for frames" -f $frameWaitTimeout)
 $framesFound = $false
 $noFrameCount = 0
 $sceneFrames = @()
@@ -490,6 +492,7 @@ while (-not $framesFound -and ((New-TimeSpan -Start $frameWaitStart).TotalSecond
     $sceneFrames = @()
     $frameCheckCount = 0
     $candidates = @()
+    $loopElapsed = [Math]::Round((New-TimeSpan -Start $frameWaitStart).TotalSeconds, 1)
 
     foreach ($outputDir in $possibleOutputDirs) {
         if (-not (Test-Path $outputDir)) {
@@ -506,9 +509,15 @@ while (-not $framesFound -and ((New-TimeSpan -Start $frameWaitStart).TotalSecond
             # LastWriteTime of the most recently written file in this directory
             $latest = ($frames | Select-Object -Last 1).LastWriteTime
             $candidates += [pscustomobject]@{ Dir = $outputDir; Count = $count; Latest = $latest; Frames = $frames }
+            Write-SceneLog ("Debug: [{0}s] found {1} frames in {2}" -f $loopElapsed, $count, $outputDir)
         }
+    }
 
-        Write-SceneLog ("Debug: scanning outputDir={0} matched={1} latest={2}" -f $outputDir, $count, ($latest -as [string]))
+    if ($frameCheckCount -eq 0) {
+        # No frames found yet; sleep briefly and retry
+        $scanInterval = if ($StabilitySeconds -lt 1) { 0.5 } else { 1 }
+        Start-Sleep -Milliseconds ([int]($scanInterval * 1000))
+        continue
     }
 
     if ($candidates.Count -gt 0) {
@@ -519,7 +528,10 @@ while (-not $framesFound -and ((New-TimeSpan -Start $frameWaitStart).TotalSecond
         if ($WaitForDoneMarker) {
             foreach ($cand in $candidates) {
                 $markerPath = Join-Path $cand.Dir ("$scenePrefix.done")
-                if (Test-Path $markerPath) { $markerCandidates += $cand }
+                if (Test-Path $markerPath) { 
+                    Write-SceneLog ("Debug: [{0}s] done marker found: {1}" -f $loopElapsed, $markerPath)
+                    $markerCandidates += $cand 
+                }
             }
         }
 
@@ -546,21 +558,23 @@ while (-not $framesFound -and ((New-TimeSpan -Start $frameWaitStart).TotalSecond
         $markerPath = Join-Path $best.Dir ("$scenePrefix.done")
         if ($WaitForDoneMarker -and ($markerCandidates.Count -eq 0)) {
             $doneWaitElapsed = 0
-            $doneWaitInterval = 2
-            while (-not (Test-Path $markerPath) -and $doneWaitElapsed -lt $DoneMarkerTimeoutSeconds) {
-                Write-SceneLog ("Debug: waiting for done marker {0} (elapsed {1}/{2}s)" -f $markerPath, $doneWaitElapsed, $DoneMarkerTimeoutSeconds)
+            $doneWaitInterval = if ($StabilitySeconds -lt 1) { 0.5 } else { 1 }
+            # Reduce done marker timeout in fast iteration mode (use StabilitySeconds as proxy)
+            $markerDeadline = if ($StabilitySeconds -lt 1) { 10 } else { $DoneMarkerTimeoutSeconds }
+            while (-not (Test-Path $markerPath) -and $doneWaitElapsed -lt $markerDeadline) {
+                Write-SceneLog ("Debug: [{0}s] waiting for done marker (elapsed {1}/{2}s)" -f $loopElapsed, $doneWaitElapsed, $markerDeadline)
                 Start-Sleep -Seconds $doneWaitInterval
                 $doneWaitElapsed += $doneWaitInterval
             }
             $doneMarkerWaitTimeSeconds = $doneWaitElapsed
             if (Test-Path $markerPath) {
-                Write-SceneLog ("Debug: done marker found: {0}" -f $markerPath)
+                Write-SceneLog ("Debug: [{0}s] done marker found after {1}s: {2}" -f $loopElapsed, $doneWaitElapsed, $markerPath)
                 # Marker indicates producer finished writing sequence; skip stability checks
                 $skipStabilityCheck = $true
                 $doneMarkerDetected = $true
                 $doneMarkerPath = $markerPath
-                Write-SceneLog ("Debug: done marker wait time: {0}s" -f [Math]::Round($doneMarkerWaitTimeSeconds, 1))
             } else {
+                Write-SceneLog ("Debug: [{0}s] done marker NOT found after {1}s; proceeding with stability checks" -f $loopElapsed, $doneWaitElapsed)
                 Write-SceneLog ("Debug: done marker not found after {0}s; falling back to stability checks" -f $DoneMarkerTimeoutSeconds)
                 $doneMarkerWarnings += "Done marker not found after $DoneMarkerTimeoutSeconds seconds (waited $doneMarkerWaitTimeSeconds seconds)"
             }
@@ -821,7 +835,7 @@ Write-SceneLog ("Debug: GPU fallback sources: before={0} after={1}" -f $beforeFa
     System = @{
         Before = if ($systemStatsBefore -and $systemStatsBefore.system) { $systemStatsBefore.system } else { $null }
         After = if ($systemStatsAfter -and $systemStatsAfter.system) { $systemStatsAfter.system } else { $null }
-        FallbackNotes = (@($fallbackNotes) | Where-Object { $_ -and $_ -ne '' })
+        FallbackNotes = @(@($fallbackNotes) | Where-Object { $_ -and $_ -ne '' })
     }
 }
 
