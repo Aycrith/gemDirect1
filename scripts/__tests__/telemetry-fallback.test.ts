@@ -24,4 +24,22 @@ describe('Telemetry fallback-note generation', () => {
     const notes = generateFallbackNotes({ system: {} }, { system: {} }, null, null)
     expect(notes.length).toBe(0)
   })
+
+  it('includes frame stability warnings when provided', () => {
+    const frameWarnings = ['Frames not stable yet']
+    const notes = generateFallbackNotes(null, null, null, null, frameWarnings)
+    expect(notes).toContain('Frames not stable yet')
+  })
+
+  it('includes forced copy note when provided', () => {
+    const forcedCopy = 'Forced copy after retries'
+    const notes = generateFallbackNotes(null, null, null, null, undefined, forcedCopy)
+    expect(notes).toContain('Forced copy after retries')
+  })
+
+  it('includes done marker warnings when provided', () => {
+    const doneWarnings = ['Done marker not found in time']
+    const notes = generateFallbackNotes(null, null, null, null, undefined, null, doneWarnings)
+    expect(notes).toContain('Done marker not found in time')
+  })
 })

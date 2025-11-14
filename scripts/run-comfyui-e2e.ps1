@@ -295,6 +295,7 @@ if ($FastIteration.IsPresent) {
     $SentinelStableSeconds = 1
     $QueueStabilitySeconds = 1
     $QueueStabilityRetries = 2
+    Add-RunSummary ("FastIteration mode enabled: historyPollInterval={0}s postExecTimeout={1}s sentinelScan={2}s sentinelStable={3}s queueStability={4}s stabilityRetries={5}" -f $SceneHistoryPollIntervalSeconds, $ScenePostExecutionTimeoutSeconds, $SentinelScanIntervalSeconds, $SentinelStableSeconds, $QueueStabilitySeconds, $QueueStabilityRetries)
 } else {
     $SentinelScanIntervalSeconds = 2
     $SentinelStableSeconds = 3
@@ -638,6 +639,18 @@ foreach ($scene in $SceneDefinitions) {
                 if ($result.Telemetry.GPU.VramDeltaMB -ne $null) {
                     $telemetrySummaryParts += ("VRAMDeltaMB={0}MB" -f $result.Telemetry.GPU.VramDeltaMB)
                 }
+            }
+
+            if ($result.Telemetry.DoneMarkerWaitSeconds -ne $null) {
+                $telemetrySummaryParts += ("DoneMarkerWaitSeconds={0}s" -f $result.Telemetry.DoneMarkerWaitSeconds)
+            }
+            $telemetrySummaryParts += ("DoneMarkerDetected={0}" -f ($result.Telemetry.DoneMarkerDetected ? 'true' : 'false'))
+            if ($result.Telemetry.DoneMarkerPath) {
+                $telemetrySummaryParts += ("DoneMarkerPath={0}" -f $result.Telemetry.DoneMarkerPath)
+            }
+            $telemetrySummaryParts += ("ForcedCopyTriggered={0}" -f ($result.Telemetry.ForcedCopyTriggered ? 'true' : 'false'))
+            if ($result.Telemetry.ForcedCopyTriggered -and $result.Telemetry.ForcedCopyDebugPath) {
+                $telemetrySummaryParts += ("ForcedCopyDebugPath={0}" -f $result.Telemetry.ForcedCopyDebugPath)
             }
             if ($result.Telemetry.System -and $result.Telemetry.System.FallbackNotes) {
                 $fallbackNotes = $result.Telemetry.System.FallbackNotes | Where-Object { $_ } | ForEach-Object { $_.ToString() }

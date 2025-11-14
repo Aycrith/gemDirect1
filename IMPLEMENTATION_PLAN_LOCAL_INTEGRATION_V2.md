@@ -15,6 +15,7 @@
 5. **Artifact metadata** collected in JSON
 6. **Validator** checks for telemetry fields
 7. **Vitest runner** outputs vitest-results.json with exit codes/logs
+8. **Producer sentinel handshake & FastIteration logging**: `scripts/generate-done-markers.ps1` plus the `write_done_marker.py` helper create atomic `<prefix>.done` sentinels, `queue-real-workflow.ps1` waits for them (logging `DoneMarker*` and forced-copy fields in telemetry plus `forced-copy-debug-<ts>.txt`), `scripts/install-sentinel-service.ps1` publishes an NSSM command, and `scripts/run-comfyui-e2e.ps1 -FastIteration` now notes the reduced poll/post-exec windows inside `run-summary.txt` so quick-turn runs are explicit in the logs.
 
 ### ⚠️ Gaps to Address
 1. **Telemetry logging in run-summary** - pollLimit field present but needs verification it always matches metadata
@@ -38,8 +39,8 @@
 
 ### Phase 2: Documentation Pass (Foundation)
 **Files**:
-- README.md - ensure telemetry section is clear
-- DOCUMENTATION_INDEX_20251111.md - refresh "Required Telemetry & Queue Policy Orientation"  
+- README.md - ensure telemetry section is clear, mention `run-summary` FastIteration/logging line, and document the producer `.done` sentinel plus forced-copy telemetry handling
+- DOCUMENTATION_INDEX_20251111.md - refresh "Required Telemetry & Queue Policy Orientation" and describe the sentinel handshake plus forced-copy debug artifacts
 - STORY_TO_VIDEO_PIPELINE_PLAN.md - add telemetry/queue details
 - HANDOFF_SESSION_NOTES.md - ensure complete
 - Add new `TELEMETRY_CONTRACT.md` - explicit spec document
@@ -160,6 +161,16 @@ Enhance with:
 - Note about external docs (LM Studio, ComfyUI)
 
 **Impact**: Clearer expectations for new agents
+
+### Task 2.3: Document sentinel/done marker & FastIteration heuristics
+**Files**: `README.md`, `DOCUMENTATION_INDEX_20251111.md`
+
+Add:
+- A description of the producer-side `.done` sentinel generation (`scripts/generate-done-markers.ps1`, `write_done_marker.py`, `scripts/install-sentinel-service.ps1`) and how the queue consumer logs `DoneMarkerFound`, `DoneMarkerWaitSeconds`, and forced-copy telemetry fields
+- A note that `run-comfyui-e2e.ps1 -FastIteration` shortens `PollIntervalSeconds`/`PostExecutionTimeoutSeconds` and explicitly logs the override inside `run-summary.txt`
+- References to the forced-copy debugging dump files (`forced-copy-debug-*.txt`) so operators can inspect stale data.
+
+**Impact**: Operators can trace sentinel failures in documentation and reproduce FastIteration logs reliably
 
 ### Task 3.1: Add useArtifactMetadata Hook
 **File**: `utils/hooks.ts`

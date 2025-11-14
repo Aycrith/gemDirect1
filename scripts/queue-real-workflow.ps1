@@ -37,15 +37,67 @@ function Write-SceneLog {
     Write-Host "[Real E2E][$SceneId] $Message"
 }
 
+function Normalize-VramValue {
+    param([object] $Value)
+
+    if ($null -eq $Value) { return 0 }
+    if ($Value -is [long] -or $Value -is [int]) { return [double]$Value }
+    if ($Value -is [string]) {
+        if ([double]::TryParse($Value, [ref]$parsed)) { return $parsed }
+        return 0
+    }
+    try {
+        return [double]$Value
+    } catch {
+        return 0
+    }
+}
+
+function Get-NvidiaSmiSystemStats {
+    # Reference: NVIDIA nvidia-smi output documentation for --query-gpu
+    $gpu = Get-GpuSnapshotFromNvidiaSmi
+    if (-not $gpu) { return $null }
+    return [pscustomobject]@{
+        system = [ordered]@{
+            source = 'nvidia-smi'
+            note = 'Fallback when /system_stats is unavailable or incomplete'
+        }
+        devices = @(
+            [ordered]@{
+                name = $gpu.Name
+                type = $gpu.Type
+                index = $gpu.Index
+                vram_total = $gpu.VramTotal
+                vram_free = $gpu.VramFree
+                fallback = $gpu.FallbackSource
+            }
+        )
+    }
+}
+
 function Get-ComfySystemStats {
     param(
         [string] $BaseUrl
     )
-    try {
-        return Invoke-RestMethod -Uri "$BaseUrl/system_stats" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
-    } catch {
-        return $null
+    $maxAttempts = 3
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        try {
+            $stats = Invoke-RestMethod -Uri "$BaseUrl/system_stats" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+            return $stats
+        } catch {
+            Write-SceneLog ("Debug: /system_stats attempt {0}/{1} failed: {2}" -f $attempt, $maxAttempts, $_.Exception.Message)
+            if ($attempt -lt $maxAttempts) {
+                Start-Sleep -Milliseconds 500
+            }
+        }
     }
+    # Fall back to parsing nvidia-smi when /system_stats is unreachable (see https://developer.nvidia.com/nvidia-system-management-interface)
+    $smiStats = Get-NvidiaSmiSystemStats
+    if ($smiStats) {
+        Write-SceneLog "Debug: /system_stats unavailable; using nvidia-smi fallback for GPU summary"
+        return $smiStats
+    }
+    return $null
 }
 
 function Get-GpuSnapshotFromNvidiaSmi {
@@ -77,8 +129,8 @@ function Get-GpuSnapshotFromNvidiaSmi {
         if ([int]::TryParse($parts[2], [ref]$tmp)) { $memTotalMB = $tmp }
         if ([int]::TryParse($parts[3], [ref]$tmp)) { $memFreeMB = $tmp }
 
-        $vramTotalBytes = if ($memTotalMB -ne $null) { [int64]$memTotalMB * 1048576 } else { $null }
-        $vramFreeBytes = if ($memFreeMB -ne $null) { [int64]$memFreeMB * 1048576 } else { $null }
+        $vramTotalBytes = if ($memTotalMB -ne $null) { [int64]$memTotalMB * 1048576 } else { 0 }
+        $vramFreeBytes = if ($memFreeMB -ne $null) { [int64]$memFreeMB * 1048576 } else { 0 }
 
         return @{ Name = $name; Type = 'nvidia'; Index = $index; VramTotal = $vramTotalBytes; VramFree = $vramFreeBytes; FallbackSource = 'nvidia-smi' }
     } catch {
@@ -103,20 +155,24 @@ function Get-GpuSnapshot {
             if ($device.PSObject.Properties.Name -contains 'vram_total') { $vramTotal = $device.vram_total }
             elseif ($device.PSObject.Properties.Name -contains 'memory_total') { $vramTotal = $device.memory_total }
             elseif ($device.PSObject.Properties.Name -contains 'memory_total_bytes') { $vramTotal = $device.memory_total_bytes }
+            elseif ($device.PSObject.Properties.Name -contains 'vram_total_bytes') { $vramTotal = $device.vram_total_bytes }
 
             if ($device.PSObject.Properties.Name -contains 'vram_free') { $vramFree = $device.vram_free }
             elseif ($device.PSObject.Properties.Name -contains 'memory_free') { $vramFree = $device.memory_free }
             elseif ($device.PSObject.Properties.Name -contains 'memory_free_bytes') { $vramFree = $device.memory_free_bytes }
+            elseif ($device.PSObject.Properties.Name -contains 'vram_free_bytes') { $vramFree = $device.vram_free_bytes }
 
             # If we found either total or free memory values, return the system_stats-derived snapshot
             if ($vramTotal -ne $null -or $vramFree -ne $null) {
-                return @{ Name = $device.name; Type = $device.type; Index = $device.index; VramTotal = $vramTotal; VramFree = $vramFree }
+                return @{ Name = $device.name; Type = $device.type; Index = $device.index; VramTotal = Normalize-VramValue $vramTotal; VramFree = Normalize-VramValue $vramFree; FallbackSource = 'system_stats' }
             }
         }
     }
 
     # Fall back to nvidia-smi if available
-    return Get-GpuSnapshotFromNvidiaSmi
+    $fallback = Get-GpuSnapshotFromNvidiaSmi
+    if ($fallback) { return $fallback }
+    return @{ Name = 'Unknown'; Type = 'unknown'; Index = 0; VramTotal = 0; VramFree = 0; FallbackSource = 'missing' }
 }
 
 if (-not (Test-Path $SceneOutputDir)) {
@@ -180,6 +236,17 @@ if ($workflow.'7'.PSObject.Properties.Name -notcontains '_meta') {
 }
 $workflow.'7'._meta.scene_prompt = $Prompt
 $workflow.'7'._meta.negative_prompt = $NegativePrompt
+
+if ($workflow.PSObject.Properties.Name -contains '9') {
+    if ($workflow.'9'.PSObject.Properties.Name -notcontains 'inputs') {
+        $workflow.'9' | Add-Member -MemberType NoteProperty -Name inputs -Value @{} -Force
+    }
+    $workflow.'9'.inputs.scene_prefix = $scenePrefix
+    $workflow.'9'.inputs.output_dir = 'C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output'
+    $workflow.'9'.widgets_values = @($scenePrefix)
+} else {
+    Write-SceneLog "Warning: workflow missing WriteDoneMarker node (id 9); done marker metadata will not be produced."
+}
 
 $clientId = "scene-$SceneId-$([guid]::NewGuid().ToString('N'))"
 $payload = @{
@@ -353,6 +420,14 @@ $copiedFrom = @()
 # Collect any frame-stability warnings here so they can be merged into the
 # canonical $warnings array (which is declared later after GPU snapshots).
 $frameStabilityWarnings = @()
+$doneMarkerDetected = $false
+$doneMarkerPath = $null
+$localMarkerCreated = $false
+$forcedCopyDebugPath = $null
+$forcedCopyTriggered = $false
+$forcedCopyFallbackNote = $null
+$doneMarkerWaitTimeSeconds = 0
+$doneMarkerWarnings = @()
 
 # If history data is present and ComfyUI reported explicit output filenames,
 # prefer those filenames (deterministic) and wait up to the post-execution
@@ -450,6 +525,11 @@ while (-not $framesFound -and ((New-TimeSpan -Start $frameWaitStart).TotalSecond
 
         if ($markerCandidates.Count -gt 0) {
             $usable = $markerCandidates
+            if (-not $doneMarkerDetected) {
+                $doneMarkerDetected = $true
+                $candidateMarker = Join-Path ($markerCandidates | Select-Object -First 1).Dir ("$scenePrefix.done")
+                $doneMarkerPath = $candidateMarker
+            }
         } else {
             $usable = $candidates
         }
@@ -472,12 +552,17 @@ while (-not $framesFound -and ((New-TimeSpan -Start $frameWaitStart).TotalSecond
                 Start-Sleep -Seconds $doneWaitInterval
                 $doneWaitElapsed += $doneWaitInterval
             }
+            $doneMarkerWaitTimeSeconds = $doneWaitElapsed
             if (Test-Path $markerPath) {
                 Write-SceneLog ("Debug: done marker found: {0}" -f $markerPath)
                 # Marker indicates producer finished writing sequence; skip stability checks
                 $skipStabilityCheck = $true
+                $doneMarkerDetected = $true
+                $doneMarkerPath = $markerPath
+                Write-SceneLog ("Debug: done marker wait time: {0}s" -f [Math]::Round($doneMarkerWaitTimeSeconds, 1))
             } else {
                 Write-SceneLog ("Debug: done marker not found after {0}s; falling back to stability checks" -f $DoneMarkerTimeoutSeconds)
+                $doneMarkerWarnings += "Done marker not found after $DoneMarkerTimeoutSeconds seconds (waited $doneMarkerWaitTimeSeconds seconds)"
             }
         }
 
@@ -507,7 +592,9 @@ while (-not $framesFound -and ((New-TimeSpan -Start $frameWaitStart).TotalSecond
 
             if (-not $stable) {
                 Write-SceneLog ("Warning: frames appear to be recently written and may still be in-flight; proceeding with copy after {0} attempts" -f $stabilityRetries)
-                $frameStabilityWarnings += "Frames appeared freshly written; forced copy after $stabilityRetries stability checks"
+                $forcedCopyTriggered = $true
+                $warningText = "Frames appeared freshly written; forced copy after $stabilityRetries stability checks"
+                $frameStabilityWarnings += $warningText
             }
         }
 
@@ -522,8 +609,13 @@ while (-not $framesFound -and ((New-TimeSpan -Start $frameWaitStart).TotalSecond
                     $markerPayload = @{ Timestamp = (Get-Date).ToString('o'); FrameCount = $best.Count; Latest = $best.Latest.ToString('o') }
                     $markerPayload | ConvertTo-Json -Depth 3 | Set-Content -Path $producerMarkerPath -Encoding utf8 -Force
                     Write-SceneLog ("Debug: created local done marker: {0}" -f $producerMarkerPath)
+                    $localMarkerCreated = $true
+                    $doneMarkerDetected = $true
+                    $doneMarkerPath = $producerMarkerPath
                 } else {
                     Write-SceneLog ("Debug: producer marker already present: {0}" -f $producerMarkerPath)
+                    $doneMarkerDetected = $true
+                    $doneMarkerPath = $producerMarkerPath
                 }
             } catch {
                 Write-SceneLog ("Debug: failed to write local done marker: {0}" -f $_.Exception.Message)
@@ -546,6 +638,27 @@ while (-not $framesFound -and ((New-TimeSpan -Start $frameWaitStart).TotalSecond
         $copiedAttemptDir = $attemptFramesDir
         $framesFound = $true
         Write-SceneLog ("Debug: chosen outputDir={0} count={1} latest={2}" -f $best.Dir, $best.Count, $best.Latest)
+
+        if ($forcedCopyTriggered) {
+            $timestampTag = (Get-Date).ToString('yyyyMMddHHmmss')
+            $forcedCopyDebugPath = Join-Path $SceneOutputDir ("forced-copy-debug-$timestampTag.txt")
+            $candidateDetails = $candidates | ForEach-Object { "Candidate: $($_.Dir) frames=$($_.Count) latest=$($_.Latest)" }
+            $debugContent = @(
+                "Timestamp: $timestampTag",
+                "ScenePrefix: $scenePrefix",
+                "Best output dir: $($best.Dir)",
+                "Frame count: $($best.Count)",
+                "Latest file: $($best.Latest)",
+                "Stability retries: $stabilityRetries",
+                "Stability window: $StabilitySeconds",
+                "Marker path waited: $markerPath",
+                "Candidates:",
+                ($candidateDetails -join [Environment]::NewLine)
+            )
+            $debugContent | Set-Content -Path $forcedCopyDebugPath -Encoding UTF8 -Force
+            Write-SceneLog ("Debug: wrote forced-copy debug dump: {0}" -f $forcedCopyDebugPath)
+            $forcedCopyFallbackNote = "Forced copy after stability retries; see $forcedCopyDebugPath"
+        }
         break
     }
 
@@ -580,6 +693,10 @@ $warnings = @()
 $errors = @()
 if ($frameStabilityWarnings -and $frameStabilityWarnings.Count -gt 0) {
     $warnings += $frameStabilityWarnings
+}
+
+if ($doneMarkerWarnings -and $doneMarkerWarnings.Count -gt 0) {
+    $warnings += $doneMarkerWarnings
 }
 
 if (@($sceneFrames).Count -lt $FrameFloor) {
@@ -637,6 +754,16 @@ if (-not $systemStatsAfter) {
     $fallbackNotes += "/system_stats present but missing VRAM after execution; used nvidia-smi fallback"
 }
 
+if ($frameStabilityWarnings.Count -gt 0) {
+    $fallbackNotes += $frameStabilityWarnings
+}
+if ($forcedCopyFallbackNote) {
+    $fallbackNotes += $forcedCopyFallbackNote
+}
+if ($doneMarkerWarnings.Count -gt 0) {
+    $fallbackNotes += $doneMarkerWarnings
+}
+
 Write-SceneLog ("Debug: After frame copy: frameCount={0}, framesFound={1}, copiedFrom={2}" -f @($sceneFrames).Count, $framesFound, ($copiedFrom -join ','))
 Write-SceneLog ("Debug: GPU before snapshot present: {0}" -f ([bool]$systemStatsBefore))
 try {
@@ -673,6 +800,11 @@ Write-SceneLog ("Debug: GPU fallback sources: before={0} after={1}" -f $beforeFa
     ExecutionSuccessDetected = $historyData -ne $null
     ExecutionSuccessAt = if ($historyRetrievedAt) { $historyRetrievedAt.ToString('o') } else { $null }
     SceneRetryBudget = $SceneRetryBudget
+    DoneMarkerDetected = $doneMarkerDetected
+    DoneMarkerWaitSeconds = [math]::Round($doneMarkerWaitTimeSeconds, 1)
+    DoneMarkerPath = $doneMarkerPath
+    ForcedCopyTriggered = $forcedCopyTriggered
+    ForcedCopyDebugPath = $forcedCopyDebugPath
     # NOTE: The GPU block follows the telemetry contract. Keep naming in sync with
     # TELEMETRY_CONTRACT.md so validators and UI can reliably parse these fields.
     GPU = @{

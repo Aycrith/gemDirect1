@@ -164,6 +164,18 @@ if (-not (Test-Path $artifactJson)) {
                     if (-not ($scene.Telemetry.PSObject.Properties.Name -contains 'SceneRetryBudget')) {
                         $errors += "Scene $sceneId telemetry missing SceneRetryBudget."
                     }
+                    if (-not ($scene.Telemetry.PSObject.Properties.Name -contains 'DoneMarkerWaitSeconds')) {
+                        $errors += "Scene $sceneId telemetry missing DoneMarkerWaitSeconds."
+                    }
+                    if (-not ($scene.Telemetry.PSObject.Properties.Name -contains 'DoneMarkerDetected')) {
+                        $errors += "Scene $sceneId telemetry missing DoneMarkerDetected."
+                    }
+                    if (-not ($scene.Telemetry.PSObject.Properties.Name -contains 'ForcedCopyTriggered')) {
+                        $errors += "Scene $sceneId telemetry missing ForcedCopyTriggered."
+                    }
+                    if (-not ($scene.Telemetry.PSObject.Properties.Name -contains 'ForcedCopyDebugPath')) {
+                        $errors += "Scene $sceneId telemetry missing ForcedCopyDebugPath."
+                    }
                     if ($scene.Telemetry.ExecutionSuccessDetected -and -not $scene.Telemetry.ExecutionSuccessAt) {
                         $errors += "Scene $sceneId telemetry signals ExecutionSuccessDetected but lacks ExecutionSuccessAt."
                     }
@@ -211,6 +223,13 @@ if (-not (Test-Path $artifactJson)) {
                         if (($null -ne $scene.Telemetry.GPU.VramBeforeMB) -and ($null -ne $scene.Telemetry.GPU.VramAfterMB) -and ($null -eq $scene.Telemetry.GPU.VramDeltaMB)) {
                             $errors += "Scene $sceneId telemetry: VramBeforeMB and VramAfterMB present but VramDeltaMB is missing (should be computed diff)."
                         }
+                        if (($null -ne $scene.Telemetry.GPU.VramBeforeMB) -and ($null -ne $scene.Telemetry.GPU.VramAfterMB) -and ($null -ne $scene.Telemetry.GPU.VramDeltaMB)) {
+                            $expectedDelta = $scene.Telemetry.GPU.VramAfterMB - $scene.Telemetry.GPU.VramBeforeMB
+                            $deltaDiscrepancy = [math]::Abs($scene.Telemetry.GPU.VramDeltaMB - $expectedDelta)
+                            if ($deltaDiscrepancy -gt 0.01) {
+                                $errors += "Scene $sceneId telemetry GPU VramDeltaMB ($($scene.Telemetry.GPU.VramDeltaMB)) does not match VramAfterMB - VramBeforeMB ($([math]::Round($expectedDelta, 3)))."
+                            }
+                        }
                     }
                     if (-not $scene.Telemetry.System) {
                         $errors += "Scene $sceneId telemetry missing System diagnostics."
@@ -225,6 +244,32 @@ if (-not (Test-Path $artifactJson)) {
                                 if ($text -notmatch $fallbackPattern) {
                                     $errors += "Scene $sceneId telemetry fallback note '$note' missing from run-summary."
                                 }
+                            }
+                        }
+                        $doneMarkerPattern = "\[Scene\s+$escapedSceneId\].*DoneMarkerWaitSeconds=([\d\.]+)s"
+                        $doneMarkerMatch = [System.Text.RegularExpressions.Regex]::Match($text, $doneMarkerPattern)
+                        if (-not $doneMarkerMatch.Success) {
+                            $errors += "Scene $sceneId telemetry summary missing DoneMarkerWaitSeconds entry."
+                        } else {
+                            $reportedDoneWait = [double]$doneMarkerMatch.Groups[1].Value
+                            $expectedDoneWait = [double]$scene.Telemetry.DoneMarkerWaitSeconds
+                            if ([math]::Abs($reportedDoneWait - $expectedDoneWait) -gt 0.1) {
+                                $errors += "Scene $sceneId telemetry DoneMarkerWaitSeconds summary ($reportedDoneWait) does not match metadata ($expectedDoneWait)."
+                            }
+                        }
+                        $doneMarkerDetectedPattern = "\[Scene\s+$escapedSceneId\].*DoneMarkerDetected=(true|false)"
+                        if ($text -notmatch $doneMarkerDetectedPattern) {
+                            $errors += "Scene $sceneId telemetry summary missing DoneMarkerDetected entry."
+                        }
+                        $forcedCopyPattern = "\[Scene\s+$escapedSceneId\].*ForcedCopyTriggered=(true|false)"
+                        $forcedCopyMatch = [System.Text.RegularExpressions.Regex]::Match($text, $forcedCopyPattern)
+                        if (-not $forcedCopyMatch.Success) {
+                            $errors += "Scene $sceneId telemetry summary missing ForcedCopyTriggered entry."
+                        }
+                        if ($scene.Telemetry.ForcedCopyTriggered -and $scene.Telemetry.ForcedCopyDebugPath) {
+                            $forcedCopyDebugPattern = "\[Scene\s+$escapedSceneId\].*ForcedCopyDebugPath="
+                            if ($text -notmatch $forcedCopyDebugPattern) {
+                                $errors += "Scene $sceneId telemetry triggered forced copy but summary lacks ForcedCopyDebugPath."
                             }
                         }
                     }

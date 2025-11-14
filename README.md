@@ -37,6 +37,8 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uvkkeiyDr3iI4KPyB4ICS6
 Producer done-marker semantics
 -----------------------------
 To avoid races between ComfyUI's SaveImage node and the consumer poller, the helper relies on a producer-side "done" marker file. Producer sentinels (or in-workflow script nodes) write a temporary file and atomically rename it into place (e.g. `<prefix>.done.tmp` → `<prefix>.done`). This prevents consumers from copying partially-written JSON marker files. The repository includes `scripts/generate-done-markers.ps1` which creates these markers when sequences appear stable or when ComfyUI history reports `execution_success` and lists output filenames. The atomic-write pattern follows common Windows file-replace semantics (write temp → move/replace) to minimize observers seeing partial content. See `scripts/generate-done-markers.ps1` and `workflows/text-to-video.json` (Write Done Marker node) for details.
+The consumer (`scripts/queue-real-workflow.ps1`) waits for the canonical `<prefix>.done` file (the `-WaitForDoneMarker` flag is true by default) and records `DoneMarkerWaitSeconds`, `DoneMarkerDetected`, `DoneMarkerPath`, `ForcedCopyTriggered`, and `ForcedCopyDebugPath` inside each `[Scene ...] Telemetry:` line plus `artifact-metadata.json`. When a marker never appears the script falls back to the stability/retry loop, emits a forced-copy warning into `System.FallbackNotes`, drops a `forced-copy-debug-<ts>.txt` dump beside the frames, and copies the images anyway so the rest of the run remains auditable. The telemetry contract in `TELEMETRY_CONTRACT.md` embeds these fields (plus the fallback notes) so validators, Vitest, and the UI can show whether each run completed via a sentinel marker or the forced-copy fallback.
+These fields are required in `run-summary.txt` so each `[Scene ...] Telemetry:` line clearly shows whether the run hit the marker in time (`DoneMarkerDetected=true`, `DoneMarkerWaitSeconds=0s`) or used the forced-copy fallback (`ForcedCopyTriggered=true`, `ForcedCopyDebugPath=...`). When forced-copy is not triggered the telemetry line still records `ForcedCopyTriggered=false`, and the fallback notes only list actual warnings. Use `run-summary.txt` or `logs/<ts>/artifact-metadata.json` to trace forced-copy dumps and confirm the sentinel telemetry before archiving the artifacts.
 In-workflow node and sentinel-as-service
 ---------------------------------------
 
@@ -52,6 +54,8 @@ Example CLI invocation (safe for Script/Shell nodes):
 # from the host where ComfyUI runs
 python C:\path\to\comfyui_nodes\write_done_marker.py --output-dir "C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\output" --prefix gemdirect1_scene-001 --frames 25
 ```
+
+Need to stage the helper? Run `pwsh scripts/deploy-write-done-marker.ps1` and it will copy `write_done_marker.py` into ComfyUI's `custom_nodes/` folder (creating directories if needed) so you can call the helper from Script/Shell nodes without manual copying.
 
 Sentinel as a Scheduled Task (Windows)
 -------------------------------------
@@ -70,6 +74,11 @@ Notes:
 - The scheduled task registers a per-user logon trigger (no admin rights), which runs the sentinel in the background whenever the user logs in. For a system-level task you can adapt the script to use a service account and require elevation.
 - If you need atomic semantics across different filesystems or network shares, prefer using a native replace (e.g., .NET File.Replace) or ensure the tmp and final file live on the same filesystem — os.replace / os.rename / Move-Item semantics only guarantee atomicity on the same mount.
 
+Sentinel as a Windows Service (NSSM)
+------------------------------------
+
+`scripts/install-sentinel-service.ps1` prints the NSSM command you need to run as Administrator after downloading NSSM from https://nssm.cc/download. NSSM (the Non-Sucking Service Manager) lets you capture stdout/stderr, define restart policies, and keep the sentinel running even when no user is logged in. Run the printed command (which by default installs a `gemDirect1-Sentinel` service pointing at `generate-done-markers.ps1`), configure the Application/I/O tabs if you want custom logging, and start it with `nssm start gemDirect1-Sentinel` whenever you need a continuously running sentinel.
+
 References: https://learn.microsoft.com/dotnet/api/system.io.file.replace (atomic replace guidance), https://github.com/comfyanonymous/ComfyUI (history API examples)
 - **UI metadata handshake**: The Artifact Snapshot and Timeline panels mirror the same data stored in `logs/<ts>/artifact-metadata.json` and `public/artifacts/latest-run.json`, so the queue policy card, telemetry chips, GPU stats, fallback warnings, Vitest logs, and archive references must always agree with what the helper logs and the validator enforces.
 
@@ -81,7 +90,7 @@ References: https://learn.microsoft.com/dotnet/api/system.io.file.replace (atomi
 
 ### Local Testing Notes
 
-- Node **22.12.0 or newer** is required. On Linux/macOS install Node 22.19.0 and add `/usr/local/node-v22.19.0/bin` to `PATH`; on Windows install Node 22.19.0 to `C:\Tools\node-v22.19.0-win-x64` and prepend that folder to your user `PATH` so `node -v` reports `v22.19.0`.
+- Node **22.19.0 or newer** is required. On Linux/macOS install Node 22.19.0 and add `/usr/local/node-v22.19.0/bin` to `PATH`; on Windows install Node 22.19.0 to `C:\Tools\node-v22.19.0-win-x64` and prepend that folder to your user `PATH` so `node -v` reports `v22.19.0`.
 - The ComfyUI service tests currently need the `vmThreads` pool to avoid fork/thread timeouts. Run the targeted suite with:
 
   ```
@@ -113,11 +122,20 @@ References: https://learn.microsoft.com/dotnet/api/system.io.file.replace (atomi
   - Use `STORY_TO_VIDEO_TEST_CHECKLIST.md` for the expected `run-summary.txt` template, validation commands, and new failure protocol (requeue guidance, history warning requirements).
   - If you manually tweak `run-summary.txt`, rerun `scripts/validate-run-summary.ps1 -RunDir logs/<ts>` so the `[Scene ...] HISTORY WARNING/ERROR` and `WARNING: Frame count below floor` entries continue to line up with `artifact-metadata.json`.
 
+### Capturing the full testing log
+
+`scripts/run-comfyui-e2e.ps1` already drives the story → video run, executes the three Vitest suites, and invokes `validate-run-summary`, so every `logs/<ts>` folder now contains the `run-summary.txt` (with FastIteration and sentinel lines), `artifact-metadata.json`, `vitest-comfyui.log`, `vitest-e2e.log`, `vitest-scripts.log`, `vitest-results.json`, and the `artifacts/comfyui-e2e-<ts>.zip` archive. That run summary explicitly lists the sentinel handshake (`DoneMarker*`/`ForcedCopy*`), GPU telemetry, and the `FastIteration mode enabled: ...` banner you need to review before sharing results.
+
+When you need to rerun only the suites, call `pwsh ./scripts/run-vitests.ps1` (add `-Quick` for the telemetry-shape-only pathway) to regenerate the Vitest logs and `vitest-results.json`. Re-running `pwsh ./scripts/validate-run-summary.ps1 -RunDir logs/<ts>` afterwards double-checks that the textual summary still matches `artifact-metadata.json` after telemetry or sentinel changes.
+
+After batching several runs, call `pwsh ./scripts/generate-sweep-report.ps1` to scan `logs/` and emit `logs/stability-sweep-<timestamp>/report.json`. That “sweep” JSON aggregates scene/frame counts, fallback notes (including forced-copy warnings), GPU/VRAM deltas, and warning flags from every run so reviewers can consume the full Vitest/ComfyUI/Validate/Sweep trace before approving artifacts.
+
 - Failure triage tips:
   - If frame counts stay at 0, verify `ComfyUI/models/checkpoints/SVD/` contains `svd_xt*.safetensors` (see [thecooltechguy/ComfyUI-Stable-Video-Diffusion](https://github.com/thecooltechguy/ComfyUI-Stable-Video-Diffusion)) and ensure `C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\output` is writable. The helper will requeue once automatically and stamp `[Scene ...] ERROR: No frames copied`.
   - History timeouts now surface via `[Scene ...] HISTORY WARNING` entries and the per-attempt poll timeline embedded in `artifact-metadata.json`. The poller now keeps retrying until `MaxWaitSeconds`, so if a scene eventually succeeds you will still see the final `[Scene ...] Frames=##` line without needing to restart. Investigate `logs/<ts>/<sceneId>/history.json` plus the `HistoryPollLog` array rendered by the Artifact Snapshot when history never resolves.
   - Alternate SVD prompt wiring examples (e.g., [ComfyUI Txt2Video with SVD on Civitai](https://civitai.com/models/211703/comfyui-txt2video-with-svd)) are referenced in `STORY_TO_VIDEO_PIPELINE_PLAN.md` if you need to adjust node mappings.
 - CI automation:
-  - `.github/workflows/pr-vitest.yml` (Windows, Node 22) runs `npm exec vitest -- run --reporter json --outputFile vitest-report.json` on every PR and uploads the JSON report for reviewers. Trigger the workflow manually with `runFullE2E = true` to run the helper on a workstation that already has ComfyUI installed—the resulting `comfyui-e2e-<ts>.zip` is published as the `comfyui-e2e-logs` artifact for inspection.
+  . `.github/workflows/pr-vitest.yml` (Windows, Node 22.19.0) runs `npm exec vitest -- run --reporter json --outputFile vitest-report.json` on every PR and uploads the JSON report for reviewers. Trigger the workflow manually with `runFullE2E = true` to run the helper on a workstation that already has ComfyUI installed—the resulting `comfyui-e2e-<ts>.zip` is published as the `comfyui-e2e-logs` artifact for inspection.
+- Fast iteration mode: pass `-FastIteration` to `scripts/run-comfyui-e2e.ps1` to shrink the poll interval to 1 s, cut the post-execution wait, tighten the sentinel scan/stability heuristics, and log a `FastIteration mode enabled: historyPollInterval=... postExecTimeout=... sentinelScan=... sentinelStable=... queueStability=...` line in `run-summary.txt` so you can instantly tell whether a quick-turn run used those heuristics. That same summary line makes it easy to distinguish the fast-iteration telemetry (with its shorter poll interval and sentinel scan timeout) from a standard run while validators/Vitest check the paired `[Scene ...] Telemetry:` lines for the required `DoneMarker*` and `ForcedCopy*` fields.
 [1]: https://lmstudio.ai/docs/api#health-checks
 [2]: https://github.com/comfyanonymous/ComfyUI/blob/master/examples/websocket_api_example.py

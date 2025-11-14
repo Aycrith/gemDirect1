@@ -10,7 +10,10 @@ export function generateFallbackNotes(
   systemBefore: any,
   systemAfter: any,
   gpuBefore: any,
-  gpuAfter: any
+  gpuAfter: any,
+  frameStabilityWarnings?: string[] | null,
+  forcedCopyNote?: string | null,
+  doneMarkerWarnings?: string[] | null
 ): string[] {
   const notes: string[] = []
 
@@ -33,6 +36,23 @@ export function generateFallbackNotes(
   } else if (gpuAfter && gpuAfter.FallbackSource === 'nvidia-smi') {
     notes.push('/system_stats present but missing VRAM after execution; used nvidia-smi fallback')
   }
+
+  const appendNotes = (items?: (string | null)[] | null) => {
+    if (!items) { return }
+    for (const item of items) {
+      if (item && item.trim().length > 0) {
+        notes.push(item)
+      }
+    }
+  }
+
+  appendNotes(frameStabilityWarnings)
+
+  if (forcedCopyNote && forcedCopyNote.trim().length > 0) {
+    notes.push(forcedCopyNote)
+  }
+
+  appendNotes(doneMarkerWarnings)
 
   return notes
 }

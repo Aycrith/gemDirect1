@@ -11,7 +11,7 @@ const tempDirs: string[] = [];
 const createRunSummary = (includeTelemetryLine: boolean, pollLimitValue = 'unbounded', fallbackNotes: string[] = []) => {
     const fallbackDescriptor = fallbackNotes.length > 0 ? fallbackNotes[0] : null;
     const telemetryLine = includeTelemetryLine
-        ? `[12:00:05] [Scene scene-001] Telemetry: DurationSeconds=10s | MaxWaitSeconds=600s | PollIntervalSeconds=2s | HistoryAttempts=3 | pollLimit=${pollLimitValue} | SceneRetryBudget=1 | PostExecutionTimeoutSeconds=30s | ExecutionSuccessDetected=true | ExecutionSuccessAt=12:00:05 | HistoryExitReason=success | VRAMBeforeMB=10240MB | VRAMAfterMB=9664MB | VRAMDeltaMB=-576MB | gpu=NVIDIA GeForce RTX 3090${fallbackDescriptor ? ` | fallback=${fallbackDescriptor}` : ''}`
+        ? `[12:00:05] [Scene scene-001] Telemetry: DurationSeconds=10s | MaxWaitSeconds=600s | PollIntervalSeconds=2s | HistoryAttempts=3 | pollLimit=${pollLimitValue} | SceneRetryBudget=1 | PostExecutionTimeoutSeconds=30s | ExecutionSuccessDetected=true | ExecutionSuccessAt=12:00:05 | HistoryExitReason=success | VRAMBeforeMB=10240MB | VRAMAfterMB=9664MB | VRAMDeltaMB=-576MB | gpu=NVIDIA GeForce RTX 3090 | DoneMarkerWaitSeconds=0s | DoneMarkerDetected=false | ForcedCopyTriggered=false${fallbackDescriptor ? ` | fallback=${fallbackDescriptor}` : ''}`
         : '';
     const fallbackLines = fallbackNotes.map((note) => `[12:00:04] [Scene scene-001] WARNING: ${note}`);
     return [
@@ -47,6 +47,11 @@ const createArtifactMetadata = (includeTelemetry = true, fallbackNotes: string[]
               ExecutionSuccessAt: new Date('2025-11-12T12:00:05Z').toISOString(),
               HistoryPostExecutionTimeoutReached: false,
               SceneRetryBudget: 1,
+              DoneMarkerDetected: false,
+              DoneMarkerWaitSeconds: 0,
+              DoneMarkerPath: null,
+              ForcedCopyTriggered: false,
+              ForcedCopyDebugPath: null,
               GPU: {
                   Name: 'NVIDIA GeForce RTX 3090',
                   VramFreeBefore: 10737418240,
@@ -239,6 +244,21 @@ describe('validate-run-summary.ps1', () => {
         const result = runValidator(runDir);
         expect(result.status).toBe(1);
         expect(result.stdout).toMatch(/Scene scene-001 telemetry summary missing VRAMBeforeMB entry/);
+    });
+
+    it('fails when reported VRAM delta differs from MB before/after difference', () => {
+        const runDir = mkdtempSync(path.join(os.tmpdir(), 'validate-run-vram-delta-'));
+        tempDirs.push(runDir);
+        writeFileSync(path.join(runDir, 'run-summary.txt'), createRunSummary(true), 'utf8');
+        const metadata = createArtifactMetadata(true);
+        const sceneTelemetry = metadata.Scenes[0].Telemetry!;
+        sceneTelemetry.GPU.VramDeltaMB = -500;
+        sceneTelemetry.GPU.VramDelta = sceneTelemetry.GPU.VramDeltaMB * 1048576;
+        writeFileSync(path.join(runDir, 'artifact-metadata.json'), JSON.stringify(metadata, null, 2), 'utf8');
+
+        const result = runValidator(runDir);
+        expect(result.status).toBe(1);
+        expect(result.stdout).toMatch(/telemetry GPU VramDeltaMB .* does not match VramAfterMB - VramBeforeMB/);
     });
     it('fails when queue policy values do not match metadata', () => {
         const runDir = mkdtempSync(path.join(os.tmpdir(), 'validate-run-queue-'));

@@ -169,6 +169,20 @@ To reduce races and avoid copying partially-written marker files, producer-side 
 
 Reference: https://learn.microsoft.com/dotnet/api/system.io.file.replace (File.Replace guidance and atomic replace semantics)
 
+### Sentinel & forced-copy telemetry
+
+Every scene telemetry record includes sentinel state and forced-copy metadata so validators/UI can determine whether the producer marker was honored or a fallback path executed. `queue-real-workflow.ps1` writes these fields into `Scenes[*].Telemetry`, and `run-comfyui-e2e.ps1` mirrors them inside the `[Scene ...] Telemetry:` line that the validator parses.
+
+| Field | Type | Source | Example |
+|-------|------|--------|---------|
+| **DoneMarkerDetected** | bool | `queue-real-workflow.ps1` | `true` |
+| **DoneMarkerWaitSeconds** | float | Seconds spent waiting for `<prefix>.done` | `0.0` |
+| **DoneMarkerPath** | string | Path to the detected `.done` file (sentinel or local copy) | `C:\ComfyUI\output\gemdirect1_scene-001.done` |
+| **ForcedCopyTriggered** | bool | Stability-failsafe that copied frames before marker/stability window | `false` |
+| **ForcedCopyDebugPath** | string | When forced copy triggered, path to `forced-copy-debug-<ts>.txt` describing the candidate | `logs\20251112-102345\scene-001\forced-copy-debug-20251112.txt` |
+
+**Purpose**: Enables the validator/UI to differentiate clean runs (marker detected in time) from forced-copy fallbacks and to present links to the generated debug dump when copies proceeded early. `System.FallbackNotes` also records the warning text (e.g., "Forced copy after stability retries; see ..." or "Done marker not found after 60 seconds"), so summaries and UI badges can show the same warning string that triggered the fallback.
+
 ### System Diagnostics & Fallbacks
 
 | Field | Type | Source | Example |
