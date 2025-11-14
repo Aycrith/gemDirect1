@@ -529,12 +529,9 @@ export const trackPromptExecution = (
                     ];
 
                     const fetchAssetCollection = async (
-                        entries: any[] | undefined,
+                        entries: any[],
                         resultType: LocalGenerationAsset['type']
                     ): Promise<LocalGenerationAsset[]> => {
-                        if (!Array.isArray(entries) || entries.length === 0) {
-                            return [];
-                        }
                         return Promise.all(
                             entries.map(async (entry) => ({
                                 type: resultType,
@@ -563,7 +560,14 @@ export const trackPromptExecution = (
                         const downloadedAssets: LocalGenerationAsset[] = [];
 
                         for (const source of assetSources) {
-                            const assets = await fetchAssetCollection(source.entries, source.resultType);
+                            const entries = source.entries;
+                            if (!Array.isArray(entries)) {
+                                continue;
+                            }
+                            if (entries.length === 0) {
+                                continue;
+                            }
+                            const assets = await fetchAssetCollection(entries, source.resultType);
                             downloadedAssets.push(...assets);
                         }
 
