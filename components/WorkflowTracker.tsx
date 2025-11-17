@@ -16,6 +16,12 @@ const STAGES: { id: WorkflowStage; name: string; icon: React.ReactNode }[] = [
     { id: 'continuity', name: 'Continuity Review', icon: <ClipboardCheckIcon className="w-7 h-7" /> },
 ];
 
+// Mapping of stage IDs to their corresponding test IDs
+const STAGE_TEST_IDS: Partial<Record<WorkflowStage, string>> = {
+    'idea': 'step-story-idea',
+    'director': 'step-direct-scenes',
+};
+
 const FlowingLine: React.FC<{ completed: boolean }> = ({ completed }) => (
     <div className="flex-1 h-1 rounded-full bg-gray-700 relative overflow-hidden mx-2">
         <div
@@ -75,7 +81,7 @@ const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ currentStage, onStage
                         <React.Fragment key={stage.id}>
                             <div className="flex flex-col items-center text-center w-36">
                                 <button
-                                    data-testid={stage.id === 'idea' ? 'step-story-idea' : stage.id === 'director' ? 'step-direct-scenes' : undefined}
+                                    data-testid={STAGE_TEST_IDS[stage.id]}
                                     onClick={() => isClickable && onStageClick(stageId)}
                                     disabled={!isClickable}
                                     className={`relative flex items-center justify-center w-16 h-16 rounded-full border-2 transition-all duration-300 group ${
