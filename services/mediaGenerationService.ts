@@ -7,6 +7,7 @@ export type MediaGenerationActions = {
     generateKeyframeForScene: (
         vision: string,
         sceneSummary: string,
+        sceneId?: string,
         logApiCall: ApiLogCallback,
         onStateChange?: ApiStateChangeCallback
     ) => Promise<string>;
@@ -15,13 +16,14 @@ export type MediaGenerationActions = {
         enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>> | undefined,
         directorsVision: string,
         sceneSummary: string,
+        sceneId?: string,
         logApiCall: ApiLogCallback,
         onStateChange?: ApiStateChangeCallback
     ) => Promise<string>;
 };
 
 const GEMINI_PROVIDER_ID = 'gemini-image';
-const LOCAL_COMFY_ID = 'comfyui-local';
+export const LOCAL_COMFY_ID = 'comfyui-local';
 
 const notify = (onStateChange: ApiStateChangeCallback | undefined, status: Parameters<ApiStateChangeCallback>[0], message: string) => {
     onStateChange?.(status, message);
@@ -56,8 +58,10 @@ const runLocal = async <T>(
 };
 
 const geminiActions: MediaGenerationActions = {
-    generateKeyframeForScene: geminiService.generateKeyframeForScene,
-    generateImageForShot: geminiService.generateImageForShot
+    generateKeyframeForScene: (vision, sceneSummary, sceneId, logApiCall, onStateChange) =>
+        geminiService.generateKeyframeForScene(vision, sceneSummary, logApiCall, onStateChange),
+    generateImageForShot: (shot, enhancers, directorsVision, sceneSummary, sceneId, logApiCall, onStateChange) =>
+        geminiService.generateImageForShot(shot, enhancers, directorsVision, sceneSummary, logApiCall, onStateChange)
 };
 
 const createLocalActions = (settings?: LocalGenerationSettings): MediaGenerationActions => {
@@ -69,17 +73,17 @@ const createLocalActions = (settings?: LocalGenerationSettings): MediaGeneration
     };
 
     return {
-        generateKeyframeForScene: (vision, sceneSummary, logApiCall, onStateChange) =>
+        generateKeyframeForScene: (vision, sceneSummary, sceneId, logApiCall, onStateChange) =>
             runLocal(
                 'generate scene keyframe',
-                () => generateSceneKeyframeLocally(ensureSettings(), vision, sceneSummary),
+                () => generateSceneKeyframeLocally(ensureSettings(), vision, sceneSummary, sceneId),
                 logApiCall,
                 onStateChange
             ),
-        generateImageForShot: (shot, enhancers, directorsVision, sceneSummary, logApiCall, onStateChange) =>
+        generateImageForShot: (shot, enhancers, directorsVision, sceneSummary, sceneId, logApiCall, onStateChange) =>
             runLocal(
                 'generate shot image',
-                () => generateShotImageLocally(ensureSettings(), shot, enhancers, directorsVision, sceneSummary),
+                () => generateShotImageLocally(ensureSettings(), shot, enhancers, directorsVision, sceneSummary, sceneId),
                 logApiCall,
                 onStateChange
             )

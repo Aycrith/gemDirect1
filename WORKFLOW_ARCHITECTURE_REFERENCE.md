@@ -398,6 +398,14 @@ Use For: Cinematic sequences, VFX heavy
     "video_generator": "svd_xt.safetensors",
     "upscaler": "4x-UltraSharp"
   },
+}
+```
+
+## Dual WAN Helper & Mapping Telemetry
+
+- Run `scripts/comfyui-status.ts` (or `node scripts/comfyui-status.ts --summary-dir test-results/comfyui-status --log-path test-results/comfyui-status/comfyui-status.log`) before every batch so you confirm both `wan-t2i` (keyframe) and `wan-i2v` (video) workflows exist, include CLIPTextEncode/LoadImage mappings, and emit queue/system telemetry for later QA comparisons.
+- The helper loads the exported `localGenSettings` (via `--project` or `LOCAL_PROJECT_STATE_PATH`), normalizes the workflow JSON, and writes a JSON summary containing queue snapshots, helper warnings, and the canonical workflow paths; keep those summaries as the ground truth when routing Visual Bible prompts or validating Playwright runs.
+- Workflow telemetry recorded by the helper includes system stats (device/VRAM), queue counts (running/pending), CVRN warnings, and missing mapping flags, so any Visual Bible prompt or plan expansion logic should log the helper summary path for traceability and avoid placeholder keyframes when base64 data is flagged as absent.
   "node_mappings": {
     "3": {
       "class": "CLIPTextEncode",
@@ -456,6 +464,33 @@ Use For: Cinematic sequences, VFX heavy
 
 ---
 
+
+## WAN Workflow Health Hook
+
+- `scripts/comfyui-status.ts` reads your exported `localGenSettings` (or the file referenced by `LOCAL_PROJECT_STATE_PATH`) and requires both WAN profiles (`wan-t2i` for keyframes, `wan-i2v` for video). It enforces mappings for `human_readable_prompt`, `full_timeline_json`, and `keyframe_image` so CLIPTextEncode/LoadImage inputs are populated before any prompt is queued.
+- The helper probes `/system_stats` and `/queue` on `LOCAL_COMFY_URL` (mirrored by `VITE_LOCAL_COMFY_URL` for the UI) and logs VRAM, pending/running counts, and warnings to `test-results/comfyui-status/<timestamp>.log`, matching the telemetry fields described in ComfyUI's WebSocket example (https://github.com/comfyanonymous/ComfyUI/blob/master/examples/websocket_api_example.py). QA cards reuse these fields, so any queue warning surfaced here appears in the Artifact Snapshot as well.
+- If the helper cannot find `workflows/image_netayume_lumina_t2i.json` or `workflows/video_wan2_2_5B_ti2v.json`, it alerts you before queuing anything, ensuring Visual Bible continuity data always references real keyframe base64 assets instead of placeholders.
+
+---
+
+## Decisions & Rationale (2025-11)
+
+- **WAN T2I over SVD for keyframes**
+  The SVD text-to-video workflow produced visually noisy, incoherent stills in this app context and consumed significant VRAM on the RTX 3090. The `wan-t2i` text→image workflow (`image_netayume_lumina_t2i.json`) now serves as the canonical keyframe generator for the local pipeline.
+
+- **WAN 2.2 5B ti2v over WAN 14B**
+  Full Wan2.2 14B video workflows routinely pushed VRAM usage to the limit when combined with SVD and other models, causing ComfyUI exits during long runs. The pipeline now standardizes on the lighter Wan2.2 5B ti2v workflow (`video_wan2_2_5B_ti2v.json`) for `wan-i2v`, balancing quality with stable runtimes on a 24 GB GPU.
+
+- **Profile-specific keyframe mapping rules**
+  Workflow validation and helper UIs treat `wan-t2i` and `wan-i2v` differently:
+  - `wan-t2i` (keyframe generator) requires CLIP text conditioning and a text mapping but does **not** require a `keyframe_image` mapping because it produces keyframes.
+  - `wan-i2v` (video generator) requires both CLIP text and `LoadImage.image` plus a `keyframe_image → LoadImage.image` mapping so scene keyframes can be consumed reliably.
+  The modal, services, and `scripts/comfyui-status.ts` all follow this contract to avoid bogus LoadImage warnings on the keyframe-only profile.
+
+- **Structured hero's journey outputs**
+  The story bible and scene payloads now include a `heroArcs` array (12 named arcs with summaries, emotional shifts, and importance) plus explicit `heroArcId` references inside scenes so downstream prompts, timelines, and shot scheduling stay aligned with the intended narrative beats. Update the prompt templates and timeline tooling only if the arc schema remains backwards compatible.
+
+
 > **Current gemDirect1 deployment:** `workflows/text-to-video.json` defines the active 9-node pipeline (CheckpointLoader → LoadImage → CLIPTextEncode → CLIPVision → `SVD_img2vid_Conditioning` → KSampler → VAE Decode → SaveImage) and loads `SVD\svd_xt.safetensors` along with `clip_vision\ViT-L-14-BEST-smooth-GmP-HF-format.safetensors`.
 
 ## Error Handling & Recovery
@@ -499,3 +534,4 @@ This architecture ensures:
 - ✅ Scalable processing
 - ✅ Flexible customization
 - ✅ Production-ready pipeline
+

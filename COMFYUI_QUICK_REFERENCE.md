@@ -124,6 +124,15 @@ C:\ComfyUI\start-comfyui.bat
 .\scripts\setup-comfyui.ps1
 ```
 
+### "The paging file is too small" (os error 1455)
+
+This is a Windows virtual memory error when loading large safetensors files. See `docs/COMFYUI_PAGEFILE_GUIDE.md` for two recommended fixes:
+
+- Increase your Windows system pagefile
+- Or run `scripts/patch-comfyui-handle-pagefile.ps1` to add a fallback in ComfyUI, or use `scripts/start-comfyui-disable-mmap.ps1` to start with `--disable-mmap`.
+ - Or run `scripts/patch-comfyui-handle-pagefile.ps1` to add a fallback in ComfyUI, or use `scripts/start-comfyui-disable-mmap.ps1` to start with `--disable-mmap`.
+	 After running the patch, validate with `scripts/validate-comfyui-patch.ps1` and, optionally, use `scripts/test-comfyui-patch-local.ps1` to verify on a copied sample first.
+
 ## 📚 Documentation
 
 - **Installation Guide**: `COMFYUI_CLEAN_INSTALL.md`

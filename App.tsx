@@ -8,6 +8,9 @@ import { saveProjectToFile, loadProjectFromFile } from './utils/projectUtils';
 import { PlanExpansionStrategyProvider, usePlanExpansionActions } from './contexts/PlanExpansionStrategyContext';
 import { MediaGenerationProviderProvider } from './contexts/MediaGenerationProviderContext';
 import { LocalGenerationSettingsProvider, useLocalGenerationSettings } from './contexts/LocalGenerationSettingsContext';
+import { PipelineProvider } from './contexts/PipelineContext';
+import { createMediaGenerationActions, LOCAL_COMFY_ID } from './services/mediaGenerationService';
+import PipelineGenerator from './components/PipelineGenerator';
 
 import StoryIdeaForm from './components/StoryIdeaForm';
 import StoryBibleEditor from './components/StoryBibleEditor';
@@ -30,6 +33,8 @@ import UploadCloudIcon from './components/icons/UploadCloudIcon';
 import ProgressBar from './components/ProgressBar';
 import WelcomeGuideModal from './components/WelcomeGuideModal';
 import ComfyUICallbackProvider from './components/ComfyUICallbackProvider';
+import VisualBiblePanel from './components/VisualBiblePanel';
+import { clearProjectData } from './utils/database';
 
 const AppContent: React.FC = () => {
     const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0, task: '' });
@@ -48,6 +53,8 @@ const AppContent: React.FC = () => {
     const [continuityModal, setContinuityModal] = useState<{ sceneId: string, lastFrame: string } | null>(null);
     const [isExtending, setIsExtending] = useState(false);
     const [hasSeenWelcome, setHasSeenWelcome] = usePersistentState('hasSeenWelcome', false);
+    const [mode, setMode] = usePersistentState<'quick' | 'director'>('mode', 'director');
+    const [isVisualBibleOpen, setIsVisualBibleOpen] = useState(false);
 
     const { sceneStatuses, updateSceneStatus } = useSceneGenerationWatcher(scenes);
 
@@ -90,6 +97,16 @@ const AppContent: React.FC = () => {
     const removeToast = useCallback((id: number) => {
         setToasts(prev => prev.filter(t => t.id !== id));
     }, []);
+
+    const handleNewProject = useCallback(async () => {
+        await clearProjectData();
+        setStoryBible(null);
+        setDirectorsVision('');
+        setScenes([]);
+        setActiveSceneId(null);
+        setScenesToReview(new Set<string>());
+        setWorkflowStage('idea');
+    }, [setStoryBible, setDirectorsVision, setScenes, setScenesToReview, setWorkflowStage]);
 
     // Set active scene when scenes are loaded/updated
     useEffect(() => {
@@ -151,6 +168,29 @@ const AppContent: React.FC = () => {
     
     const handleExtendTimeline = (sceneId: string, lastFrame: string) => {
         setContinuityModal({ sceneId, lastFrame });
+    };
+
+    const handleRerunScene = async (sceneId: string) => {
+        const scene = scenes.find(s => s.id === sceneId);
+        if (!scene || !storyBible) return;
+
+        try {
+            updateApiStatus({ status: 'running', message: 'Regenerating scene keyframe...' });
+            const mediaActions = createMediaGenerationActions(LOCAL_COMFY_ID, localGenSettings);
+            const image = await mediaActions.generateKeyframeForScene(
+                directorsVision,
+                scene.summary,
+                sceneId,
+                logApiCall,
+                updateApiStatus
+            );
+            setGeneratedImages(prev => ({ ...prev, [sceneId]: image }));
+            addToast('Scene keyframe regenerated!', 'success');
+        } catch (error) {
+            addToast(error instanceof Error ? error.message : 'Failed to regenerate scene.', 'error');
+        } finally {
+            updateApiStatus({ status: 'idle' });
+        }
     };
 
     const handleSaveProject = async () => {
@@ -285,6 +325,7 @@ const AppContent: React.FC = () => {
                     refinedSceneIds={refinedSceneIds}
                     onUpdateSceneSummary={handleUpdateSceneSummary}
                     onExtendTimeline={handleExtendTimeline}
+                    onRerunScene={handleRerunScene}
                 />;
             default:
                 return <p>Welcome! Please start with an idea.</p>;
@@ -302,35 +343,120 @@ const AppContent: React.FC = () => {
                     <SparklesIcon className="w-7 h-7 text-amber-400" />
                     <h1 className="text-xl font-bold text-white">Cinematic Story Generator</h1>
                 </div>
-                <div>
-                    <button onClick={handleSaveProject} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Save project">
-                        <SaveIcon className="w-6 h-6 text-gray-400" />
-                    </button>
-                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" style={{ display: 'none' }} />
-                    <button onClick={handleLoadProjectClick} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Load project">
-                        <UploadCloudIcon className="w-6 h-6 text-gray-400" />
-                    </button>
-                     <button onClick={() => setIsUsageDashboardOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Open usage dashboard">
-                        <BarChartIcon className="w-6 h-6 text-gray-400" />
-                    </button>
-                    <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" aria-label="Open settings">
-                        <SettingsIcon className="w-6 h-6 text-gray-400" />
-                    </button>
+                <div className="flex items-center gap-4">
+                    <div className="flex bg-gray-800 rounded-lg p-1">
+                        <button
+                            data-testid="mode-quick"
+                            onClick={() => setMode('quick')}
+                            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                                mode === 'quick' ? 'bg-amber-600 text-white' : 'text-gray-300 hover:text-white'
+                            }`}
+                        >
+                            Quick Generate
+                        </button>
+                        <button
+                            data-testid="mode-director"
+                            onClick={() => setMode('director')}
+                            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                                mode === 'director' ? 'bg-amber-600 text-white' : 'text-gray-300 hover:text-white'
+                            }`}
+                        >
+                            Director Mode
+                        </button>
+                    </div>
+                    <div>
+                        {mode === 'director' && (
+                            <button
+                                data-testid="btn-new-project"
+                                onClick={handleNewProject}
+                                className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2"
+                                aria-label="New project"
+                            >
+                                New
+                            </button>
+                        )}
+                        <button onClick={handleSaveProject} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Save project">
+                            <SaveIcon className="w-6 h-6 text-gray-400" />
+                        </button>
+                        <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" style={{ display: 'none' }} />
+                        <button onClick={handleLoadProjectClick} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Load project">
+                            <UploadCloudIcon className="w-6 h-6 text-gray-400" />
+                        </button>
+                         <button onClick={() => setIsUsageDashboardOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Open usage dashboard">
+                            <BarChartIcon className="w-6 h-6 text-gray-400" />
+                        </button>
+                        {mode === 'director' && (
+                            <button onClick={() => setIsVisualBibleOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Open visual bible">
+                                📖
+                            </button>
+                        )}
+                        <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" aria-label="Open settings">
+                            <SettingsIcon className="w-6 h-6 text-gray-400" />
+                        </button>
+                    </div>
                 </div>
             </header>
             
             <main className="py-8 sm:py-12">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
-                    <ArtifactViewer />
-                    {generationProgress.total > 0 && (
-                        <ProgressBar
-                            current={generationProgress.current}
-                            total={generationProgress.total}
-                            task={generationProgress.task}
-                        />
+                    {mode === 'quick' ? (
+                        <>
+                            <section className="mb-12">
+                                <PipelineGenerator onOpenInDirectorMode={(result, prompt) => {
+                                    // Create project state and load it
+                                    import('./utils/projectUtils').then(({ createQuickProjectState }) => {
+                                        const projectState = createQuickProjectState(result, prompt);
+                                        
+                                        // Load the project into Director Mode
+                                        setStoryBible(projectState.storyBible);
+                                        setDirectorsVision(projectState.directorsVision);
+                                        setScenes(projectState.scenes);
+                                        setScenesToReview(projectState.scenesToReview);
+                                        
+                                        // Switch to Director Mode
+                                        setMode('director');
+                                        setWorkflowStage('director');
+                                        
+                                        addToast('Project loaded in Director Mode! You can now refine your story.', 'success');
+                                    });
+                                }} />
+                            </section>
+                            <ArtifactViewer addToast={addToast} />
+                        </>
+                    ) : (
+                        <>
+                            {mode === 'director' && (
+                                <section className="mb-8 p-4 bg-gray-800/30 rounded-lg border border-gray-700/50">
+                                    <h2 className="text-lg font-semibold text-amber-400 mb-2">Quick Generate Sandbox</h2>
+                                    <p className="text-sm text-gray-400 mb-4">For fast one-prompt to video experiments. Switch to Quick Generate mode for full focus.</p>
+                                    <PipelineGenerator onOpenInDirectorMode={(result, prompt) => {
+                                        // Create project state and load it
+                                        import('./utils/projectUtils').then(({ createQuickProjectState }) => {
+                                            const projectState = createQuickProjectState(result, prompt);
+                                            
+                                            // Load the project into current Director Mode session
+                                            setStoryBible(projectState.storyBible);
+                                            setDirectorsVision(projectState.directorsVision);
+                                            setScenes(projectState.scenes);
+                                            setScenesToReview(projectState.scenesToReview);
+                                            
+                                            addToast('Quick run imported! Refine your story in Director Mode.', 'success');
+                                        });
+                                    }} />
+                                </section>
+                            )}
+                            <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
+                            <ArtifactViewer addToast={addToast} />
+                            {generationProgress.total > 0 && (
+                                <ProgressBar
+                                    current={generationProgress.current}
+                                    total={generationProgress.total}
+                                    task={generationProgress.task}
+                                />
+                            )}
+                            {renderCurrentStage()}
+                        </>
                     )}
-                    {renderCurrentStage()}
                 </div>
             </main>
 
@@ -401,6 +527,12 @@ const AppContent: React.FC = () => {
                     onClose={() => setHasSeenWelcome(true)}
                 />
             )}
+            {mode === 'director' && (
+                <VisualBiblePanel
+                    isOpen={isVisualBibleOpen}
+                    onClose={() => setIsVisualBibleOpen(false)}
+                />
+            )}
         </div>
     );
 };
@@ -408,17 +540,19 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => (
     <UsageProvider>
         <ApiStatusProvider>
-            <PlanExpansionStrategyProvider>
-                <LocalGenerationSettingsProvider>
-                    <MediaGenerationProviderProvider>
-                        <TemplateContextProvider>
-                            <ComfyUICallbackProvider>
-                                <AppContent />
-                            </ComfyUICallbackProvider>
-                        </TemplateContextProvider>
-                    </MediaGenerationProviderProvider>
-                </LocalGenerationSettingsProvider>
-            </PlanExpansionStrategyProvider>
+            <PipelineProvider>
+                <PlanExpansionStrategyProvider>
+                    <LocalGenerationSettingsProvider>
+                        <MediaGenerationProviderProvider>
+                            <TemplateContextProvider>
+                                <ComfyUICallbackProvider>
+                                    <AppContent />
+                                </ComfyUICallbackProvider>
+                            </TemplateContextProvider>
+                        </MediaGenerationProviderProvider>
+                    </LocalGenerationSettingsProvider>
+                </PlanExpansionStrategyProvider>
+            </PipelineProvider>
         </ApiStatusProvider>
     </UsageProvider>
 );

@@ -1,6 +1,14 @@
 import { ApiStateChangeCallback, ApiLogCallback } from './geminiService';
 import * as geminiService from './geminiService';
 import * as localFallback from './localFallbackService';
+import {
+    generateLocalSceneList,
+    generateStoryBlueprint,
+    suggestStoryIdeas as llmSuggestStoryIdeas,
+    suggestDirectorsVisions as llmSuggestDirectorsVisions,
+    refineDirectorsVision as llmRefineDirectorsVision,
+    suggestCoDirectorObjectives as llmSuggestCoDirectorObjectives,
+} from './localStoryService';
 import { StoryBible, Scene, TimelineData, BatchShotTask, Shot, CreativeEnhancers, BatchShotResult, DetailedShotResult, CoDirectorResult, ContinuityResult, WorkflowMapping } from '../types';
 
 export type PlanExpansionActions = {
@@ -187,15 +195,15 @@ const localActions: PlanExpansionActions = {
         logSuccess(logApiCall, 'prune context for batch processing (local)', LOCAL_STRATEGY_ID);
         return result;
     },
-    generateStoryBible: (idea, genre = 'sci-fi', logApiCall, onStateChange) => runLocal('generate Story Bible', () => localFallback.generateStoryBible(idea, genre), logApiCall, onStateChange),
-    generateSceneList: (plotOutline, directorsVision, logApiCall, onStateChange) => runLocal('generate scene list', () => localFallback.generateSceneList(plotOutline, directorsVision), logApiCall, onStateChange),
+    generateStoryBible: (idea, genre = 'sci-fi', logApiCall, onStateChange) => runLocal('generate Story Bible', () => generateStoryBlueprint(idea, genre), logApiCall, onStateChange),
+    generateSceneList: (plotOutline, directorsVision, logApiCall, onStateChange) => runLocal('generate scene list', () => generateLocalSceneList(plotOutline, directorsVision), logApiCall, onStateChange),
     generateAndDetailInitialShots: (prunedContext, logApiCall, onStateChange) => runLocal('generate and detail initial shots', () => localFallback.generateAndDetailInitialShots(prunedContext), logApiCall, onStateChange),
-    suggestStoryIdeas: (logApiCall, onStateChange) => runLocal('suggest ideas', () => localFallback.suggestStoryIdeas(), logApiCall, onStateChange),
-    suggestDirectorsVisions: (storyBible, logApiCall, onStateChange) => runLocal('suggest visions', () => localFallback.suggestDirectorsVisions(storyBible), logApiCall, onStateChange),
+    suggestStoryIdeas: (logApiCall, onStateChange) => runLocal('suggest ideas', () => llmSuggestStoryIdeas(), logApiCall, onStateChange),
+    suggestDirectorsVisions: (storyBible, logApiCall, onStateChange) => runLocal('suggest visions', () => llmSuggestDirectorsVisions(storyBible), logApiCall, onStateChange),
     suggestNegativePrompts: (directorsVision, sceneSummary, logApiCall, onStateChange) => runLocal('suggest negative prompts', () => localFallback.suggestNegativePrompts(), logApiCall, onStateChange),
-    refineDirectorsVision: (vision, storyBible, logApiCall, onStateChange) => runLocal('refine director vision', () => localFallback.refineDirectorsVision(vision, storyBible), logApiCall, onStateChange),
+    refineDirectorsVision: (vision, storyBible, logApiCall, onStateChange) => runLocal('refine director vision', () => llmRefineDirectorsVision(vision, storyBible), logApiCall, onStateChange),
     refineStoryBibleSection: (section, content, storyContext, logApiCall, onStateChange) => runLocal('refine story bible section', () => localFallback.refineStoryBibleSection(section, content, storyContext), logApiCall, onStateChange),
-    suggestCoDirectorObjectives: (logline, sceneSummary, directorsVision, logApiCall, onStateChange) => runLocal('suggest Co-Director objectives', () => localFallback.suggestCoDirectorObjectives(logline, sceneSummary, directorsVision), logApiCall, onStateChange),
+    suggestCoDirectorObjectives: (logline, sceneSummary, directorsVision, logApiCall, onStateChange) => runLocal('suggest Co-Director objectives', () => llmSuggestCoDirectorObjectives(logline, sceneSummary, directorsVision), logApiCall, onStateChange),
     getCoDirectorSuggestions: (prunedContext, timelineSummary, objective, logApiCall, onStateChange) => runLocal('get Co-Director suggestions', () => localFallback.getCoDirectorSuggestions(prunedContext, timelineSummary, objective), logApiCall, onStateChange),
     batchProcessShotEnhancements: (tasks, _prunedContext, logApiCall, onStateChange) => runLocal('batch process shots', () => localFallback.batchProcessShotEnhancements(tasks), logApiCall, onStateChange),
     analyzeVideoFrames: (frames, logApiCall, onStateChange) => runLocal('analyze video frames', () => localFallback.analyzeVideoFrames(frames), logApiCall, onStateChange),
@@ -274,7 +282,7 @@ export const createPlanExpansionActions = (strategyId: string): PlanExpansionAct
     }
     
     // For Gemini strategy, wrap each action with automatic fallback to local
-    return {
+    const actionsWithFallback: PlanExpansionActions = {
         getPrunedContextForShotGeneration: createFallbackAction(
             geminiActions.getPrunedContextForShotGeneration,
             localActions.getPrunedContextForShotGeneration,
@@ -376,6 +384,19 @@ export const createPlanExpansionActions = (strategyId: string): PlanExpansionAct
             'generateWorkflowMapping'
         ),
     };
+
+    const LOCAL_ONLY_ACTIONS: Array<keyof PlanExpansionActions> = [
+        'suggestStoryIdeas',
+        'suggestDirectorsVisions',
+        'refineDirectorsVision',
+        'suggestCoDirectorObjectives',
+    ];
+    LOCAL_ONLY_ACTIONS.forEach((actionName) => {
+        actionsWithFallback[actionName] = localActions[actionName];
+    });
+
+    return actionsWithFallback;
 };
 
 export type { ApiStateChangeCallback, ApiLogCallback };
+

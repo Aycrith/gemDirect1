@@ -1,5 +1,8 @@
-import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset } from '../types';
+import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
+import { getVisualBible } from './visualBibleContext';
+import { getPromptConfigForModel, applyPromptTemplate, type PromptTarget, getDefaultNegativePromptForModel } from './promptTemplates';
+import { getVisualContextForShot, getCharacterContextForShot, getVisualContextForScene, getCharacterContextForScene } from './visualBiblePromptHelpers';
 
 export const DEFAULT_NEGATIVE_PROMPT = 'blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, oversaturated, undersaturated, motion blur';
 
@@ -10,6 +13,17 @@ const DISCOVERY_CANDIDATES = [
     'http://127.0.0.1:8188',  // ComfyUI standalone default
     'http://localhost:8188',
 ];
+
+export interface WorkflowGenerationMetadata {
+    highlightMappings: WorkflowProfileMappingHighlight[];
+    mappingEntries: Array<{ key: string; dataType: string }>;
+    missingMappings: MappableData[];
+    warnings: string[];
+    referencesCanonical: boolean;
+    hasTextMapping: boolean;
+    hasKeyframeMapping: boolean;
+    mapping: WorkflowMapping;
+}
 
 /**
  * Attempts to find a running ComfyUI server by checking a list of common addresses.
@@ -123,6 +137,54 @@ export const checkSystemResources = async (url: string): Promise<string> => {
  * @param url The server URL to check.
  * @returns A promise that resolves to an object containing running and pending queue counts.
  */
+const DEFAULT_WORKFLOW_PROFILE_ID = 'wan-i2v';
+
+// Known workflow file names for canonical detection
+// These are used only for friendly logging/metadata, not as hard-coded paths.
+const KNOWN_WAN_WORKFLOWS = [
+  'image_netayume_lumina_t2i.json',
+  'video_wan2_2_5B_ti2v.json',
+];
+
+// Constants for workflow mapping types
+const TEXT_MAPPING_TYPES = ['human_readable_prompt', 'full_timeline_json'];
+const KEYFRAME_MAPPING_TYPE = 'keyframe_image';
+const HIGHLIGHT_TYPES = ['human_readable_prompt', 'full_timeline_json', 'keyframe_image'];
+
+// Helper functions for workflow mapping analysis
+const getPromptPayload = (workflowJson?: string): Record<string, any> | null => {
+  if (!workflowJson) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(workflowJson);
+    return parsed.prompt ?? parsed;
+  } catch {
+    return null;
+  }
+};
+
+const hasTextMapping = (mapping: WorkflowMapping): boolean =>
+  Object.values(mapping).some(value => TEXT_MAPPING_TYPES.includes(value));
+
+const hasKeyframeMapping = (mapping: WorkflowMapping): boolean =>
+  Object.values(mapping).includes(KEYFRAME_MAPPING_TYPE);
+
+const computeHighlightMappings = (workflowJson: string | undefined, mapping: WorkflowMapping): WorkflowProfileMappingHighlight[] => {
+  const prompt = getPromptPayload(workflowJson);
+  return HIGHLIGHT_TYPES.flatMap(type => {
+    const entry = Object.entries(mapping).find(([, dataType]) => dataType === type);
+    if (!entry) {
+      return [];
+    }
+    const [key] = entry;
+    const [nodeId, inputName] = key.split(':');
+    const node = prompt?.[nodeId];
+    const nodeTitle = node?._meta?.title || node?.label || `Node ${nodeId}`;
+    return [{ type: type as MappableData, nodeId, inputName: inputName ?? '', nodeTitle }];
+  });
+};
+
 export const getQueueInfo = async (url: string): Promise<{ queue_running: number, queue_pending: number }> => {
     if (!url) {
         throw new Error("Server address is not configured.");
@@ -148,10 +210,24 @@ export interface WorkflowProfile {
 
 const resolveWorkflowProfile = (
     settings: LocalGenerationSettings,
-    override?: WorkflowProfile
+    modelId?: string,
+    override?: WorkflowProfile,
+    profileId?: string
 ): WorkflowProfile => {
-    const workflowJson = override?.workflowJson ?? settings.workflowJson;
-    const mapping = override?.mapping ?? settings.mapping ?? {};
+    if (override) {
+        return override;
+    }
+    const profileFromSettings = profileId ? settings.workflowProfiles?.[profileId] : undefined;
+    const primaryProfile = settings.workflowProfiles?.[DEFAULT_WORKFLOW_PROFILE_ID];
+    const workflowJson =
+        profileFromSettings?.workflowJson ??
+        primaryProfile?.workflowJson ??
+        settings.workflowJson;
+    const mapping =
+        profileFromSettings?.mapping ??
+        primaryProfile?.mapping ??
+        settings.mapping ??
+        {};
 
     if (!workflowJson) {
         throw new Error("No workflow has been synced from the server.");
@@ -163,20 +239,53 @@ const resolveWorkflowProfile = (
     };
 };
 
+function resolveModelIdFromSettings(settings: LocalGenerationSettings): string {
+  return settings.modelId || 'comfy-svd';
+}
+
+const friendlyMappingLabel = (type: string): string => {
+  switch (type) {
+    case 'human_readable_prompt':
+      return 'Human-Readable Prompt (CLIP)';
+    case 'full_timeline_json':
+      return 'Full Timeline JSON (CLIP)';
+    case 'keyframe_image':
+      return 'Keyframe Image (LoadImage)';
+    default:
+      return type;
+  }
+};
+
 /**
- * Validates the synced workflow and the consistency of the data mappings.
- * @param settings The current local generation settings.
- * @returns A promise that resolves if validation passes, and rejects with an array of specific error messages otherwise.
+ * Validates the active workflow JSON and mapping for a given profile.
+ *
+ * The rules are profile-specific:
+ * - wan-t2i (text → image keyframes):
+ *   - Requires at least one CLIPTextEncode.text node.
+ *   - Requires a text mapping (human_readable_prompt or full_timeline_json).
+ *   - Does NOT require a keyframe_image mapping because this profile produces
+ *     keyframes instead of consuming them.
+ * - wan-i2v (text+image → video):
+ *   - Requires CLIPTextEncode.text AND LoadImage.image nodes.
+ *   - Requires both a text mapping and a keyframe_image → LoadImage.image mapping.
+ *
+ * @param settings Local generation settings whose workflowJson/mapping represent
+ *                 the currently active profile (queueComfyUIPrompt passes a
+ *                 profile-specific copy).
+ * @param profileId Active workflow profile id ('wan-t2i' or 'wan-i2v').
  */
-export const validateWorkflowAndMappings = (settings: LocalGenerationSettings): void => {
+export const validateWorkflowAndMappings = (
+    settings: LocalGenerationSettings,
+    profileId: string = 'wan-i2v',
+): void => {
     if (!settings.workflowJson) {
         throw new Error("No workflow has been synced from the server.");
     }
 
-    let workflowApi;
+    let workflowApi: Record<string, any>;
     try {
         workflowApi = JSON.parse(settings.workflowJson);
-    } catch (e) {
+    } catch {
         throw new Error("The synced workflow is not valid JSON. Please re-sync.");
     }
 
@@ -187,20 +296,44 @@ export const validateWorkflowAndMappings = (settings: LocalGenerationSettings): 
 
     const mapping = settings.mapping ?? {};
     const workflowNodes = Object.values(promptPayloadTemplate ?? {}) as Array<Record<string, any>>;
-    const hasSvdConditioning = workflowNodes.some((node) => node?.class_type === 'SVD_img2vid_Conditioning');
     const mappingErrors: string[] = [];
     const mappedDataTypes = new Set(Object.values(mapping));
 
-    // Stricter checks for essential mappings
-    if (
-        !hasSvdConditioning &&
-        !mappedDataTypes.has('human_readable_prompt') &&
-        !mappedDataTypes.has('full_timeline_json')
-    ) {
-        mappingErrors.push("Workflow is missing a mapping for the main text prompt. Please map either 'Human-Readable Prompt' or 'Full Timeline JSON' to a text input in your workflow.");
+    // Check for required node types in the workflow.
+    const hasClipTextEncode = workflowNodes.some(
+        (node) => node?.class_type === 'CLIPTextEncode' && node.inputs?.text !== undefined,
+    );
+    const hasLoadImage = workflowNodes.some(
+        (node) => node?.class_type === 'LoadImage' && node.inputs?.image !== undefined,
+    );
+
+    // Blocking errors for core workflow requirements.
+    // For wan-t2i (text-to-image keyframes) we only require CLIP text conditioning.
+    // For wan-i2v (image-to-video) we require both CLIP and LoadImage so keyframe
+    // images can be injected into the graph.
+    if (!hasClipTextEncode) {
+        mappingErrors.push(
+            "Workflow requires at least one CLIPTextEncode node with a 'text' input for text conditioning. This workflow appears to be image-only and cannot process text prompts.",
+        );
     }
-    if (!mappedDataTypes.has('keyframe_image')) {
-        mappingErrors.push("Workflow is missing a mapping for the keyframe image. Please map 'Keyframe Image' to a 'LoadImage' node's 'image' input.");
+    if (profileId === 'wan-i2v' && !hasLoadImage) {
+        mappingErrors.push(
+            "Workflow requires at least one LoadImage node with an 'image' input for keyframe conditioning.",
+        );
+    }
+
+    // Stricter checks for essential mappings.
+    // Both profiles must have a text prompt mapping, but only wan-i2v requires
+    // a keyframe_image mapping (wan-t2i produces keyframes instead of consuming them).
+    if (!mappedDataTypes.has('human_readable_prompt') && !mappedDataTypes.has('full_timeline_json')) {
+        mappingErrors.push(
+            "Workflow is missing a mapping for the main text prompt. Please map either 'Human-Readable Prompt' or 'Full Timeline JSON' to a CLIPTextEncode node's 'text' input.",
+        );
+    }
+    if (profileId === 'wan-i2v' && !mappedDataTypes.has('keyframe_image')) {
+        mappingErrors.push(
+            "Workflow is missing a mapping for the keyframe image. Please map 'Keyframe Image' to a LoadImage node's 'image' input.",
+        );
     }
     
     // Check individual mappings for consistency and type compatibility
@@ -230,7 +363,7 @@ export const validateWorkflowAndMappings = (settings: LocalGenerationSettings): 
     }
 
     if (mappingErrors.length > 0) {
-        throw new Error(`Mapping Consistency Errors:\n- ${mappingErrors.join('\n- ')}\nPlease re-sync your workflow or adjust mappings.`);
+        throw new Error(`Workflow Validation Errors:\n- ${mappingErrors.join('\n- ')}\nPlease update your ComfyUI workflow to include text conditioning nodes and ensure proper mappings.`);
     }
 };
 
@@ -290,7 +423,31 @@ const fetchAssetAsDataURL = async (url: string, filename: string, subfolder: str
     const blob = await response.blob();
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
+        reader.onloadend = () => {
+            const dataUrl = reader.result as string;
+            // Micro-instrumentation: emit a short, deterministic anchor so E2E traces
+            // can correlate the inline data: URI with GEMDIRECT console diagnostics.
+            try {
+                // Console anchor (visible in Playwright traces)
+                console.info('GEMDIRECT-KEYFRAME:' + (dataUrl ? dataUrl.slice(0, 200) : ''));
+
+                // Also push a compact diagnostic into a global so tests can read it from the page
+                const g: any = globalThis as any;
+                g.__gemDirectClientDiagnostics = g.__gemDirectClientDiagnostics || [];
+                g.__gemDirectClientDiagnostics.push({
+                    event: 'keyframe-fetched',
+                    filename,
+                    subfolder,
+                    type,
+                    prefix: (dataUrl ? dataUrl.slice(0, 200) : ''),
+                    ts: Date.now(),
+                });
+            } catch (e) {
+                // ignore instrumentation errors
+            }
+
+            resolve(dataUrl);
+        };
         reader.onerror = reject;
         reader.readAsDataURL(blob);
     });
@@ -309,9 +466,80 @@ export const queueComfyUIPrompt = async (
     settings: LocalGenerationSettings,
     payloads: { json: string; text: string; structured: any[]; negativePrompt: string },
     base64Image: string,
+    profileId: string = DEFAULT_WORKFLOW_PROFILE_ID,
     profileOverride?: WorkflowProfile
 ): Promise<any> => {
-    const profile = resolveWorkflowProfile(settings, profileOverride);
+    // Lightweight in-browser diagnostic recorder so E2E tests can read a deterministic
+    // list of events describing attempted uploads/prompts. We avoid writing large
+    // binary blobs and only record summaries/snippets to keep payloads small.
+    const pushDiagnostic = (entry: Record<string, any>) => {
+        try {
+            const g: any = globalThis as any;
+            g.__gemDirectComfyDiagnostics = g.__gemDirectComfyDiagnostics || [];
+            const safe = { ts: new Date().toISOString(), ...entry };
+            // truncate large fields
+            if (typeof safe.body === 'string' && safe.body.length > 1000) safe.body = safe.body.slice(0, 1000) + '...';
+            if (typeof safe.bodySnippet === 'string' && safe.bodySnippet.length > 1000) safe.bodySnippet = safe.bodySnippet.slice(0, 1000) + '...';
+            g.__gemDirectComfyDiagnostics.push(safe);
+        } catch (e) {
+            // ignore any diagnostic errors
+        }
+    };
+    const modelId = resolveModelIdFromSettings(settings);
+    const profile = resolveWorkflowProfile(settings, modelId, profileOverride, profileId);
+    const profileConfig = settings.workflowProfiles?.[profileId];
+    const workflowPath = profileConfig?.sourcePath || 'inline workflow';
+    const highlightEntries =
+        profileConfig?.metadata?.highlightMappings ?? computeHighlightMappings(profile.workflowJson, profile.mapping);
+    const hasText = hasTextMapping(profile.mapping);
+    const hasKeyframe = hasKeyframeMapping(profile.mapping);
+    const missingMappingsSet = new Set<MappableData>(profileConfig?.metadata?.missingMappings ?? []);
+    if (!hasText) {
+        missingMappingsSet.add('human_readable_prompt');
+        missingMappingsSet.add('full_timeline_json');
+    }
+      if (profileId === 'wan-i2v' && !hasKeyframe) {
+          missingMappingsSet.add('keyframe_image');
+      }
+    const missingMappings = Array.from(missingMappingsSet);
+    const warningSet = new Set(profileConfig?.metadata?.warnings ?? []);
+    if (!hasText) {
+        warningSet.add('Missing CLIP text input mapping (Human-Readable Prompt / Full Timeline JSON).');
+    }
+      if (profileId === 'wan-i2v' && !hasKeyframe) {
+          warningSet.add('Missing LoadImage keyframe mapping.');
+      }
+    const warnings = Array.from(warningSet);
+    const mappingEntries = Object.entries(profile.mapping).map(([key, dataType]) => ({ key, dataType }));
+    const referencesCanonical = Boolean(
+        profile.workflowJson &&
+        KNOWN_WAN_WORKFLOWS.some(workflowFile =>
+            profile.workflowJson.toLowerCase().includes(workflowFile.toLowerCase())
+        )
+    );
+    const workflowMeta = {
+        highlightMappings: highlightEntries,
+        mappingEntries,
+        missingMappings,
+        warnings,
+        referencesCanonical,
+        hasTextMapping: hasText,
+        hasKeyframeMapping: hasKeyframe,
+        mapping: profile.mapping,
+    };
+    console.log(`[${profileId}] Workflow path: ${workflowPath} | Canonical workflow: ${referencesCanonical ? 'detected' : 'not detected'}`);
+    if (highlightEntries.length > 0) {
+        highlightEntries.forEach(entry => {
+            console.log(
+                `[${profileId}] ${friendlyMappingLabel(entry.type)} -> ${entry.nodeId}:${entry.inputName} (${entry.nodeTitle})`
+            );
+        });
+    } else {
+        console.log(`[${profileId}] Mapping entries: ${mappingEntries.map(entry => `${entry.dataType}:${entry.key}`).join(', ') || 'none'}`);
+    }
+    if (missingMappings.length > 0) {
+        console.warn(`[${profileId}] Missing mappings: ${missingMappings.join(', ')}`);
+    }
 
     let workflowApi: Record<string, any>;
     try {
@@ -333,7 +561,9 @@ export const queueComfyUIPrompt = async (
     try {
         await checkServerConnection(runtimeSettings.comfyUIUrl);
         systemResourcesMessage = await checkSystemResources(runtimeSettings.comfyUIUrl);
-        validateWorkflowAndMappings(runtimeSettings);
+        // Validate using the active profile so wan-t2i (text->image) is not
+        // incorrectly forced to have a LoadImage/keyframe mapping.
+        validateWorkflowAndMappings(runtimeSettings, profileId);
     } catch(error) {
         // Re-throw the specific error from the checks to be displayed to the user.
         throw error;
@@ -343,6 +573,9 @@ export const queueComfyUIPrompt = async (
     try {
         const promptPayload = JSON.parse(JSON.stringify(promptPayloadTemplate));
         const baseUrl = runtimeSettings.comfyUIUrl.endsWith('/') ? runtimeSettings.comfyUIUrl : `${runtimeSettings.comfyUIUrl}/`;
+        const clientId = runtimeSettings.comfyUIClientId || `csg_${Date.now()}`;
+        console.log(`[${profileId}] Using Comfy client ID: ${clientId}`);
+        pushDiagnostic({ profileId, action: 'prepare', clientId, workflowPath });
         
         let uploadedImageFilename: string | null = null;
         
@@ -362,9 +595,11 @@ export const queueComfyUIPrompt = async (
                     method: 'POST',
                     body: formData,
                 });
+                pushDiagnostic({ profileId, action: 'uploadImage:attempt', uploadFormFields: Array.from((formData as any).keys ? (formData as any).keys() : []), base64Length: base64Image.length });
 
                 if (!uploadResponse.ok) throw new Error(`Failed to upload image to ComfyUI. Status: ${uploadResponse.status}`);
                 const uploadResult = await uploadResponse.json();
+                pushDiagnostic({ profileId, action: 'uploadImage:result', uploadResult: { name: uploadResult?.name, status: uploadResponse.status } });
                 uploadedImageFilename = uploadResult.name;
             }
         }
@@ -401,7 +636,8 @@ export const queueComfyUIPrompt = async (
         }
         
         // --- STEP 3: QUEUE THE PROMPT ---
-        const body = JSON.stringify({ prompt: promptPayload, client_id: runtimeSettings.comfyUIClientId || `csg_${Date.now()}` });
+        const body = JSON.stringify({ prompt: promptPayload, client_id: clientId });
+        pushDiagnostic({ profileId, action: 'prompt:posting', bodySnippet: body?.slice ? body.slice(0, 1000) : undefined });
         const response = await fetch(`${baseUrl}prompt`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -417,13 +653,34 @@ export const queueComfyUIPrompt = async (
             throw new Error(errorMessage);
         }
         const result = await response.json();
+        try { pushDiagnostic({ profileId, action: 'prompt:result', promptId: result?.prompt_id, resultSnippet: JSON.stringify(result).slice(0, 1000) }); } catch(e){}
+
+        let queueSnapshot;
+        try {
+            queueSnapshot = await getQueueInfo(runtimeSettings.comfyUIUrl);
+            console.log(
+                `[${profileId}] Queue snapshot: Running=${queueSnapshot.queue_running}, Pending=${queueSnapshot.queue_pending}`
+            );
+            pushDiagnostic({ profileId, action: 'queue:snapshot', queueSnapshot });
+        } catch (queueError) {
+            const message = queueError instanceof Error ? queueError.message : String(queueError);
+            console.warn(`[${profileId}] Queue snapshot unavailable: ${message}`);
+            pushDiagnostic({ profileId, action: 'queue:snapshot-unavailable', message });
+        }
+
         return {
             ...result,
             systemResources: systemResourcesMessage,
+            workflowProfileId: profileId,
+            workflowPath,
+            clientId,
+            queueSnapshot,
+            workflowMeta,
         };
 
     } catch (error) {
         console.error("Error processing ComfyUI request:", error);
+        try { pushDiagnostic({ profileId, action: 'error', message: error instanceof Error ? error.message : String(error) }); } catch(e){}
         if (error instanceof TypeError && error.message.includes('fetch')) {
             throw new Error(`Failed to connect to ComfyUI at '${runtimeSettings.comfyUIUrl}'. Please check if the server is running and accessible.`);
         }
@@ -648,7 +905,15 @@ export const generateVideoFromShot = async (
     onProgress?: (statusUpdate: Partial<LocalGenerationStatus>) => void,
     dependencies?: VideoGenerationDependencies,
     overrides?: VideoGenerationOverrides
-): Promise<{ videoPath: string; duration: number; filename: string; frames?: string[] }> => {
+): Promise<{
+    videoPath: string;
+    duration: number;
+    filename: string;
+    frames?: string[];
+    workflowMeta?: WorkflowGenerationMetadata;
+    queueSnapshot?: { queue_running: number; queue_pending: number };
+    systemResources?: string;
+}> => {
     
     const reportProgress = (update: Partial<LocalGenerationStatus>) => {
         if (onProgress) onProgress(update);
@@ -665,25 +930,34 @@ export const generateVideoFromShot = async (
         reportProgress({ status: 'running', message: 'Building video generation prompt...' });
         
         // Step 1: Build human-readable prompt
-        const humanPrompt = buildShotPrompt(shot, enhancers, directorsVision);
+        const humanPrompt = buildShotPrompt(shot, enhancers, directorsVision, settings, undefined, shot.id, 'shotVideo');
         
         reportProgress({ status: 'running', message: `Prompt: ${humanPrompt.substring(0, 80)}...` });
 
         // Step 2: Build payload with shot-specific data
+        const modelId = resolveModelIdFromSettings(settings);
+        const defaultNegativePrompt = getDefaultNegativePromptForModel(modelId, 'shotVideo');
         const appliedNegativePrompt = overrides?.negativePrompt?.trim()?.length
             ? overrides.negativePrompt
-            : DEFAULT_NEGATIVE_PROMPT;
+            : defaultNegativePrompt;
+        const finalNegativePrompt = extendNegativePrompt(appliedNegativePrompt);
 
         const payloads = {
             json: JSON.stringify({ shot_id: shot.id, description: shot.description }),
             text: humanPrompt,
             structured: [],
-            negativePrompt: appliedNegativePrompt
+            negativePrompt: finalNegativePrompt
         };
+
+        // Enforce keyframe image requirement if workflow expects it
+        const keyframeMappingExists = Object.values(settings.mapping).includes('keyframe_image');
+        if (keyframeMappingExists && !keyframeImage) {
+            throw new Error("This workflow requires a keyframe image for video generation, but none was provided. Please ensure a keyframe image is available.");
+        }
 
         // Step 3: Queue prompt in ComfyUI
         reportProgress({ status: 'running', message: 'Queuing prompt in ComfyUI...' });
-        const promptResponse = await queuePrompt(settings, payloads, keyframeImage || '');
+        const promptResponse = await queuePrompt(settings, payloads, keyframeImage || '', 'wan-i2v');
         const resourceMessage =
             promptResponse && typeof promptResponse === 'object'
                 ? (promptResponse as { systemResources?: string }).systemResources
@@ -747,7 +1021,10 @@ export const generateVideoFromShot = async (
                             videoPath: outputData.data || `gemdirect1_shot_${shot.id}`,
                             duration: frameDuration,
                             filename: outputData.filename || `gemdirect1_shot_${shot.id}.mp4`,
-                            frames: frameSequence.length > 0 ? frameSequence : undefined
+                            frames: frameSequence.length > 0 ? frameSequence : undefined,
+                            workflowMeta: (promptResponse as any)?.workflowMeta,
+                            queueSnapshot: (promptResponse as any)?.queueSnapshot,
+                            systemResources: resourceMessage,
                         });
                     }
                 } catch (e) {
@@ -772,6 +1049,10 @@ export const generateVideoFromShot = async (
 type GenerateVideoFromShotFn = typeof generateVideoFromShot;
 
 
+const SINGLE_FRAME_PROMPT = 'Single cinematic frame, one moment, no collage or multi-panel layout, no UI overlays or speech bubbles, cinematic lighting.';
+const NEGATIVE_GUIDANCE = 'multi-panel, collage, split-screen, storyboard panels, speech bubbles, comic strip, UI overlays, repeated scenes, duplicated subjects, interface elements, textual callouts, multiple narratives in same frame';
+const extendNegativePrompt = (base: string): string => (base && base.trim().length > 0 ? `${base}, ${NEGATIVE_GUIDANCE}` : NEGATIVE_GUIDANCE);
+
 /**
  * Builds a human-readable prompt for a shot with creative enhancers.
  * This format is optimized for video generation models.
@@ -779,9 +1060,27 @@ type GenerateVideoFromShotFn = typeof generateVideoFromShot;
 export const buildShotPrompt = (
     shot: Shot,
     enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>> | undefined,
-    directorsVision: string
+    directorsVision: string,
+    settings: LocalGenerationSettings,
+    sceneId?: string,
+    shotId?: string,
+    target: PromptTarget = 'shotImage'
 ): string => {
-    let prompt = `${shot.description}`;
+    const heroArcSegmentParts: string[] = [];
+    if (shot.arcId) {
+        heroArcSegmentParts.push(`Hero arc reference: ${shot.arcId}`);
+    }
+    if (shot.arcName) {
+        heroArcSegmentParts.push(`Hero arc name: ${shot.arcName}`);
+    }
+    if (shot.heroMoment) {
+        heroArcSegmentParts.push('Heroic focal moment');
+    }
+    const heroArcSegment = heroArcSegmentParts.filter(Boolean).join('; ');
+
+    const purposeSegment = shot.purpose ? `Shot purpose: ${shot.purpose}` : '';
+    const baseParts = [SINGLE_FRAME_PROMPT, shot.description, purposeSegment, heroArcSegment].filter(Boolean);
+    let basePrompt = baseParts.join(' ');
 
     // Add creative enhancers if provided
     if (enhancers && Object.keys(enhancers).length > 0) {
@@ -810,16 +1109,48 @@ export const buildShotPrompt = (
         }
 
         if (enhancerParts.length > 0) {
-            prompt += ` (${enhancerParts.join('; ')})`;
+            basePrompt += ` (${enhancerParts.join('; ')})`;
         }
     }
 
     // Add directors vision context
     if (directorsVision) {
-        prompt += ` Style: ${directorsVision}.`;
+        basePrompt += ` Style: ${directorsVision}.`;
     }
 
-    return prompt.trim();
+    // Get Visual Bible context
+    const visualBible = getVisualBible();
+    const visualContext = getVisualContextForShot(visualBible, sceneId, shotId || shot.id);
+    const styleSnippets: string[] = [];
+    if (visualContext.styleBoardTitles.length > 0) {
+        styleSnippets.push(visualContext.styleBoardTitles.join(', '));
+    }
+    if (visualContext.styleBoardTags.length > 0) {
+        styleSnippets.push(`tags: ${visualContext.styleBoardTags.join(', ')}`);
+    }
+    const styleSegment = styleSnippets.length > 0 ? `Visual bible style cues: ${styleSnippets.join('; ')}.` : '';
+
+    const charContext = getCharacterContextForShot(visualBible, sceneId, shotId || shot.id);
+    const characterSnippets: string[] = [];
+    if (charContext.characterNames.length > 0) {
+        characterSnippets.push(`Characters: ${charContext.characterNames.join(', ')}`);
+    }
+    if (charContext.identityTags.length > 0) {
+        characterSnippets.push(`Identity tags: ${charContext.identityTags.join(', ')}`);
+    }
+    if (charContext.visualTraits.length > 0) {
+        characterSnippets.push(`Visual traits: ${charContext.visualTraits.join(', ')}`);
+    }
+    const characterSegment = characterSnippets.length > 0 ? `Visual bible character cues: ${characterSnippets.join('; ')}.` : '';
+
+    const combinedVBSegment = [styleSegment, characterSegment].filter(Boolean).join(' ');
+
+    // Apply prompt template with guardrails
+    const modelId = resolveModelIdFromSettings(settings);
+    const config = getPromptConfigForModel(modelId, target);
+    const finalPrompt = applyPromptTemplate(basePrompt, combinedVBSegment, config);
+
+    return finalPrompt;
 };
 
 export interface TimelineGenerationOptions {
@@ -840,7 +1171,15 @@ export const generateTimelineVideos = async (
     keyframeImages: Record<string, string>,
     onProgress?: (shotId: string, statusUpdate: Partial<LocalGenerationStatus>) => void,
     options?: TimelineGenerationOptions
-): Promise<Record<string, { videoPath: string; duration: number; filename: string }>> => {
+): Promise<Record<string, {
+    videoPath: string;
+    duration: number;
+    filename: string;
+    frames?: string[];
+    workflowMeta?: WorkflowGenerationMetadata;
+    queueSnapshot?: { queue_running: number; queue_pending: number };
+    systemResources?: string;
+}>> => {
     
     const results: Record<string, { videoPath: string; duration: number; filename: string }> = {};
     const shotExecutor = options?.shotGenerator ?? generateVideoFromShot;
@@ -950,25 +1289,67 @@ export const generateSceneKeyframeLocally = async (
     settings: LocalGenerationSettings,
     directorsVision: string,
     sceneSummary: string,
+    sceneId?: string,
     onProgress?: (statusUpdate: Partial<LocalGenerationStatus>) => void
 ): Promise<string> => {
-    const prompt = [
+    const basePromptParts = [
+        SINGLE_FRAME_PROMPT,
         'Cinematic establishing frame, high fidelity, 4K resolution, 16:9 aspect ratio.',
         `Scene summary: ${sceneSummary}`,
         `Director's vision: ${directorsVision}`,
         'Render a single still image that captures the mood, palette, and lighting cues of this scene.'
-    ].join('\n');
+    ];
+    const heroArcInfo = sceneId ? `Hero arc reference: ${sceneId}` : '';
+    if (heroArcInfo) {
+        basePromptParts.push(heroArcInfo);
+    }
+    const basePrompt = basePromptParts.filter(Boolean).join('\n');
 
+    // Get Visual Bible context
+    const visualBible = getVisualBible();
+    const visualContext = getVisualContextForScene(visualBible, sceneId || '');
+    const styleSnippets: string[] = [];
+    if (visualContext.styleBoardTitles.length > 0) {
+      styleSnippets.push(visualContext.styleBoardTitles.join(', '));
+    }
+    if (visualContext.styleBoardTags.length > 0) {
+      styleSnippets.push(`tags: ${visualContext.styleBoardTags.join(', ')}`);
+    }
+    const styleSegment = styleSnippets.length > 0 ? `Visual bible style cues: ${styleSnippets.join('; ')}.` : '';
+
+    const characterContext = getCharacterContextForScene(visualBible, sceneId || '');
+    const characterSnippets: string[] = [];
+    if (characterContext.characterNames.length > 0) {
+      characterSnippets.push(`Characters: ${characterContext.characterNames.join(', ')}`);
+    }
+    if (characterContext.identityTags.length > 0) {
+      characterSnippets.push(`Identity tags: ${characterContext.identityTags.join(', ')}`);
+    }
+    if (characterContext.visualTraits.length > 0) {
+      characterSnippets.push(`Visual traits: ${characterContext.visualTraits.join(', ')}`);
+    }
+    const characterSegment = characterSnippets.length > 0 ? `Visual bible character cues: ${characterSnippets.join('; ')}.` : '';
+    const combinedVBSegment = [styleSegment, characterSegment].filter(Boolean).join(' ');
+
+    // Apply prompt template with guardrails
+    const modelId = resolveModelIdFromSettings(settings);
+    const config = getPromptConfigForModel(modelId, 'sceneKeyframe');
+    const finalPrompt = applyPromptTemplate(basePrompt, combinedVBSegment || undefined, config);
+
+    const negativeBase = getDefaultNegativePromptForModel(resolveModelIdFromSettings(settings), 'sceneKeyframe');
     const payloads = {
         json: JSON.stringify({ scene_summary: sceneSummary, directors_vision: directorsVision }),
-        text: prompt,
+        text: finalPrompt,
         structured: [],
-        negativePrompt: DEFAULT_NEGATIVE_PROMPT,
+        negativePrompt: extendNegativePrompt(negativeBase),
     };
 
-    const response = await queueComfyUIPrompt(settings, payloads, '');
+    const response = await queueComfyUIPrompt(settings, payloads, '', 'wan-t2i');
     if (!response?.prompt_id) {
         throw new Error('Failed to queue prompt: No prompt_id returned.');
+    }
+    if (response.systemResources && response.systemResources.trim()) {
+        onProgress?.({ status: 'running', message: response.systemResources });
     }
 
     const finalOutput = await waitForComfyCompletion(settings, response.prompt_id, onProgress);
@@ -985,19 +1366,23 @@ export const generateShotImageLocally = async (
     enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>> | undefined,
     directorsVision: string,
     sceneSummary: string,
+    sceneId?: string,
     onProgress?: (statusUpdate: Partial<LocalGenerationStatus>) => void
 ): Promise<string> => {
-    const shotPrompt = buildShotPrompt(shot, enhancers, directorsVision);
+    const shotPrompt = buildShotPrompt(shot, enhancers, directorsVision, settings, sceneId, shot.id, 'shotImage');
     const payloads = {
         json: JSON.stringify({ shot_id: shot.id, scene_summary: sceneSummary }),
         text: shotPrompt,
         structured: [],
-        negativePrompt: DEFAULT_NEGATIVE_PROMPT,
+        negativePrompt: getDefaultNegativePromptForModel(resolveModelIdFromSettings(settings), 'shotImage'),
     };
 
-    const response = await queueComfyUIPrompt(settings, payloads, '');
+    const response = await queueComfyUIPrompt(settings, payloads, '', 'wan-t2i');
     if (!response?.prompt_id) {
         throw new Error('Failed to queue prompt: No prompt_id returned.');
+    }
+    if (response.systemResources && response.systemResources.trim()) {
+        onProgress?.({ status: 'running', message: response.systemResources });
     }
 
     const finalOutput = await waitForComfyCompletion(settings, response.prompt_id, onProgress);

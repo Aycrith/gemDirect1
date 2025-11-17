@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import GenerationControls from "../GenerationControls";
 import { createValidTestSettings } from "../../services/__tests__/fixtures";
@@ -104,6 +104,7 @@ const createControlledGenerator = (
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  cleanup();
 });
 
 describe("GenerationControls", () => {

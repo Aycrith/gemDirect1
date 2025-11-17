@@ -52,6 +52,7 @@ const WelcomeGuideModal: React.FC<WelcomeGuideModalProps> = ({ onClose }) => {
 
                 <div className="p-6 mt-auto border-t border-gray-700 text-center bg-gray-900/50 rounded-b-lg">
                     <button
+                        data-testid="btn-welcome-dismiss"
                         onClick={onClose}
                         className="w-full sm:w-auto flex items-center justify-center px-8 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-amber-700 hover:to-orange-700 transform hover:scale-105"
                     >

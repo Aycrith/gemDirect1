@@ -3,7 +3,10 @@ import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from
 import ContinuityCard from './ContinuityCard';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import GuideCard from './GuideCard';
+import E2EQACard from './E2EQACard';
 import { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
+import { useVisualBible } from '../utils/hooks';
+import { findCharacterContinuityIssues } from '../services/continuityVisualContext';
 
 interface ContinuityDirectorProps {
   scenes: Scene[];
@@ -19,6 +22,7 @@ interface ContinuityDirectorProps {
   refinedSceneIds: Set<string>;
   onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
   onExtendTimeline: (sceneId: string, lastFrame: string) => void;
+  onRerunScene?: (sceneId: string) => void;
 }
 
 const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
@@ -35,7 +39,21 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
   refinedSceneIds,
   onUpdateSceneSummary,
   onExtendTimeline,
+  onRerunScene,
 }) => {
+  const sceneRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+  const { visualBible } = useVisualBible();
+
+  const characterContinuityIssues = React.useMemo(() => {
+    return findCharacterContinuityIssues(visualBible, scenes);
+  }, [visualBible, scenes]);
+
+  const handleSelectScene = useCallback((sceneId: string) => {
+    const element = sceneRefs.current[sceneId];
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
   const getNarrativeContext = useCallback((sceneId: string): string => {
       if (!storyBible || !scenes.length) return '';
       
@@ -96,8 +114,13 @@ CONTEXT FROM ADJACENT SCENES:
         </h2>
         <p className="mt-4 text-lg text-gray-400 max-w-3xl mx-auto">
           Upload your generated videos for each scene. The AI will analyze them, score them against your creative intent, and provide feedback to refine your story.
+          {/* TODO: Phase 4 - Future phases will auto-link latest renders from the canonical pipeline instead of requiring manual upload, and integrate Visual Bible continuity scoring. */}
         </p>
       </header>
+
+      <div className="mb-8">
+        <E2EQACard onSelectScene={handleSelectScene} />
+      </div>
 
       <GuideCard title="Completing the Creative Loop">
           <p>
@@ -110,29 +133,34 @@ CONTEXT FROM ADJACENT SCENES:
 
       <div className="space-y-12">
         {scenes.map((scene, index) => (
-          <ContinuityCard
-            key={scene.id}
-            scene={scene}
-            sceneNumber={index + 1}
-            storyBible={storyBible}
-            narrativeContext={getNarrativeContext(scene.id)}
-            directorsVision={directorsVision}
-            generatedImage={generatedImages[scene.id]}
-            data={continuityData[scene.id] || { status: 'idle' }}
-            setContinuityData={(updater) => {
-              setContinuityData(prev => ({
-                ...prev,
-                [scene.id]: typeof updater === 'function' ? updater(prev[scene.id]) : updater
-              }));
-            }}
-            addToast={addToast}
-            onApiStateChange={onApiStateChange}
-            onApiLog={onApiLog}
-            onApplySuggestion={onApplySuggestion}
-            isRefined={refinedSceneIds.has(scene.id)}
-            onUpdateSceneSummary={onUpdateSceneSummary}
-            onExtendTimeline={onExtendTimeline}
-          />
+          <div key={scene.id} ref={(el) => sceneRefs.current[scene.id] = el}>
+            <ContinuityCard
+              scene={scene}
+              sceneNumber={index + 1}
+              storyBible={storyBible}
+              narrativeContext={getNarrativeContext(scene.id)}
+              directorsVision={directorsVision}
+              generatedImage={generatedImages[scene.id]}
+              data={continuityData[scene.id] || { status: 'idle' }}
+              setContinuityData={(updater) => {
+                setContinuityData(prev => ({
+                  ...prev,
+                  [scene.id]: typeof updater === 'function' ? updater(prev[scene.id]) : updater
+                }));
+              }}
+              addToast={addToast}
+              onApiStateChange={onApiStateChange}
+              onApiLog={onApiLog}
+              onApplySuggestion={onApplySuggestion}
+              isRefined={refinedSceneIds.has(scene.id)}
+              onUpdateSceneSummary={onUpdateSceneSummary}
+              onExtendTimeline={onExtendTimeline}
+              allSceneIds={scenes.map(s => s.id)}
+              allScenes={scenes}
+              onRerunScene={onRerunScene}
+              characterContinuityIssues={characterContinuityIssues.filter(issue => issue.scenes.includes(scene.id))}
+            />
+          </div>
         ))}
       </div>
     </div>

@@ -12,33 +12,41 @@ describe('buildShotPrompt', () => {
   };
 
   it('returns the shot description when no enhancers or vision are provided', () => {
-    const prompt = buildShotPrompt(baseShot, undefined, '');
-    expect(prompt).toBe('A wide establishing shot of a futuristic skyline');
+    const settings = createValidTestSettings();
+    const prompt = buildShotPrompt(baseShot, undefined, '', settings);
+    // New guardrails prepend a short single-frame instruction; ensure the
+    // generated prompt still contains the original shot description and the
+    // single-frame guidance.
+    expect(prompt).toContain(baseShot.description);
+    expect(prompt).toContain('Single cinematic frame');
   });
 
   it('appends creative enhancers in a readable format', () => {
+    const settings = createValidTestSettings();
     const enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>> = {
       framing: ['overhead'],
       movement: ['tracking'],
       lighting: ['neon glow', 'rim light'],
     };
 
-    const prompt = buildShotPrompt(baseShot, enhancers, '');
+    const prompt = buildShotPrompt(baseShot, enhancers, '', settings);
     expect(prompt).toContain('Framing: overhead');
     expect(prompt).toContain('Movement: tracking');
     expect(prompt).toContain('Lighting: neon glow, rim light');
   });
 
   it("appends the director's vision at the end", () => {
-    const prompt = buildShotPrompt(baseShot, undefined, 'High contrast noir style');
+    const settings = createValidTestSettings();
+    const prompt = buildShotPrompt(baseShot, undefined, 'High contrast noir style', settings);
     expect(prompt.endsWith('Style: High contrast noir style.')).toBe(true);
   });
 
   it('orders description, enhancers, then director vision', () => {
+    const settings = createValidTestSettings();
     const enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>> = {
       mood: ['tense'],
     };
-    const prompt = buildShotPrompt(baseShot, enhancers, 'Grimy cyberpunk aesthetic');
+    const prompt = buildShotPrompt(baseShot, enhancers, 'Grimy cyberpunk aesthetic', settings);
 
     const descriptionIndex = prompt.indexOf(baseShot.description);
     const enhancersIndex = prompt.indexOf('Mood:');
@@ -115,13 +123,16 @@ describe('generateVideoFromShot', () => {
         text: expect.stringContaining(baseShot.description),
         negativePrompt: expect.stringContaining('blurry'),
       }),
-      baseKeyframe
+      baseKeyframe,
+      expect.any(String) // profileId
     );
 
     expect(queueInfoMock).toHaveBeenCalled();
-    expect(result.frames).toHaveLength(frames.length);
+    expect(result).toMatchObject({
+      frames: expect.arrayContaining(frames),
+      filename: 'gemdirect1_shot_shot-42.png',
+    });
     expect(result.duration).toBeCloseTo(frames.length / 24, 5);
-    expect(result.filename).toBe('gemdirect1_shot_shot-42.png');
 
     expect(progressSpy).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'Building video generation prompt...' })
@@ -164,10 +175,13 @@ describe('generateVideoFromShot', () => {
     await vi.advanceTimersByTimeAsync(2000);
     await generationPromise;
 
+    // Negative prompts are extended with guardrail guidance; assert the
+    // provided override is preserved within the final negative prompt.
     expect(queueMock).toHaveBeenCalledWith(
       expect.any(Object),
-      expect.objectContaining({ negativePrompt: 'foggy, desaturated' }),
+      expect.objectContaining({ negativePrompt: expect.stringContaining('foggy, desaturated') }),
       baseKeyframe,
+      expect.any(String) // profileId
     );
   });
 
@@ -188,7 +202,7 @@ describe('generateVideoFromShot', () => {
         progressSpy,
         { queuePrompt: queueMock }
       )
-    ).rejects.toThrow('Unable to reach ComfyUI');
+    ).rejects.toThrow('This workflow requires a keyframe image for video generation, but none was provided.');
 
     expect(progressSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({

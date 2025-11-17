@@ -128,7 +128,8 @@ foreach ($dir in $runDirs) {
                 }
                 if ($telemetry.System -and $telemetry.System.PSObject -and $telemetry.System.PSObject.Properties.Name -contains 'FallbackNotes') {
                     $sceneRec.Telemetry.SystemFallbackNotes = $telemetry.System.FallbackNotes
-                    if ($telemetry.System.FallbackNotes -and $telemetry.System.FallbackNotes.Count -gt 0) { $runReport.HasFallbackNotes = $true }
+                    $fallbackArray = @($telemetry.System.FallbackNotes)
+                    if ($fallbackArray -and $fallbackArray.Count -gt 0) { $runReport.HasFallbackNotes = $true }
                 }
             }
 

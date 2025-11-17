@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as db from './database';
-import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot, SceneStatus, SceneGenerationStatus } from '../types';
+import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot, SceneStatus, SceneGenerationStatus, VisualBible, ComfyUIStatusSummary } from '../types';
 import { useApiStatus } from '../contexts/ApiStatusContext';
 import { useUsage } from '../contexts/UsageContext';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
@@ -228,6 +228,7 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                 timeline: { shots: [], shotEnhancers: {}, transitions: [], negativePrompt: '' },
             }));
             setScenes(newScenes);
+            setWorkflowStage('director');
             
             // Mark all scenes as pending
             newScenes.forEach(s => {
@@ -248,7 +249,7 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                     const taskMessage = `Generating keyframe for scene: "${scene.title}"`;
                     setGenerationProgress(prev => ({ ...prev, current: i + 1, task: taskMessage }));
                     
-                    const image = await mediaActions.generateKeyframeForScene(vision, scene.summary, logApiCall, updateApiStatus);
+                    const image = await mediaActions.generateKeyframeForScene(vision, scene.summary, scene.id, logApiCall, updateApiStatus);
                     
                     setGeneratedImages(prev => ({ ...prev, [scene.id]: image }));
                     
@@ -269,7 +270,6 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
             
             setGenerationProgress({ current: 0, total: 0, task: '' }); // Reset progress bar
 
-            setWorkflowStage('director');
             if (successes === newScenes.length) {
                 addToast('All scene keyframes generated successfully!', 'success');
             } else {
@@ -527,6 +527,18 @@ export interface ArtifactSceneMetadata {
     SceneRetryBudget?: number;
     HistoryConfig?: SceneHistoryConfig;
     SceneKeyframe?: string;
+    // Optional scene-level video metadata (filled once per-scene MP4 exists)
+    Video?: SceneVideoMetadata;
+}
+
+export interface SceneVideoMetadata {
+    Path: string;
+    Status: 'processing' | 'ready' | 'error';
+    DurationSeconds?: number;
+    UpdatedAt?: string;
+     Version?: number;
+     Notes?: string;
+    Error?: string;
 }
 
 export interface ArtifactMetadata {
@@ -1210,4 +1222,79 @@ export function useRecommendations(options?: {
     clearAllRecommendations,
     refresh: fetchRecommendations,
   };
+}
+
+/**
+ * Hook for managing Visual Bible data (characters, style boards, canonical keyframes).
+ * Uses persistent state to store the visual bible across sessions.
+ */
+export function useVisualBible() {
+  const [visualBible, setVisualBibleState] = usePersistentState<VisualBible>('visualBible', {
+    characters: [],
+    styleBoards: [],
+  });
+
+  // Update the service context whenever visualBible changes
+  React.useEffect(() => {
+    import('../services/visualBibleContext').then(({ setVisualBible }) => {
+      setVisualBible(visualBible);
+    });
+  }, [visualBible]);
+
+  return {
+    visualBible,
+    setVisualBible: setVisualBibleState,
+  };
+}
+
+export interface E2EQAResult {
+  runId: string;
+  timestamp: string;
+  scenes: Array<{
+    sceneId: string;
+    frameCount: number;
+    avgBrightness: number;
+    frameVariance: number;
+    flags: string[];
+  }>;
+  helperSummary?: ComfyUIStatusSummary;
+  helperSummaryPath?: string;
+}
+
+export function useLastE2EQAResult(): {
+  result: E2EQAResult | null;
+  loading: boolean;
+  error: string | null;
+  refresh: () => void;
+} {
+  const [result, setResult] = useState<E2EQAResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Try to fetch from logs/latest-qa.json or similar
+      // For now, look in logs directory for qa-report.json files
+      const response = await fetch('/logs/latest-qa.json');
+      if (response.ok) {
+        const data = await response.json();
+        setResult(data);
+      } else {
+        setResult(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load E2E QA results');
+      setResult(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { result, loading, error, refresh };
 }

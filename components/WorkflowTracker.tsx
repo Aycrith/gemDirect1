@@ -73,8 +73,9 @@ const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ currentStage, onStage
 
                     return (
                         <React.Fragment key={stage.id}>
-                             <div className="flex flex-col items-center text-center w-36">
+                            <div className="flex flex-col items-center text-center w-36">
                                 <button
+                                    data-testid={stage.id === 'idea' ? 'step-story-idea' : stage.id === 'director' ? 'step-direct-scenes' : undefined}
                                     onClick={() => isClickable && onStageClick(stageId)}
                                     disabled={!isClickable}
                                     className={`relative flex items-center justify-center w-16 h-16 rounded-full border-2 transition-all duration-300 group ${

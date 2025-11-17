@@ -4,6 +4,9 @@ export interface Shot {
   id: string;
   title?: string;
   description: string;
+  purpose?: string;
+  arcId?: string;
+  heroMoment?: boolean;
 }
 
 export interface CreativeEnhancers {
@@ -33,6 +36,12 @@ export interface Scene {
     summary: string;
     timeline: TimelineData;
     generatedPayload?: { json: string; text: string; structured: any[]; negativePrompt: string };
+    heroArcId?: string;
+    heroArcName?: string;
+    heroArcSummary?: string;
+    heroArcOrder?: number;
+    shotPurpose?: string;
+    heroMoment?: boolean;
 }
 
 export interface StoryBible {
@@ -40,6 +49,15 @@ export interface StoryBible {
     characters: string;
     setting: string;
     plotOutline: string;
+    heroArcs?: HeroArc[];
+}
+
+export interface HeroArc {
+    id: string;
+    name: string;
+    summary: string;
+    emotionalShift: string;
+    importance: number;
 }
 
 export type WorkflowStage = 'idea' | 'bible' | 'vision' | 'director' | 'continuity';
@@ -127,6 +145,16 @@ export interface SceneContinuityData {
   videoAnalysis?: string;
   continuityResult?: ContinuityResult;
   frames?: string[];
+  continuityScore?: SceneContinuityScore;
+}
+
+export interface SceneContinuityScore {
+  visualBibleConsistency: number;  // 0–1 or 0–100
+  styleBoardReuseCount: number;    // how many scenes share boards
+  structuralContinuity?: number;   // new
+  transitionQuality?: number;      // new
+  durationConsistency?: number;    // new
+  overallScore: number;            // composite
 }
 
 export interface BatchShotTask {
@@ -168,11 +196,81 @@ export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_jso
 // Key is `${nodeId}:${inputName}`
 export type WorkflowMapping = Record<string, MappableData>; 
 
+export interface WorkflowProfileMappingHighlight {
+  type: MappableData;
+  nodeId: string;
+  inputName: string;
+  nodeTitle: string;
+}
+
+export interface WorkflowProfileMetadata {
+  lastSyncedAt?: number;
+  highlightMappings?: WorkflowProfileMappingHighlight[];
+  missingMappings?: MappableData[];
+  warnings?: string[];
+}
+
+export interface WorkflowProfile {
+  id: string;
+  label: string;
+  workflowJson: string;
+  mapping: WorkflowMapping;
+  sourcePath?: string;
+  syncedAt?: number;
+  metadata?: WorkflowProfileMetadata;
+}
+
+export interface ComfyUIStatusQueueSummary {
+  running?: number;
+  pending?: number;
+  latencyMs?: number;
+  error?: string;
+}
+
+export interface ComfyUIStatusSystemStats {
+  durationMs?: number;
+  summary?: string;
+  warning?: string;
+  devices?: Array<{
+    name?: string;
+    type?: string;
+    free?: number | string;
+    total?: number | string;
+  }>;
+}
+
+export interface ComfyUIStatusProfileSummary {
+  id: string;
+  label: string;
+  sourcePath?: string;
+  highlightMappings: WorkflowProfileMappingHighlight[];
+  mappingEntries: Array<{ key: string; dataType: MappableData }>;
+  missingMappings: MappableData[];
+  warnings: string[];
+  hasTextMapping: boolean;
+  hasKeyframeMapping: boolean;
+  referencesCanonical: boolean;
+}
+
+export interface ComfyUIStatusSummary {
+  timestamp: string;
+  summaryPath?: string;
+  helperLogPath?: string;
+  comfyUrl: string;
+  queue?: ComfyUIStatusQueueSummary;
+  systemStats?: ComfyUIStatusSystemStats;
+  workflows: ComfyUIStatusProfileSummary[];
+  workflowFiles: Array<{ path: string; exists: boolean }>;
+  warnings: string[];
+}
+
 export interface LocalGenerationSettings {
     comfyUIUrl: string;
     comfyUIClientId: string;
     workflowJson: string; // Will store the FETCHED workflow
     mapping: WorkflowMapping;
+    modelId?: string; // 'comfy-svd' | 'wan-video' | others later
+    workflowProfiles?: Record<string, WorkflowProfile>;
 }
 
 export interface LocalGenerationAsset {
@@ -198,12 +296,33 @@ export interface LocalGenerationStatus {
 
 export type SceneGenerationStatus = 'pending' | 'generating' | 'complete' | 'failed';
 
-export interface SceneStatus {
-  sceneId: string;
+export interface VisualBibleCharacter {
+  id: string;
+  name: string;
+  description?: string;
+  // Base64 or URL references to images
+  imageRefs?: string[];
+
+  role?: 'protagonist' | 'antagonist' | 'supporting' | 'background';
+  visualTraits?: string[];      // e.g., ["short hair", "red jacket"]
+  identityTags?: string[];      // e.g., ["Courier-001", "Mirror-Self"]
+}
+
+export interface VisualBibleStyleBoard {
+  id: string;
   title: string;
-  status: SceneGenerationStatus;
-  progress: number; // 0-100
-  error?: string;
-  startTime?: number;
-  endTime?: number;
+  description?: string;
+  imageRefs?: string[];
+  tags?: string[];
+}
+
+export interface VisualBible {
+  characters: VisualBibleCharacter[];
+  styleBoards: VisualBibleStyleBoard[];
+  // Optional mapping from story/scene/shot to visual references
+  sceneKeyframes?: Record<string, string[]>; // sceneId → imageRefs
+  shotReferences?: Record<string, string[]>; // shotId → imageRefs
+
+  sceneCharacters?: Record<string, string[]>; // sceneId -> characterIds
+  shotCharacters?: Record<string, string[]>;  // shotId -> characterIds
 }

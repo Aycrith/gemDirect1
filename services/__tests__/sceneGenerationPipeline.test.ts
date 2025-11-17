@@ -19,7 +19,8 @@ const sampleTimeline: TimelineData = {
 
 describe('sceneGenerationPipeline', () => {
   it('creates shot plans with prompts and context metadata', () => {
-    const plan = createSceneShotPlan(sampleTimeline, 'Blade Runner neon noir', 'The hero prepares for the heist.');
+    const settings = createValidTestSettings();
+    const plan = createSceneShotPlan(sampleTimeline, 'Blade Runner neon noir', 'The hero prepares for the heist.', settings);
 
     expect(plan.shots).toHaveLength(2);
     expect(plan.shots[0].prompt).toContain(sampleTimeline.shots[0].description);
@@ -29,7 +30,8 @@ describe('sceneGenerationPipeline', () => {
   });
 
   it('requests keyframes for every plan and strips data URL prefixes', async () => {
-    const plans = createSceneShotPlan(sampleTimeline, 'Blade Runner neon noir', 'Prep').shots;
+    const settings = createValidTestSettings();
+    const plans = createSceneShotPlan(sampleTimeline, 'Blade Runner neon noir', 'Prep', settings).shots;
     const mediaActions: MediaGenerationActions = {
       generateKeyframeForScene: vi.fn(),
       generateImageForShot: vi

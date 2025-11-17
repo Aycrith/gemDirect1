@@ -79,6 +79,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
             <form onSubmit={handleSubmit} className="mt-6">
                  <div className="relative">
                     <textarea
+                        aria-label="Director's Vision"
                         value={vision}
                         onChange={(e) => setVision(e.target.value)}
                         rows={4}

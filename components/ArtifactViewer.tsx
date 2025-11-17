@@ -5,6 +5,13 @@ import QueuePolicyCard from './QueuePolicyCard';
 import FallbackWarningsCard from './FallbackWarningsCard';
 import HistoricalTelemetryCard from './HistoricalTelemetryCard';
 import TelemetryComparisonChart from './TelemetryComparisonChart';
+import TelemetryFilterPanel from './TelemetryFilterPanel';
+import ExportDialog from './ExportDialog';
+import { RecommendationEngine, type TelemetrySnapshot, type Recommendation } from '../services/recommendationEngine';
+import { ExportService } from '../services/exportService';
+import ScenePlayer from './ScenePlayer';
+import { getSceneVideoManager } from '../services/videoGenerationService';
+import type { ToastMessage } from '../types';
 
 type ArtifactScene = ArtifactSceneMetadata;
 
@@ -107,11 +114,41 @@ const buildTelemetrySummary = (scene: ArtifactScene): string[] => {
     return summary;
 };
 
-const ArtifactViewer: React.FC = () => {
+interface ArtifactViewerProps {
+    addToast?: (message: string, type: ToastMessage['type']) => void;
+}
+
+const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
     const { artifact, error, loading, refresh } = useArtifactMetadata();
     const { historicalRuns, compareWithHistorical, dbInitialized } = useRunHistory();
     const [showWarningsOnly, setShowWarningsOnly] = useState(false);
     const [comparison, setComparison] = useState<any>(null);
+    const [showFilterPanel, setShowFilterPanel] = useState(false);
+    const [showExportDialog, setShowExportDialog] = useState(false);
+    const [filteredTelemetry, setFilteredTelemetry] = useState<TelemetrySnapshot[]>([]);
+    const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+    const [regeneratingScenes, setRegeneratingScenes] = useState<Set<string>>(new Set());
+
+    // Generate recommendations from artifact telemetry
+    useEffect(() => {
+        if (artifact && artifact.Story.Telemetry) {
+            const telemetrySnapshot: TelemetrySnapshot = {
+                storyId: artifact.Story.Id,
+                scenes: (artifact.Story.Scenes || []).length,
+                successRate: artifact.Story.Telemetry.SuccessRate || 0,
+                durationSeconds: (artifact.Story.Telemetry.DurationMs || 0) / 1000,
+                gpuUsageGb: artifact.Story.Telemetry.GPUUsageGB || 0,
+                retries: artifact.Story.Telemetry.Retries || 0,
+                timeouts: artifact.Story.Telemetry.Timeouts || 0,
+                timestamp: new Date(artifact.Timestamp),
+            };
+            
+            // Generate recommendations from telemetry
+            const recs = RecommendationEngine.analyzeTelemetry([telemetrySnapshot]);
+            setRecommendations(recs);
+            setFilteredTelemetry([telemetrySnapshot]);
+        }
+    }, [artifact]);
 
     // Calculate comparison with historical data when artifact or historicalRuns change
     useEffect(() => {
@@ -138,6 +175,27 @@ const ArtifactViewer: React.FC = () => {
                 !scene.HistoryRetrieved,
         );
     }, [artifact, showWarningsOnly]);
+
+    const handleRegenerateScene = async (sceneId: string, prompt?: string, negativePrompt?: string) => {
+        setRegeneratingScenes((prev) => {
+            const next = new Set(prev);
+            next.add(sceneId);
+            return next;
+        });
+        addToast?.(`Regenerating video for ${sceneId}…`, 'info');
+        try {
+            const manager = getSceneVideoManager();
+            await manager.regenerateScene(sceneId, { prompt, negativePrompt });
+            addToast?.(`Scene ${sceneId} video updated.`, 'success');
+        } finally {
+            refresh();
+            setRegeneratingScenes((prev) => {
+                const next = new Set(prev);
+                next.delete(sceneId);
+                return next;
+            });
+        }
+    };
 
     if (loading) {
         return (
@@ -193,6 +251,20 @@ const ArtifactViewer: React.FC = () => {
                         onClick={() => setShowWarningsOnly((prev) => !prev)}
                     >
                         {showWarningsOnly ? 'Show all scenes' : 'Show warnings only'}
+                    </button>
+                    <button
+                        type="button"
+                        className="px-3 py-1 rounded-lg border border-violet-400/60 text-xs text-violet-200 hover:bg-violet-500/10"
+                        onClick={() => setShowFilterPanel((prev) => !prev)}
+                    >
+                        {showFilterPanel ? 'Hide Filter' : 'Filter'}
+                    </button>
+                    <button
+                        type="button"
+                        className="px-3 py-1 rounded-lg border border-amber-400/60 text-xs text-amber-200 hover:bg-amber-500/10"
+                        onClick={() => setShowExportDialog(true)}
+                    >
+                        Export
                     </button>
                 </div>
             </div>
@@ -617,6 +689,17 @@ const ArtifactViewer: React.FC = () => {
                                     )}
                                 </div>
                             )}
+                            {/* Scene-level video playback with regeneration hook */}
+                            <div className="mt-3">
+                                <ScenePlayer
+                                    scene={scene}
+                                    runDir={artifact.RunDir}
+                                    isRegenerating={regeneratingScenes.has(scene.SceneId)}
+                                    onRegenerateScene={(sceneId) =>
+                                        handleRegenerateScene(sceneId, scene.Prompt, scene.NegativePrompt)
+                                    }
+                                />
+                            </div>
                         </div>
                     </details>
                     );
@@ -655,6 +738,60 @@ const ArtifactViewer: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {/* Telemetry Filter Panel */}
+            {showFilterPanel && (
+                <div className="border-t border-gray-700 pt-6">
+                    <TelemetryFilterPanel
+                        data={filteredTelemetry}
+                        onFilter={setFilteredTelemetry}
+                        onExport={() => setShowExportDialog(true)}
+                    />
+                </div>
+            )}
+
+            {/* AI Recommendations Section */}
+            {recommendations.length > 0 && (
+                <div className="border-t border-gray-700 pt-6">
+                    <h3 className="text-gray-400 text-[11px] uppercase tracking-wide mb-4">AI Recommendations</h3>
+                    <div className="space-y-3">
+                        {recommendations.map((rec, idx) => (
+                            <div
+                                key={idx}
+                                className={`p-4 rounded-lg border ${
+                                    rec.severity === 'critical'
+                                        ? 'bg-red-500/10 border-red-400/30 text-red-200'
+                                        : rec.severity === 'warning'
+                                          ? 'bg-amber-500/10 border-amber-400/30 text-amber-200'
+                                          : 'bg-blue-500/10 border-blue-400/30 text-blue-200'
+                                }`}
+                            >
+                                <div className="flex items-start justify-between mb-2">
+                                    <span className="font-semibold text-sm">{rec.title}</span>
+                                    <span className={`text-xs px-2 py-1 rounded ${
+                                        rec.severity === 'critical'
+                                            ? 'bg-red-500/20'
+                                            : rec.severity === 'warning'
+                                              ? 'bg-amber-500/20'
+                                              : 'bg-blue-500/20'
+                                    }`}>
+                                        {rec.severity}
+                                    </span>
+                                </div>
+                                <p className="text-xs">{rec.description}</p>
+                                {rec.action && (
+                                    <p className="text-xs mt-2 font-mono text-gray-400">
+                                        💡 {rec.action}
+                                    </p>
+                                )}
+                                <p className="text-xs mt-2 text-gray-500">
+                                    Confidence: {Math.round(rec.confidence * 100)}%
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Historical Telemetry Section - Wave 2 */}
             {dbInitialized && historicalRuns.length > 0 && (
@@ -753,6 +890,17 @@ const ArtifactViewer: React.FC = () => {
                     <p>Historical telemetry data will appear here after additional runs are completed</p>
                 </div>
             )}
+
+            {/* Export Dialog */}
+            <ExportDialog
+                data={filteredTelemetry}
+                recommendations={recommendations}
+                isOpen={showExportDialog}
+                onClose={() => setShowExportDialog(false)}
+                onExportComplete={() => {
+                    setShowExportDialog(false);
+                }}
+            />
         </section>
     );
 };

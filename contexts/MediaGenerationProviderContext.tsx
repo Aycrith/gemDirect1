@@ -59,13 +59,22 @@ export const MediaGenerationProviderProvider: React.FC<{ children: React.ReactNo
     );
 
     const fallbackProvider = useMemo(() => {
+        // If local ComfyUI settings are configured, prefer comfyui-local
+        if (localGenerationSettings?.comfyUIUrl && localGenerationSettings?.workflowJson) {
+            const localProvider = providers.find(provider => provider.id === 'comfyui-local');
+            if (localProvider && localProvider.isAvailable) {
+                return localProvider;
+            }
+        }
+        
+        // Otherwise fall back to the default available provider
         const defaultAvailable = providers.find(provider => provider.isDefault && provider.isAvailable);
         if (defaultAvailable) {
             return defaultAvailable;
         }
         const firstAvailable = providers.find(provider => provider.isAvailable);
         return firstAvailable ?? providers[0];
-    }, [providers]);
+    }, [providers, localGenerationSettings]);
 
     useEffect(() => {
         const selected = providers.find(provider => provider.id === selectedProviderId);

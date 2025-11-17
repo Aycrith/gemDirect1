@@ -8,7 +8,8 @@ export default defineConfig({
     environment: 'happy-dom',
     setupFiles: [],
     include: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx'],
-    exclude: ['node_modules', 'dist'],
+    // Exclude Playwright end-to-end specs so Vitest doesn't try to run them.
+    exclude: ['node_modules', 'dist', 'tests/e2e/**'],
     pool: 'forks',
     maxWorkers: 1,
     isolate: false,

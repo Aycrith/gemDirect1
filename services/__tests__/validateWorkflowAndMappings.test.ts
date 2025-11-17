@@ -31,6 +31,31 @@ describe('validateWorkflowAndMappings', () => {
     );
   });
 
+  it('throws when CLIPTextEncode node is missing', () => {
+    const settings = getSettings();
+    const workflow = JSON.parse(settings.workflowJson);
+    // Remove CLIP nodes
+    delete workflow.prompt.positive_clip;
+    delete workflow.prompt.negative_clip;
+    settings.workflowJson = JSON.stringify(workflow);
+
+    expect(() => validateWorkflowAndMappings(settings)).toThrow(
+      /requires at least one CLIPTextEncode node/i
+    );
+  });
+
+  it('throws when LoadImage node is missing', () => {
+    const settings = getSettings();
+    const workflow = JSON.parse(settings.workflowJson);
+    // Remove LoadImage node
+    delete workflow.prompt.keyframe_loader;
+    settings.workflowJson = JSON.stringify(workflow);
+
+    expect(() => validateWorkflowAndMappings(settings)).toThrow(
+      /requires at least one LoadImage node/i
+    );
+  });
+
   it('throws when a mapped node no longer exists', () => {
     const settings = getSettings();
     settings.mapping['ghost_node:text'] = 'human_readable_prompt';

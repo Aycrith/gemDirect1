@@ -87,6 +87,16 @@ if ($process) {
         Write-Host "   ⚠ Server process found but not responding" -ForegroundColor Yellow
         Write-Host "   May still be starting up..." -ForegroundColor Yellow
     }
+
+        # Check log for pagefile errors
+        $logPath1 = Join-Path "$installPath" "comfyui.log"
+        if (Test-Path $logPath1) {
+            $logText = Get-Content $logPath1 -Raw -ErrorAction SilentlyContinue
+            if ($logText -match "page.*file.*too small|os error 1455|页面文件太小") {
+                Write-Host "⚠ ComfyUI logs show pagefile / OOM (os error 1455)." -ForegroundColor Yellow
+                Write-Host "   → Increase Windows pagefile or run: .\scripts\patch-comfyui-handle-pagefile.ps1 or use scripts\start-comfyui-disable-mmap.ps1 to restart with --disable-mmap" -ForegroundColor Cyan
+            }
+        }
 } else {
     Write-Host "   ⚠ ComfyUI not running" -ForegroundColor Yellow
     Write-Host "   Start with: C:\ComfyUI\start-comfyui.bat" -ForegroundColor Yellow

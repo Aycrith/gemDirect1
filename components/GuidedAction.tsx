@@ -8,9 +8,18 @@ interface GuidedActionProps {
     onClick: () => void;
     isLoading?: boolean;
     icon?: React.ReactNode;
+    buttonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
 }
 
-const GuidedAction: React.FC<GuidedActionProps> = ({ title, description, buttonText, onClick, isLoading = false, icon }) => {
+const GuidedAction: React.FC<GuidedActionProps> = ({
+    title,
+    description,
+    buttonText,
+    onClick,
+    isLoading = false,
+    icon,
+    buttonProps,
+}) => {
     return (
         <div className="text-center p-8 bg-gray-800/30 rounded-lg border-2 border-dashed border-amber-700/50 flex flex-col items-center justify-center animate-breathing-glow my-6">
             <div className="mb-4 text-amber-400">
@@ -21,6 +30,7 @@ const GuidedAction: React.FC<GuidedActionProps> = ({ title, description, buttonT
             <button
                 onClick={onClick}
                 disabled={isLoading}
+                {...buttonProps}
                 className="mt-6 inline-flex items-center justify-center px-6 py-3 bg-amber-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:bg-amber-700 disabled:bg-gray-500 transform hover:scale-105"
             >
                 {isLoading ? 'Processing...' : buttonText}
