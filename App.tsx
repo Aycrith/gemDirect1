@@ -34,6 +34,7 @@ import ProgressBar from './components/ProgressBar';
 import WelcomeGuideModal from './components/WelcomeGuideModal';
 import ComfyUICallbackProvider from './components/ComfyUICallbackProvider';
 import VisualBiblePanel from './components/VisualBiblePanel';
+import ConfirmationModal from './components/ConfirmationModal';
 import { clearProjectData } from './utils/database';
 
 const AppContent: React.FC = () => {
@@ -55,6 +56,7 @@ const AppContent: React.FC = () => {
     const [hasSeenWelcome, setHasSeenWelcome] = usePersistentState('hasSeenWelcome', false);
     const [mode, setMode] = usePersistentState<'quick' | 'director'>('mode', 'director');
     const [isVisualBibleOpen, setIsVisualBibleOpen] = useState(false);
+    const [isNewProjectConfirmOpen, setIsNewProjectConfirmOpen] = useState(false);
 
     const { sceneStatuses, updateSceneStatus } = useSceneGenerationWatcher(scenes);
 
@@ -96,6 +98,10 @@ const AppContent: React.FC = () => {
 
     const removeToast = useCallback((id: number) => {
         setToasts(prev => prev.filter(t => t.id !== id));
+    }, []);
+
+    const handleNewProjectRequest = useCallback(() => {
+        setIsNewProjectConfirmOpen(true);
     }, []);
 
     const handleNewProject = useCallback(async () => {
@@ -368,7 +374,7 @@ const AppContent: React.FC = () => {
                         {mode === 'director' && (
                             <button
                                 data-testid="btn-new-project"
-                                onClick={handleNewProject}
+                                onClick={handleNewProjectRequest}
                                 className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2"
                                 aria-label="New project"
                             >
@@ -533,6 +539,15 @@ const AppContent: React.FC = () => {
                     onClose={() => setIsVisualBibleOpen(false)}
                 />
             )}
+            <ConfirmationModal
+                isOpen={isNewProjectConfirmOpen}
+                onClose={() => setIsNewProjectConfirmOpen(false)}
+                onConfirm={handleNewProject}
+                title="Start New Project?"
+                message="This will clear all current project data, including your story bible, scenes, and generated content. This action cannot be undone."
+                confirmText="Start New Project"
+                cancelText="Cancel"
+            />
         </div>
     );
 };
