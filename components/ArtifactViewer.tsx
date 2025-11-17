@@ -8,7 +8,6 @@ import TelemetryComparisonChart from './TelemetryComparisonChart';
 import TelemetryFilterPanel from './TelemetryFilterPanel';
 import ExportDialog from './ExportDialog';
 import { RecommendationEngine, type TelemetrySnapshot, type Recommendation } from '../services/recommendationEngine';
-import { ExportService } from '../services/exportService';
 import ScenePlayer from './ScenePlayer';
 import { getSceneVideoManager } from '../services/videoGenerationService';
 import type { ToastMessage } from '../types';
