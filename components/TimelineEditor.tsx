@@ -284,7 +284,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const latestFallbackNotes = latestSceneSnapshot?.Telemetry?.System?.FallbackNotes?.filter(Boolean) ?? [];
     
     // Use artifact metadata for scene-level render status
-    const { artifact: artifactMetadata, loading: artifactLoading } = useArtifactMetadata(5000); // Auto-refresh every 5 seconds
+    const { artifact: artifactMetadata } = useArtifactMetadata(5000); // Auto-refresh every 5 seconds
     const sceneArtifactMetadata = useMemo(
         () => artifactMetadata?.Scenes.find((meta) => meta.SceneId === scene.id) ?? null,
         [artifactMetadata, scene.id],
