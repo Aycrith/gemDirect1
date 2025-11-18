@@ -9,24 +9,32 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "check:health-helper": "node scripts/comfyui-status.ts",
+    "check:vitest-subset": "npm test -- --run",
+    "check:playwright-svd": "npx playwright test tests/e2e/svd-basic.spec.ts",
+    "check:playwright-wan": "npx playwright test tests/e2e/wan-basic.spec.ts",
+    "e2e:smoke": "node scripts/e2eSmoke.js"
   },
   "dependencies": {
     "@google/genai": "^1.28.0",
+    "@rollup/rollup-linux-x64-gnu": "^4.53.2",
     "idb": "^8.0.0",
     "marked": "^16.4.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "@vitest/ui": "^4.0.8",
     "happy-dom": "^20.0.10",
-    "typescript": "~5.8.2",
+    "playwright": "^1.56.1",
     "ts-node": "^10.9.1",
+    "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vitest": "^4.0.8"
   }

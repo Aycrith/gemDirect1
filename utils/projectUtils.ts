@@ -1,6 +1,7 @@
 
 import { StoryBible, Scene, LocalGenerationSettings, LocalGenerationStatus, SceneContinuityData } from '../types';
 import { blobToBase64, base64ToBlob } from './videoUtils';
+import { StoryToVideoResult } from '../services/storyToVideoPipeline';
 
 export interface ProjectSaveState {
     version: number;
@@ -118,4 +119,36 @@ export const loadProjectFromFile = (file: File): Promise<ProjectSaveState> => {
         reader.onerror = () => reject(new Error('Failed to read file.'));
         reader.readAsText(file);
     });
+};
+
+/**
+ * Create a minimal project state from Quick Generate results for promotion to Director Mode
+ */
+export const createQuickProjectState = (result: StoryToVideoResult, prompt: string): Omit<ProjectSaveState, 'version' | 'scenesToReview'> & { scenesToReview: Set<string> } => {
+  // Convert StoryToVideoResult scenes to Scene objects
+  const scenes: Scene[] = result.scenes.map(scene => ({
+    id: scene.id,
+    title: scene.title,
+    summary: scene.summary,
+    timeline: scene.timeline
+  }));
+
+  return {
+    storyBible: result.storyBible,
+    directorsVision: `${result.storyBible.characters}. ${result.storyBible.setting}. ${result.storyBible.plotOutline}`,
+    scenes,
+    generatedImages: {},
+    generatedShotImages: {},
+    continuityData: {},
+    localGenSettings: {
+      provider: 'comfyui',
+      model: 'default',
+      resolution: '1024x576',
+      frameRate: 25,
+      duration: 4,
+      style: 'cinematic'
+    },
+    localGenStatus: {},
+    scenesToReview: new Set()
+  };
 };

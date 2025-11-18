@@ -106,13 +106,18 @@ if ($primary) {
     Write-Host "  (Has $($primary.ModelCount) models and $($primary.CustomNodes) custom nodes)" -ForegroundColor Gray
     
     # Generate the correct task command
+    # Note: --disable-mmap flag disables memory-mapped file I/O for safetensors.
+    # This prevents Windows pagefile mmap crashes when loading large models (>4GB)
+    # that can occur due to Windows pagefile limitations with memory-mapped files.
     Write-Host "`n=== Recommended Task Configuration ===" -ForegroundColor Cyan
     $taskCommand = @"
-cd "$($primary.Path)"; & "$($primary.PythonPath)" main.py --listen 127.0.0.1 --port 8000 --enable-cors-header "*"
+cd "$($primary.Path)"; & "$($primary.PythonPath)" main.py --listen 127.0.0.1 --port 8000 --enable-cors-header "*" --disable-mmap
 "@
     
     Write-Host "Update your VS Code task 'Start ComfyUI Server' to:" -ForegroundColor Yellow
     Write-Host $taskCommand -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Note: The --disable-mmap flag prevents Windows pagefile crashes when loading large models." -ForegroundColor DarkGray
     
     # Offer to update the task automatically
     Write-Host "`n"
@@ -143,6 +148,18 @@ cd "$($primary.Path)"; & "$($primary.PythonPath)" main.py --listen 127.0.0.1 --p
         } catch {
             Write-Host "✗ Error updating tasks: $_" -ForegroundColor Red
             Write-Host "Please update manually using the command above." -ForegroundColor Yellow
+        }
+    }
+
+    # Offer to patch ComfyUI to avoid pagefile mmap crash
+    $patchChoice = Read-Host "Would you like me to apply a safetensors pagefile fallback patch to ComfyUI at $($primary.Path)? (y/n)"
+    if ($patchChoice -eq 'y' -or $patchChoice -eq 'Y') {
+        $patchScript = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Definition) "patch-comfyui-handle-pagefile.ps1"
+        if (Test-Path $patchScript) {
+            & $patchScript -customComfyPath $primary.Path
+            Write-Host "✓ Patch applied (if possible). Run scripts\validate-comfyui-patch.ps1 to verify." -ForegroundColor Green
+        } else {
+            Write-Host "✗ Could not find patch script: $patchScript" -ForegroundColor Yellow
         }
     }
 }

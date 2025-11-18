@@ -32,6 +32,7 @@ export const createSceneShotPlan = (
     timeline: TimelineData,
     directorsVision: string,
     sceneSummary: string,
+    settings: LocalGenerationSettings,
 ): SceneShotPlanningResult => {
     if (!timeline || !Array.isArray(timeline.shots) || timeline.shots.length === 0) {
         throw new Error('Timeline must include at least one shot before running the generation pipeline.');
@@ -42,7 +43,7 @@ export const createSceneShotPlan = (
         return {
             shot,
             order: index,
-            prompt: buildShotPrompt(shot, enhancers, directorsVision),
+            prompt: buildShotPrompt(shot, enhancers, directorsVision, settings),
             negativePrompt: timeline.negativePrompt || DEFAULT_NEGATIVE_PROMPT,
             enhancers,
         };
@@ -74,6 +75,7 @@ export interface SceneAssetSynthesisOptions {
     mediaActions: MediaGenerationActions;
     directorsVision: string;
     sceneSummary: string;
+    sceneId?: string;
     logApiCall: ApiLogCallback;
     onStateChange?: ApiStateChangeCallback;
 }
@@ -97,6 +99,7 @@ export const generateKeyframesForPlans = async (
                 plan.enhancers,
                 options.directorsVision,
                 options.sceneSummary,
+                options.sceneId,
                 options.logApiCall,
                 options.onStateChange,
             );
@@ -115,6 +118,7 @@ export interface ScenePipelineOptions {
     timeline: TimelineData;
     directorsVision: string;
     sceneSummary: string;
+    sceneId?: string;
     mediaActions: MediaGenerationActions;
     logApiCall: ApiLogCallback;
     onStateChange?: ApiStateChangeCallback;
@@ -134,7 +138,7 @@ export const runSceneGenerationPipeline = async (
     videoResults: Record<string, { videoPath: string; duration: number; filename: string }>;
     keyframeErrors: Array<{ shotId: string; error: string }>;
 }> => {
-    const plan = createSceneShotPlan(options.timeline, options.directorsVision, options.sceneSummary);
+    const plan = createSceneShotPlan(options.timeline, options.directorsVision, options.sceneSummary, options.settings);
     const existingKeyframes = options.existingKeyframes ?? {};
 
     const missingPlans = plan.shots.filter((shotPlan) => !existingKeyframes[shotPlan.shot.id]);
@@ -146,6 +150,7 @@ export const runSceneGenerationPipeline = async (
             mediaActions: options.mediaActions,
             directorsVision: options.directorsVision,
             sceneSummary: options.sceneSummary,
+            sceneId: options.sceneId,
             logApiCall: options.logApiCall,
             onStateChange: options.onStateChange,
         });

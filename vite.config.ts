@@ -8,6 +8,17 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        ...(env.VITE_LOCAL_STORY_PROVIDER_URL
+          ? {
+              proxy: {
+                '/local-llm': {
+                  target: env.VITE_LOCAL_STORY_PROVIDER_URL,
+                  changeOrigin: true,
+                  rewrite: () => '',
+                },
+              },
+            }
+          : {}),
       },
       plugins: [react()],
       define: {

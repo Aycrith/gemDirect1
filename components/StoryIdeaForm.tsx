@@ -69,6 +69,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                     <p className="text-xs text-gray-500 mt-1">Template guidance will enhance your story's narrative coherence.</p>
                 </div>
                 <textarea
+                    aria-label="Story Idea"
                     value={idea}
                     onChange={(e) => setIdea(e.target.value)}
                     rows={4}

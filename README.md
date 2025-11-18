@@ -8,6 +8,14 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/drive/1uvkkeiyDr3iI4KPyB4ICS6JaMrDY4TjF
 
+## Temporary Change Log (please read before coding)
+
+- `scripts/comfyui-status.ts` is now required reading before every generation or test run. It validates the dual WAN profiles (`wan-t2i` for keyframes + `wan-i2v` for videos), confirms the `human_readable_prompt`/`full_timeline_json`/`keyframe_image` mappings use CLIPTextEncode/LoadImage nodes, and records queue/system telemetry (VRAM, latency, warnings) along with the workflow file paths. Point it at your exported `localGenSettings` JSON (or `LOCAL_PROJECT_STATE_PATH`) and keep an eye on the log stored in `test-results/comfyui-status/`.
+- We assume the WAN workflow bundles live at `workflows/image_netayume_lumina_t2i.json` and `workflows/video_wan2_2_5B_ti2v.json`; change the helper's `KNOWN_WAN_WORKFLOWS` list if you override the filenames, and keep the `LOCAL_*`/`VITE_LOCAL_*` environment variables in sync between the helper, React UI, and Playwright suites. The helper is the single source of truth for system telemetry and queue policy before you queue any shots.
+- This temporary change log doubles as a checklist: before touching code, re-read `README.md`, every `docs/STORY_TO_VIDEO_PIPELINE_PHASE_*.md`, `WORKFLOW_ARCHITECTURE_REFERENCE.md`, the QA/testing guides, and `scripts/comfyui-status.ts` so the helper, dual WAN workflows, LM Studio wiring, and QA expectations stay aligned.
+- Story outputs now follow an explicit 12-arc hero's journey schema (see `docs/STORY_TO_VIDEO_PIPELINE_PHASE_1.md` for the JSON shape) so the LLM returns structured `heroArcs` plus scene-to-arc mappings; future agents must keep that schema in mind when editing prompts or timeline tooling.
+- The canonical WAN video workflow is `video_wan2_2_5B_ti2v.json`—all docs, helpers, and UI prompts should reference this 5B path and the lower-VRAM, 3–8 minute runtime targets for RTX 3090. SVD runs are optional regression checks gated by `RUN_SVD_E2E`.
+
 ## Run Locally
 
 **Prerequisites:**  Node.js >= 22.19.0 (the helper scripts now enforce this at runtime and will exit early if `node -v` reports an older version).
@@ -24,10 +32,54 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uvkkeiyDr3iI4KPyB4ICS6
   $env:LOCAL_LLM_TEMPERATURE = '0.35'
   $env:LOCAL_LLM_TIMEOUT_MS = '120000'   # ~90s generation time
   ```
+ - To ensure the React UI talks directly to LM Studio you also need to surface those settings via Vite. Set the `VITE_LOCAL_*` variants before running `npm run dev` or `npx playwright test`:
+   ```bash
+   export VITE_LOCAL_STORY_PROVIDER_URL='http://192.168.50.192:1234/v1/chat/completions'
+   export VITE_LOCAL_LLM_MODEL='mistralai/mistral-7b-instruct-v0.3'
+   export VITE_LOCAL_LLM_REQUEST_FORMAT='openai-chat'
+   export VITE_LOCAL_LLM_TEMPERATURE=0.35
+   export VITE_LOCAL_LLM_TIMEOUT_MS=120000
+   export VITE_LOCAL_LLM_SEED=42
+   ```
+   These values are read by the new `localStoryService` so the story bible form uses LM Studio instead of fallback templates.
 - The helper now performs a `/v1/models` probe before ComfyUI spins up so we never waste a run on a dead LLM instance. Override the probe target with `LOCAL_LLM_HEALTHCHECK_URL` or skip the check (not recommended) with `LOCAL_LLM_SKIP_HEALTHCHECK=1`.
 - When the probe hits a non-responsive LM Studio instance it raises an error immediately, so you can gracefully fall back to another provider or set [`LOCAL_LLM_SKIP_HEALTHCHECK=1`](https://lmstudio.ai/docs/api#health-checks) if the endpoint intentionally blocks `/models` entirely; the override is handy when the default `/v1/models` path is behind a proxy or you want to hit a different host than the story generator’s prompts.
 - Verify the endpoint before a headless run: `Invoke-WebRequest http://192.168.50.192:1234/v1/models`.
 - If LM Studio is offline, fall back to Ollama by swapping `LOCAL_STORY_PROVIDER_URL`/`LOCAL_LLM_MODEL` (keep `LOCAL_LLM_REQUEST_FORMAT=openai-chat`). Note the fallback in `run-summary.txt`.
+- Mirror the `LOCAL_*` env vars with their `VITE_LOCAL_*` cousins so React/Playwright/`localStoryService` share the same LM Studio endpoint, timeout, seed, and request format. The helper also expects `LOCAL_PROJECT_STATE_PATH` to point at the exported JSON that holds `localGenSettings`, which must contain dual WAN workflows and the required CLIP/LoadImage mappings for `human_readable_prompt`, `full_timeline_json`, and `keyframe_image`. Structured metadata (seed, durationMs, warning) follows the LM Studio guidance at [https://lmstudio.ai/docs/api#chat-completions](https://lmstudio.ai/docs/api#chat-completions).
+
+### ComfyUI Health Helper
+
+Before you queue text-to-video generation, run the helper to confirm the WAN workflows, node mappings, and Comfy queue health:
+
+```bash
+npx ts-node scripts/comfyui-status.ts --project ./path/to/your-exported-project.json
+```
+
+The helper now also accepts `--summary-dir`/`--log-path` so each run writes a JSON summary plus an optional verbose log under `test-results/comfyui-status/`. It checks both `wan-t2i` and `wan-i2v` profiles, ensures the canonical workflow JSON files exist, enforces CLIPTextEncode + LoadImage mappings for `human_readable_prompt`, `full_timeline_json`, and `keyframe_image`, and records whether Visual Bible keyframes are placeholders or real base64 payloads. Queue/system telemetry (devices, VRAM, running/pending counts) is captured per run, and the helper prints the summary path for QA to link to Visual Bible prompts and Playwright traces.
+
+Wrap helper runs with `node scripts/comfyui-status.ts --project <exported state> --summary-dir test-results/comfyui-status --log-path test-results/comfyui-status/comfyui-status.log` before queuing work or triggering Playwright suites so the logged CLIP/LoadImage mappings and telemetry are available for every downstream test and artifact.
+
+> Self-check: Did I verify dual workflows map through `comfyui-status.ts`, and did the LM Studio metadata (seed/duration/warning) get logged alongside every plan expansion action?
+
+The script reads the `localGenSettings` block (exported via the app's **Save Project** action or stored under `LOCAL_PROJECT_STATE_PATH`), hits `/system_stats` and `/queue` on `LOCAL_COMFY_URL`/`VITE_LOCAL_COMFY_URL` (defaults to `http://127.0.0.1:8188`), logs latency, warns if the queue is busy, and prints the mapped node IDs for `human_readable_prompt`, `full_timeline_json`, and `keyframe_image`. It also reports whether the canonical WAN workflows (`image_netayume_lumina_t2i.json` and `video_wan2_2_5B_ti2v.json`) are available before you push any shots.
+
+## Docs-first guardrail for future agents
+
+Before editing code, scripts, or workflows in this repo, re-read:
+
+- `README.md`
+- `WORKFLOW_ARCHITECTURE_REFERENCE.md`
+- `COMFYUI_WORKFLOW_INDEX.md`
+- All `docs/STORY_TO_VIDEO_PIPELINE_PHASE_*.md`
+- The QA + testing guides (`TESTING_*`, `VALIDATION_*`, `QA_VALIDATION_REPORT_*`)
+- `DOCUMENTATION_INDEX_20251111.md` and `notes/codex-agent-notes-20251111.md`
+
+Treat these documents as the source of truth for LM Studio configuration, dual WAN workflow expectations (wan-t2i for keyframes, wan-i2v 5B ti2v for videos), queue/telemetry contracts, and helper usage. Update them whenever you change behavior so the next agent can safely pick up the system from documentation alone.
+
+Use this helper interactively and in CI/Playwright runs so you never hit the generation queue with stale or unmapped workflows.
+
+Capture each helper execution under `test-results/comfyui-status/<timestamp>.log` (or the path your automation framework prefers) so QA cards can reference the VRAM warnings, queue position, and node mappings that correspond to any Visual Bible run. The helper mirrors the telemetry fields exposed by ComfyUI's WebSocket example (https://github.com/comfyanonymous/ComfyUI/blob/master/examples/websocket_api_example.py), so the queue/polling metadata can be stitched into Artifact Snapshot cards without extra parsing.
 
 #### LLM Foundation & Health Checks
 

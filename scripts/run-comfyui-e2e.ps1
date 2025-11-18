@@ -960,6 +960,47 @@ $artifactMetadataJson = $artifactMetadata | ConvertTo-Json -Depth 6
 $artifactMetaPath = Join-Path $RunDir 'artifact-metadata.json'
 $artifactMetadataJson | Set-Content -Path $artifactMetaPath -Encoding utf8
 
+# Step 11b: Generate Wan2-based per-scene videos and wire scene-level video metadata
+$wanScript = Join-Path $ProjectRoot 'scripts\generate-scene-videos-wan2.ps1'
+$updateVideoMetadataScript = Join-Path $ProjectRoot 'scripts\update-scene-video-metadata.ps1'
+if ((Test-Path $wanScript) -and (Test-Path $updateVideoMetadataScript)) {
+    Write-Host "Step 11b: Generating Wan2 per-scene videos with $wanScript"
+    try {
+        & pwsh -NoLogo -ExecutionPolicy Bypass -File $wanScript -RunDir $RunDir
+        $wanExit = $LASTEXITCODE
+        if ($wanExit -ne 0) {
+            Add-RunSummary ("[Video] Wan2 scene video generation script exited with code {0}" -f $wanExit)
+            Write-Warning "Wan2 scene video generation script exited with code $wanExit"
+        } else {
+            Add-RunSummary "[Video] Wan2 scene video generation completed"
+        }
+    } catch {
+        Add-RunSummary ("[Video] Wan2 scene video generation failed: {0}" -f $_.Exception.Message)
+        Write-Warning ("Wan2 scene video generation failed: {0}" -f $_.Exception.Message)
+    }
+
+    Write-Host "Step 11c: Updating scene video metadata with $updateVideoMetadataScript"
+    try {
+        & pwsh -NoLogo -ExecutionPolicy Bypass -File $updateVideoMetadataScript -RunDir $RunDir -VideoSubDir 'video'
+        $updateExit = $LASTEXITCODE
+        if ($updateExit -ne 0) {
+            Add-RunSummary ("[Video] Scene video metadata update script exited with code {0}" -f $updateExit)
+            Write-Warning "Scene video metadata update script exited with code $updateExit"
+        } else {
+            Add-RunSummary "[Video] Scene video metadata updated"
+        }
+    } catch {
+        Add-RunSummary ("[Video] Scene video metadata update failed: {0}" -f $_.Exception.Message)
+        Write-Warning ("Scene video metadata update failed: {0}" -f $_.Exception.Message)
+    }
+} else {
+    Add-RunSummary "[Video] Wan2 scene video tooling not found; skipping per-scene video generation"
+}
+
+# Reload the artifact metadata JSON so that any Video blocks added by
+# update-scene-video-metadata.ps1 are reflected in the public artifact.
+$artifactMetadataJson = Get-Content -Path $artifactMetaPath -Raw
+
 $publicArtifactDir = Join-Path $ProjectRoot 'public\artifacts'
 New-Item -ItemType Directory -Path $publicArtifactDir -Force | Out-Null
 $publicArtifactFile = Join-Path $publicArtifactDir 'latest-run.json'

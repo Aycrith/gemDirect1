@@ -1,5 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LocalGenerationSettings, WorkflowInput, MappableData, WorkflowMapping, ToastMessage } from '../types';
+import {
+    LocalGenerationSettings,
+    WorkflowInput,
+    MappableData,
+    WorkflowMapping,
+    ToastMessage,
+    WorkflowProfile,
+    WorkflowProfileMetadata,
+    WorkflowProfileMappingHighlight
+} from '../types';
 import { discoverComfyUIServer } from '../services/comfyUIService';
 import { usePlanExpansionActions, usePlanExpansionStrategy } from '../contexts/PlanExpansionStrategyContext';
 import { useMediaGenerationProvider } from '../contexts/MediaGenerationProviderContext';
@@ -57,12 +66,170 @@ const parseWorkflowForInputs = (workflowJson: string): WorkflowInput[] => {
     }
 };
 
+const HIGHLIGHT_TYPES: MappableData[] = ['human_readable_prompt', 'full_timeline_json', 'keyframe_image'];
+const TEXT_MAPPING_TYPES: MappableData[] = ['human_readable_prompt', 'full_timeline_json'];
+const KEYFRAME_MAPPING_TYPE: MappableData = 'keyframe_image';
+
+const getPromptPayload = (workflowJson: string): Record<string, any> | null => {
+    if (!workflowJson) return null;
+    try {
+        const parsed = JSON.parse(workflowJson);
+        return parsed.prompt ?? parsed;
+    } catch {
+        return null;
+    }
+};
+
+const hasTextMapping = (mapping: WorkflowMapping): boolean =>
+    Object.values(mapping).some(value => TEXT_MAPPING_TYPES.includes(value));
+
+const hasKeyframeMapping = (mapping: WorkflowMapping): boolean =>
+    Object.values(mapping).includes(KEYFRAME_MAPPING_TYPE);
+
+const METADATA_STALE_THRESHOLD_MS = 1000 * 60 * 60; // 60 minutes
+const STALE_METADATA_WARNING =
+    'Workflow metadata is stale. Run the helper, refresh mappings, and save settings before queuing work.';
+
+const buildProfileMetadata = (
+    workflowJson: string,
+    mapping: WorkflowMapping,
+    previous: WorkflowProfileMetadata | undefined,
+    profileId: string,
+    options?: { overrideLastSyncedAt?: number }
+): WorkflowProfileMetadata => {
+    const highlightMappings: WorkflowProfileMappingHighlight[] = [];
+    const missingMappings: MappableData[] = [];
+    const warnings: string[] = [];
+
+    const prompt = getPromptPayload(workflowJson);
+    if (!prompt && workflowJson) {
+        warnings.push('Failed to parse workflow JSON; highlight data is unavailable.');
+    }
+
+    HIGHLIGHT_TYPES.forEach(type => {
+        const entry = Object.entries(mapping).find(([, dataType]) => dataType === type);
+        if (!entry) return;
+        const [key] = entry;
+        const [nodeId, inputName] = key.split(':');
+        const node = prompt?.[nodeId];
+        const nodeTitle = node?._meta?.title || node?.label || `Node ${nodeId}`;
+        highlightMappings.push({
+            type,
+            nodeId,
+            inputName: inputName ?? '',
+            nodeTitle,
+        });
+    });
+
+    if (!hasTextMapping(mapping)) {
+        // Mark text mappings as missing when neither human_readable_prompt nor
+        // full_timeline_json has been mapped. validateProfileMappings() will
+        // treat either as sufficient.
+        missingMappings.push('human_readable_prompt');
+    }
+    // Only require keyframe_image mapping for image-to-video workflows (wan-i2v).
+    // The wan-t2i profile is text-to-image and produces keyframes instead of consuming them,
+    // so keyframe_image is optional there.
+    if (profileId === 'wan-i2v' && !hasKeyframeMapping(mapping)) {
+        missingMappings.push('keyframe_image');
+    }
+
+    const lastSyncedAt = options?.overrideLastSyncedAt ?? previous?.lastSyncedAt ?? Date.now();
+    if (lastSyncedAt && Date.now() - lastSyncedAt > METADATA_STALE_THRESHOLD_MS) {
+        warnings.push(STALE_METADATA_WARNING);
+    }
+
+    return {
+        lastSyncedAt,
+        highlightMappings,
+        missingMappings,
+        warnings,
+    };
+};
+
+const getHighlightLabel = (type: MappableData): string => {
+    switch (type) {
+        case 'human_readable_prompt':
+            return 'Human-Readable Prompt';
+        case 'full_timeline_json':
+            return 'Full Timeline JSON';
+        case 'keyframe_image':
+            return 'Keyframe Image';
+        default:
+            return type;
+    }
+};
+
+const getMissingDescription = (type: MappableData): string => {
+    if (type === 'human_readable_prompt') {
+        return 'CLIP text input (Human-Readable Prompt / Full Timeline JSON)';
+    }
+    if (type === 'keyframe_image') {
+        return 'LoadImage keyframe input';
+    }
+    return type;
+};
+
+type WorkflowProfileDefinition = {
+    id: string;
+    label: string;
+    description: string;
+    bundlePath: string;
+};
+
+const WORKFLOW_PROFILE_DEFINITIONS: WorkflowProfileDefinition[] = [
+    {
+        id: 'wan-t2i',
+        label: 'WAN Text→Image (Keyframe)',
+        description: 'Scene keyframe workflow (image_netayume_lumina_t2i.json).',
+        bundlePath: '../workflows/image_netayume_lumina_t2i.json',
+    },
+    {
+        id: 'wan-i2v',
+        label: 'WAN Text+Image→Video',
+        description: 'Video workflow (video_wan2_2_14B_i2v-modified.json).',
+        bundlePath: '../workflows/video_wan2_2_14B_i2v-modified.json',
+    },
+];
+
+const PRIMARY_PROFILE_ID = 'wan-i2v';
+
+type WorkflowProfileState = {
+    workflowJson: string;
+    mapping: WorkflowMapping;
+    metadata: WorkflowProfileMetadata;
+};
+
+const buildProfileRecords = (settings: LocalGenerationSettings): Record<string, WorkflowProfileState> => {
+    const storedProfiles = settings.workflowProfiles ?? {};
+    return WORKFLOW_PROFILE_DEFINITIONS.reduce((acc, profile) => {
+        const stored = storedProfiles[profile.id];
+        const workflowJson = stored?.workflowJson ?? (profile.id === PRIMARY_PROFILE_ID ? settings.workflowJson : '');
+        const mapping = stored?.mapping ?? (profile.id === PRIMARY_PROFILE_ID ? settings.mapping : {});
+        acc[profile.id] = {
+            workflowJson,
+            mapping,
+            metadata: buildProfileMetadata(workflowJson, mapping, stored?.metadata, profile.id),
+        };
+        return acc;
+    }, {} as Record<string, WorkflowProfileState>);
+};
+
+const buildProfileInputs = (profiles: Record<string, WorkflowProfileState>) => {
+    const inputs: Record<string, WorkflowInput[]> = {};
+    Object.entries(profiles).forEach(([profileId, profile]) => {
+        inputs[profileId] = profile.workflowJson ? parseWorkflowForInputs(profile.workflowJson) : [];
+    });
+    return inputs;
+};
+
 const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settings, onSave, addToast }) => {
     const [localSettings, setLocalSettings] = useState<LocalGenerationSettings>(settings);
-    const [workflowInputs, setWorkflowInputs] = useState<WorkflowInput[]>([]);
+    const [profiles, setProfiles] = useState<Record<string, WorkflowProfileState>>(() => buildProfileRecords(settings));
+    const [profileInputs, setProfileInputs] = useState<Record<string, WorkflowInput[]>>(() => buildProfileInputs(buildProfileRecords(settings)));
     const [discoveryStatus, setDiscoveryStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
     const [isSyncing, setIsSyncing] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
     
     // Provider contexts
     const { strategies, activeStrategy, activeStrategyId, selectStrategy } = usePlanExpansionStrategy();
@@ -73,20 +240,50 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
 
     useEffect(() => {
         setLocalSettings(settings);
-        if (settings.workflowJson) {
-            setWorkflowInputs(parseWorkflowForInputs(settings.workflowJson));
-        } else {
-            setWorkflowInputs([]);
-        }
+        const records = buildProfileRecords(settings);
+        setProfiles(records);
+        setProfileInputs(buildProfileInputs(records));
         setDiscoveryStatus('idle');
     }, [settings, isOpen]);
     
-    useEffect(() => {
-        // When localSettings (which can be updated by AiConfigurator) changes, re-parse the inputs
-        if(localSettings.workflowJson) {
-            setWorkflowInputs(parseWorkflowForInputs(localSettings.workflowJson));
-        }
-    }, [localSettings.workflowJson]);
+    const updateProfile = (profileId: string, updater: (current: WorkflowProfileState) => WorkflowProfileState) => {
+        setProfiles(prev => {
+            const current =
+                prev[profileId] ?? {
+                    workflowJson: '',
+                    mapping: {},
+                    metadata: buildProfileMetadata('', {}, undefined, profileId),
+                };
+            const updated = updater(current);
+            const next = {
+                ...prev,
+                [profileId]: {
+                    ...updated,
+                    metadata: buildProfileMetadata(updated.workflowJson, updated.mapping, current.metadata, profileId),
+                },
+            };
+            if (profileId === PRIMARY_PROFILE_ID) {
+                setLocalSettings(prevSettings => ({
+                    ...prevSettings,
+                    workflowJson: updated.workflowJson,
+                    mapping: updated.mapping,
+                }));
+            }
+            return next;
+        });
+    };
+
+    const applyWorkflowJson = (profileId: string, workflowJson: string) => {
+        setProfileInputs(prev => ({
+            ...prev,
+            [profileId]: workflowJson ? parseWorkflowForInputs(workflowJson) : [],
+        }));
+        updateProfile(profileId, (current) => ({ ...current, workflowJson }));
+    };
+
+    const applyMapping = (profileId: string, mapping: WorkflowMapping) => {
+        updateProfile(profileId, (current) => ({ ...current, mapping }));
+    };
 
 
     const handleDiscover = async () => {
@@ -100,7 +297,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         }
     };
     
-    const handleSyncWorkflow = async () => {
+    const handleSyncWorkflow = async (profileId: string) => {
         if (!localSettings.comfyUIUrl) {
             addToast('Please enter a server address first.', 'error');
             return;
@@ -130,7 +327,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
             // The workflow is in prompt[2], which contains the actual node structure
             const workflowJson = JSON.stringify(latestEntry.prompt[2], null, 2);
 
-            setLocalSettings(prev => ({ ...prev, workflowJson }));
+            applyWorkflowJson(profileId, workflowJson);
             addToast('Workflow synced successfully from ComfyUI history! Please review your mappings.', 'success');
         } catch (error) {
             const message = error instanceof Error ? error.message : "An unknown error occurred.";
@@ -141,16 +338,15 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     };
 
 
-    const handleLoadBundledWorkflow = async () => {
+    const handleLoadBundledWorkflow = async (profileId: string, bundlePath: string) => {
         try {
-            const bundledUrl = new URL('../workflows/text-to-video.json', import.meta.url);
+            const bundledUrl = new URL(bundlePath, import.meta.url);
             const response = await fetch(bundledUrl);
             if (!response.ok) {
                 throw new Error(`Failed to load bundled workflow (status ${response.status}).`);
             }
             const workflowJson = await response.text();
-            setLocalSettings(prev => ({ ...prev, workflowJson }));
-            setWorkflowInputs(parseWorkflowForInputs(workflowJson));
+            applyWorkflowJson(profileId, workflowJson);
             addToast('Bundled workflow loaded. Review mappings below.', 'success');
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unexpected error loading bundled workflow.';
@@ -158,15 +354,14 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         }
     };
 
-    const handleWorkflowFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleWorkflowFileSelected = (profileId: string) => async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) {
             return;
         }
         try {
             const text = await file.text();
-            setLocalSettings(prev => ({ ...prev, workflowJson: text }));
-            setWorkflowInputs(parseWorkflowForInputs(text));
+            applyWorkflowJson(profileId, text);
             addToast(`Imported workflow from ${file.name}.`, 'success');
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Could not read workflow file.';
@@ -178,19 +373,20 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         }
     };
 
-    const handleAutoMapCurrentWorkflow = async () => {
-        if (!localSettings.workflowJson || !localSettings.workflowJson.trim()) {
+    const handleAutoMapCurrentWorkflow = async (profileId: string) => {
+        const targetProfile = profiles[profileId];
+        if (!targetProfile?.workflowJson || !targetProfile.workflowJson.trim()) {
             addToast('Please load or paste a workflow JSON first.', 'error');
             return;
         }
         try {
             updateApiStatus('loading', 'Analyzing workflow locally...');
             const mapping: WorkflowMapping = await planActions.generateWorkflowMapping(
-                localSettings.workflowJson,
+                targetProfile.workflowJson,
                 logApiCall,
                 updateApiStatus
             );
-            setLocalSettings(prev => ({ ...prev, mapping }));
+            applyMapping(profileId, mapping);
             addToast('Workflow inputs mapped automatically.', 'success');
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to analyze workflow mapping.';
@@ -200,20 +396,68 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         }
     };
 
-    const handleUploadWorkflowClick = () => {
-        fileInputRef.current?.click();
+    const handleUploadWorkflowClick = (profileId: string) => {
+        fileInputRefs.current[profileId]?.click();
     };
 
-    const handleMappingChange = (key: string, value: MappableData) => {
-        setLocalSettings(prev => ({
-            ...prev,
-            mapping: { ...prev.mapping, [key]: value }
+    const handleMappingChange = (profileId: string, key: string, value: MappableData) => {
+        updateProfile(profileId, (current) => ({
+            ...current,
+            mapping: { ...current.mapping, [key]: value }
         }));
     };
 
+    const validateProfileMappings = (): boolean => {
+        for (const profileDef of WORKFLOW_PROFILE_DEFINITIONS) {
+            const profileState = profiles[profileDef.id];
+            const missing = profileState?.metadata?.missingMappings ?? [];
+            if (missing.length === 0) {
+                continue;
+            }
+
+            // For the wan-t2i (text->image) profile we only enforce text mappings;
+            // keyframe_image is only required for wan-i2v (image->video).
+            const requiresKeyframe = profileDef.id === 'wan-i2v';
+            const hasMissingText = missing.includes('human_readable_prompt') || missing.includes('full_timeline_json');
+            const hasMissingKeyframe = missing.includes('keyframe_image');
+
+            if (hasMissingText || (requiresKeyframe && hasMissingKeyframe)) {
+                const friendly = getMissingDescription(hasMissingText ? 'human_readable_prompt' : 'keyframe_image');
+                addToast(`The ${profileDef.label} workflow requires ${friendly} before saving.`, 'error');
+                return false;
+            }
+        }
+        return true;
+    };
+
     const handleSave = () => {
-        console.log('[LocalGenerationSettingsModal] handleSave called with localSettings:', JSON.stringify(localSettings, null, 2));
-        onSave(localSettings);
+        if (!validateProfileMappings()) return;
+
+        const profilePayload: Record<string, WorkflowProfile> = WORKFLOW_PROFILE_DEFINITIONS.reduce((acc, profileDef) => {
+            const state = profiles[profileDef.id];
+            const metadataSnapshot = {
+                ...(state?.metadata ?? {}),
+                lastSyncedAt: Date.now(),
+            };
+            acc[profileDef.id] = {
+                id: profileDef.id,
+                label: profileDef.label,
+                workflowJson: state?.workflowJson ?? '',
+                mapping: state?.mapping ?? {},
+                metadata: metadataSnapshot,
+            };
+            return acc;
+        }, {} as Record<string, WorkflowProfile>);
+
+        const primaryProfile = profiles[PRIMARY_PROFILE_ID];
+        const updatedSettings: LocalGenerationSettings = {
+            ...localSettings,
+            workflowProfiles: profilePayload,
+            workflowJson: primaryProfile?.workflowJson ?? localSettings.workflowJson,
+            mapping: primaryProfile?.mapping ?? localSettings.mapping,
+        };
+        console.log('[LocalGenerationSettingsModal] handleSave called with localSettings:', JSON.stringify(updatedSettings, null, 2));
+        onSave(updatedSettings);
         onClose();
     };
 
@@ -334,6 +578,14 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                             <input id="client-id" type="text" value={localSettings.comfyUIClientId} onChange={e => setLocalSettings(p => ({...p, comfyUIClientId: e.target.value}))} className="mt-1 block w-full bg-gray-800 border-gray-600 rounded-md p-2 text-sm" placeholder="e.g., your_name_here"/>
                              <p className="text-xs text-gray-500 mt-1">Enter any unique name here. This prevents conflicts if multiple browser tabs are open.</p>
                         </div>
+                        <div>
+                            <label htmlFor="model-id" className="text-sm font-medium text-gray-300">Video Model</label>
+                            <select id="model-id" value={localSettings.modelId || 'comfy-svd'} onChange={e => setLocalSettings(p => ({...p, modelId: e.target.value}))} className="mt-1 block w-full bg-gray-800 border-gray-600 rounded-md p-2 text-sm">
+                                <option value="comfy-svd">Stable Video Diffusion (SVD)</option>
+                                <option value="wan-video">WAN Video (experimental)</option>
+                            </select>
+                            <p className="text-xs text-gray-500 mt-1">Choose the video generation model. WAN is experimental and may require specific workflows.</p>
+                        </div>
                     </div>
 
                     {/* Workflow Sync & Mapping */}
@@ -345,76 +597,132 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                            onUpdateSettings={setLocalSettings}
                            addToast={addToast}
                         />
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="application/json"
-                            className="hidden"
-                            onChange={handleWorkflowFileSelected}
-                        />
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                            <button
-                                onClick={handleLoadBundledWorkflow}
-                                className="flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-indigo-600/80 text-white font-semibold hover:bg-indigo-600 transition-colors"
-                            >
-                                Load Sample Workflow
-                            </button>
-                            <button
-                                onClick={handleUploadWorkflowClick}
-                                className="flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-gray-700 text-gray-100 font-semibold hover:bg-gray-600 transition-colors"
-                            >
-                                Import JSON File
-                            </button>
-                            <button
-                                onClick={handleAutoMapCurrentWorkflow}
-                                className="flex items-center justify-center gap-2 px-3 py-2 rounded-md bg-emerald-600/80 text-white font-semibold hover:bg-emerald-600 transition-colors"
-                            >
-                                Auto-map Current Workflow
-                            </button>
-                        </div>
-
-                        <div className="text-center">
-                             <button
-                                onClick={handleSyncWorkflow}
-                                disabled={isSyncing}
-                                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-600/50 text-gray-300 font-semibold rounded-md hover:bg-gray-600/80 disabled:bg-gray-500 transition-colors text-xs border border-gray-500"
-                            >
-                                <RefreshCwIcon className="w-4 h-4" />
-                                {isSyncing ? 'Syncing...' : 'Re-sync Workflow Only (Manual Mode)'}
-                            </button>
-                        </div>
-                        
-                        {workflowInputs.length > 0 && (
-                            <div className="space-y-3 pt-4 border-t border-gray-600">
-                                <h5 className="text-md font-semibold text-gray-300">Map Timeline Data to Workflow Inputs</h5>
-                                {workflowInputs.map(input => {
-                                    const key = `${input.nodeId}:${input.inputName}`;
-                                    const Icon = input.inputType === 'IMAGE' ? ImageIcon : FileTextIcon;
-                                    return (
-                                        <div key={key} className="flex items-center justify-between gap-4 p-2 bg-gray-800/50 rounded-md">
-                                            <div className="flex items-center gap-2 text-sm text-gray-300">
-                                                <Icon className="w-4 h-4 text-gray-400" />
-                                                <div>
-                                                    <span className="font-bold">{input.nodeTitle}</span>
-                                                    <span className="text-gray-400"> &rarr; {input.inputName}</span>
-                                                </div>
+                        <div className="space-y-5">
+                            {WORKFLOW_PROFILE_DEFINITIONS.map(profile => {
+                                const inputs = profileInputs[profile.id] ?? [];
+                                const mapping = profiles[profile.id]?.mapping ?? {};
+                                const metadata = profiles[profile.id]?.metadata;
+                                const highlightEntries = metadata?.highlightMappings ?? [];
+                                const missingMappings = metadata?.missingMappings ?? [];
+                                const metadataWarnings = metadata?.warnings ?? [];
+                                return (
+                                    <section key={profile.id} className="p-4 bg-gray-900/60 border border-gray-700 rounded-lg space-y-3">
+                                        <input
+                                            ref={(el) => { fileInputRefs.current[profile.id] = el; }}
+                                            type="file"
+                                            accept="application/json"
+                                            className="hidden"
+                                            onChange={handleWorkflowFileSelected(profile.id)}
+                                        />
+                                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                            <div>
+                                                <h5 className="text-lg font-semibold text-gray-100">{profile.label}</h5>
+                                                <p className="text-xs text-gray-400">{profile.description}</p>
                                             </div>
-                                            <select value={localSettings.mapping[key] || 'none'} onChange={e => handleMappingChange(key, e.target.value as MappableData)} className="bg-gray-700 border-gray-600 rounded-md p-1.5 text-xs">
-                                                <option value="none">-- Don't Map --</option>
-                                                {input.inputType === 'STRING' && <>
-                                                    <option value="human_readable_prompt">Human-Readable Prompt</option>
-                                                    <option value="full_timeline_json">Full Timeline JSON</option>
-                                                    <option value="negative_prompt">Negative Prompt</option>
-                                                </>}
-                                                {input.inputType === 'IMAGE' && <>
-                                                    <option value="keyframe_image">Keyframe Image</option>
-                                                </>}
-                                            </select>
+                                            <div className="flex flex-wrap gap-2">
+                                                <button
+                                                    onClick={() => handleLoadBundledWorkflow(profile.id, profile.bundlePath)}
+                                                    className="px-3 py-1.5 text-xs font-semibold rounded-md bg-indigo-600/80 text-white hover:bg-indigo-600 transition"
+                                                >
+                                                    Load WAN Workflow
+                                                </button>
+                                                <button
+                                                    onClick={() => handleUploadWorkflowClick(profile.id)}
+                                                    className="px-3 py-1.5 text-xs font-semibold rounded-md bg-gray-700 text-gray-200 hover:bg-gray-600 transition"
+                                                >
+                                                    Import JSON
+                                                </button>
+                                                <button
+                                                    onClick={() => handleAutoMapCurrentWorkflow(profile.id)}
+                                                    className="px-3 py-1.5 text-xs font-semibold rounded-md bg-emerald-600/80 text-white hover:bg-emerald-500 transition"
+                                                >
+                                                    Auto-map
+                                                </button>
+                                            </div>
                                         </div>
-                                    )
-                                })}
-                            </div>
-                        )}
+                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-gray-400">
+                                            <span>{inputs.length} inputs detected</span>
+                                            <button
+                                                onClick={() => handleSyncWorkflow(profile.id)}
+                                                disabled={isSyncing}
+                                                className="inline-flex items-center justify-center gap-1 px-3 py-1 text-[11px] font-semibold rounded-full border border-gray-600 text-gray-200 hover:border-gray-400 disabled:opacity-60"
+                                            >
+                                                <RefreshCwIcon className="w-3 h-3" />
+                                                {isSyncing ? 'Syncing...' : 'Re-sync from Comfy'}
+                                            </button>
+                                        </div>
+                                        {metadata?.lastSyncedAt && (
+                                            <p className="text-[11px] text-gray-400">
+                                                Last validated: {new Date(metadata.lastSyncedAt).toLocaleString()}
+                                            </p>
+                                        )}
+                                        {inputs.length > 0 ? (
+                                            <div className="space-y-2 pt-2 border-t border-gray-700">
+                                                {inputs.map(input => {
+                                                    const key = `${input.nodeId}:${input.inputName}`;
+                                                    const Icon = input.inputType === 'IMAGE' ? ImageIcon : FileTextIcon;
+                                                    return (
+                                                        <div key={key} className="flex items-center justify-between gap-4 p-2 bg-gray-800/50 rounded-md">
+                                                            <div className="flex items-center gap-2 text-sm text-gray-300">
+                                                                <Icon className="w-4 h-4 text-gray-400" />
+                                                                <div>
+                                                                    <span className="font-bold">{input.nodeTitle}</span>
+                                                                    <span className="text-gray-400"> &rarr; {input.inputName}</span>
+                                                                </div>
+                                                            </div>
+                                                            <select value={mapping[key] || 'none'} onChange={e => handleMappingChange(profile.id, key, e.target.value as MappableData)} className="bg-gray-700 border border-gray-600 rounded-md p-1.5 text-xs">
+                                                                <option value="none">-- Don't Map --</option>
+                                                                {input.inputType === 'STRING' && <>
+                                                                    <option value="human_readable_prompt">Human-Readable Prompt</option>
+                                                                    <option value="full_timeline_json">Full Timeline JSON</option>
+                                                                    <option value="negative_prompt">Negative Prompt</option>
+                                                                </>}
+                                                                {input.inputType === 'IMAGE' && <>
+                                                                    <option value="keyframe_image">Keyframe Image</option>
+                                                                </>}
+                                                            </select>
+                                                        </div>
+                                                    );
+                                                })}
+                                                {highlightEntries.length > 0 && (
+                                                    <div className="space-y-1 text-xs text-gray-300">
+                                                        <p className="text-xs font-semibold text-gray-200">Detected mappings</p>
+                                                        <div className="space-y-0.5">
+                                                            {highlightEntries.map(entry => (
+                                                                <Tooltip key={`${profile.id}-${entry.type}`} text={`${entry.nodeTitle} (${entry.nodeId}:${entry.inputName})`}>
+                                                                    <p className="flex flex-wrap items-center gap-1 text-emerald-300">
+                                                                        <span className="font-semibold">{getHighlightLabel(entry.type)}</span>
+                                                                        <span className="text-gray-400">→ {entry.nodeId}:{entry.inputName}</span>
+                                                                    </p>
+                                                                </Tooltip>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {missingMappings.length > 0 && (
+                                                    <div className="text-xs text-amber-300 space-y-1">
+                                                        {missingMappings.map(type => (
+                                                            <p key={`${profile.id}-${type}`}>
+                                                                Missing {getMissingDescription(type)} for the {profile.label} workflow.
+                                                            </p>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {metadataWarnings.length > 0 && (
+                                                    <div className="text-xs text-yellow-300 space-y-1">
+                                                        {metadataWarnings.map((warning, index) => (
+                                                            <p key={`warn-${profile.id}-${index}`}>{warning}</p>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-gray-500 italic">Load a workflow to preview and map its inputs.</p>
+                                        )}
+                                    </section>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     {/* Pre-flight Check */}

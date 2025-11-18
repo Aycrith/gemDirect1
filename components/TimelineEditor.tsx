@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
+// TODO: import { usePipeline } from '../contexts/PipelineContext'; // Not yet implemented
 
 const formatVramValue = (value?: number | string | null): string => {
     if (value == null) return 'n/a';
@@ -98,7 +99,7 @@ import RefreshCwIcon from './icons/RefreshCwIcon';
 import Tooltip from './Tooltip';
 import SaveIcon from './icons/SaveIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
-import { useInteractiveSpotlight, useArtifactMetadata, type SceneTelemetryMetadata } from '../utils/hooks';
+import { useInteractiveSpotlight, useArtifactMetadata, type SceneTelemetryMetadata, useVisualBible } from '../utils/hooks';
 import GuidedAction from './GuidedAction';
 import GuideCard from './GuideCard';
 import CompassIcon from './icons/CompassIcon';
@@ -109,6 +110,10 @@ import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContex
 import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
 import { useTemplateContext } from '../contexts/TemplateContext';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
+// TODO: Visual Bible integration not yet implemented
+// import ScenePlayer from './ScenePlayer';
+// import VisualBibleLinkModal from './VisualBibleLinkModal';
+// import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -140,11 +145,15 @@ const TimelineItem: React.FC<{
     onEnhancersChange: (shotId: string, newEnhancers: Partial<Omit<CreativeEnhancers, 'transitions'>>) => void;
     onDeleteShot: (shotId: string) => void;
     onGenerateImage: (shotId: string) => void;
+    onLinkToVisualBible: (shotId: string, imageData: string) => void;
     isDragging: boolean;
-}> = ({ shot, index, enhancers, imageUrl, isGeneratingImage, onDescriptionChange, onEnhancersChange, onDeleteShot, onGenerateImage, isDragging }) => {
+    visualBible: any;
+}> = ({ shot, index, enhancers, imageUrl, isGeneratingImage, onDescriptionChange, onEnhancersChange, onDeleteShot, onGenerateImage, onLinkToVisualBible, isDragging, visualBible }) => {
     const [isControlsVisible, setIsControlsVisible] = useState(false);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
 
+    const hasVisualBibleLinks = visualBible?.shotReferences?.[shot.id];
+    
     return (
         <div 
             ref={spotlightRef} 
@@ -154,12 +163,25 @@ const TimelineItem: React.FC<{
             {imageUrl && (
                 <div className="w-1/4 flex-shrink-0">
                     <img src={`data:image/jpeg;base64,${imageUrl}`} alt={`Preview for shot ${index + 1}`} className="rounded-md aspect-video object-cover" />
+                    <button
+                        onClick={() => onLinkToVisualBible(shot.id, imageUrl)}
+                        className="mt-1 w-full px-2 py-1 bg-amber-600 text-white text-xs rounded-md hover:bg-amber-700 transition-colors"
+                    >
+                        Add to Visual Bible
+                    </button>
                 </div>
             )}
             <div className="flex-grow">
                 <div className="flex justify-between items-start gap-4">
                     <div className="flex-grow">
-                        <label className="block text-sm font-bold text-gray-300 mb-2 cursor-grab">Shot {index + 1}</label>
+                        <label className="block text-sm font-bold text-gray-300 mb-2 cursor-grab flex items-center gap-2">
+                            Shot {index + 1}
+                            {hasVisualBibleLinks && (
+                                <span className="px-1 py-0.5 bg-amber-600/20 text-amber-300 text-xs rounded border border-amber-600/30" title="Linked to Visual Bible">
+                                    VB
+                                </span>
+                            )}
+                        </label>
                         <textarea
                             value={shot.description}
                             onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
@@ -223,6 +245,11 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [hasChanges, setHasChanges] = useState(false);
     const [isBatchProcessing, setIsBatchProcessing] = useState<false | 'description' | 'enhancers'>(false);
     const [isTemplateGuidanceOpen, setIsTemplateGuidanceOpen] = useState(false);
+    const [linkModalState, setLinkModalState] = useState<{ isOpen: boolean; imageData: string; sceneId?: string; shotId?: string } | null>(null);
+    
+    // TODO: Implement usePipeline hook
+    const generateStoryToVideo = async () => { console.log('generateStoryToVideo not implemented'); };
+    const isGenerating = false;
     
     const templateContext = useTemplateContext();
     const { updateCoveredElements } = templateContext;
@@ -259,6 +286,19 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const latestGpu = latestSceneSnapshot?.Telemetry?.GPU;
     const latestFallbackNotes = latestSceneSnapshot?.Telemetry?.System?.FallbackNotes?.filter(Boolean) ?? [];
     
+    // Use artifact metadata for scene-level render status
+    const { artifact: artifactMetadata } = useArtifactMetadata(5000); // Auto-refresh every 5 seconds
+    const sceneArtifactMetadata = useMemo(
+        () => artifactMetadata?.Scenes.find((meta) => meta.SceneId === scene.id) ?? null,
+        [artifactMetadata, scene.id],
+    );
+    
+    // Visual Bible hook for future integration
+    const { visualBible } = useVisualBible();
+    
+    // Get Visual Bible context for this scene
+    const visualBibleInfo = useMemo(() => getSceneVisualBibleContext(visualBible, scene.id), [scene.id, visualBible]);
+    
     // Auto-save state
     const saveTimeoutRef = useRef<number | null>(null);
     const [saveStatus, setSaveStatus] = useState<'saved' | 'unsaved' | 'saving'>('saved');
@@ -277,12 +317,43 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
         if (!resolvedSceneKeyframe) {
             onApiStateChange('loading', 'Generating base scene keyframe...');
+            // Instrumentation: emit lightweight, structured logs so E2E can detect a client-side
+            // attempt to generate a keyframe. We both push to a global array (readable via page.evaluate)
+            // and write a console.info line with a stable prefix so Playwright can capture it from
+            // the browser console.
+            try {
+                const diag = {
+                    event: 'call-generateKeyframeForScene',
+                    sceneId: scene.id,
+                    summaryPreview: (scene.summary || '').slice(0, 200),
+                    ts: Date.now(),
+                };
+                try { (window as any).__gemDirectClientDiagnostics = (window as any).__gemDirectClientDiagnostics || []; (window as any).__gemDirectClientDiagnostics.push(diag); } catch (e) { /* ignore */ }
+                try { console.info('GEMDIRECT-INSTRUMENT:' + JSON.stringify(diag)); } catch (e) { /* ignore */ }
+            } catch (e) {
+                // swallow instrumentation errors to avoid blocking generation
+            }
+
             const generated = await mediaActions.generateKeyframeForScene(
                 directorsVision,
                 scene.summary,
                 onApiLog,
                 onApiStateChange
             );
+
+            // Emit result instrumentation
+            try {
+                const res = {
+                    event: 'result-generateKeyframeForScene',
+                    sceneId: scene.id,
+                    length: typeof generated === 'string' ? generated.length : 0,
+                    ts: Date.now(),
+                };
+                try { (window as any).__gemDirectClientDiagnostics = (window as any).__gemDirectClientDiagnostics || []; (window as any).__gemDirectClientDiagnostics.push(res); } catch (e) { /* ignore */ }
+                try { console.info('GEMDIRECT-INSTRUMENT:' + JSON.stringify(res)); } catch (e) { /* ignore */ }
+            } catch (e) {
+                /* ignore */
+            }
             resolvedSceneKeyframe = stripDataUrlPrefix(generated);
             onSceneKeyframeGenerated?.(scene.id, resolvedSceneKeyframe);
         }
@@ -292,14 +363,28 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             const newlyGenerated: Record<string, string> = {};
             for (const shot of missingShots) {
                 const enhancers = timeline.shotEnhancers[shot.id];
+                // Instrumentation for shot-level image generation
+                try {
+                    const diagShot = { event: 'call-generateImageForShot', sceneId: scene.id, shotId: shot.id, ts: Date.now() };
+                    try { (window as any).__gemDirectClientDiagnostics = (window as any).__gemDirectClientDiagnostics || []; (window as any).__gemDirectClientDiagnostics.push(diagShot); } catch (e) { /* ignore */ }
+                    try { console.info('GEMDIRECT-INSTRUMENT:' + JSON.stringify(diagShot)); } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore */ }
+
                 const generated = await mediaActions.generateImageForShot(
                     shot,
                     enhancers,
                     directorsVision,
                     scene.summary,
+                    scene.id,
                     onApiLog,
                     onApiStateChange
                 );
+
+                try {
+                    const diagShotRes = { event: 'result-generateImageForShot', sceneId: scene.id, shotId: shot.id, length: typeof generated === 'string' ? generated.length : 0, ts: Date.now() };
+                    try { (window as any).__gemDirectClientDiagnostics = (window as any).__gemDirectClientDiagnostics || []; (window as any).__gemDirectClientDiagnostics.push(diagShotRes); } catch (e) { /* ignore */ }
+                    try { console.info('GEMDIRECT-INSTRUMENT:' + JSON.stringify(diagShotRes)); } catch (e) { /* ignore */ }
+                } catch (e) { /* ignore */ }
                 const normalized = stripDataUrlPrefix(generated);
                 shotImages[shot.id] = normalized;
                 newlyGenerated[shot.id] = normalized;
@@ -507,7 +592,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setIsGeneratingShotImage(prev => ({ ...prev, [shotId]: true }));
         try {
             const enhancers = timeline.shotEnhancers[shotId] || {};
-            const image = await mediaActions.generateImageForShot(shot, enhancers, directorsVision, scene.summary, onApiLog, onApiStateChange);
+            const image = await mediaActions.generateImageForShot(shot, enhancers, directorsVision, scene.summary, scene.id, onApiLog, onApiStateChange);
             setGeneratedShotImages(prev => ({ ...prev, [shotId]: stripDataUrlPrefix(image) }));
         } catch (error) {
             console.error(`Failed to generate image for shot ${shotId}:`, error);
@@ -615,6 +700,16 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setIsSummaryUpdating(false);
     };
 
+    const handleGenerateVideoWithAI = async () => {
+        if (!storyBible) {
+            alert('Please complete the story bible first.');
+            return;
+        }
+        // Generate using the story logline as prompt
+        // TODO: Phase 3 - Refine this to run scene-specific renders instead of whole-story re-generation
+        await generateStoryToVideo(storyBible.logline, 'cinematic');
+    };
+
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
         setDraggedItemIndex(index);
         e.dataTransfer.effectAllowed = 'move';
@@ -673,11 +768,38 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 {sceneKeyframe && (
                     <div className="sm:w-1/3 flex-shrink-0">
                         <img src={`data:image/jpeg;base64,${sceneKeyframe}`} alt={`Keyframe for ${scene.title}`} className="rounded-md aspect-video object-cover" />
+                        <button
+                            onClick={() => setLinkModalState({ isOpen: true, imageData: sceneKeyframe, sceneId: scene.id })}
+                            className="mt-2 w-full px-3 py-1 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700 transition-colors"
+                        >
+                            Add keyframe to Visual Bible
+                        </button>
                     </div>
                 )}
                 <div className="flex-grow">
                     <h2 className="text-2xl font-bold text-white">{scene.title}</h2>
                     <p className="text-gray-400 mt-1">{scene.summary}</p>
+                    {scene.heroArcName && (
+                        <p className="text-xs text-amber-300 mt-1">
+                            Hero Arc: <span className="font-semibold text-white">{scene.heroArcName}</span>
+                            {scene.heroArcOrder ? ` (#${scene.heroArcOrder})` : ''}
+                            {scene.heroArcSummary ? ` · ${scene.heroArcSummary}` : ''}
+                        </p>
+                    )}
+                    {visualBibleInfo && (visualBibleInfo.styleBoards.length > 0 || visualBibleInfo.tags.length > 0) && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                            {visualBibleInfo.styleBoards.map(board => (
+                                <span key={board} className="px-2 py-0.5 bg-amber-600/20 text-amber-300 text-xs rounded-full border border-amber-600/30">
+                                    {board}
+                                </span>
+                            ))}
+                            {visualBibleInfo.tags.map(tag => (
+                                <span key={tag} className="px-2 py-0.5 bg-blue-600/20 text-blue-300 text-xs rounded-full border border-blue-600/30">
+                                    {tag}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                     {isRefined && (
                          <button 
                             onClick={handleUpdateSummaryClick} 
@@ -690,6 +812,20 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     )}
                 </div>
             </header>
+
+            {/* Latest Render Section - TODO: Implement ScenePlayer component */}
+            {sceneArtifactMetadata?.Video ? (
+                <div className="bg-gray-800/30 border border-indigo-500/30 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold text-indigo-400 mb-3">Latest Render</h3>
+                    <p className="text-gray-500">Scene player not yet implemented</p>
+                </div>
+            ) : (
+                <div className="bg-gray-800/30 border border-gray-700/50 rounded-lg p-4 text-center">
+                    <h3 className="text-lg font-semibold text-gray-400 mb-2">Latest Render</h3>
+                    <p className="text-gray-500">No video render available yet for this scene.</p>
+                    <p className="text-sm text-gray-600 mt-1">Generate locally or use the AI pipeline to create a video.</p>
+                </div>
+            )}
 
             {latestSceneSnapshot && (
                 <div className="bg-gray-800/30 border border-emerald-500/30 rounded-lg p-4 text-xs text-gray-300 space-y-3">
@@ -786,6 +922,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     buttonText="Generate & Detail Initial Shots"
                     onClick={handleGenerateAndDetailInitialShots}
                     icon={<TimelineIcon className="w-12 h-12" />}
+                    buttonProps={{ 'data-testid': 'btn-generate-shots' }}
                 />
             )}
 
@@ -809,7 +946,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             >
                 {timeline.shots.length > 0 ? (
                     timeline.shots.map((shot, index) => (
-                        <div key={shot.id} 
+                        <div
+                            key={shot.id}
+                            data-testid="shot-row"
+                            data-shot-id={shot.id}
                             onDragStart={(e) => handleDragStart(e, index)}
                             onDragOver={(e) => handleDragOver(e, index)}
                         >
@@ -826,7 +966,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 onEnhancersChange={(shotId, enh) => updateTimeline({ shotEnhancers: { ...timeline.shotEnhancers, [shotId]: enh } })}
                                 onDeleteShot={handleDeleteShot}
                                 onGenerateImage={handleGenerateShotImage}
+                                onLinkToVisualBible={(shotId, imageData) => setLinkModalState({ isOpen: true, imageData, shotId })}
                                 isDragging={draggedItemIndex === index}
+                                visualBible={visualBible}
                             />
                             {index < timeline.shots.length - 1 && (
                                 <TransitionSelector value={timeline.transitions[index] || 'Cut'} onChange={(newVal) => {
@@ -954,11 +1096,21 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         </button>
                         <Tooltip text={!isLocalGenConfigured ? "Please configure ComfyUI server and sync workflow in Settings." : "Generate video using your local ComfyUI server"}>
                             <button
+                                data-testid="btn-generate-locally"
                                 onClick={handleGenerateLocally}
                                 disabled={!isLocalGenConfigured}
                                 className="px-6 py-3 bg-amber-600 text-white font-semibold rounded-full shadow-lg hover:bg-amber-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
                             >
                                Generate Locally
+                            </button>
+                        </Tooltip>
+                        <Tooltip text={isGenerating ? "Generation in progress..." : "Generate video using AI pipeline"}>
+                            <button
+                                onClick={handleGenerateVideoWithAI}
+                                disabled={isGenerating}
+                                className="px-6 py-3 bg-purple-600 text-white font-semibold rounded-full shadow-lg hover:bg-purple-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
+                            >
+                               {isGenerating ? 'Generating...' : 'Generate Video'}
                             </button>
                         </Tooltip>
                     </div>
@@ -984,6 +1136,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     onClose={() => setIsTemplateGuidanceOpen(false)}
                 />
             )}
+            {/* TODO: VisualBibleLinkModal not yet implemented */}
+            {linkModalState?.isOpen && null}
         </div>
     );
 };

@@ -12,6 +12,8 @@ import ImageIcon from './icons/ImageIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
 import BookOpenIcon from './icons/BookOpenIcon';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
+import { useVisualBible } from '../utils/hooks';
+import { getSceneVisualBibleContext, computeSceneContinuityScore, CharacterContinuityIssue } from '../services/continuityVisualContext';
 
 interface ContinuityCardProps {
   scene: Scene;
@@ -29,6 +31,10 @@ interface ContinuityCardProps {
   isRefined: boolean;
   onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
   onExtendTimeline: (sceneId: string, lastFrame: string) => void;
+  allSceneIds: string[];
+  allScenes: Scene[];
+  onRerunScene?: (sceneId: string) => void;
+  characterContinuityIssues?: CharacterContinuityIssue[];
 }
 
 const ScoreCircle: React.FC<{ score: number; label: string }> = ({ score, label }) => {
@@ -78,9 +84,19 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   onApplySuggestion,
   isRefined,
   onUpdateSceneSummary,
-  onExtendTimeline
+  onExtendTimeline,
+  allSceneIds,
+  allScenes,
+  onRerunScene,
+  characterContinuityIssues = []
 }) => {
     const { analyzeVideoFrames, getPrunedContextForContinuity, scoreContinuity } = usePlanExpansionActions();
+    const { visualBible } = useVisualBible();
+
+    // Compute continuity score
+    const continuityScore = React.useMemo(() => {
+      return computeSceneContinuityScore(visualBible, scene, allScenes);
+    }, [visualBible, scene, allScenes]);
   const handleAnalysis = async (file: File) => {
     try {
       setContinuityData(prev => ({ 
@@ -100,7 +116,9 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
     const analysis = await analyzeVideoFrames(frames, onApiLog, onApiStateChange);
       setContinuityData(prev => ({ ...prev, videoAnalysis: analysis, status: 'scoring' }));
 
-      const context = await getPrunedContextForContinuity(storyBible, narrativeContext, scene, directorsVision, onApiLog, onApiStateChange);
+      const visualBibleContext = getSceneVisualBibleContext(visualBible, scene.id);
+      const extendedNarrativeContext = narrativeContext + (visualBibleContext.styleBoards.length > 0 ? `\n\nVisual Bible Context:\n- Style Boards: ${visualBibleContext.styleBoards.join(', ')}\n- Tags: ${visualBibleContext.tags.join(', ')}` : '');
+      const context = await getPrunedContextForContinuity(storyBible, extendedNarrativeContext, scene, directorsVision, onApiLog, onApiStateChange);
       const result = await scoreContinuity(context, scene, analysis, onApiLog, onApiStateChange);
       setContinuityData(prev => ({ ...prev, continuityResult: result, status: 'complete' }));
 
@@ -140,8 +158,30 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   return (
     <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700/80 rounded-xl shadow-lg overflow-hidden">
         <header className="p-6 bg-gray-900/40 border-b border-gray-700/80">
-            <h3 className="text-xl font-bold text-white">Scene {sceneNumber}: {scene.title}</h3>
-            <p className="text-sm text-gray-400 mt-1">{scene.summary}</p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h3 className="text-xl font-bold text-white">Scene {sceneNumber}: {scene.title}</h3>
+                    <p className="text-sm text-gray-400 mt-1">{scene.summary}</p>
+                    {(() => {
+                        const visualBibleContext = getSceneVisualBibleContext(visualBible, scene.id);
+                        return visualBibleContext.styleBoards.length > 0 ? (
+                            <div className="mt-2 text-xs text-gray-500">
+                                <span className="font-medium text-indigo-400">Visual Bible:</span> {visualBibleContext.styleBoards.join(', ')}
+                                {visualBibleContext.tags.length > 0 && ` (${visualBibleContext.tags.join(', ')})`}
+                            </div>
+                        ) : null;
+                    })()}
+                </div>
+                {onRerunScene && (
+                    <button
+                        onClick={() => onRerunScene(scene.id)}
+                        className="px-3 py-1.5 text-sm font-medium text-blue-300 bg-blue-900/30 border border-blue-700/50 rounded-md hover:bg-blue-900/50 transition-colors"
+                        title="Re-run scene generation"
+                    >
+                        Re-run Scene
+                    </button>
+                )}
+            </div>
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-px bg-gray-700/80">
@@ -179,12 +219,42 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                     <div className="space-y-6">
                         <div>
                             <h4 className="text-lg font-semibold text-amber-400 mb-4">Continuity Scores</h4>
-                            <div className="grid grid-cols-3 gap-4">
-                               <ScoreCircle score={data.continuityResult.scores.narrative_coherence} label="Narrative" />
-                               <ScoreCircle score={data.continuityResult.scores.aesthetic_alignment} label="Aesthetic" />
-                               <ScoreCircle score={data.continuityResult.scores.thematic_resonance} label="Thematic" />
+                            <div className="text-center mb-4">
+                               <ScoreCircle score={Math.round(continuityScore.overallScore * 100)} label="Overall Continuity" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                               <div className="text-center">
+                                   <div className="text-gray-400">VB Consistency</div>
+                                   <div className="text-lg font-bold text-blue-400">{Math.round(continuityScore.visualBibleConsistency * 100)}%</div>
+                               </div>
+                               <div className="text-center">
+                                   <div className="text-gray-400">Structural</div>
+                                   <div className="text-lg font-bold text-green-400">{Math.round(continuityScore.structuralContinuity! * 100)}%</div>
+                               </div>
+                               <div className="text-center">
+                                   <div className="text-gray-400">Transitions</div>
+                                   <div className="text-lg font-bold text-purple-400">{Math.round(continuityScore.transitionQuality! * 100)}%</div>
+                               </div>
+                               <div className="text-center">
+                                   <div className="text-gray-400">Duration</div>
+                                   <div className="text-lg font-bold text-orange-400">{Math.round(continuityScore.durationConsistency! * 100)}%</div>
+                               </div>
                             </div>
                         </div>
+
+                        {characterContinuityIssues.length > 0 && (
+                            <div>
+                                <h4 className="text-lg font-semibold text-red-400 mb-4">Character Continuity Issues</h4>
+                                <div className="space-y-2">
+                                    {characterContinuityIssues.map((issue, i) => (
+                                        <div key={i} className="text-sm text-red-300 p-2 bg-red-900/20 rounded-md border border-red-800/30">
+                                            {issue.message}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         <FeedbackCard title="Overall Feedback" content={data.continuityResult.overall_feedback} isLoading={false} />
                         
                         {projectChanges.length > 0 && (
@@ -200,6 +270,17 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                                             <button onClick={() => onApplySuggestion(s, scene.id)} className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-yellow-600 text-white hover:bg-yellow-700">Apply</button>
                                         </div>
                                     ))}
+                                </div>
+                                <div className="mt-4">
+                                    <button 
+                                        onClick={() => {
+                                            // Apply all project-wide changes
+                                            projectChanges.forEach(s => onApplySuggestion(s, scene.id));
+                                        }} 
+                                        className="w-full px-4 py-2 text-sm font-medium text-yellow-300 bg-yellow-900/30 border border-yellow-700/50 rounded-md hover:bg-yellow-900/50 transition-colors"
+                                    >
+                                        Apply to Story Bible
+                                    </button>
                                 </div>
                             </div>
                         )}
@@ -218,7 +299,25 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                                         </div>
                                     ))}
                                 </div>
-                                {isRefined && <button onClick={() => onUpdateSceneSummary(scene.id)} className="text-sm text-yellow-400 mt-4">Update Scene Summary with Refinements</button>}
+                                <div className="mt-4 space-y-2">
+                                    <button 
+                                        onClick={() => {
+                                            // Apply all timeline changes
+                                            timelineChanges.forEach(s => onApplySuggestion(s, scene.id));
+                                        }} 
+                                        className="w-full px-4 py-2 text-sm font-medium text-amber-300 bg-amber-900/30 border border-amber-700/50 rounded-md hover:bg-amber-900/50 transition-colors"
+                                    >
+                                        Apply All Timeline Fixes
+                                    </button>
+                                    {isRefined && (
+                                        <button 
+                                            onClick={() => onUpdateSceneSummary(scene.id)} 
+                                            className="w-full px-4 py-2 text-sm font-medium text-yellow-300 bg-yellow-900/30 border border-yellow-700/50 rounded-md hover:bg-yellow-900/50 transition-colors"
+                                        >
+                                            Update Scene Summary with Refinements
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         )}
                         

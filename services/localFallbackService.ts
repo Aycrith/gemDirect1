@@ -1,4 +1,4 @@
-import { StoryBible, Scene, TimelineData, CreativeEnhancers, BatchShotTask, BatchShotResult, DetailedShotResult, Shot, WorkflowMapping, CoDirectorResult, ContinuityResult, ShotEnhancers } from '../types';
+import { StoryBible, Scene, TimelineData, CreativeEnhancers, BatchShotTask, BatchShotResult, DetailedShotResult, Shot, WorkflowMapping, CoDirectorResult, ContinuityResult, HeroArc } from '../types';
 
 const TITLE_LENGTH_LIMIT = 48;
 const BODY_LENGTH_LIMIT = 140;
@@ -116,6 +116,30 @@ const extractProtagonist = (idea: string): string => {
     return keywords[0] || 'The Protagonist';
 };
 
+const FALLBACK_HERO_ARC_NAMES = [
+    'Ordinary World',
+    'Call to Adventure',
+    'Refusal of the Call',
+    'Meeting the Mentor',
+    'Crossing the Threshold',
+    'Tests, Allies, Enemies',
+    'Approach to the Inmost Cave',
+    'Ordeal',
+    'Reward',
+    'The Road Back',
+    'Resurrection',
+    'Return with the Elixir',
+];
+
+const buildFallbackHeroArcs = (): HeroArc[] =>
+    FALLBACK_HERO_ARC_NAMES.map((name, index) => ({
+        id: `arc-${String(index + 1).padStart(2, '0')}`,
+        name,
+        summary: `${name} stage of the hero's journey.`,
+        emotionalShift: 'Shifting emotional stakes across the journey.',
+        importance: 6,
+    }));
+
 export const generateStoryBible = async (idea: string, genre: string = 'sci-fi'): Promise<StoryBible> => {
     const trimmedIdea = idea.trim();
     const protagonist = extractProtagonist(trimmedIdea);
@@ -135,7 +159,8 @@ export const generateStoryBible = async (idea: string, genre: string = 'sci-fi')
         logline,
         characters,
         setting,
-        plotOutline: acts
+        plotOutline: acts,
+        heroArcs: buildFallbackHeroArcs()
     };
 };
 

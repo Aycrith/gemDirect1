@@ -1,12 +1,65 @@
-import React, { createContext, useContext } from 'react';
-import { LocalGenerationSettings } from '../types';
+import React, { createContext, useContext, useEffect } from 'react';
+import { LocalGenerationSettings, WorkflowProfile, WorkflowProfileMetadata } from '../types';
 import { usePersistentState } from '../utils/hooks';
+
+const WORKFLOW_PROFILE_DEFINITIONS: Array<{ id: string; label: string }> = [
+    { id: 'wan-t2i', label: 'WAN Text→Image (Keyframe)' },
+    { id: 'wan-i2v', label: 'WAN Text+Image→Video' },
+];
+const PRIMARY_WORKFLOW_PROFILE_ID = 'wan-i2v';
+
+const createDefaultProfileMetadata = (): WorkflowProfileMetadata => ({
+    lastSyncedAt: Date.now(),
+    highlightMappings: [],
+    missingMappings: [],
+    warnings: [],
+});
+
+const createDefaultWorkflowProfiles = (): Record<string, WorkflowProfile> =>
+    WORKFLOW_PROFILE_DEFINITIONS.reduce((acc, def) => {
+        acc[def.id] = {
+            id: def.id,
+            label: def.label,
+            workflowJson: '',
+            mapping: {},
+            metadata: createDefaultProfileMetadata(),
+        };
+        return acc;
+    }, {} as Record<string, WorkflowProfile>);
+
+const normalizeWorkflowProfiles = (settings: LocalGenerationSettings): Record<string, WorkflowProfile> => {
+    const source = settings.workflowProfiles ?? {};
+        const primaryJson = source[PRIMARY_WORKFLOW_PROFILE_ID]?.workflowJson ?? settings.workflowJson ?? '';
+        const primaryMapping = source[PRIMARY_WORKFLOW_PROFILE_ID]?.mapping ?? (settings.mapping ?? {});
+        const primaryMetadata = source[PRIMARY_WORKFLOW_PROFILE_ID]?.metadata;
+
+        return WORKFLOW_PROFILE_DEFINITIONS.reduce((acc, def) => {
+            const previous = source[def.id];
+            acc[def.id] = {
+                id: def.id,
+                label: def.label,
+                workflowJson:
+                    previous?.workflowJson ??
+                    (def.id === PRIMARY_WORKFLOW_PROFILE_ID ? primaryJson : ''),
+                mapping:
+                    previous?.mapping ??
+                    (def.id === PRIMARY_WORKFLOW_PROFILE_ID ? primaryMapping : {}),
+                metadata:
+                    previous?.metadata ??
+                    (def.id === PRIMARY_WORKFLOW_PROFILE_ID
+                        ? primaryMetadata ?? createDefaultProfileMetadata()
+                        : createDefaultProfileMetadata()),
+            };
+            return acc;
+        }, {} as Record<string, WorkflowProfile>);
+};
 
 export const DEFAULT_LOCAL_GENERATION_SETTINGS: LocalGenerationSettings = {
     comfyUIUrl: '',
     comfyUIClientId: '',
     workflowJson: '',
     mapping: {},
+    workflowProfiles: createDefaultWorkflowProfiles(),
 };
 
 type LocalGenerationSettingsContextValue = {
@@ -18,6 +71,19 @@ const LocalGenerationSettingsContext = createContext<LocalGenerationSettingsCont
 
 export const LocalGenerationSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [settings, setSettings] = usePersistentState<LocalGenerationSettings>('localGenSettings', DEFAULT_LOCAL_GENERATION_SETTINGS);
+
+    useEffect(() => {
+        const hasAllProfiles = WORKFLOW_PROFILE_DEFINITIONS.every(def => Boolean(settings.workflowProfiles?.[def.id]));
+        if (!hasAllProfiles) {
+            const normalized = normalizeWorkflowProfiles(settings);
+            setSettings(prev => ({
+                ...prev,
+                workflowProfiles: normalized,
+                workflowJson: normalized[PRIMARY_WORKFLOW_PROFILE_ID]?.workflowJson ?? prev.workflowJson,
+                mapping: normalized[PRIMARY_WORKFLOW_PROFILE_ID]?.mapping ?? prev.mapping,
+            }));
+        }
+    }, [settings, setSettings]);
 
     return (
         <LocalGenerationSettingsContext.Provider value={{ settings, setSettings }}>

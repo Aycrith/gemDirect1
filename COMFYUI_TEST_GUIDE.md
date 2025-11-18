@@ -14,6 +14,10 @@
 
 ---
 
+> **Docs-first reminder:** Before editing workflows or touching code, re-read README.md, every docs/STORY_TO_VIDEO_PIPELINE_PHASE_*.md, WORKFLOW_ARCHITECTURE_REFERENCE.md, the QA/testing guides, and scripts/comfyui-status.ts so helper runtime expectations remain aligned.
+>
+> Story bibles now include a structured `heroArcs` array plus `heroArcId` per scene; all prompts and validations expect those arcs to surface in the generated JSON. The canonical WAN video workflow is `video_wan2_2_5B_ti2v.json`, so keep your local settings and helper metadata pointing at that 5B bundle and target 3–8 minute runs on RTX 3090. SVD runs remain optional regression checks triggered via `RUN_SVD_E2E=1`.
+
 ## 🔧 Configuration Steps
 
 ### Step 1: Open Settings Modal
@@ -281,5 +285,11 @@ Look for:
 **Expected Outcome**: Complete end-to-end story creation with local video/image generation via ComfyUI! 🎬
 
 ---
+
+## ?? Helper & QA Telemetry
+
+- Always run `npx ts-node scripts/comfyui-status.ts --project ./path/to/exported-project.json --summary-dir test-results/comfyui-status --log-path test-results/comfyui-status/comfyui-status.log` before queuing scenes so the helper validates both `wan-t2i` and `wan-i2v` workflows, confirms the CLIPTextEncode and LoadImage mappings, and captures queue/system telemetry for QA cards and Playwright traces.
+- Archive each helper summary/log under `test-results/comfyui-status/` so downstream checks (Playwright specs, Visual Bible prompts, plan expansion logs) can point to the same VRAM snapshots, queue warnings, and mapping highlights the helper reported.
+- Mirror the helper's `LOCAL_*` env vars via `VITE_LOCAL_*` so the React UI, Playwright suites, and LM Studio integration all observe the same endpoint, seed, and timeout settings; any drift will show up as mismatched helper metadata in the archived summaries.
 
 **Note**: The app has been updated to prioritize port 8000 in auto-discovery, so it should find your ComfyUI Desktop instance immediately!

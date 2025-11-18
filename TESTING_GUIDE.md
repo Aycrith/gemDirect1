@@ -33,6 +33,32 @@ Use this guide whenever you add coverage for the ComfyUI bridge, so the next age
 - `npx vitest run services/__tests__/sceneGenerationPipeline.test.ts`
 - Covers the shot-planning helper (prompt synthesis + negative prompt inheritance), keyframe synthesis via the selected media provider, and the orchestration that feeds those assets directly into `generateTimelineVideos`. Keep this suite green whenever you change the media-generation bridge so TimelineEditor’s auto-prep flow stays reliable.
 
+## Helper artifacts & diagnostics (how tests capture evidence)
+
+The ComfyUI bridge emits small, deterministic diagnostics so Playwright and unit tests can assert the presence of key artifacts without transferring large binaries. Use these hooks in tests and E2E runs:
+
+- Console anchor: `GEMDIRECT-KEYFRAME:` — printed by `fetchAssetAsDataURL` with the first ~200 characters of the fetched data URL. Playwright tests can capture this via a `page.on('console', ...)` handler or by enabling trace/logging.
+- Global in-page diagnostics:
+   - `window.__gemDirectComfyDiagnostics` — short diagnostic entries recorded by `queueComfyUIPrompt` (attempts, prompt posting, results, queue snapshot notices).
+   - `window.__gemDirectClientDiagnostics` — keyframe-prefixed diagnostics recorded by `fetchAssetAsDataURL` (keyframe-fetched events and compact prefixes).
+
+Examples (Playwright):
+
+```ts
+// capture console lines
+const consoleMessages: string[] = [];
+page.on('console', msg => consoleMessages.push(msg.text()));
+
+// later assert the GEMDIRECT anchor was logged
+expect(consoleMessages.some(m => m.includes('GEMDIRECT-KEYFRAME:'))).toBeTruthy();
+
+// or read the in-page diagnostics directly
+const diag = await page.evaluate(() => (window as any).__gemDirectComfyDiagnostics || []);
+expect(diag.length).toBeGreaterThan(0);
+```
+
+Record that the test harness and the UI suite both push small diagnostics to these globals; include checks for them in WAN E2E tests to strengthen traceability for keyframes, helper logs, and queue lifecycle events.
+
 ## 3. Running the Suite
 
 ```bash
