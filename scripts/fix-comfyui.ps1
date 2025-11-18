@@ -106,6 +106,9 @@ if ($primary) {
     Write-Host "  (Has $($primary.ModelCount) models and $($primary.CustomNodes) custom nodes)" -ForegroundColor Gray
     
     # Generate the correct task command
+    # Note: --disable-mmap flag disables memory-mapped file I/O for safetensors.
+    # This prevents Windows pagefile mmap crashes when loading large models (>4GB)
+    # that can occur due to Windows pagefile limitations with memory-mapped files.
     Write-Host "`n=== Recommended Task Configuration ===" -ForegroundColor Cyan
     $taskCommand = @"
 cd "$($primary.Path)"; & "$($primary.PythonPath)" main.py --listen 127.0.0.1 --port 8000 --enable-cors-header "*" --disable-mmap
@@ -113,6 +116,8 @@ cd "$($primary.Path)"; & "$($primary.PythonPath)" main.py --listen 127.0.0.1 --p
     
     Write-Host "Update your VS Code task 'Start ComfyUI Server' to:" -ForegroundColor Yellow
     Write-Host $taskCommand -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Note: The --disable-mmap flag prevents Windows pagefile crashes when loading large models." -ForegroundColor DarkGray
     
     # Offer to update the task automatically
     Write-Host "`n"
