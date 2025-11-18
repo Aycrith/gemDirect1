@@ -19,10 +19,27 @@ const ExportDialog: React.FC<ExportDialogProps> = ({ data, recommendations, isOp
         if (data.length === 0) {
             return null;
         }
-        const totalDuration = data.reduce((sum, snapshot) => sum + snapshot.durationSeconds, 0);
-        const avgSuccess = data.reduce((sum, snapshot) => sum + snapshot.successRate, 0) / data.length;
-        const maxRetries = Math.max(...data.map((snapshot) => snapshot.retries));
-        const avgGpu = data.reduce((sum, snapshot) => sum + snapshot.gpuUsageGb, 0) / data.length;
+
+        const safeNumber = (value?: number): number => {
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                return value;
+            }
+            return 0;
+        };
+
+        const normalized = data.map((snapshot) => ({
+            durationSeconds: safeNumber(snapshot.durationSeconds),
+            successRate: Math.min(1, Math.max(0, safeNumber(snapshot.successRate))),
+            retries: safeNumber(snapshot.retries),
+            gpuUsageGb: safeNumber(snapshot.gpuUsageGb),
+        }));
+
+        const totalDuration = normalized.reduce((sum, snapshot) => sum + snapshot.durationSeconds, 0);
+        const avgSuccess =
+            normalized.reduce((sum, snapshot) => sum + snapshot.successRate, 0) / Math.max(normalized.length, 1);
+        const maxRetries = Math.max(...normalized.map((snapshot) => snapshot.retries), 0);
+        const avgGpu = normalized.reduce((sum, snapshot) => sum + snapshot.gpuUsageGb, 0) / Math.max(normalized.length, 1);
+
         return {
             totalDuration,
             avgSuccess,

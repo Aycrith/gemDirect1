@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { runValidation } from '../../scripts/validate-run-summary.js';
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 const validatorScript = path.resolve(projectRoot, 'scripts', 'validate-run-summary.ps1');
@@ -129,10 +130,20 @@ const createArtifactMetadata = (includeTelemetry = true, fallbackNotes: string[]
     };
 };
 
-const runValidator = (runDir: string) =>
-    spawnSync('pwsh', ['-NoLogo', '-ExecutionPolicy', 'Bypass', '-File', validatorScript, '-RunDir', runDir], {
+const runValidator = (runDir: string) => {
+    const result = spawnSync('pwsh', ['-NoLogo', '-ExecutionPolicy', 'Bypass', '-File', validatorScript, '-RunDir', runDir], {
         encoding: 'utf8',
     });
+    if (result.error && result.error.code === 'ENOENT') {
+        const fallback = runValidation(runDir);
+        return {
+            status: fallback.status,
+            stdout: fallback.stdout,
+            stderr: fallback.stderr,
+        };
+    }
+    return result;
+};
 
 afterAll(() => {
     tempDirs.forEach((dir) => {

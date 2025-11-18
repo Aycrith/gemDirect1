@@ -7,6 +7,19 @@ export interface ExportOptions {
     filename?: string;
 }
 
+export interface ExportResult {
+    success: boolean;
+    filename?: string;
+    format?: ExportFormat;
+    error?: string;
+    durationMs?: number;
+}
+
+export interface ExportResponse {
+    result: ExportResult;
+    content: string;
+}
+
 function createBlobUrl(data: Blob): string {
     if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
         return URL.createObjectURL(data);
@@ -64,6 +77,44 @@ function toCsv(snapshots: TelemetrySnapshot[], recommendations: Recommendation[]
     return rows.join('\n');
 }
 
+function encodeValue(value: unknown): string {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    const stringified = typeof value === 'string' ? value : JSON.stringify(value);
+    return `"${stringified.replace(/"/g, '""')}"`;
+}
+
+function toCsvFromRecords(records: Record<string, unknown>[]): string {
+    if (records.length === 0) {
+        return '';
+    }
+    const headers = Array.from(new Set(records.flatMap((record) => Object.keys(record))));
+    const rows = [headers.map(encodeValue).join(',')];
+
+    records.forEach((record) => {
+        rows.push(
+            headers
+                .map((key) => encodeValue(record[key]))
+                .join(',')
+        );
+    });
+
+    return rows.join('\n');
+}
+
+function toJsonFromRecords(records: Record<string, unknown>[]): string {
+    return JSON.stringify(
+        {
+            generatedAt: new Date().toISOString(),
+            recordCount: records.length,
+            records,
+        },
+        null,
+        2
+    );
+}
+
 export default class ExportService {
     static async exportTelemetryReport(
         snapshots: TelemetrySnapshot[],
@@ -93,5 +144,37 @@ export default class ExportService {
         const url = createBlobUrl(blob);
         triggerDownload(url, filename);
         return filename;
+    }
+
+    static async exportToCSV(records: Record<string, unknown>[]): Promise<ExportResponse> {
+        const start = performance.now();
+        const content = toCsvFromRecords(records);
+        const elapsed = performance.now() - start;
+
+        return {
+            result: {
+                success: true,
+                format: 'csv',
+                filename: 'telemetry-export.csv',
+                durationMs: elapsed,
+            },
+            content,
+        };
+    }
+
+    static async exportToJSON(records: Record<string, unknown>[]): Promise<ExportResponse> {
+        const start = performance.now();
+        const content = toJsonFromRecords(records);
+        const elapsed = performance.now() - start;
+
+        return {
+            result: {
+                success: true,
+                format: 'json',
+                filename: 'telemetry-export.json',
+                durationMs: elapsed,
+            },
+            content,
+        };
     }
 }

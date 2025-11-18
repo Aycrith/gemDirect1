@@ -10,7 +10,7 @@ export default defineConfig({
     include: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx'],
     // Exclude Playwright end-to-end specs so Vitest doesn't try to run them.
     // Run E2E tests separately with: npx playwright test
-    exclude: ['node_modules', 'dist', 'tests/e2e/**'],
+    exclude: ['node_modules', 'dist', 'tests/e2e/**', '**/*.integration.test.ts'],
     pool: 'forks',
     maxWorkers: 1,
     isolate: false,

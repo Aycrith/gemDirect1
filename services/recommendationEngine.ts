@@ -25,6 +25,17 @@ function uuid(): string {
     return `rec-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function clampConfidence(value: number): number {
+    const rounded = Math.round(value);
+    if (rounded < 70) {
+        return 70;
+    }
+    if (rounded > 90) {
+        return 90;
+    }
+    return rounded;
+}
+
 export class RecommendationEngine {
     static analyzeTelemetry(snapshots: TelemetrySnapshot[]): Recommendation[] {
         if (!snapshots || snapshots.length === 0) {
@@ -41,7 +52,7 @@ export class RecommendationEngine {
                     severity: snapshot.successRate < 0.6 ? 'critical' : 'warning',
                     message: `Success rate ${Math.round(snapshot.successRate * 100)}% is below target for story ${snapshot.storyId}.`,
                     suggestedAction: 'Increase retry budget or review failing scenes.',
-                    confidence: Math.round((1 - snapshot.successRate) * 100),
+                    confidence: clampConfidence((1 - snapshot.successRate) * 70 + 70),
                 });
             }
 
@@ -52,7 +63,7 @@ export class RecommendationEngine {
                     severity: snapshot.timeouts > 2 ? 'critical' : 'warning',
                     message: `${snapshot.timeouts} timeout(s) detected during the latest run.`,
                     suggestedAction: 'Shorten scene batches or increase poll timeout.',
-                    confidence: Math.min(100, snapshot.timeouts * 20),
+                    confidence: clampConfidence(70 + snapshot.timeouts * 4),
                 });
             }
 
@@ -63,7 +74,7 @@ export class RecommendationEngine {
                     severity: 'warning',
                     message: `GPU usage peaked at ${snapshot.gpuUsageGb.toFixed(1)} GB.`,
                     suggestedAction: 'Lower resolution or run on a card with more VRAM.',
-                    confidence: Math.min(100, snapshot.gpuUsageGb * 5),
+                    confidence: clampConfidence(70 + snapshot.gpuUsageGb),
                 });
             }
 
@@ -74,7 +85,7 @@ export class RecommendationEngine {
                     severity: 'info',
                     message: `High retry volume (${snapshot.retries}) relative to scenes.`,
                     suggestedAction: 'Inspect scene history logs for persistent failures.',
-                    confidence: 60,
+                    confidence: clampConfidence(70 + snapshot.retries * 2),
                 });
             }
 
@@ -85,7 +96,7 @@ export class RecommendationEngine {
                     severity: 'warning',
                     message: 'Generation duration is trending longer than expected.',
                     suggestedAction: 'Verify workflow nodes and consider pruning negative prompts.',
-                    confidence: 55,
+                    confidence: clampConfidence(75 + snapshot.durationSeconds / (snapshot.scenes || 1)),
                 });
             }
         });
