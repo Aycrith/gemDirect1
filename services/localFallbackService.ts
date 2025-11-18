@@ -1,4 +1,4 @@
-import { StoryBible, Scene, TimelineData, CreativeEnhancers, BatchShotTask, BatchShotResult, DetailedShotResult, Shot, WorkflowMapping, CoDirectorResult, ContinuityResult, ShotEnhancers, HeroArc } from '../types';
+import { StoryBible, Scene, TimelineData, CreativeEnhancers, BatchShotTask, BatchShotResult, DetailedShotResult, Shot, WorkflowMapping, CoDirectorResult, ContinuityResult, HeroArc } from '../types';
 
 const TITLE_LENGTH_LIMIT = 48;
 const BODY_LENGTH_LIMIT = 140;
