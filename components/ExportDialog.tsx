@@ -128,4 +128,6 @@ const ExportDialog: React.FC<ExportDialogProps> = ({ data, recommendations, isOp
     );
 };
 
+export { ExportDialog, type ExportDialogProps };
+
 export default ExportDialog;
