@@ -5,12 +5,17 @@ import QueuePolicyCard from './QueuePolicyCard';
 import FallbackWarningsCard from './FallbackWarningsCard';
 import HistoricalTelemetryCard from './HistoricalTelemetryCard';
 import TelemetryComparisonChart from './TelemetryComparisonChart';
-import TelemetryFilterPanel from './TelemetryFilterPanel';
-import ExportDialog from './ExportDialog';
-import { RecommendationEngine, type TelemetrySnapshot, type Recommendation } from '../services/recommendationEngine';
-import ScenePlayer from './ScenePlayer';
-import { getSceneVideoManager } from '../services/videoGenerationService';
+// TODO: Telemetry/Export features not yet implemented
+// import TelemetryFilterPanel from './TelemetryFilterPanel';
+// import ExportDialog from './ExportDialog';
+// import { RecommendationEngine, type TelemetrySnapshot, type Recommendation } from '../services/recommendationEngine';
+// import ScenePlayer from './ScenePlayer';
+// import { getSceneVideoManager } from '../services/videoGenerationService';
 import type { ToastMessage } from '../types';
+
+// Temporary stub types until recommendationEngine is implemented
+type TelemetrySnapshot = any;
+type Recommendation = any;
 
 type ArtifactScene = ArtifactSceneMetadata;
 
@@ -251,20 +256,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                     >
                         {showWarningsOnly ? 'Show all scenes' : 'Show warnings only'}
                     </button>
-                    <button
-                        type="button"
-                        className="px-3 py-1 rounded-lg border border-violet-400/60 text-xs text-violet-200 hover:bg-violet-500/10"
-                        onClick={() => setShowFilterPanel((prev) => !prev)}
-                    >
-                        {showFilterPanel ? 'Hide Filter' : 'Filter'}
-                    </button>
-                    <button
-                        type="button"
-                        className="px-3 py-1 rounded-lg border border-amber-400/60 text-xs text-amber-200 hover:bg-amber-500/10"
-                        onClick={() => setShowExportDialog(true)}
-                    >
-                        Export
-                    </button>
+                    {/* TODO: Filter/Export buttons - TelemetryFilterPanel/ExportDialog not yet implemented */}
                 </div>
             </div>
 
@@ -688,16 +680,9 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                                     )}
                                 </div>
                             )}
-                            {/* Scene-level video playback with regeneration hook */}
-                            <div className="mt-3">
-                                <ScenePlayer
-                                    scene={scene}
-                                    runDir={artifact.RunDir}
-                                    isRegenerating={regeneratingScenes.has(scene.SceneId)}
-                                    onRegenerateScene={(sceneId) =>
-                                        handleRegenerateScene(sceneId, scene.Prompt, scene.NegativePrompt)
-                                    }
-                                />
+                            {/* TODO: Scene-level video playback - ScenePlayer not yet implemented */}
+                            <div className="mt-3 text-gray-500 text-sm">
+                                Scene video player not yet implemented
                             </div>
                         </div>
                     </details>
@@ -738,16 +723,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                 </div>
             </div>
 
-            {/* Telemetry Filter Panel */}
-            {showFilterPanel && (
-                <div className="border-t border-gray-700 pt-6">
-                    <TelemetryFilterPanel
-                        data={filteredTelemetry}
-                        onFilter={setFilteredTelemetry}
-                        onExport={() => setShowExportDialog(true)}
-                    />
-                </div>
-            )}
+            {/* TODO: Telemetry Filter Panel - component not yet implemented */}
 
             {/* AI Recommendations Section */}
             {recommendations.length > 0 && (
@@ -890,16 +866,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                 </div>
             )}
 
-            {/* Export Dialog */}
-            <ExportDialog
-                data={filteredTelemetry}
-                recommendations={recommendations}
-                isOpen={showExportDialog}
-                onClose={() => setShowExportDialog(false)}
-                onExportComplete={() => {
-                    setShowExportDialog(false);
-                }}
-            />
+            {/* TODO: Export Dialog - component not yet implemented */}
         </section>
     );
 };
