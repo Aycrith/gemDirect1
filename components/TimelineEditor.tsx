@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
-import { usePipeline } from '../contexts/PipelineContext';
+// TODO: import { usePipeline } from '../contexts/PipelineContext'; // Not yet implemented
 
 const formatVramValue = (value?: number | string | null): string => {
     if (value == null) return 'n/a';
@@ -110,9 +110,10 @@ import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContex
 import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
 import { useTemplateContext } from '../contexts/TemplateContext';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
-import ScenePlayer from './ScenePlayer';
-import VisualBibleLinkModal from './VisualBibleLinkModal';
-import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
+// TODO: Visual Bible integration not yet implemented
+// import ScenePlayer from './ScenePlayer';
+// import VisualBibleLinkModal from './VisualBibleLinkModal';
+// import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -246,7 +247,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [isTemplateGuidanceOpen, setIsTemplateGuidanceOpen] = useState(false);
     const [linkModalState, setLinkModalState] = useState<{ isOpen: boolean; imageData: string; sceneId?: string; shotId?: string } | null>(null);
     
-    const { generateStoryToVideo, isGenerating } = usePipeline();
+    // TODO: Implement usePipeline hook
+    const generateStoryToVideo = async () => { console.log('generateStoryToVideo not implemented'); };
+    const isGenerating = false;
     
     const templateContext = useTemplateContext();
     const { updateCoveredElements } = templateContext;
@@ -810,11 +813,11 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 </div>
             </header>
 
-            {/* Latest Render Section */}
+            {/* Latest Render Section - TODO: Implement ScenePlayer component */}
             {sceneArtifactMetadata?.Video ? (
                 <div className="bg-gray-800/30 border border-indigo-500/30 rounded-lg p-4">
                     <h3 className="text-lg font-semibold text-indigo-400 mb-3">Latest Render</h3>
-                    <ScenePlayer scene={sceneArtifactMetadata} runDir={artifactMetadata?.RunDir} />
+                    <p className="text-gray-500">Scene player not yet implemented</p>
                 </div>
             ) : (
                 <div className="bg-gray-800/30 border border-gray-700/50 rounded-lg p-4 text-center">
@@ -1133,15 +1136,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     onClose={() => setIsTemplateGuidanceOpen(false)}
                 />
             )}
-            {linkModalState?.isOpen && (
-                <VisualBibleLinkModal
-                    isOpen={true}
-                    onClose={() => setLinkModalState(null)}
-                    imageData={linkModalState.imageData}
-                    sceneId={linkModalState.sceneId}
-                    shotId={linkModalState.shotId}
-                />
-            )}
+            {/* TODO: VisualBibleLinkModal not yet implemented */}
+            {linkModalState?.isOpen && null}
         </div>
     );
 };
