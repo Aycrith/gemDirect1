@@ -229,8 +229,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     const [profileInputs, setProfileInputs] = useState<Record<string, WorkflowInput[]>>(() => buildProfileInputs(buildProfileRecords(settings)));
     const [discoveryStatus, setDiscoveryStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
     const [isSyncing, setIsSyncing] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [fileTargetProfile, setFileTargetProfile] = useState<string | null>(null);
+    const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
     
     // Provider contexts
     const { strategies, activeStrategy, activeStrategyId, selectStrategy } = usePlanExpansionStrategy();
@@ -355,20 +354,14 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
         }
     };
 
-    const handleWorkflowFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleWorkflowFileSelected = (profileId: string) => async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) {
-            setFileTargetProfile(null);
-            return;
-        }
-        if (!fileTargetProfile) {
-            addToast('Select a workflow target before importing.', 'error');
-            event.target.value = '';
             return;
         }
         try {
             const text = await file.text();
-            applyWorkflowJson(fileTargetProfile, text);
+            applyWorkflowJson(profileId, text);
             addToast(`Imported workflow from ${file.name}.`, 'success');
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Could not read workflow file.';
@@ -377,7 +370,6 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
             if (event.target) {
                 event.target.value = '';
             }
-            setFileTargetProfile(null);
         }
     };
 
@@ -405,8 +397,7 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
     };
 
     const handleUploadWorkflowClick = (profileId: string) => {
-        setFileTargetProfile(profileId);
-        fileInputRef.current?.click();
+        fileInputRefs.current[profileId]?.click();
     };
 
     const handleMappingChange = (profileId: string, key: string, value: MappableData) => {
@@ -606,13 +597,6 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                            onUpdateSettings={setLocalSettings}
                            addToast={addToast}
                         />
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="application/json"
-                            className="hidden"
-                            onChange={handleWorkflowFileSelected}
-                        />
                         <div className="space-y-5">
                             {WORKFLOW_PROFILE_DEFINITIONS.map(profile => {
                                 const inputs = profileInputs[profile.id] ?? [];
@@ -623,6 +607,13 @@ const LocalGenerationSettingsModal: React.FC<Props> = ({ isOpen, onClose, settin
                                 const metadataWarnings = metadata?.warnings ?? [];
                                 return (
                                     <section key={profile.id} className="p-4 bg-gray-900/60 border border-gray-700 rounded-lg space-y-3">
+                                        <input
+                                            ref={(el) => { fileInputRefs.current[profile.id] = el; }}
+                                            type="file"
+                                            accept="application/json"
+                                            className="hidden"
+                                            onChange={handleWorkflowFileSelected(profile.id)}
+                                        />
                                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                                             <div>
                                                 <h5 className="text-lg font-semibold text-gray-100">{profile.label}</h5>
