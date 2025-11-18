@@ -1,8 +1,19 @@
 import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
-import { getVisualBible } from './visualBibleContext';
-import { getPromptConfigForModel, applyPromptTemplate, type PromptTarget, getDefaultNegativePromptForModel } from './promptTemplates';
-import { getVisualContextForShot, getCharacterContextForShot, getVisualContextForScene, getCharacterContextForScene } from './visualBiblePromptHelpers';
+// TODO: Visual Bible integration not yet implemented
+// import { getVisualBible } from './visualBibleContext';
+// import { getPromptConfigForModel, applyPromptTemplate, type PromptTarget, getDefaultNegativePromptForModel } from './promptTemplates';
+// import { getVisualContextForShot, getCharacterContextForShot, getVisualContextForScene, getCharacterContextForScene } from './visualBiblePromptHelpers';
+
+// Stub implementations until Visual Bible services are implemented
+const getVisualBible = () => null;
+const getPromptConfigForModel = (modelId: string, target: any) => ({ template: '{prompt}' });
+const applyPromptTemplate = (prompt: string, vbSegment: string, config: any) => vbSegment ? `${prompt} ${vbSegment}` : prompt;
+const getDefaultNegativePromptForModel = (modelId: string, target: string) => '';
+const getVisualContextForShot = (vb: any, sceneId: string, shotId: string) => '';
+const getCharacterContextForShot = (vb: any, sceneId: string, shotId: string) => '';
+const getVisualContextForScene = (vb: any, sceneId: string) => '';
+const getCharacterContextForScene = (vb: any, sceneId: string) => '';
 
 export const DEFAULT_NEGATIVE_PROMPT = 'blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, oversaturated, undersaturated, motion blur';
 

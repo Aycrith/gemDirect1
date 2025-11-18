@@ -3,10 +3,10 @@ import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from
 import ContinuityCard from './ContinuityCard';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import GuideCard from './GuideCard';
-import E2EQACard from './E2EQACard';
+// TODO: import E2EQACard from './E2EQACard'; // Not yet implemented
 import { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import { useVisualBible } from '../utils/hooks';
-import { findCharacterContinuityIssues } from '../services/continuityVisualContext';
+// TODO: import { findCharacterContinuityIssues } from '../services/continuityVisualContext'; // Not yet implemented
 
 interface ContinuityDirectorProps {
   scenes: Scene[];
@@ -44,8 +44,9 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
   const sceneRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
   const { visualBible } = useVisualBible();
 
+  // TODO: Implement findCharacterContinuityIssues
   const characterContinuityIssues = React.useMemo(() => {
-    return findCharacterContinuityIssues(visualBible, scenes);
+    return []; // findCharacterContinuityIssues(visualBible, scenes);
   }, [visualBible, scenes]);
 
   const handleSelectScene = useCallback((sceneId: string) => {
@@ -118,9 +119,7 @@ CONTEXT FROM ADJACENT SCENES:
         </p>
       </header>
 
-      <div className="mb-8">
-        <E2EQACard onSelectScene={handleSelectScene} />
-      </div>
+      {/* TODO: E2EQACard not yet implemented */}
 
       <GuideCard title="Completing the Creative Loop">
           <p>

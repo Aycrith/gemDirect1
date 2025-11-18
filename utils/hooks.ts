@@ -1234,12 +1234,12 @@ export function useVisualBible() {
     styleBoards: [],
   });
 
-  // Update the service context whenever visualBible changes
-  React.useEffect(() => {
-    import('../services/visualBibleContext').then(({ setVisualBible }) => {
-      setVisualBible(visualBible);
-    });
-  }, [visualBible]);
+  // TODO: Update the service context whenever visualBible changes - visualBibleContext not yet implemented
+  // React.useEffect(() => {
+  //   import('../services/visualBibleContext').then(({ setVisualBible }) => {
+  //     setVisualBible(visualBible);
+  //   });
+  // }, [visualBible]);
 
   return {
     visualBible,

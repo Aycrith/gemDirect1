@@ -5,7 +5,7 @@ import FilmIcon from './icons/FilmIcon';
 import AlertTriangleIcon from './icons/AlertTriangleIcon';
 import SceneStatusIndicator from './SceneStatusIndicator';
 import { useVisualBible } from '../utils/hooks';
-import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
+// TODO: import { getSceneVisualBibleContext } from '../services/continuityVisualContext'; // Not yet implemented
 
 interface SceneNavigatorProps {
     scenes: Scene[];
@@ -28,8 +28,9 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                     {scenes.map((scene, index) => {
                         const needsReview = scenesToReview.has(scene.id);
                         const status = sceneStatuses[scene.id];
-                        const visualBibleInfo = getSceneVisualBibleContext(visualBible, scene.id);
-                        const hasVisualBibleLinks = visualBibleInfo && (visualBibleInfo.styleBoards.length > 0 || visualBibleInfo.tags.length > 0);
+                        // TODO: Implement getSceneVisualBibleContext
+                        const visualBibleInfo = null; // getSceneVisualBibleContext(visualBible, scene.id);
+                        const hasVisualBibleLinks = false; // visualBibleInfo && (visualBibleInfo.styleBoards.length > 0 || visualBibleInfo.tags.length > 0);
                         return (
                             <li 
                                 key={scene.id} 

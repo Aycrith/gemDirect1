@@ -8,9 +8,7 @@ import { saveProjectToFile, loadProjectFromFile } from './utils/projectUtils';
 import { PlanExpansionStrategyProvider, usePlanExpansionActions } from './contexts/PlanExpansionStrategyContext';
 import { MediaGenerationProviderProvider } from './contexts/MediaGenerationProviderContext';
 import { LocalGenerationSettingsProvider, useLocalGenerationSettings } from './contexts/LocalGenerationSettingsContext';
-import { PipelineProvider } from './contexts/PipelineContext';
 import { createMediaGenerationActions, LOCAL_COMFY_ID } from './services/mediaGenerationService';
-import PipelineGenerator from './components/PipelineGenerator';
 
 import StoryIdeaForm from './components/StoryIdeaForm';
 import StoryBibleEditor from './components/StoryBibleEditor';
@@ -33,7 +31,7 @@ import UploadCloudIcon from './components/icons/UploadCloudIcon';
 import ProgressBar from './components/ProgressBar';
 import WelcomeGuideModal from './components/WelcomeGuideModal';
 import ComfyUICallbackProvider from './components/ComfyUICallbackProvider';
-import VisualBiblePanel from './components/VisualBiblePanel';
+// TODO: import VisualBiblePanel from './components/VisualBiblePanel'; // Not yet implemented
 import { clearProjectData } from './utils/database';
 
 const AppContent: React.FC = () => {
@@ -401,50 +399,17 @@ const AppContent: React.FC = () => {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     {mode === 'quick' ? (
                         <>
+                            {/* TODO: PipelineGenerator component not yet implemented */}
                             <section className="mb-12">
-                                <PipelineGenerator onOpenInDirectorMode={(result, prompt) => {
-                                    // Create project state and load it
-                                    import('./utils/projectUtils').then(({ createQuickProjectState }) => {
-                                        const projectState = createQuickProjectState(result, prompt);
-                                        
-                                        // Load the project into Director Mode
-                                        setStoryBible(projectState.storyBible);
-                                        setDirectorsVision(projectState.directorsVision);
-                                        setScenes(projectState.scenes);
-                                        setScenesToReview(projectState.scenesToReview);
-                                        
-                                        // Switch to Director Mode
-                                        setMode('director');
-                                        setWorkflowStage('director');
-                                        
-                                        addToast('Project loaded in Director Mode! You can now refine your story.', 'success');
-                                    });
-                                }} />
+                                <div className="p-4 bg-gray-800/30 rounded-lg border border-gray-700/50">
+                                    <p className="text-amber-400">Quick Generate mode coming soon...</p>
+                                </div>
                             </section>
                             <ArtifactViewer addToast={addToast} />
                         </>
                     ) : (
                         <>
-                            {mode === 'director' && (
-                                <section className="mb-8 p-4 bg-gray-800/30 rounded-lg border border-gray-700/50">
-                                    <h2 className="text-lg font-semibold text-amber-400 mb-2">Quick Generate Sandbox</h2>
-                                    <p className="text-sm text-gray-400 mb-4">For fast one-prompt to video experiments. Switch to Quick Generate mode for full focus.</p>
-                                    <PipelineGenerator onOpenInDirectorMode={(result, prompt) => {
-                                        // Create project state and load it
-                                        import('./utils/projectUtils').then(({ createQuickProjectState }) => {
-                                            const projectState = createQuickProjectState(result, prompt);
-                                            
-                                            // Load the project into current Director Mode session
-                                            setStoryBible(projectState.storyBible);
-                                            setDirectorsVision(projectState.directorsVision);
-                                            setScenes(projectState.scenes);
-                                            setScenesToReview(projectState.scenesToReview);
-                                            
-                                            addToast('Quick run imported! Refine your story in Director Mode.', 'success');
-                                        });
-                                    }} />
-                                </section>
-                            )}
+                            {/* TODO: Quick Generate Sandbox - PipelineGenerator not yet implemented */}
                             <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
                             <ArtifactViewer addToast={addToast} />
                             {generationProgress.total > 0 && (
@@ -527,12 +492,7 @@ const AppContent: React.FC = () => {
                     onClose={() => setHasSeenWelcome(true)}
                 />
             )}
-            {mode === 'director' && (
-                <VisualBiblePanel
-                    isOpen={isVisualBibleOpen}
-                    onClose={() => setIsVisualBibleOpen(false)}
-                />
-            )}
+            {/* TODO: VisualBiblePanel not yet implemented */}
         </div>
     );
 };
@@ -540,19 +500,17 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => (
     <UsageProvider>
         <ApiStatusProvider>
-            <PipelineProvider>
-                <PlanExpansionStrategyProvider>
-                    <LocalGenerationSettingsProvider>
-                        <MediaGenerationProviderProvider>
-                            <TemplateContextProvider>
-                                <ComfyUICallbackProvider>
-                                    <AppContent />
-                                </ComfyUICallbackProvider>
-                            </TemplateContextProvider>
-                        </MediaGenerationProviderProvider>
-                    </LocalGenerationSettingsProvider>
-                </PlanExpansionStrategyProvider>
-            </PipelineProvider>
+            <PlanExpansionStrategyProvider>
+                <LocalGenerationSettingsProvider>
+                    <MediaGenerationProviderProvider>
+                        <TemplateContextProvider>
+                            <ComfyUICallbackProvider>
+                                <AppContent />
+                            </ComfyUICallbackProvider>
+                        </TemplateContextProvider>
+                    </MediaGenerationProviderProvider>
+                </LocalGenerationSettingsProvider>
+            </PlanExpansionStrategyProvider>
         </ApiStatusProvider>
     </UsageProvider>
 );
