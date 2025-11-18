@@ -536,8 +536,8 @@ export interface SceneVideoMetadata {
     Status: 'processing' | 'ready' | 'error';
     DurationSeconds?: number;
     UpdatedAt?: string;
-     Version?: number;
-     Notes?: string;
+    Version?: number;
+    Notes?: string;
     Error?: string;
 }
 
