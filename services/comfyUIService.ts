@@ -31,6 +31,27 @@ export interface WorkflowGenerationMetadata {
     mapping: WorkflowMapping;
 }
 
+const DEFAULT_FETCH_TIMEOUT_MS = 12000;
+
+const fetchWithTimeout = async (
+    resource: RequestInfo,
+    init: RequestInit = {},
+    timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS,
+): Promise<Response> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(resource, {
+            signal: controller.signal,
+            mode: 'cors',
+            credentials: 'omit',
+            ...init,
+        });
+    } finally {
+        clearTimeout(timeoutId);
+    }
+};
+
 /**
  * Attempts to find a running ComfyUI server by checking a list of common addresses.
  * @returns The URL of the found server, or null if no server is found.
@@ -38,27 +59,16 @@ export interface WorkflowGenerationMetadata {
 export const discoverComfyUIServer = async (): Promise<string | null> => {
   for (const baseUrl of DISCOVERY_CANDIDATES) {
     try {
-      // Use a short timeout to avoid long waits for unresponsive addresses.
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000); // 2-second timeout
-
-      // Fetch a simple, known endpoint. /system_stats is lightweight and ideal for this check.
       const url = baseUrl.endsWith('/') ? `${baseUrl}system_stats` : `${baseUrl}/system_stats`;
-      
-      const response = await fetch(url, { signal: controller.signal, mode: 'cors' });
-      clearTimeout(timeoutId);
+      const response = await fetchWithTimeout(url, undefined, 2000);
 
-      // A successful response (even if not JSON, just getting a response is enough for discovery)
       if (response.ok) {
         const data = await response.json();
-        // A simple check to see if the response looks like ComfyUI's stats
         if (data && data.system && data.devices) {
              return baseUrl;
         }
       }
     } catch (error) {
-      // This will catch network errors (server not running), CORS errors (server running but not configured for this origin), and timeouts.
-      // We ignore them and proceed to the next candidate.
       console.log(`Discovery attempt failed for ${baseUrl}:`, error);
     }
   }
@@ -78,10 +88,7 @@ export const checkServerConnection = async (url: string): Promise<void> => {
         throw new Error("Server address is not configured.");
     }
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3-second timeout for checks
-        const response = await fetch(`${url}/system_stats`, { signal: controller.signal, mode: 'cors' });
-        clearTimeout(timeoutId);
+        const response = await fetchWithTimeout(`${url}/system_stats`, undefined, 3000);
         if (!response.ok) {
             throw new Error(`Server responded with status ${response.status}.`);
         }
@@ -107,10 +114,7 @@ export const checkSystemResources = async (url: string): Promise<string> => {
         return "Server address is not configured.";
     }
     try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const response = await fetch(`${url}/system_stats`, { signal: controller.signal, mode: 'cors' });
-        clearTimeout(timeoutId);
+        const response = await fetchWithTimeout(`${url}/system_stats`, undefined, 3000);
         if (!response.ok) {
             return `Could not retrieve system stats (status: ${response.status}).`;
         }
@@ -195,10 +199,7 @@ export const getQueueInfo = async (url: string): Promise<{ queue_running: number
     if (!url) {
         throw new Error("Server address is not configured.");
     }
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
-    const response = await fetch(`${url}/queue`, { signal: controller.signal, mode: 'cors' });
-    clearTimeout(timeoutId);
+    const response = await fetchWithTimeout(`${url}/queue`, undefined, 3000);
     if (!response.ok) {
         throw new Error(`Could not retrieve queue info (status: ${response.status}).`);
     }
@@ -422,7 +423,7 @@ const ensureWorkflowMappingDefaults = (workflowNodes: Record<string, any>, exist
 // Fetches an asset from the ComfyUI server and converts it to a data URL.
 const fetchAssetAsDataURL = async (url: string, filename: string, subfolder: string, type: string): Promise<string> => {
     const baseUrl = url.endsWith('/') ? url : `${url}/`;
-    const response = await fetch(`${baseUrl}view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`);
+    const response = await fetchWithTimeout(`${baseUrl}view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`, undefined, 5000);
     if (!response.ok) {
         throw new Error(`Failed to fetch asset from ComfyUI server. Status: ${response.status}`);
     }
@@ -597,10 +598,10 @@ export const queueComfyUIPrompt = async (
                 formData.append('image', blob, `csg_keyframe_${Date.now()}.jpg`);
                 formData.append('overwrite', 'true');
                 
-                const uploadResponse = await fetch(`${baseUrl}upload/image`, {
+                const uploadResponse = await fetchWithTimeout(`${baseUrl}upload/image`, {
                     method: 'POST',
                     body: formData,
-                });
+                }, 45000);
                 pushDiagnostic({ profileId, action: 'uploadImage:attempt', uploadFormFields: Array.from((formData as any).keys ? (formData as any).keys() : []), base64Length: base64Image.length });
 
                 if (!uploadResponse.ok) throw new Error(`Failed to upload image to ComfyUI. Status: ${uploadResponse.status}`);
@@ -644,11 +645,11 @@ export const queueComfyUIPrompt = async (
         // --- STEP 3: QUEUE THE PROMPT ---
         const body = JSON.stringify({ prompt: promptPayload, client_id: clientId });
         pushDiagnostic({ profileId, action: 'prompt:posting', bodySnippet: body?.slice ? body.slice(0, 1000) : undefined });
-        const response = await fetch(`${baseUrl}prompt`, {
+        const response = await fetchWithTimeout(`${baseUrl}prompt`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body,
-        });
+        }, 60000);
 
         if (!response.ok) {
             let errorMessage = `ComfyUI server responded with status: ${response.status}`;
@@ -687,6 +688,9 @@ export const queueComfyUIPrompt = async (
     } catch (error) {
         console.error("Error processing ComfyUI request:", error);
         try { pushDiagnostic({ profileId, action: 'error', message: error instanceof Error ? error.message : String(error) }); } catch(e){}
+        if (error instanceof Error && error.name === 'AbortError') {
+            throw new Error('ComfyUI request timed out. The server may be slow or unresponsive.');
+        }
         if (error instanceof TypeError && error.message.includes('fetch')) {
             throw new Error(`Failed to connect to ComfyUI at '${runtimeSettings.comfyUIUrl}'. Please check if the server is running and accessible.`);
         }
@@ -921,10 +925,15 @@ export const generateVideoFromShot = async (
     systemResources?: string;
 }> => {
     
-    const reportProgress = (update: Partial<LocalGenerationStatus>) => {
-        if (onProgress) onProgress(update);
-        console.log(`[Video Generation] ${update.message}`);
-    };
+        const reportProgress = (update: Partial<LocalGenerationStatus>) => {
+            if (onProgress) onProgress(update);
+            console.log(`[Video Generation] ${update.message}`);
+        };
+
+        const getSceneContext = (promptId?: string): string => {
+            const base = `Scene ${shot.id}`;
+            return promptId ? `${base} (prompt ${promptId})` : base;
+        };
 
     const {
         queuePrompt = queueComfyUIPrompt,
@@ -958,12 +967,20 @@ export const generateVideoFromShot = async (
         // Enforce keyframe image requirement if workflow expects it
         const keyframeMappingExists = Object.values(settings.mapping).includes('keyframe_image');
         if (keyframeMappingExists && !keyframeImage) {
-            throw new Error("This workflow requires a keyframe image for video generation, but none was provided. Please ensure a keyframe image is available.");
+            throw new Error(`${getSceneContext()} requires a keyframe image for this workflow but none was provided.`);
         }
 
         // Step 3: Queue prompt in ComfyUI
         reportProgress({ status: 'running', message: 'Queuing prompt in ComfyUI...' });
-        const promptResponse = await queuePrompt(settings, payloads, keyframeImage || '', 'wan-i2v');
+        let promptResponse;
+        try {
+            promptResponse = await queuePrompt(settings, payloads, keyframeImage || '', 'wan-i2v');
+        } catch (queueError) {
+            const message = queueError instanceof Error ? queueError.message : String(queueError);
+            const contextMessage = `${getSceneContext()} failed to queue prompt: ${message}`;
+            reportProgress({ status: 'error', message: contextMessage });
+            throw new Error(contextMessage);
+        }
         const resourceMessage =
             promptResponse && typeof promptResponse === 'object'
                 ? (promptResponse as { systemResources?: string }).systemResources
@@ -978,7 +995,8 @@ export const generateVideoFromShot = async (
         }
 
         if (!promptResponse || !promptResponse.prompt_id) {
-            throw new Error('Failed to queue prompt: No prompt_id returned');
+            const contextMessage = `${getSceneContext()} did not receive a prompt_id after queuing`;
+            throw new Error(contextMessage);
         }
 
         const promptId = promptResponse.prompt_id;
@@ -1007,9 +1025,10 @@ export const generateVideoFromShot = async (
             trackExecution(settings, promptId, wrappedOnProgress);
 
             // Set timeout for safety (max 5 minutes per shot)
-            const timeout = setTimeout(() => {
-                reject(new Error('Video generation timeout (5 minutes exceeded)'));
-            }, 5 * 60 * 1000);
+        const timeout = setTimeout(() => {
+            const message = `${getSceneContext(promptId)} timed out (5 minutes exceeded) while waiting for output`;
+            reject(new Error(message));
+        }, 5 * 60 * 1000);
 
             // Poll for completion (alternative to WebSocket-only tracking)
             const pollInterval = setInterval(async () => {
@@ -1023,32 +1042,35 @@ export const generateVideoFromShot = async (
                         // Calculate duration: 25 frames @ 24fps = ~1.04 seconds
                         const frameDuration = frameSequence.length > 0 ? frameSequence.length / 24 : 1.04;
                         
-                        resolve({
-                            videoPath: outputData.data || `gemdirect1_shot_${shot.id}`,
-                            duration: frameDuration,
-                            filename: outputData.filename || `gemdirect1_shot_${shot.id}.mp4`,
-                            frames: frameSequence.length > 0 ? frameSequence : undefined,
-                            workflowMeta: (promptResponse as any)?.workflowMeta,
-                            queueSnapshot: (promptResponse as any)?.queueSnapshot,
-                            systemResources: resourceMessage,
-                        });
-                    }
-                } catch (e) {
-                    clearInterval(pollInterval);
-                    clearTimeout(timeout);
-                    const errorMessage = e instanceof Error ? e.message : String(e);
-                    reportProgress({ status: 'error', message: `Queue polling failed: ${errorMessage}` });
-                    reject(new Error(errorMessage));
+                    resolve({
+                        videoPath: outputData.data || `gemdirect1_shot_${shot.id}`,
+                        duration: frameDuration,
+                        filename: outputData.filename || `gemdirect1_shot_${shot.id}.mp4`,
+                        frames: frameSequence.length > 0 ? frameSequence : undefined,
+                        workflowMeta: (promptResponse as any)?.workflowMeta,
+                        queueSnapshot: (promptResponse as any)?.queueSnapshot,
+                        systemResources: resourceMessage,
+                    });
                 }
-            }, 2000);
-        });
+            } catch (e) {
+                clearInterval(pollInterval);
+                clearTimeout(timeout);
+                const errorMessage = e instanceof Error ? e.message : String(e);
+                const contextMessage = `${getSceneContext(promptId)} queue polling failed: ${errorMessage}`;
+                reportProgress({ status: 'error', message: contextMessage });
+                reject(new Error(contextMessage));
+            }
+        }, 2000);
+    });
 
     } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const contextMessage = `${getSceneContext()} video generation failed: ${message}`;
         reportProgress({
             status: 'error',
-            message: `Video generation failed: ${error instanceof Error ? error.message : String(error)}`
+            message: contextMessage,
         });
-        throw error;
+        throw new Error(contextMessage);
     }
 };
 
@@ -1056,8 +1078,8 @@ type GenerateVideoFromShotFn = typeof generateVideoFromShot;
 
 
 const SINGLE_FRAME_PROMPT = 'Single cinematic frame, one moment, no collage or multi-panel layout, no UI overlays or speech bubbles, cinematic lighting.';
-const NEGATIVE_GUIDANCE = 'multi-panel, collage, split-screen, storyboard panels, speech bubbles, comic strip, UI overlays, repeated scenes, duplicated subjects, interface elements, textual callouts, multiple narratives in same frame';
-const extendNegativePrompt = (base: string): string => (base && base.trim().length > 0 ? `${base}, ${NEGATIVE_GUIDANCE}` : NEGATIVE_GUIDANCE);
+export const NEGATIVE_GUIDANCE = 'multi-panel, collage, split-screen, storyboard panels, speech bubbles, comic strip, UI overlays, repeated scenes, duplicated subjects, interface elements, textual callouts, multiple narratives in same frame';
+export const extendNegativePrompt = (base: string): string => (base && base.trim().length > 0 ? `${base}, ${NEGATIVE_GUIDANCE}` : NEGATIVE_GUIDANCE);
 
 /**
  * Builds a human-readable prompt for a shot with creative enhancers.
@@ -1380,7 +1402,7 @@ export const generateShotImageLocally = async (
         json: JSON.stringify({ shot_id: shot.id, scene_summary: sceneSummary }),
         text: shotPrompt,
         structured: [],
-        negativePrompt: getDefaultNegativePromptForModel(resolveModelIdFromSettings(settings), 'shotImage'),
+        negativePrompt: extendNegativePrompt(getDefaultNegativePromptForModel(resolveModelIdFromSettings(settings), 'shotImage')),
     };
 
     const response = await queueComfyUIPrompt(settings, payloads, '', 'wan-t2i');
@@ -1398,3 +1420,5 @@ export const generateShotImageLocally = async (
 
     return stripDataUrlPrefix(finalOutput.data);
 };
+
+

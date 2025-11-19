@@ -1,0 +1,88 @@
+2025-11-18T22:11:27.965Z [INFO] INFO: Found CLIPTextEncode.text node
+2025-11-18T22:11:27.965Z [INFO] INFO: Found LoadImage.image node
+2025-11-18T22:11:27.965Z [INFO] INFO: Text mapping present
+2025-11-18T22:11:27.965Z [INFO] INFO: Keyframe mapping present
+2025-11-18T22:11:27.966Z [INFO] INFO: Mapping preflight summary:
+{
+  "helper": "MappingPreflight",
+  "timestamp": "2025-11-18T22:11:27.965Z",
+  "projectPath": "C:\\Dev\\gemDirect1",
+  "settingsPath": "C:\\Dev\\gemDirect1\\localGenSettings.json",
+  "workflows": {
+    "hasWanT2I": true,
+    "hasWanI2V": true
+  },
+  "mappings": {
+    "wanT2I": {
+      "clipText": true,
+      "keyframeImageRequired": false,
+      "clipNodePresent": true,
+      "inferredClipNode": null
+    },
+    "wanI2V": {
+      "clipText": true,
+      "loadImage": true,
+      "keyframeImageRequired": true,
+      "clipNodePresent": true,
+      "loadNodePresent": true,
+      "inferredClipNode": null,
+      "inferredLoadNode": null
+    }
+  },
+  "missingWanI2VRequirements": [],
+  "warnings": [],
+  "logEntries": [
+    {
+      "level": "INFO",
+      "message": "Found CLIPTextEncode.text node",
+      "timestamp": "2025-11-18T22:11:27.965Z"
+    },
+    {
+      "level": "INFO",
+      "message": "Found LoadImage.image node",
+      "timestamp": "2025-11-18T22:11:27.965Z"
+    },
+    {
+      "level": "INFO",
+      "message": "Text mapping present",
+      "timestamp": "2025-11-18T22:11:27.965Z"
+    },
+    {
+      "level": "INFO",
+      "message": "Keyframe mapping present",
+      "timestamp": "2025-11-18T22:11:27.965Z"
+    }
+  ],
+  "logPath": null
+}
+[StoryGenerator] Story assets created
+  Γ₧£ Output directory: C:\Dev\gemDirect1\logs\20251118-171128\story
+  Γ₧£ Story ID: story-d3623bfd-9c53-470f-a118-51159ec9c335
+  Γ₧£ Scenes: 3
+  Γ₧£ LLM: status=skipped | format=direct-json
+    - scene-001: Signal in the Mist (C:\Dev\gemDirect1\logs\20251118-171128\story\keyframes\scene-001.png)
+    - scene-002: Archive Heartbeat (C:\Dev\gemDirect1\logs\20251118-171128\story\keyframes\scene-002.png)
+    - scene-003: Rainlight Market (C:\Dev\gemDirect1\logs\20251118-171128\story\keyframes\scene-003.png)
+[wan2] RunDir=C:\Dev\gemDirect1\logs\20251118-171128 ComfyUrl=http://127.0.0.1:8188
+[wan2] PollIntervalSeconds=1s MaxWaitSeconds=30s
+[31;1mAdd-RunSummaryLine: [0mC:\Dev\gemDirect1\scripts\generate-scene-videos-wan2.ps1:17:1[0m
+[31;1m[0m[36;1mLine |[0m
+[31;1m[0m[36;1m[36;1m  17 | [0m [36;1mAdd-RunSummaryLine[0m "[Video] Wan2 queue knobs: PollIntervalSeconds=${P .[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m ~~~~~~~~~~~~~~~~~~[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mThe term 'Add-RunSummaryLine' is not recognized as a name of a cmdlet, function, script file, or[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mexecutable program. Check the spelling of the name, or if a path was included, verify that the path is[0m
+[31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m[31;1m[36;1m[31;1m[36;1m     | [31;1mcorrect and try again.[0m
+Using wan-i2v workflow from localGenSettings.json
+[scene-001] Uploaded keyframe as gemdirect1_scene-001_00576_.png
+[scene-001] Updated SaveVideo node: format=auto codec=auto prefix=C:\Dev\gemDirect1\logs\20251118-171128\video\scene-001\scene-001
+[33;1mWARNING: [scene-001] Failed to queue prompt: Cannot bind parameter 'Date'. Cannot convert value "-" to type "System.DateTime". Error: "String '-' was not recognized as a valid DateTime."[0m
+Using wan-i2v workflow from localGenSettings.json
+[scene-002] Uploaded keyframe as gemdirect1_scene-002_00876_.png
+[scene-002] Updated SaveVideo node: format=auto codec=auto prefix=C:\Dev\gemDirect1\logs\20251118-171128\video\scene-002\scene-002
+[33;1mWARNING: [scene-002] Failed to queue prompt: Cannot bind parameter 'Date'. Cannot convert value "-" to type "System.DateTime". Error: "String '-' was not recognized as a valid DateTime."[0m
+Using wan-i2v workflow from localGenSettings.json
+[scene-003] Uploaded keyframe as gemdirect1_scene-003_00826_.png
+[scene-003] Updated SaveVideo node: format=auto codec=auto prefix=C:\Dev\gemDirect1\logs\20251118-171128\video\scene-003\scene-003
+[33;1mWARNING: [scene-003] Failed to queue prompt: Cannot bind parameter 'Date'. Cannot convert value "-" to type "System.DateTime". Error: "String '-' was not recognized as a valid DateTime."[0m
+Updated scene video metadata in C:\Dev\gemDirect1\logs\20251118-171128\artifact-metadata.json
+run-summary validation: PASS

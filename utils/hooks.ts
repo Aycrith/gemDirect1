@@ -566,6 +566,16 @@ export interface ArtifactMetadata {
     };
     VitestSummary?: VitestSummaryMetadata;
     Archive: string;
+    HelperSummaries?: {
+        MappingPreflight?: {
+            Summary?: string;
+            Log?: string;
+        };
+        ComfyUIStatus?: {
+            Summary?: string;
+            Log?: string;
+        };
+    };
 }
 
 export interface ArtifactMetadataState {

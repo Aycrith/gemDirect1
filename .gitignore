@@ -23,6 +23,7 @@ idea
 *.sln
 *.sw?
 artifacts/
+!artifacts/playwright-report.zip
 public/artifacts/latest-run.json
 
 ### Local test artifacts and generated outputs (ignored to keep repo clean)

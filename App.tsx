@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react';
 import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationStatus, SceneContinuityData } from './types';
 import { useProjectData, usePersistentState, useSceneGenerationWatcher } from './utils/hooks';
 import { ApiStatusProvider, useApiStatus } from './contexts/ApiStatusContext';
@@ -10,32 +10,47 @@ import { MediaGenerationProviderProvider } from './contexts/MediaGenerationProvi
 import { LocalGenerationSettingsProvider, useLocalGenerationSettings } from './contexts/LocalGenerationSettingsContext';
 import { PipelineProvider } from './contexts/PipelineContext';
 import { createMediaGenerationActions, LOCAL_COMFY_ID } from './services/mediaGenerationService';
-import PipelineGenerator from './components/PipelineGenerator';
 
+// P0 Optimization: Code splitting for heavy components
+// Target: Reduce initial bundle, improve -1.5s cold start
+// These components are lazy-loaded only when needed
+const TimelineEditor = lazy(() => import('./components/TimelineEditor'));
+const LocalGenerationSettingsModal = lazy(() => import('./components/LocalGenerationSettingsModal'));
+const UsageDashboard = lazy(() => import('./components/UsageDashboard'));
+const ContinuityDirector = lazy(() => import('./components/ContinuityDirector'));
+const ContinuityModal = lazy(() => import('./components/ContinuityModal'));
+const VisualBiblePanel = lazy(() => import('./components/VisualBiblePanel'));
+const ArtifactViewer = lazy(() => import('./components/ArtifactViewer'));
+
+// Eager imports for critical path components
 import StoryIdeaForm from './components/StoryIdeaForm';
 import StoryBibleEditor from './components/StoryBibleEditor';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import SceneNavigator from './components/SceneNavigator';
-import TimelineEditor from './components/TimelineEditor';
 import WorkflowTracker from './components/WorkflowTracker';
-import ArtifactViewer from './components/ArtifactViewer';
 import Toast from './components/Toast';
 import ApiStatusIndicator from './components/ApiStatusIndicator';
-import UsageDashboard from './components/UsageDashboard';
 import BarChartIcon from './components/icons/BarChartIcon';
 import SettingsIcon from './components/icons/SettingsIcon';
-import LocalGenerationSettingsModal from './components/LocalGenerationSettingsModal';
-import ContinuityDirector from './components/ContinuityDirector';
-import ContinuityModal from './components/ContinuityModal';
 import SparklesIcon from './components/icons/SparklesIcon';
 import SaveIcon from './components/icons/SaveIcon';
 import UploadCloudIcon from './components/icons/UploadCloudIcon';
 import ProgressBar from './components/ProgressBar';
 import WelcomeGuideModal from './components/WelcomeGuideModal';
-import ComfyUICallbackProvider from './components/ComfyUICallbackProvider';
-import VisualBiblePanel from './components/VisualBiblePanel';
+import ComfyUICallbackProvider from './components/ComfyUICallbackProvider.clean';
 import ConfirmationModal from './components/ConfirmationModal';
+import PipelineGenerator from './components/PipelineGenerator';
 import { clearProjectData } from './utils/database';
+
+// Loading fallback component
+const LoadingFallback: React.FC<{ message?: string }> = ({ message = 'Loading...' }) => (
+  <div className="flex items-center justify-center p-8">
+    <div className="flex flex-col items-center gap-3">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500"></div>
+      <p className="text-sm text-neutral-400">{message}</p>
+    </div>
+  </div>
+);
 
 const AppContent: React.FC = () => {
     const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0, task: '' });
@@ -71,7 +86,9 @@ const AppContent: React.FC = () => {
     const { logApiCall } = useUsage();
     const planActions = usePlanExpansionActions();
 
-    const shouldShowWelcome = !hasSeenWelcome && !storyBible;
+    // Skip welcome dialog in Playwright test environment
+    const isPlaywrightTest = import.meta.env.VITE_PLAYWRIGHT_SKIP_WELCOME === 'true';
+    const shouldShowWelcome = !isPlaywrightTest && !hasSeenWelcome && !storyBible;
 
     // Effect for the interactive background gradient
     useEffect(() => {
@@ -290,49 +307,57 @@ const AppContent: React.FC = () => {
                             <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} scenesToReview={scenesToReview} sceneStatuses={sceneStatuses} />
                         </div>
                         <div className="lg:col-span-3">
-                            {activeScene ? <TimelineEditor 
-                                key={activeScene.id} 
-                                scene={activeScene} 
-                                onUpdateScene={(updatedScene) => {
-                                    const newScenes = scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
-                                    setScenes(newScenes);
-                                }} 
-                                directorsVision={directorsVision} 
-                                storyBible={storyBible!} 
-                                onApiStateChange={updateApiStatus} 
-                                onApiLog={logApiCall} 
-                                scenes={scenes}
-                                onApplySuggestion={handleApplySuggestion}
-                                generatedImages={generatedImages}
-                                generatedShotImages={generatedShotImages}
-                                setGeneratedShotImages={setGeneratedShotImages}
-                                onSceneKeyframeGenerated={handleSceneKeyframeGenerated}
-                                localGenSettings={localGenSettings}
-                                localGenStatus={localGenStatus}
-                                setLocalGenStatus={setLocalGenStatus}
-                                isRefined={refinedSceneIds.has(activeScene.id)}
-                                onUpdateSceneSummary={handleUpdateSceneSummary}
-                            /> : <p>Select a scene</p>}
+                            {activeScene ? (
+                                <Suspense fallback={<LoadingFallback message="Loading timeline editor..." />}>
+                                    <TimelineEditor 
+                                        key={activeScene.id} 
+                                        scene={activeScene} 
+                                        onUpdateScene={(updatedScene) => {
+                                            const newScenes = scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
+                                            setScenes(newScenes);
+                                        }} 
+                                        directorsVision={directorsVision} 
+                                        storyBible={storyBible!} 
+                                        onApiStateChange={updateApiStatus} 
+                                        onApiLog={logApiCall} 
+                                        scenes={scenes}
+                                        onApplySuggestion={handleApplySuggestion}
+                                        generatedImages={generatedImages}
+                                        generatedShotImages={generatedShotImages}
+                                        setGeneratedShotImages={setGeneratedShotImages}
+                                        onSceneKeyframeGenerated={handleSceneKeyframeGenerated}
+                                        localGenSettings={localGenSettings}
+                                        localGenStatus={localGenStatus}
+                                        setLocalGenStatus={setLocalGenStatus}
+                                        isRefined={refinedSceneIds.has(activeScene.id)}
+                                        onUpdateSceneSummary={handleUpdateSceneSummary}
+                                    />
+                                </Suspense>
+                            ) : <p>Select a scene</p>}
                         </div>
                     </div>
                 );
             case 'continuity':
-                return <ContinuityDirector 
-                    scenes={scenes}
-                    storyBible={storyBible!}
-                    directorsVision={directorsVision}
-                    generatedImages={generatedImages}
-                    continuityData={continuityData}
-                    setContinuityData={setContinuityData}
-                    addToast={addToast}
-                    onApiStateChange={updateApiStatus}
-                    onApiLog={logApiCall}
-                    onApplySuggestion={handleApplySuggestion}
-                    refinedSceneIds={refinedSceneIds}
-                    onUpdateSceneSummary={handleUpdateSceneSummary}
-                    onExtendTimeline={handleExtendTimeline}
-                    onRerunScene={handleRerunScene}
-                />;
+                return (
+                    <Suspense fallback={<LoadingFallback message="Loading continuity director..." />}>
+                        <ContinuityDirector 
+                            scenes={scenes}
+                            storyBible={storyBible!}
+                            directorsVision={directorsVision}
+                            generatedImages={generatedImages}
+                            continuityData={continuityData}
+                            setContinuityData={setContinuityData}
+                            addToast={addToast}
+                            onApiStateChange={updateApiStatus}
+                            onApiLog={logApiCall}
+                            onApplySuggestion={handleApplySuggestion}
+                            refinedSceneIds={refinedSceneIds}
+                            onUpdateSceneSummary={handleUpdateSceneSummary}
+                            onExtendTimeline={handleExtendTimeline}
+                            onRerunScene={handleRerunScene}
+                        />
+                    </Suspense>
+                );
             default:
                 return <p>Welcome! Please start with an idea.</p>;
         }
@@ -427,7 +452,9 @@ const AppContent: React.FC = () => {
                                     });
                                 }} />
                             </section>
-                            <ArtifactViewer addToast={addToast} />
+                            <Suspense fallback={<LoadingFallback message="Loading artifacts..." />}>
+                                <ArtifactViewer addToast={addToast} />
+                            </Suspense>
                         </>
                     ) : (
                         <>
@@ -452,7 +479,9 @@ const AppContent: React.FC = () => {
                                 </section>
                             )}
                             <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
-                            <ArtifactViewer addToast={addToast} />
+                            <Suspense fallback={<LoadingFallback message="Loading artifacts..." />}>
+                                <ArtifactViewer addToast={addToast} />
+                            </Suspense>
                             {generationProgress.total > 0 && (
                                 <ProgressBar
                                     current={generationProgress.current}
@@ -468,8 +497,11 @@ const AppContent: React.FC = () => {
 
             <Toast toasts={toasts} removeToast={removeToast} />
             <ApiStatusIndicator />
-            <UsageDashboard isOpen={isUsageDashboardOpen} onClose={() => setIsUsageDashboardOpen(false)} />
-            <LocalGenerationSettingsModal 
+            <Suspense fallback={null}>
+                <UsageDashboard isOpen={isUsageDashboardOpen} onClose={() => setIsUsageDashboardOpen(false)} />
+            </Suspense>
+            <Suspense fallback={null}>
+                <LocalGenerationSettingsModal 
                 isOpen={isSettingsModalOpen}
                 onClose={() => setIsSettingsModalOpen(false)}
                 settings={localGenSettings}
@@ -482,9 +514,11 @@ const AppContent: React.FC = () => {
                 }}
                 addToast={addToast}
             />
+            </Suspense>
             {continuityModal && (
-                <ContinuityModal
-                    isOpen={true}
+                <Suspense fallback={null}>
+                    <ContinuityModal
+                        isOpen={true}
                     onClose={() => setContinuityModal(null)}
                     onSubmit={async (direction) => {
                         if (!continuityModal) return;
@@ -527,6 +561,7 @@ const AppContent: React.FC = () => {
                     lastFrame={continuityModal.lastFrame}
                     isLoading={isExtending}
                 />
+                </Suspense>
             )}
             {shouldShowWelcome && (
                 <WelcomeGuideModal 
@@ -534,10 +569,12 @@ const AppContent: React.FC = () => {
                 />
             )}
             {mode === 'director' && (
-                <VisualBiblePanel
-                    isOpen={isVisualBibleOpen}
-                    onClose={() => setIsVisualBibleOpen(false)}
-                />
+                <Suspense fallback={null}>
+                    <VisualBiblePanel
+                        isOpen={isVisualBibleOpen}
+                        onClose={() => setIsVisualBibleOpen(false)}
+                    />
+                </Suspense>
             )}
             <ConfirmationModal
                 isOpen={isNewProjectConfirmOpen}

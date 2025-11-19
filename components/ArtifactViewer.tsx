@@ -1,21 +1,13 @@
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useArtifactMetadata, type ArtifactMetadata, type ArtifactSceneMetadata, type StoryLLMMetadata, useRunHistory } from '../utils/hooks';
 import TelemetryBadges from './TelemetryBadges';
 import QueuePolicyCard from './QueuePolicyCard';
 import FallbackWarningsCard from './FallbackWarningsCard';
 import HistoricalTelemetryCard from './HistoricalTelemetryCard';
 import TelemetryComparisonChart from './TelemetryComparisonChart';
-// TODO: Telemetry/Export features not yet implemented
-// import TelemetryFilterPanel from './TelemetryFilterPanel';
-// import ExportDialog from './ExportDialog';
-// import { RecommendationEngine, type TelemetrySnapshot, type Recommendation } from '../services/recommendationEngine';
-// import ScenePlayer from './ScenePlayer';
-// import { getSceneVideoManager } from '../services/videoGenerationService';
+import { RecommendationEngine, type TelemetrySnapshot, type Recommendation } from '../services/recommendationEngine';
+import { getSceneVideoManager } from '../services/videoGenerationService';
 import type { ToastMessage } from '../types';
-
-// Temporary stub types until recommendationEngine is implemented
-type TelemetrySnapshot = any;
-type Recommendation = any;
 
 type ArtifactScene = ArtifactSceneMetadata;
 
@@ -116,6 +108,16 @@ const buildTelemetrySummary = (scene: ArtifactScene): string[] => {
         }
     }
     return summary;
+};
+
+const toFileUri = (filePath?: string): string | undefined => {
+    if (!filePath) return undefined;
+    if (filePath.startsWith('file://')) return filePath;
+    const trimmed = filePath.replace(/^\/+/, '');
+    if (/^[a-zA-Z]:/.test(trimmed)) {
+        return `file:///${trimmed}`;
+    }
+    return `file:///${trimmed}`;
 };
 
 interface ArtifactViewerProps {
@@ -232,6 +234,13 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
         queuePolicy && queuePolicy.HistoryMaxAttempts && queuePolicy.HistoryMaxAttempts > 0
             ? queuePolicy.HistoryMaxAttempts
             : 'unbounded';
+    const helperSummaries = artifact.HelperSummaries;
+    const mappingHelper = helperSummaries?.MappingPreflight;
+    const comfyHelper = helperSummaries?.ComfyUIStatus;
+    const mappingSummaryHref = mappingHelper?.Summary ? toFileUri(mappingHelper.Summary) : undefined;
+    const mappingLogHref = mappingHelper?.Log ? toFileUri(mappingHelper.Log) : undefined;
+    const comfySummaryHref = comfyHelper?.Summary ? toFileUri(comfyHelper.Summary) : undefined;
+    const comfyLogHref = comfyHelper?.Log ? toFileUri(comfyHelper.Log) : undefined;
 
     return (
         <section className="mt-6 bg-gray-900 border border-emerald-500/20 rounded-2xl p-5 shadow-xl shadow-emerald-900/10 text-sm text-gray-200 space-y-4">
@@ -413,6 +422,55 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                     {artifact.Story.StoryDir && (
                         <div className="text-[11px] text-gray-500">Story dir: {artifact.Story.StoryDir}</div>
                     )}
+                    {(mappingSummaryHref || mappingLogHref || comfySummaryHref || comfyLogHref) && (
+                        <div className="space-y-1 text-[11px] text-emerald-200">
+                            <div className="text-emerald-300 font-semibold">Helper summaries & logs</div>
+                            {mappingSummaryHref && (
+                                <a
+                                    className="block truncate max-w-[20vw] text-emerald-200 underline hover:text-emerald-100"
+                                    href={mappingSummaryHref}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={mappingHelper?.Summary}
+                                >
+                                    Mapping preflight summary
+                                </a>
+                            )}
+                            {mappingLogHref && (
+                                <a
+                                    className="block truncate max-w-[20vw] text-emerald-200 underline hover:text-emerald-100"
+                                    href={mappingLogHref}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={mappingHelper?.Log}
+                                >
+                                    Mapping preflight log
+                                </a>
+                            )}
+                            {comfySummaryHref && (
+                                <a
+                                    className="block truncate max-w-[20vw] text-emerald-200 underline hover:text-emerald-100"
+                                    href={comfySummaryHref}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={comfyHelper?.Summary}
+                                >
+                                    ComfyUI status summary
+                                </a>
+                            )}
+                            {comfyLogHref && (
+                                <a
+                                    className="block truncate max-w-[20vw] text-emerald-200 underline hover:text-emerald-100"
+                                    href={comfyLogHref}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={comfyHelper?.Log}
+                                >
+                                    ComfyUI status log
+                                </a>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -439,6 +497,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                             const lastPollStatus =
                                 pollLogCount > 0 ? scene.HistoryPollLog?.[pollLogCount - 1]?.Status ?? 'n/a' : 'n/a';
                             const fallbackNotes = scene.Telemetry?.System?.FallbackNotes?.filter(Boolean) ?? [];
+                            const videoHref = toFileUri(scene.Video?.Path);
                             return (
                                 <tr key={scene.SceneId} className="border-t border-gray-800">
                                     <td className="px-2 py-1 text-sm text-gray-100">
@@ -479,14 +538,17 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                                             <div className="text-[11px] text-gray-500">{scene.HistoryAttempts} poll attempts</div>
                                         )}
                                     </td>
-                                    <td className="px-2 py-1 text-xs text-gray-300 space-y-1">
-                                        {telemetrySummary.length > 0 ? (
-                                            telemetrySummary.map((line, index) => (
-                                                <div key={`${scene.SceneId}-telemetry-${index}`}>{line}</div>
-                                            ))
-                                        ) : (
-                                            <div className="text-gray-500">n/a</div>
-                                        )}
+                                    <td className="px-2 py-1 text-xs text-gray-300 space-y-2">
+                                        <TelemetryBadges telemetry={scene.Telemetry} title="Scene Telemetry" />
+                                        <div className="space-y-1">
+                                            {telemetrySummary.length > 0 ? (
+                                                telemetrySummary.map((line, index) => (
+                                                    <div key={`${scene.SceneId}-telemetry-${index}`}>{line}</div>
+                                                ))
+                                            ) : (
+                                                <div className="text-gray-500">n/a</div>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-2 py-1 text-xs space-y-1">
                                         {!scene.Success && <div className="text-red-400">Scene failed</div>}
@@ -508,7 +570,36 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                                         ))}
                                         {scene.Errors?.map((err) => (
                                             <div key={err} className="text-red-400">{err}</div>
-                                        ))}
+                                        ))} 
+                                        {scene.Video && (
+                                            <div className="space-y-0.5 text-[11px] text-cyan-200 mt-1">
+                                                {scene.Video.Path && videoHref && (
+                                                    <a
+                                                        className="block truncate max-w-[20vw] underline hover:text-emerald-100"
+                                                        href={videoHref}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        title={scene.Video.Path}
+                                                    >
+                                                        {scene.Video.Path}
+                                                    </a>
+                                                )}
+                                                {typeof scene.Video.DurationSeconds === 'number' && (
+                                                    <div className="text-gray-300">Duration: {scene.Video.DurationSeconds}s</div>
+                                                )}
+                                                {scene.Video.Status && (
+                                                    <div className="text-gray-400">Video status: {scene.Video.Status}</div>
+                                                )}
+                                                {scene.Video.UpdatedAt && (
+                                                    <div className="text-gray-400">
+                                                        Updated {new Date(scene.Video.UpdatedAt).toLocaleString()}
+                                                    </div>
+                                                )}
+                                                {scene.Video.Error && (
+                                                    <div className="text-yellow-200">Video error: {scene.Video.Error}</div>
+                                                )}
+                                            </div>
+                                        )}
                                     </td>
                                 </tr>
                             );

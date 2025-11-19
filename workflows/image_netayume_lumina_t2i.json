@@ -1,0 +1,25 @@
+{
+  "prompt": {
+    "positive_clip": {
+      "class_type": "CLIPTextEncode",
+      "inputs": { "text": "" },
+      "_meta": { "title": "CLIPTextEncode - Positive Prompt Layer" }
+    },
+    "negative_clip": {
+      "class_type": "CLIPTextEncode",
+      "inputs": { "text": "" },
+      "_meta": { "title": "CLIPTextEncode - Negative Prompt Layer" }
+    },
+    "metadata_writer": {
+      "class_type": "Note",
+      "inputs": { "text": "" },
+      "_meta": { "title": "Metadata Writer" }
+    },
+    "image_saver": {
+      "class_type": "SaveImage",
+      "inputs": { "images": ["positive_clip", 0] },
+      "_meta": { "title": "Save Image" }
+    }
+  }
+}
+

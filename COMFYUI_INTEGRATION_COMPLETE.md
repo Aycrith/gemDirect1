@@ -44,6 +44,10 @@ gemDirect1 Timeline Editor
    - Video output parameters
    - Quality presets
 
+### Preflight Mapping & Telemetry Handshake
++- Run `node scripts/preflight-mappings.ts --project ./exported-project.json --summary-dir test-results/comfyui-status` before queuing scenes so the helper validates the wan-t2i/wan-i2v mapping contract, infers missing inline nodes, writes a normalized `mapping-preflight.json` plus a `unit` mirror, and exits code `3` if the required CLIP+LoadImage wiring is missing for the video workflow. The run script now records that summary path inside `HelperSummaries.MappingPreflight`.
+- Mirror the same telemetry via `node scripts/comfyui-status.ts --project ./exported-project.json --summary-dir test-results/comfyui-status --log-path test-results/comfyui-status/comfyui-status.log` to capture VRAM/queue data, mapping status, and workflow availability for the UI telemetry cards, Artifact Snapshot badge, and QA artifacts. The helper writes both a JSON summary and verbose log, and `HelperSummaries.ComfyUIStatus` exposes those paths (plus the earlier mapping preflight summary) so downstream automation, the Artifact Snapshot UI, and Playwright tests can reopen the exact telemetry the UI links to.
+
 ---
 
 ## Part 2: Workflow Architecture
@@ -306,6 +310,10 @@ Complete SVD workflow blueprint with all nodes pre-configured.
 - [ ] Add support for custom models
 - [ ] Set up auto-retry logic for failed generations
 
+### WAN Video Automation & Metadata
+- Step 11b: Invoke `scripts/generate-scene-videos-wan2.ps1 -RunDir logs/<ts> -ComfyUrl http://127.0.0.1:8188 -MaxWaitSeconds <n> -PollIntervalSeconds <s>` so each `scene_*`/`scene-*` folder uploads its first keyframe, injects it into the first `LoadImage`, forces the first `SaveVideo` node to mp4/libx264, and polls for `logs/<ts>/video/<sceneId>/<sceneId>.mp4` while emitting `[Scene ...] Wan2` telemetry lines into `run-summary.txt`.
+- Step 11c: Run `scripts/update-scene-video-metadata.ps1 -RunDir logs/<ts> -VideoSubDir video` to append forward-slash `Video.Path` entries (plus optional `DurationSeconds`, `Status`, `UpdatedAt`, and `Error`) into `artifact-metadata.json` so the Artifact Snapshot and Timeline UI can surface each MP4.
+
 ---
 
 ## Part 7: Quick Start
@@ -448,3 +456,12 @@ const results = await generateTimelineVideos(
 ---
 
 **Status**: Ready for UI Integration 🚀
+Guardrails (2025-11)
+- Keyframes and per-shot prompts include a single-frame instruction to discourage storyboard/collage outputs.
+- Negative prompts are extended with multi‑panel avoidance. See `SINGLE_FRAME_PROMPT`, `NEGATIVE_GUIDANCE`, and `extendNegativePrompt()` in `services/comfyUIService.ts`.
+
+WAN profiles and mappings
+- wan-t2i (keyframes): requires CLIP text mapping; `keyframe_image` is not required.
+- wan-i2v (video): requires CLIP + `LoadImage` and a `keyframe_image` mapping.
+- Validation logic is centralized in `validateWorkflowAndMappings()`.
+- Per-scene WAN 5B videos are uploaded via `scripts/generate-scene-videos-wan2.ps1` (HttpClient + multipart upload + `LoadImage` injection) and cataloged by `scripts/update-scene-video-metadata.ps1` (forward-slash paths, scene IDs, durations). The CLI run script still calls them as Step 11b/11c so Artifact Snapshots, `run-summary.txt`, and `artifact-metadata.json` stay in sync with the same telemetry that the helper exports.

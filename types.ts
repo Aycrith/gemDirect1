@@ -6,6 +6,7 @@ export interface Shot {
   description: string;
   purpose?: string;
   arcId?: string;
+  arcName?: string;
   heroMoment?: boolean;
 }
 

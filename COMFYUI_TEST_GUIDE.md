@@ -91,6 +91,10 @@ After connection, the pre-flight check should display:
    - ✅ Workflow Validity
    - ✅ Mapping Consistency
 
+- CLI: run `node scripts/preflight-mappings.ts --project ./exported-project.json --summary-dir test-results/comfyui-status` before queuing scenes; the helper fails with exit code 3 whenever wan-i2v mappings are missing so the run can abort early and writes `mapping-preflight.json` (plus a `unit` mirror). The E2E driver captures this path as `HelperSummaries.MappingPreflight` so the Artifact Snapshot and Playwright QA cards can link to the same JSON telemetry.
+- CLI: run `node scripts/comfyui-status.ts --project ./exported-project.json --summary-dir test-results/comfyui-status --log-path test-results/comfyui-status/comfyui-status.log` so the helper probes `/system_stats` and `/queue`, records the QueueConfig/HistoryConfig knobs, and exposes `HelperSummaries.ComfyUIStatus` for UI/testing consumption.
+- Helper output consistency: the helper writes both the summary JSON and the verbose log into `test-results/comfyui-status/`, and the same paths are reflected in `HelperSummaries.MappingPreflight` / `HelperSummaries.ComfyUIStatus` inside `artifact-metadata.json` and `public/artifacts/latest-run.json`, guaranteeing Playwright attachments, the Artifact Snapshot UI, and validator checks all reference the identical telemetry names/values.
+
 ### Step 7: Save Settings
 1. Click **"Save"** button
 2. Settings are persisted to localStorage
@@ -135,8 +139,14 @@ After connection, the pre-flight check should display:
    - Progress updates appear:
      - "Queued... Position: X"
      - "Executing: [Node Name]"
-     - Progress bar: 0% → 100%
+   - Progress bar: 0% → 100%
    - Final output displayed (image or video)
+
+### Guardrail Validation
+- Confirm the generated helper prompt begins with the single-frame instruction and that the helper log/diagnostic includes the NEGATIVE_GUIDANCE clause (the guardrail test suite asserts these strings). This ensures the model stays centered on one cinematic still per shot.
+
+### WAN Video Script Smoke Check
+- Run `scripts/generate-scene-videos-wan2.ps1 -RunDir logs/<ts> -MaxWaitSeconds 600 -PollIntervalSeconds 5` (or adjust the knobs) to reproduce Step 11b outside the main helper: the script uploads the keyframe via `.NET HttpClient`, injects it into the first `LoadImage` node, forces the first `SaveVideo` node to mp4/libx264 with a deterministic `logs/<ts>/video/<sceneId>/<sceneId>` prefix, queues `video_wan2_2_5B_ti2v.json`, and polls for the MP4 while appending `[Scene ...] Wan2 ...` telemetry entries to `run-summary.txt`. Follow it with `scripts/update-scene-video-metadata.ps1 -RunDir logs/<ts> -VideoSubDir video` to ensure `artifact-metadata.json` captures forward-slash `Video.Path` records, optional durations (via `ffprobe` when installed), status/updatedAt timestamps, and error details for each scene so the validator and Artifact Snapshot can rely on them.
 
 ### Test 5: Verify in ComfyUI
 While generation is running:
@@ -255,7 +265,7 @@ Node 10: LoadImage - image                   → Keyframe Image
 
 ### In ComfyUI (http://127.0.0.1:8000)
 1. **Workflow**:
-   - Text inputs show injected prompts (from gemDirect1)
+   - Text inputs show injected prompts (from gemDirect1) with single-frame guidance in keyframe prompts
    - LoadImage shows uploaded keyframe (if mapped)
 
 2. **Queue Panel**:
@@ -293,3 +303,6 @@ Look for:
 - Mirror the helper's `LOCAL_*` env vars via `VITE_LOCAL_*` so the React UI, Playwright suites, and LM Studio integration all observe the same endpoint, seed, and timeout settings; any drift will show up as mismatched helper metadata in the archived summaries.
 
 **Note**: The app has been updated to prioritize port 8000 in auto-discovery, so it should find your ComfyUI Desktop instance immediately!
+Guardrails
+- Prompts include a single-frame instruction; verify generated keyframes are single-moment (no collage/panels).
+- Negative prompts include multi‑panel avoidance terms (e.g., collage, storyboard, split‑screen).

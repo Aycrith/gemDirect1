@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -8,6 +8,23 @@ import { runValidation } from '../../scripts/validate-run-summary.js';
 const projectRoot = path.resolve(__dirname, '..', '..');
 const validatorScript = path.resolve(projectRoot, 'scripts', 'validate-run-summary.ps1');
 const tempDirs: string[] = [];
+
+const createHelperFiles = (runDir: string) => {
+    const testResultsDir = path.join(runDir, 'test-results');
+    mkdirSync(testResultsDir, { recursive: true });
+    writeFileSync(
+        path.join(testResultsDir, 'mapping-preflight.json'),
+        JSON.stringify({ helper: 'MappingPreflight', timestamp: new Date().toISOString() }, null, 2),
+        'utf8',
+    );
+    writeFileSync(path.join(testResultsDir, 'mapping-preflight.log'), '[INFO] Mapping preflight complete', 'utf8');
+    writeFileSync(
+        path.join(testResultsDir, 'comfyui-status.json'),
+        JSON.stringify({ helper: 'ComfyUIStatus', timestamp: new Date().toISOString() }, null, 2),
+        'utf8',
+    );
+    writeFileSync(path.join(testResultsDir, 'comfyui-status.log'), '[INFO] ComfyUI status complete', 'utf8');
+};
 
 const createRunSummary = (includeTelemetryLine: boolean, pollLimitValue = 'unbounded', fallbackNotes: string[] = []) => {
     const fallbackDescriptor = fallbackNotes.length > 0 ? fallbackNotes[0] : null;
@@ -105,6 +122,13 @@ const createArtifactMetadata = (includeTelemetry = true, fallbackNotes: string[]
                 KeyframeSource: 'keyframe.png',
                 Telemetry: telemetry,
                 SceneRetryBudget: 1,
+                Video: {
+                    Path: 'video/scene-001/output.mp4',
+                    DurationSeconds: 10.0,
+                    Status: 'complete',
+                    UpdatedAt: new Date().toISOString(),
+                    Error: null,
+                },
             },
         ],
         QueueConfig: {
@@ -113,6 +137,16 @@ const createArtifactMetadata = (includeTelemetry = true, fallbackNotes: string[]
             HistoryPollIntervalSeconds: 2,
             HistoryMaxAttempts: 0,
             PostExecutionTimeoutSeconds: 30,
+        },
+        HelperSummaries: {
+            MappingPreflight: {
+                Summary: 'test-results/mapping-preflight.json',
+                Log: 'test-results/mapping-preflight.log',
+            },
+            ComfyUIStatus: {
+                Summary: 'test-results/comfyui-status.json',
+                Log: 'test-results/comfyui-status.log',
+            },
         },
         LLMHealthInfo: {
             Url: null,
@@ -161,6 +195,7 @@ describe('validate-run-summary.ps1', () => {
             JSON.stringify(createArtifactMetadata(true), null, 2),
             'utf8',
         );
+        createHelperFiles(runDir);
 
         const result = runValidator(runDir);
         expect(result.status).toBe(0);
@@ -221,6 +256,7 @@ describe('validate-run-summary.ps1', () => {
             JSON.stringify(createArtifactMetadata(true, fallback), null, 2),
             'utf8',
         );
+        createHelperFiles(runDir);
 
         const result = runValidator(runDir);
         expect(result.status).toBe(0);

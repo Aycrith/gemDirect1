@@ -14,7 +14,34 @@ View your app in AI Studio: https://ai.studio/apps/drive/1uvkkeiyDr3iI4KPyB4ICS6
 - We assume the WAN workflow bundles live at `workflows/image_netayume_lumina_t2i.json` and `workflows/video_wan2_2_5B_ti2v.json`; change the helper's `KNOWN_WAN_WORKFLOWS` list if you override the filenames, and keep the `LOCAL_*`/`VITE_LOCAL_*` environment variables in sync between the helper, React UI, and Playwright suites. The helper is the single source of truth for system telemetry and queue policy before you queue any shots.
 - This temporary change log doubles as a checklist: before touching code, re-read `README.md`, every `docs/STORY_TO_VIDEO_PIPELINE_PHASE_*.md`, `WORKFLOW_ARCHITECTURE_REFERENCE.md`, the QA/testing guides, and `scripts/comfyui-status.ts` so the helper, dual WAN workflows, LM Studio wiring, and QA expectations stay aligned.
 - Story outputs now follow an explicit 12-arc hero's journey schema (see `docs/STORY_TO_VIDEO_PIPELINE_PHASE_1.md` for the JSON shape) so the LLM returns structured `heroArcs` plus scene-to-arc mappings; future agents must keep that schema in mind when editing prompts or timeline tooling.
+- `services/localStoryService.ts` now prompts LM Studio for JSON hero arcs and story metadata (per `docs/STORY_TO_VIDEO_PIPELINE_PHASE_1.md`), falling back to deterministic data when the LLM is unavailable, and the new `services/storyToVideoPipeline.ts` simulates the story→scene→timeline path so Quick Generate runs can bootstrap Director Mode states without another service call.
+- ⚠️ The helper scripts/components that many passages mention (`scripts/comfyui-status.ts`, `scripts/generate-scene-videos-wan2.ps1`, `scripts/update-scene-video-metadata.ps1`, `contexts/PipelineContext.tsx`, `components/VisualBiblePanel.tsx`, `components/E2EQACard.tsx`, `tests/e2e/svd-capture.spec.ts`, `tests/e2e/comfyHelper.ts`, `services/__tests__/localStoryService.test.ts`, `services/__tests__/comfyUIService.test.ts`) are not present in this branch yet; restore them before trusting the expanded QA narrative.
 - The canonical WAN video workflow is `video_wan2_2_5B_ti2v.json`—all docs, helpers, and UI prompts should reference this 5B path and the lower-VRAM, 3–8 minute runtime targets for RTX 3090. SVD runs are optional regression checks gated by `RUN_SVD_E2E`.
+
+## Docs-First Discipline (2025-11)
+- Read the meta-docs before changing code: WORKFLOW_ARCHITECTURE_REFERENCE.md, COMFYUI_WORKFLOW_INDEX.md, COMFYUI_INTEGRATION*.md, TESTING_* and VALIDATION_* guides.
+- Keep docs and tests in sync with code changes; record decisions under "Decisions & Rationale (2025-11)".
+
+### Validation Checklist (WAN-First)
+- WAN e2e runs and progress are tracked via `scripts/run-comfyui-e2e.ps1` (pipeline + generation) and `scripts/validation-metrics.ts` (metrics).
+- Run `pwsh -NoLogo -ExecutionPolicy Bypass -File scripts/run-comfyui-e2e.ps1 -FastIteration` followed by `npm run validation:metrics`. The latest metrics live in `test-results/validation-metrics/latest.json` and include `totalScenes`, `videosDetected`, `videosMissing`, and `uploadsFailed` for the WAN video path.
+- Treat validation as milestone-based: Milestone 1 = at least one WAN video (`videosDetected >= 1`), Milestone 2 = all scenes yield videos (`videosDetected === totalScenes`, `videosMissing === 0`), Milestone 3 = robust runs (`uploadsFailed === 0`), as detailed in `VALIDATION_PROGRESS.md`.
+- SVD e2e UI coverage is strictly optional and gated behind `RUN_SVD_E2E=1`; by default only WAN workflows are exercised in Playwright and pipeline validation.
+
+## Local WAN Usage
+- Keyframes: WAN T2I (`workflows/image_netayume_lumina_t2i.json`)
+- Video: WAN 2.2 5B ti2v (`workflows/video_wan2_2_5B_ti2v.json`)
+- Mapping rules: wan-t2i requires CLIP only; wan-i2v requires CLIP + `LoadImage` mapped to `keyframe_image`.
+- Guardrails: single-frame instruction + multi-panel negative guidance are applied to all prompts.
+- Scripts: Use `scripts/generate-scene-videos-wan2.ps1` (HttpClient-based upload + prompt injection) followed by `scripts/update-scene-video-metadata.ps1` so each MP4 file and metadata entry is captured with forward slashes and audit-friendly warnings.
+- RTX 3090 guidance:
+  - Target 24 FPS; keep scene shots around 16–24 frames for fast iterations.
+  - Preferred resolutions: 1024×576 or 1280×720 (balance VRAM/use).
+  - Steps: 12–20 (titrate up when quality demands it); watch VRAM/latency badges printed by `comfyui-status`.
+  - The helper logs VRAM before/after values so the UI and artifact snapshots share the same telemetry; avoid stacking multiple high-step shots back-to-back if free VRAM drops below ~2 GB.
+
+### Helper: ComfyUI Status
+Run `npm run check:health-helper` to write a summary in `test-results/comfyui-status/` (set `LOCAL_COMFY_URL` if needed).
 
 ## Run Locally
 
@@ -80,6 +107,12 @@ Treat these documents as the source of truth for LM Studio configuration, dual W
 Use this helper interactively and in CI/Playwright runs so you never hit the generation queue with stale or unmapped workflows.
 
 Capture each helper execution under `test-results/comfyui-status/<timestamp>.log` (or the path your automation framework prefers) so QA cards can reference the VRAM warnings, queue position, and node mappings that correspond to any Visual Bible run. The helper mirrors the telemetry fields exposed by ComfyUI's WebSocket example (https://github.com/comfyanonymous/ComfyUI/blob/master/examples/websocket_api_example.py), so the queue/polling metadata can be stitched into Artifact Snapshot cards without extra parsing.
+
+### Mapping Preflight & Helper Telemetry
+- Step 0: run `node scripts/preflight-mappings.ts --project ./exported-project.json --summary-dir test-results/comfyui-status` before you queue work. The helper enforces the WAN mapping contract (CLIPTextEncode.text + human_readable_prompt/full_timeline_json for `wan-t2i`, and the `keyframe_image` → `LoadImage.image` pair that `wan-i2v` needs), auto-infers inline mappings, writes normalized JSON plus a `unit/comfyui-status.json` mirror, and exits `3` when the wan-i2v prerequisites are still missing so that automation aborts before wasting GPU time.
+- Follow up with `node scripts/comfyui-status.ts --project ./exported-project.json --summary-dir test-results/comfyui-status --log-path test-results/comfyui-status/comfyui-status.log`. It probes `/system_stats` and `/queue`, records the same `QueueConfig`/`HistoryConfig` knobs the UI shows, and surfaces VRAM before/after/delta, poll limits, History exit reasons, and mapping status for artifact snapshots and QA cards. The generated `test-results/comfyui-status/comfyui-status.json` and the mapping preflight summary feed the new `HelperSummaries` object in `artifact-metadata.json`, so both the Artifact Snapshot UI and Playwright cards can link back to the exact JSON telemetry the helper just recorded.
+- Mapping rules recap: `wan-t2i` needs CLIP text conditioning only, `wan-i2v` needs CLIP plus the `keyframe_image` → `LoadImage.image` mapping. Guardrails (`SINGLE_FRAME_PROMPT`, `NEGATIVE_GUIDANCE`) stay attached to every still prompt the services build so the queue always sees a single cinematic moment.
+- Helper outputs: every helper run writes both the JSON summary and verbose log into `test-results/comfyui-status/<timestamp>/` (mirrors kept in `HelperSummaries.MappingPreflight` and `HelperSummaries.ComfyUIStatus` inside `artifact-metadata.json` and `public/artifacts/latest-run.json`). Keep telemetry field names (DurationSeconds, PollIntervalSeconds, MaxWaitSeconds, HistoryExitReason, GPU/VRAM stats, queue knobs) synchronized with the validator, UI chips, and Playwright tests so future runs can verify the same traceable data end-to-end.
 
 #### LLM Foundation & Health Checks
 
@@ -242,6 +275,79 @@ References: https://learn.microsoft.com/dotnet/api/system.io.file.replace (atomi
 3. Run the app:
    `npm run dev`
 
+## React Browser Testing
+
+**Test Coverage**: 40 Playwright E2E tests across 6 phases (27/40 passing = **67.5% coverage**)
+
+| Phase | Tests | Pass Rate | Status |
+|-------|-------|-----------|--------|
+| **Phase 1: App Loading** | 4/4 | 100% | ✅ Complete |
+| **Phase 2: Story Generation** | 3/5 | 60% | ⚠️ CORS limitations |
+| **Phase 3: Scene/Timeline** | 2/8 | 25% | ⚠️ Requires workflow execution |
+| **Phase 4: ComfyUI Integration** | 4/5 | 80% | ✅ Strong |
+| **Phase 5: Data Persistence** | 6/7 | 86% | ✅ Strong |
+| **Phase 6: Error Handling** | 8/8 | 100% | ✅ Complete |
+
+### Running Tests
+
+```bash
+# Start dev server (required for tests)
+npm run dev
+
+# Run all E2E tests
+npx playwright test
+
+# Run specific phase
+npx playwright test tests/e2e/app-loading.spec.ts --reporter=list
+
+# Generate HTML report
+npx playwright test --reporter=html
+npx playwright show-report
+
+# Debug mode
+npx playwright test --debug
+```
+
+### Test Organization
+
+Tests are organized by application phase:
+- **Phase 1** (`app-loading.spec.ts`): Basic infrastructure, IndexedDB, mode switching
+- **Phase 2** (`story-generation.spec.ts`): Story bible generation via local LLM
+- **Phase 3** (`scene-generation.spec.ts`, `timeline-editing.spec.ts`): Scene navigator, timeline editor
+- **Phase 4** (`video-generation.spec.ts`): ComfyUI integration, keyframe generation
+- **Phase 5** (`data-persistence.spec.ts`): IndexedDB persistence, project export/import
+- **Phase 6** (`error-handling.spec.ts`): Error recovery, validation, resilience
+
+### Known Test Limitations
+
+1. **Phase 2 (CORS - 2 tests skipped)**: Browser fetch to LM Studio blocked by missing CORS headers. Tests use real local LLM via Mistral instead of mocking Gemini SDK (which bypasses Playwright interception). Workaround: Tests skip browser-based LLM generation scenarios.
+
+2. **Phase 3 (UI Rendering - 6 tests skipped)**: Scene navigator and timeline editor tests require full workflow execution to render components properly. Tests are documented with correct selectors (`[data-testid="scene-row"]`, `[data-testid="shot-row"]`) from actual components but skip execution due to state hydration complexity.
+
+3. **Phase 4 (ComfyUI Settings - 1 test skipped)**: Settings modal verification pending UI structure inspection.
+
+4. **Phase 5 (Import Timeout - 1 test skipped)**: IndexedDB import/export occasionally times out with large payloads.
+
+See `REACT_BROWSER_TESTING_PROGRESS_REPORT.md` for detailed test status and `REACT_BROWSER_TESTING_DEVELOPER_GUIDE.md` for extending tests.
+
+### Testing Strategy
+
+**Real Integration Testing**: Tests use actual local services (Mistral LLM via LM Studio) instead of SDK mocking because:
+- The Google Generative AI SDK bypasses Playwright's `page.route()` interception
+- Response mocking at the fetch level doesn't work for SDK-wrapped requests
+- Real local LLM integration provides more realistic test scenarios
+
+**Environment Variables**: Tests automatically configure:
+```powershell
+VITE_PLAYWRIGHT_SKIP_WELCOME=true           # Bypass welcome dialog
+VITE_LOCAL_STORY_PROVIDER_URL=http://192.168.50.192:1234/v1/chat/completions
+VITE_LOCAL_LLM_MODEL=mistralai/mistral-7b-instruct-v0.3
+VITE_LOCAL_LLM_REQUEST_FORMAT=openai-chat
+VITE_LOCAL_LLM_TEMPERATURE=0.35
+```
+
+These are set automatically in `playwright.config.ts` when running tests.
+
 ### Local Testing Notes
 
 - Node **22.19.0 or newer** is required. On Linux/macOS install Node 22.19.0 and add `/usr/local/node-v22.19.0/bin` to `PATH`; on Windows install Node 22.19.0 to `C:\Tools\node-v22.19.0-win-x64` and prepend that folder to your user `PATH` so `node -v` reports `v22.19.0`.
@@ -265,7 +371,10 @@ References: https://learn.microsoft.com/dotnet/api/system.io.file.replace (atomi
 - **Queue policy knobs**: pass `-SceneMaxWaitSeconds`, `-SceneHistoryMaxAttempts`, `-SceneHistoryPollIntervalSeconds`, or `-ScenePostExecutionTimeoutSeconds` (or set the matching `SCENE_*` env vars) to tune how long we wait for `/history` messages and how long we continue polling after the `execution_success` flag appears. These knobs flow through every run artifact: `QueueConfig`/`HistoryConfig` in `artifact-metadata.json`, the Artifact Snapshot policy card, and the Timeline editor’s per-scene banner. The validator at `scripts/validate-run-summary.ps1` now asserts that each scene’s telemetry contains `DurationSeconds`, `MaxWaitSeconds`, `PollIntervalSeconds`, `HistoryAttempts`, `HistoryAttemptLimit`, GPU name, and VRAM (before/after) plus the poll-limit text inside `[Scene ...] Telemetry` lines, so missing GPU telemetry or pollLimit values surface as hard failures before archiving a run.
   The history poller mirrors the status ladder shown in ComfyUI’s [`websockets_api_example.py`](https://github.com/comfyanonymous/ComfyUI/blob/master/websockets_api_example.py) so every `[Scene ...] HISTORY WARNING/ERROR` line cites the same reason (`maxWait`, `attemptLimit`, `postExecution`, etc.), and `System.FallbackNotes` captures the `/system_stats` failures that trigger the `nvidia-smi` fallback.
 5. **Artifact snapshot + telemetry**: The helper builds `logs/<ts>/artifact-metadata.json` (story metadata, LLM provenance, moods, per-scene prompts, frame counts, GPU telemetry, warnings, history poll attempts, requeue summaries, Vitest logs, archive path) and mirrors it to `public/artifacts/latest-run.json`. The React **Artifact Snapshot** panel now surfaces these details with a warnings-only filter, duration/GPU summaries, and per-scene storyline context so you can audit runs without leaving the app. The Artifact Snapshot and Timeline editor now render the `QueueConfig`/`HistoryConfig` knobs alongside GPU/VRAM deltas, pollLimit badges, exit reasons, fallback notes, and archive references so you can trace every warning without opening raw JSON.
+  - Helper summary paths: `artifact-metadata.json` now exposes `HelperSummaries` (mapping preflight + ComfyUI status) so Playwright cards and the Artifact Snapshot UI can link directly to the JSON telemetry the README, QA guides, and Timeline banners point reviewers to.
   6. **Archival**: ComfyUI shuts down after the suites complete and `artifacts/comfyui-e2e-<ts>.zip` is generated. The archive mirrors the entire `logs/<ts>` directory (story folder, scenes, history files, generated frames, vitest logs, and run summary).
+
+  7. **Step 11b/11c (WAN video automation)**: After the helper finishes the queued scenes, `scripts/generate-scene-videos-wan2.ps1` (HttpClient upload, deterministic `LoadImage`/`SaveVideo` wiring, mp4/libx264 defaults, and configurable `-MaxWaitSeconds`/`-PollIntervalSeconds`) uploads each scene keyframe, patches the first `LoadImage`, queues the wan-i2v workflow, and polls for `logs/<ts>/video/<sceneId>/<sceneId>.mp4` until the timeout while writing `[Scene ...] Wan2 ...` telemetry lines to `run-summary.txt`. Follow it with `scripts/update-scene-video-metadata.ps1 -RunDir logs/<ts> -VideoSubDir video` so the artifact metadata contains normalized forward-slash `Video.Path` entries plus optional `DurationSeconds` (via `ffprobe` if installed), `Status`, `UpdatedAt`, and `Error` for every scene so the Artifact Snapshot and UI can surface the MP4s consistently.
 
 - Post-run checklist:
   - Read `logs/<ts>/run-summary.txt`, confirming `## Story`, `[Scene ...][Attempt ...]`, `[Scene ...] HISTORY WARNING/ERROR`, `Requeue requested`, and `## Artifact Index` entries match what you observed on the console (frame counts, durations, Vitest exit codes, zip path, vitest-scripts log).

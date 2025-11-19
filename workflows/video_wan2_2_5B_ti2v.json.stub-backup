@@ -1,0 +1,25 @@
+{
+  "prompt": {
+    "positive_clip": {
+      "class_type": "CLIPTextEncode",
+      "inputs": { "text": "" },
+      "_meta": { "title": "CLIPTextEncode - Positive Prompt Layer" }
+    },
+    "negative_clip": {
+      "class_type": "CLIPTextEncode",
+      "inputs": { "text": "" },
+      "_meta": { "title": "CLIPTextEncode - Negative Prompt Layer" }
+    },
+    "keyframe_loader": {
+      "class_type": "LoadImage",
+      "inputs": { "image": "__KEYFRAME__" },
+      "_meta": { "title": "Keyframe Loader" }
+    },
+    "video_writer": {
+      "class_type": "SaveVideo",
+      "inputs": { "fps": 24, "filename_prefix": "gemdirect1_scene" },
+      "_meta": { "title": "Save Video" }
+    }
+  }
+}
+

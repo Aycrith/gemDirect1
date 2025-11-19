@@ -467,7 +467,8 @@ Use For: Cinematic sequences, VFX heavy
 
 ## WAN Workflow Health Hook
 
-- `scripts/comfyui-status.ts` reads your exported `localGenSettings` (or the file referenced by `LOCAL_PROJECT_STATE_PATH`) and requires both WAN profiles (`wan-t2i` for keyframes, `wan-i2v` for video). It enforces mappings for `human_readable_prompt`, `full_timeline_json`, and `keyframe_image` so CLIPTextEncode/LoadImage inputs are populated before any prompt is queued.
+- `scripts/preflight-mappings.ts --project ./exported-project.json --summary-dir test-results/comfyui-status` runs before any helper queues scenes. It enforces the wan-t2i vs wan-i2v mapping contract (CLIP text + optional `keyframe_image` → `LoadImage` wiring), auto-infers inline nodes when necessary, logs OK/WARN lines, writes normalized summary + `unit` mirror JSON, writes a companion log, and exits with code `3` if wan-i2v still lacks the required keyframe mapping. Both the JSON and log paths are recorded in `HelperSummaries.MappingPreflight` so downstream automation can refer back to the exact telemetry the helper produced.
+- `scripts/comfyui-status.ts` reads your exported `localGenSettings` (or the file referenced by `LOCAL_PROJECT_STATE_PATH`) and requires both WAN profiles (`wan-t2i` for keyframes, `wan-i2v` for video). It enforces mappings for `human_readable_prompt`, `full_timeline_json`, and `keyframe_image` so CLIPTextEncode/LoadImage inputs are populated before any prompt is queued. Each run writes both a JSON summary and verbose log (paths captured in `HelperSummaries.ComfyUIStatus`) and surfaces the same queue/VRAM telemetry the Artifact Snapshot UI, validator, and Playwright tests consume.
 - The helper probes `/system_stats` and `/queue` on `LOCAL_COMFY_URL` (mirrored by `VITE_LOCAL_COMFY_URL` for the UI) and logs VRAM, pending/running counts, and warnings to `test-results/comfyui-status/<timestamp>.log`, matching the telemetry fields described in ComfyUI's WebSocket example (https://github.com/comfyanonymous/ComfyUI/blob/master/examples/websocket_api_example.py). QA cards reuse these fields, so any queue warning surfaced here appears in the Artifact Snapshot as well.
 - If the helper cannot find `workflows/image_netayume_lumina_t2i.json` or `workflows/video_wan2_2_5B_ti2v.json`, it alerts you before queuing anything, ensuring Visual Bible continuity data always references real keyframe base64 assets instead of placeholders.
 
@@ -489,6 +490,15 @@ Use For: Cinematic sequences, VFX heavy
 
 - **Structured hero's journey outputs**
   The story bible and scene payloads now include a `heroArcs` array (12 named arcs with summaries, emotional shifts, and importance) plus explicit `heroArcId` references inside scenes so downstream prompts, timelines, and shot scheduling stay aligned with the intended narrative beats. Update the prompt templates and timeline tooling only if the arc schema remains backwards compatible.
+
+- **Guardrails & prompt hygiene**
+  Every still prompt starts with `SINGLE_FRAME_PROMPT` and all negative prompts append `NEGATIVE_GUIDANCE` (see `extendNegativePrompt()` in `services/comfyUIService.ts`). The guardrail Vitest (`services/__tests__/comfyGuardrails.test.ts`) ensures these strings persist whenever the TL/shot pipelines build prompts or reuse Visual Bible cues, preventing multi-panel or collage-style outputs.
+
+- **Telemetry contract**
+  The helper (`scripts/comfyui-status.ts`), validator (`scripts/validate-run-summary.ps1`), and Artifact Snapshot UI share the same telemetry fields (`DurationSeconds`, `MaxWaitSeconds`, `PollIntervalSeconds`, `HistoryAttempts`, `HistoryExitReason`, `HistoryPostExecutionTimeoutReached`, GPU VRAM stats, and queue policy knobs) so reviewers see identical queue policy cards and warnings as the logs. Missing telemetry now breaks validation before any artifacts archive.
+
+- **WAN-first automation**
+  Keyframes use `wan-t2i`, video uses `wan-i2v` (WAN 2.2 5B ti2v is canonical; SVD is QA-only behind `RUN_SVD_E2E=1`). React browser testing validates this integration without executing actual video generation (see `REACT_BROWSER_TESTING_PROGRESS_REPORT.md` for Phase 4 ComfyUI Integration test details). Step 11b now runs `scripts/generate-scene-videos-wan2.ps1`, which uploads each keyframe via `.NET HttpClient`, patches the first `LoadImage`, forces the first `SaveVideo` node to mp4/libx264 with a deterministic `logs/<ts>/video/<sceneId>/<sceneId>` prefix, polls `/prompt` with configurable `-MaxWaitSeconds`/`-PollIntervalSeconds`, and writes `[Scene ...] Wan2 ...` telemetry into `run-summary.txt`. Step 11c then runs `scripts/update-scene-video-metadata.ps1` so `artifact-metadata.json` contains forward-slash `Video.Path` entries, optional durations (via `ffprobe` when available), status/timestamps, and error details that mirror the helper summaries.
 
 
 > **Current gemDirect1 deployment:** `workflows/text-to-video.json` defines the active 9-node pipeline (CheckpointLoader → LoadImage → CLIPTextEncode → CLIPVision → `SVD_img2vid_Conditioning` → KSampler → VAE Decode → SaveImage) and loads `SVD\svd_xt.safetensors` along with `clip_vision\ViT-L-14-BEST-smooth-GmP-HF-format.safetensors`.
@@ -534,4 +544,9 @@ This architecture ensures:
 - ✅ Scalable processing
 - ✅ Flexible customization
 - ✅ Production-ready pipeline
+## Decisions & Rationale (2025-11)
 
+- WAN-first pipeline: Use WAN T2I for keyframes and WAN 2.2 5B ti2v for videos. SVD remains an optional regression path (gated by `RUN_SVD_E2E=1`).
+- Mapping requirements: wan-t2i requires CLIP text mapping only; wan-i2v requires CLIP + `LoadImage` with `keyframe_image` mapping.
+- Prompt guardrails: single-frame instruction + multi-panel negative guidance enforced in `services/comfyUIService.ts`.
+- Helper summary handshake & telemetry: the run harness executes `scripts/preflight-mappings.ts` and `scripts/comfyui-status.ts` before UAV scenes, records their JSON outputs at `logs/<ts>/test-results/comfyui-status`, and exposes the paths as `HelperSummaries.MappingPreflight` / `HelperSummaries.ComfyUIStatus` in `artifact-metadata.json`. WAN video automation writes deterministic `logs/<ts>/video/<sceneId>/<sceneId>.mp4` outputs plus normalized forward-slash `Video.Path`, `DurationSeconds`, `Status`, `UpdatedAt`, and `Error` metadata so the Artifact Snapshot, Timeline, and Playwright flows all consume the same telemetry.

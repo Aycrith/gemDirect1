@@ -202,12 +202,12 @@ describe('generateVideoFromShot', () => {
         progressSpy,
         { queuePrompt: queueMock }
       )
-    ).rejects.toThrow('This workflow requires a keyframe image for video generation, but none was provided.');
+    ).rejects.toThrow(/requires a keyframe image for this workflow but none was provided/);
 
     expect(progressSpy).toHaveBeenLastCalledWith(
       expect.objectContaining({
         status: 'error',
-        message: expect.stringContaining('Video generation failed'),
+        message: expect.stringContaining('video generation failed'),
       })
     );
   });

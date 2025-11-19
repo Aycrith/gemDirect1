@@ -91,7 +91,7 @@ import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import ImageIcon from './icons/ImageIcon';
 import { generateVideoRequestPayloads } from '../services/payloadService';
-import { generateTimelineVideos, stripDataUrlPrefix } from '../services/comfyUIService';
+import { generateTimelineVideos, stripDataUrlPrefix, queueComfyUIPrompt } from '../services/comfyUIService';
 import FinalPromptModal from './FinalPromptModal';
 import LocalGenerationStatusComponent from './LocalGenerationStatus';
 import TimelineIcon from './icons/TimelineIcon';
@@ -633,6 +633,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             return;
         }
 
+        // CRITICAL: Retrieve scene keyframe before generation
+        const sceneKeyframe = generatedImages[scene.id];
+        if (!sceneKeyframe) {
+            updateStatus({ status: 'error', message: 'Scene keyframe is required. Please generate a keyframe image first.', progress: 0 });
+            return;
+        }
+
         updateStatus({ status: 'queued', message: 'Preparing timeline generation...', progress: 0 });
 
         let assets: { sceneKeyframe: string; shotImages: Record<string, string> };
@@ -783,7 +790,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         <p className="text-xs text-amber-300 mt-1">
                             Hero Arc: <span className="font-semibold text-white">{scene.heroArcName}</span>
                             {scene.heroArcOrder ? ` (#${scene.heroArcOrder})` : ''}
-                            {scene.heroArcSummary ? ` · ${scene.heroArcSummary}` : ''}
+                            {scene.heroArcSummary ? ` · ${scene.heroArcSummary.substring(0, 120)}${scene.heroArcSummary.length > 120 ? '…' : ''}` : ''}
                         </p>
                     )}
                     {visualBibleInfo && (visualBibleInfo.styleBoards.length > 0 || visualBibleInfo.tags.length > 0) && (

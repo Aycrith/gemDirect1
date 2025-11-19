@@ -14,11 +14,11 @@
     "check:vitest-subset": "npm test -- --run",
     "check:playwright-svd": "npx playwright test tests/e2e/svd-basic.spec.ts",
     "check:playwright-wan": "npx playwright test tests/e2e/wan-basic.spec.ts",
-    "e2e:smoke": "node scripts/e2eSmoke.js"
+    "validation:metrics": "node scripts/validation-metrics.ts",
+    "watch:validation-history": "node scripts/watch-validation-history.ts"
   },
   "dependencies": {
     "@google/genai": "^1.28.0",
-    "@rollup/rollup-linux-x64-gnu": "^4.53.2",
     "idb": "^8.0.0",
     "marked": "^16.4.1",
     "react": "^19.2.0",

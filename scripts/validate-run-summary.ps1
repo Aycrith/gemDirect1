@@ -88,6 +88,45 @@ if (-not (Test-Path $artifactJson)) {
                 }
             }
         }
+        if (-not $artifact.HelperSummaries) {
+            $errors += "Artifact metadata missing HelperSummaries."
+        } else {
+            $mappingHelper = $artifact.HelperSummaries.MappingPreflight
+            if (-not $mappingHelper -or [string]::IsNullOrWhiteSpace($mappingHelper.Summary)) {
+                $errors += "HelperSummaries.MappingPreflight missing summary path."
+            } else {
+                $mappingPath = $mappingHelper.Summary -replace '/', '\'
+                if (-not (Test-Path $mappingPath)) {
+                    $warnings += "Mapping preflight summary file not found at $($mappingHelper.Summary)."
+                }
+            }
+            if (-not $mappingHelper -or [string]::IsNullOrWhiteSpace($mappingHelper.Log)) {
+                $warnings += "HelperSummaries.MappingPreflight log path is not provided."
+            } else {
+                $mappingLogPath = $mappingHelper.Log -replace '/', '\'
+                if (-not (Test-Path $mappingLogPath)) {
+                    $warnings += "Mapping preflight log not found at $($mappingHelper.Log)."
+                }
+            }
+
+            $statusHelper = $artifact.HelperSummaries.ComfyUIStatus
+            if (-not $statusHelper -or [string]::IsNullOrWhiteSpace($statusHelper.Summary)) {
+                $errors += "HelperSummaries.ComfyUIStatus missing summary path."
+            } else {
+                $statusPath = $statusHelper.Summary -replace '/', '\'
+                if (-not (Test-Path $statusPath)) {
+                    $warnings += "ComfyUI status summary file not found at $($statusHelper.Summary)."
+                }
+            }
+            if (-not $statusHelper -or [string]::IsNullOrWhiteSpace($statusHelper.Log)) {
+                $warnings += "HelperSummaries.ComfyUIStatus log path is not provided."
+            } else {
+                $statusLogPath = $statusHelper.Log -replace '/', '\'
+                if (-not (Test-Path $statusLogPath)) {
+                    $warnings += "ComfyUI status log not found at $($statusHelper.Log)."
+                }
+            }
+        }
         if ($artifact.Scenes) {
             foreach ($scene in $artifact.Scenes) {
                 $sceneId = $scene.SceneId
@@ -293,6 +332,33 @@ if (-not (Test-Path $artifactJson)) {
                         if (-not $vramDeltaMatch.Success) {
                             $errors += "Scene $sceneId telemetry summary missing VRAMDeltaMB entry."
                         }
+                    }
+                }
+                if (-not ($scene.PSObject.Properties.Name -contains 'Video')) {
+                    $errors += "Scene $sceneId metadata missing Video information."
+                } else {
+                    if (-not ($scene.Video.PSObject.Properties.Name -contains 'Path')) {
+                        $errors += "Scene $sceneId video metadata missing Path."
+                    } elseif ($scene.Video.Path -and ($scene.Video.Path -match '\\')) {
+                        $errors += "Scene $sceneId video path must use forward slashes."
+                    }
+                    if (-not ($scene.Video.PSObject.Properties.Name -contains 'DurationSeconds')) {
+                        $errors += "Scene $sceneId video metadata missing DurationSeconds."
+                    }
+                    if (-not ($scene.Video.PSObject.Properties.Name -contains 'Status')) {
+                        $errors += "Scene $sceneId video metadata missing Status."
+                    }
+                    if (-not ($scene.Video.PSObject.Properties.Name -contains 'UpdatedAt')) {
+                        $errors += "Scene $sceneId video metadata missing UpdatedAt."
+                    }
+                    if (-not ($scene.Video.PSObject.Properties.Name -contains 'Error')) {
+                        $errors += "Scene $sceneId video metadata missing Error field."
+                    }
+                    if ($scene.Video.Status -eq 'complete' -and [string]::IsNullOrWhiteSpace($scene.Video.Path)) {
+                        $errors += "Scene $sceneId video Status=complete but Path is empty."
+                    }
+                    if ($scene.Video.Status -eq 'missing' -and [string]::IsNullOrWhiteSpace($scene.Video.Error)) {
+                        $warnings += "Scene $sceneId video marked missing but no Error message provided."
                     }
                 }
             }

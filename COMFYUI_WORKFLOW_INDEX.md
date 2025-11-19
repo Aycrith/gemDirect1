@@ -218,6 +218,11 @@ ONGOING
 
 ---
 
+## Automation Scripts
+- Run `node scripts/preflight-mappings.ts --project ./exported-project.json --summary-dir test-results/comfyui-status` as Step 0 so the helper validates the wan-t2i/wan-i2v mappings and emits normalized summaries (or exits code 3 when keyframe mappings are missing).
+- Use `scripts/generate-scene-videos-wan2.ps1 -RunDir logs/<ts> -ComfyUrl http://127.0.0.1:8188 -MaxWaitSeconds <n> -PollIntervalSeconds <s>` to upload each scene keyframe, inject it into the first `LoadImage`, set deterministic SaveVideo formatting/prefix, and poll for `logs/<ts>/video/<sceneId>/<sceneId>.mp4` while emitting run-summary telemetry for the validator.
+- After `logs/<ts>` contains all MP4s, run `scripts/update-scene-video-metadata.ps1 -RunDir logs/<ts> -VideoSubDir video` so `artifact-metadata.json` gets forward-slash `Video.Path` records with optional `DurationSeconds` (via `ffprobe` when available), `Status`, `UpdatedAt`, and `Error` for each scene.
+
 ## File Organization in Repository
 
 ```
@@ -347,3 +352,19 @@ Or Ctrl+Shift+F to search across all documents
 All the tools you need are documented here. Start with the summary, follow the setup guide, and you'll have production-ready video generation in 30 minutes.
 
 Good luck! 🚀
+## Canonical Workflows (2025-11)
+
+- Keyframes: `workflows/image_netayume_lumina_t2i.json` (WAN T2I)
+- Video: `workflows/video_wan2_2_5B_ti2v.json` (WAN 2.2 5B ti2v)
+
+Decisions & Rationale (2025-11)
+- WAN 5B ti2v is canonical for video; 14B references are deprecated here.
+- WAN T2I generates keyframes and does not require a `keyframe_image` mapping.
+- WAN I2V consumes keyframes and requires a `LoadImage` node mapped to `keyframe_image`.
+- Guardrails tightened: `SINGLE_FRAME_PROMPT` prefixed to every still-image prompt and `NEGATIVE_GUIDANCE` appended to all negative prompts so the generator never drifts toward collaged or UI-heavy outputs. Dedicated Vitest coverage (`services/__tests__/comfyGuardrails.test.ts`) asserts these strings and the helper metadata logs them per shot.
+- Scripts `scripts/generate-scene-videos-wan2.ps1` (HttpClient multipart upload + queue) and `scripts/update-scene-video-metadata.ps1` (normalized paths + mp4 links) formalize WAN 5B automation for Director Mode while keeping telemetry (queue ids, durations, warnings) in sync with `comfyui-status.ts`.
+## Helper Scripts & Telemetry
+
+- **Step 0 Mapping Preflight**: Run `scripts/preflight-mappings.ts` before queuing scenes (pass `--project ./exported-project.json --summary-dir logs/<ts>/test-results/comfyui-status`). It validates that the wan-i2v workflow still exposes `CLIPTextEncode.text` + `LoadImage.image`, infers inline mappings, writes normalized JSON plus a `unit/comfyui-status.json` mirror, and exits with code `3` when the keyframe wiring is missing. The artifact metadata now exposes a `HelperSummaries` object (mapping preflight + ComfyUI status paths) so the Artifact Snapshot UI and Playwright cards can link back to the exact JSON telemetry that QA references.
+- **ComfyUI Status Telemetry**: `scripts/comfyui-status.ts` probes `/system_stats` and `/queue`, records the QueueConfig/HistoryConfig knobs, VRAM before/after/delta, history exit reasons, and mapping status, and writes both a summary JSON and a log (`comfyui-status.log`). Those files are referenced via `HelperSummaries.ComfyUIStatus` so the UI, validator, and Playwright tests always read the same telemetry the helper produced.
+- **WAN Video Automation**: `scripts/generate-scene-videos-wan2.ps1` uploads the first keyframe, injects it into the wan-i2v workflow, forces deterministic `SaveVideo`/`mp4` settings, and polls for `logs/<ts>/video/<sceneId>/<sceneId>.mp4`. Follow it with `scripts/update-scene-video-metadata.ps1 -RunDir logs/<ts> -VideoSubDir video` to normalize forward-slash `Video.Path`, `DurationSeconds`, `Status`, `UpdatedAt`, and `Error` for every scene (ffprobe optional) so the Artifact Snapshot and Timeline panels surface the renders consistently.

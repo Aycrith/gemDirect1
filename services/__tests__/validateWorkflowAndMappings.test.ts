@@ -73,4 +73,30 @@ describe('validateWorkflowAndMappings', () => {
       /Mapped input 'missing_input' not found on node 'CLIPTextEncode - Positive Prompt Layer'/i
     );
   });
+
+  it('wan-t2i: does not require keyframe image mapping or LoadImage node', () => {
+    const settings = getSettings();
+    // Remove keyframe mapping and node to simulate t2i workflow
+    delete (settings as any).mapping['keyframe_loader:image'];
+    const workflow = JSON.parse(settings.workflowJson);
+    delete workflow.prompt.keyframe_loader;
+    settings.workflowJson = JSON.stringify(workflow);
+
+    expect(() => validateWorkflowAndMappings(settings, 'wan-t2i')).not.toThrow();
+  });
+
+  it('wan-i2v: requires keyframe image mapping and LoadImage node', () => {
+    const settings = getSettings();
+    // Ensure removing mapping triggers error for i2v
+    delete (settings as any).mapping['keyframe_loader:image'];
+
+    expect(() => validateWorkflowAndMappings(settings, 'wan-i2v')).toThrow(/keyframe image/i);
+
+    // Also ensure missing LoadImage node triggers error for i2v
+    const workflow = JSON.parse(settings.workflowJson);
+    delete workflow.prompt.keyframe_loader;
+    settings.workflowJson = JSON.stringify(workflow);
+
+    expect(() => validateWorkflowAndMappings(settings, 'wan-i2v')).toThrow(/LoadImage node/i);
+  });
 });

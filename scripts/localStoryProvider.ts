@@ -2,7 +2,10 @@ import crypto from 'node:crypto';
 
 import { type LLMStoryRequest, type LLMStoryResponse, type LLMRequestFormat } from './types/storyTypes';
 
-const DEFAULT_TIMEOUT_MS = 8000;
+// Increase default timeout for local LLM calls to allow slower local/stable LLMs
+// (LM Studio and similar) extra time to reply. Can be overridden via CLI/env.
+// Mistral-7B needs ~110ms/token, 900 tokens = ~100s minimum + network overhead
+const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_CHAT_TEMPERATURE = 0.45;
 const DEFAULT_MAX_TOKENS = 900;
 
@@ -154,9 +157,23 @@ export const fetchLocalStory = async (
 ): Promise<LLMStoryResponse> => {
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const format: LLMRequestFormat = options.format ?? request.format ?? 'direct-json';
-
-    if (format === 'openai-chat') {
-        return fetchOpenAIChatStory(url, request, timeoutMs, options);
+    try {
+        if (format === 'openai-chat') {
+            return await fetchOpenAIChatStory(url, request, timeoutMs, options);
+        }
+        return await fetchDirectJsonStory(url, request, timeoutMs);
+    } catch (err) {
+        const msg = (err as Error).message || String(err);
+        // Emit targeted guidance if we detect common local model crash signatures
+        if (/crashed|Exit code|model has crashed/i.test(msg)) {
+            console.warn('[LocalLLM] Detected local model crash during story generation.');
+            console.warn('[LocalLLM] Recommended actions:');
+            console.warn('  1. In LM Studio, increase GPU offload layers (e.g. 32 for Mistral-7B) to avoid slow CPU-only generation.');
+            console.warn('  2. Ensure other high VRAM processes (e.g. ComfyUI heavy workflows) are not consuming GPU memory at model load time.');
+            console.warn('  3. If repeated, lower context length or max_tokens, or switch to a smaller quantization (Q4_K_M already medium).');
+            console.warn('  4. Confirm CUDA initialization succeeds and no earlier "failed to initialize CUDA" appears in LM Studio logs.');
+        }
+        console.warn(`[LocalLLM] Story generation error: ${msg}`);
+        throw err;
     }
-    return fetchDirectJsonStory(url, request, timeoutMs);
 };
