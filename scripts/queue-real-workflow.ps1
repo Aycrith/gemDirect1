@@ -231,6 +231,21 @@ $gpuBefore = Get-GpuSnapshot -Stats $systemStatsBefore
 $workflow = Get-Content $WorkflowPath -Raw | ConvertFrom-Json
 $workflow.'2'.inputs.image = $keyframeName
 $workflow.'2'.widgets_values[0] = $keyframeName
+
+# Fix SVD seed for consistent frame generation (Phase 3 fix)
+# Use fixed seed and remove 'randomize' to ensure 25 frames per video
+if ($workflow.PSObject.Properties.Name -contains '5') {
+    $fixedSeed = 878722216565963
+    $workflow.'5'.inputs.seed = $fixedSeed
+    # Update widgets_values: [seed, control, steps, cfg, sampler, scheduler, denoise]
+    # Original: [2389290561623, "randomize", 30, 4.5, "euler_ancestral", "karras", 1]
+    # Fixed: [878722216565963, "fixed", 30, 4.5, "euler_ancestral", "karras", 1]
+    if ($workflow.'5'.widgets_values -and $workflow.'5'.widgets_values.Count -ge 2) {
+        $workflow.'5'.widgets_values[0] = $fixedSeed
+        $workflow.'5'.widgets_values[1] = "fixed"
+    }
+}
+
 $workflow.'7'.inputs.filename_prefix = $scenePrefix
 if ($workflow.'7'.PSObject.Properties.Name -notcontains '_meta') {
     $workflow.'7' | Add-Member -MemberType NoteProperty -Name _meta -Value @{ }
