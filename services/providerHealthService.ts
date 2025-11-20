@@ -6,6 +6,8 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
+import { LocalGenerationSettings } from '../types';
+import { checkFastVideoHealth } from './fastVideoService';
 
 export interface ProviderHealthStatus {
     providerId: string;
@@ -178,18 +180,84 @@ export const checkComfyUIHealth = async (serverUrl: string = 'http://127.0.0.1:8
 };
 
 /**
+ * Check FastVideo server health
+ */
+export const checkFastVideoServerHealth = async (
+    settings: LocalGenerationSettings
+): Promise<ProviderHealthStatus> => {
+    const startTime = Date.now();
+    const result: ProviderHealthStatus = {
+        providerId: 'fastvideo-local',
+        providerName: 'FastVideo',
+        status: 'unknown',
+        message: 'Checking...',
+        lastChecked: new Date()
+    };
+
+    if (!settings.fastVideo?.endpointUrl) {
+        result.status = 'unavailable';
+        result.message = 'FastVideo not configured';
+        return result;
+    }
+
+    try {
+        const healthData = await checkFastVideoHealth(settings);
+        const responseTime = Date.now() - startTime;
+        result.responseTime = responseTime;
+
+        if (healthData.status === 'ok') {
+            result.status = healthData.modelLoaded ? 'healthy' : 'degraded';
+            result.message = healthData.modelLoaded
+                ? `Server running | Model: ${healthData.modelId.split('/').pop()} (${responseTime}ms)`
+                : `Server running but model not loaded (${responseTime}ms)`;
+        } else {
+            result.status = 'degraded';
+            result.message = `Server responded with status: ${healthData.status}`;
+        }
+    } catch (error) {
+        result.status = 'unavailable';
+        result.responseTime = Date.now() - startTime;
+        
+        if (error instanceof Error) {
+            if (error.message.includes('timeout')) {
+                result.message = 'Server timeout - check if adapter is running';
+            } else if (error.message.includes('fetch') || error.message.includes('NetworkError')) {
+                result.message = 'Server not reachable - run scripts/run-fastvideo-server.ps1';
+            } else {
+                result.message = `Connection error: ${error.message}`;
+            }
+        } else {
+            result.message = 'Unknown connection error';
+        }
+    }
+
+    return result;
+};
+
+/**
  * Generate comprehensive system health report
  */
-export const getSystemHealthReport = async (comfyUIUrl?: string): Promise<SystemHealthReport> => {
-    const [geminiHealth, localHealth, comfyHealth] = await Promise.all([
+export const getSystemHealthReport = async (
+    comfyUIUrl?: string,
+    settings?: LocalGenerationSettings
+): Promise<SystemHealthReport> => {
+    const promises = [
         checkGeminiHealth(),
         checkLocalDrafterHealth(),
-        comfyUIUrl ? checkComfyUIHealth(comfyUIUrl) : Promise.resolve(null)
-    ]);
+        comfyUIUrl ? checkComfyUIHealth(comfyUIUrl) : Promise.resolve(null),
+        (settings && settings.videoProvider === 'fastvideo-local') 
+            ? checkFastVideoServerHealth(settings) 
+            : Promise.resolve(null)
+    ];
+
+    const [geminiHealth, localHealth, comfyHealth, fastVideoHealth] = await Promise.all(promises);
 
     const providers: ProviderHealthStatus[] = [geminiHealth, localHealth];
     if (comfyHealth) {
         providers.push(comfyHealth);
+    }
+    if (fastVideoHealth) {
+        providers.push(fastVideoHealth);
     }
 
     const recommendations: string[] = [];
@@ -208,6 +276,13 @@ export const getSystemHealthReport = async (comfyUIUrl?: string): Promise<System
     if (comfyHealth && comfyHealth.status === 'unavailable') {
         recommendations.push('⚠️ ComfyUI server is not reachable. Start the server using the "Start ComfyUI Server" task.');
         recommendations.push('💡 You can still use Gemini Image for keyframe generation.');
+    }
+
+    if (fastVideoHealth && fastVideoHealth.status === 'unavailable') {
+        recommendations.push('⚠️ FastVideo server is not reachable. Start it with: scripts/run-fastvideo-server.ps1');
+        recommendations.push('💡 Switch to ComfyUI provider in Settings or use Gemini Image for keyframes.');
+    } else if (fastVideoHealth && fastVideoHealth.status === 'degraded') {
+        recommendations.push('⚠️ FastVideo server is running but model not loaded. First request will take longer.');
     }
 
     if (geminiHealth.status === 'healthy' && localHealth.status === 'healthy') {

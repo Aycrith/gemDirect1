@@ -1,6 +1,7 @@
 import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 import { getVisualBible } from './visualBibleContext';
+import { generateCorrelationId, logCorrelation, networkTap } from '../utils/correlation';
 // TODO: Visual Bible integration not yet implemented
 // import { getPromptConfigForModel, applyPromptTemplate, type PromptTarget, getDefaultNegativePromptForModel } from './promptTemplates';
 import { getVisualContextForShot, getCharacterContextForShot, getVisualContextForScene, getCharacterContextForScene } from './visualBiblePromptHelpers';
@@ -643,13 +644,44 @@ export const queueComfyUIPrompt = async (
         }
         
         // --- STEP 3: QUEUE THE PROMPT ---
+        // Generate correlation ID for request tracking
+        const correlationId = generateCorrelationId();
+        const startTime = Date.now();
+        
+        logCorrelation(
+            { correlationId, timestamp: startTime, source: 'comfyui' },
+            `Queueing ComfyUI prompt`,
+            { profileId, clientId }
+        );
+
         const body = JSON.stringify({ prompt: promptPayload, client_id: clientId });
-        pushDiagnostic({ profileId, action: 'prompt:posting', bodySnippet: body?.slice ? body.slice(0, 1000) : undefined });
+        pushDiagnostic({ profileId, action: 'prompt:posting', bodySnippet: body?.slice ? body.slice(0, 1000) : undefined, correlationId });
         const response = await fetchWithTimeout(`${baseUrl}prompt`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Correlation-ID': correlationId,
+                'X-Request-ID': correlationId,
+            },
             body,
         }, 60000);
+
+        // Track request in network tap
+        const duration = Date.now() - startTime;
+        networkTap.add({
+            correlationId,
+            url: `${baseUrl}prompt`,
+            method: 'POST',
+            status: response.status,
+            duration,
+            timestamp: startTime,
+        });
+        
+        logCorrelation(
+            { correlationId, timestamp: Date.now(), source: 'comfyui' },
+            `ComfyUI prompt queued`,
+            { status: response.status, duration }
+        );
 
         if (!response.ok) {
             let errorMessage = `ComfyUI server responded with status: ${response.status}`;
@@ -1046,7 +1078,30 @@ export const generateVideoFromShot = async (
                 try {
                     const queueInfo = await pollQueueInfo(settings.comfyUIUrl);
                     // If queue is empty and we have output, we're done
-                    if (queueInfo.queue_running === 0 && queueInfo.queue_pending === 0 && outputData) {
+                    if (queueInfo.queue_running === 0 && queueInfo.queue_pending === 0) {
+                        // Hardened validation: ensure we have actual output data
+                        if (!outputData) {
+                            clearInterval(pollInterval);
+                            clearTimeout(timeout);
+                            const errorMsg = `${getSceneContext(promptId)} queue completed but no output data was received. Generation may have failed silently.`;
+                            reportProgress({ status: 'error', message: errorMsg });
+                            reject(new Error(errorMsg));
+                            return;
+                        }
+
+                        // Validate we have either frames or a filename
+                        const hasFrames = frameSequence.length > 0;
+                        const hasFilename = outputData.filename && outputData.filename.trim().length > 0;
+                        
+                        if (!hasFrames && !hasFilename) {
+                            clearInterval(pollInterval);
+                            clearTimeout(timeout);
+                            const errorMsg = `${getSceneContext(promptId)} completed but produced no frames or filename. Output may be empty or invalid.`;
+                            reportProgress({ status: 'error', message: errorMsg });
+                            reject(new Error(errorMsg));
+                            return;
+                        }
+
                         clearInterval(pollInterval);
                         clearTimeout(timeout);
                         

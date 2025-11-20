@@ -16,8 +16,8 @@ AI-powered cinematic story generator creating production video timelines. Transf
 |--------|-------|--------|
 | **WAN2 Video Generation** | 3/3 scenes (100%) | ✅ **WORKING** |
 | **Playwright E2E Tests** | ~44/50 (88%) | ⚠️ Minor Issues |
-| **React Mount Time** | 1581ms | ⚠️ Acceptable |
-| **Build Time** | ~2.5s | ✅ Excellent |
+| **React Mount Time** | 1236ms | ✅ **Good** (20.9% improvement) |
+| **Build Time** | 2.13s | ✅ Excellent |
 | **TypeScript Errors** | 0 | ✅ Perfect |
 
 **Validation Evidence** (Run: `logs/20251119-205415/`):
@@ -27,7 +27,7 @@ scene-002.mp4: 5.2 MB (successful) ✅
 scene-003.mp4: 8.17 MB (186.1s generation) ✅
 ```
 
-📖 **Full Status**: See [`Documentation/CURRENT_STATUS.md`](Documentation/CURRENT_STATUS.md) for complete metrics, known issues, and recommendations.
+📖 **Full Status**: See [`Documentation/PROJECT_STATUS_CONSOLIDATED.md`](Documentation/PROJECT_STATUS_CONSOLIDATED.md) for complete project status (single source of truth).
 
 ## 🚀 Quick Start
 
@@ -46,7 +46,7 @@ npm test                      # Run unit tests
 npx playwright test           # Run E2E tests (88% passing)
 ```
 
-📘 **New Here?** Read [`START_HERE.md`](START_HERE.md) for 5-minute overview.
+📘 **New Here?** Read [`START_HERE.md`](START_HERE.md) for 5-minute overview, or [`Documentation/PROJECT_STATUS_CONSOLIDATED.md`](Documentation/PROJECT_STATUS_CONSOLIDATED.md) for comprehensive status.
 
 ## 🏗️ Architecture
 
@@ -91,6 +91,126 @@ npx playwright test           # Run E2E tests (88% passing)
 
 ### Helper: ComfyUI Status
 Run `npm run check:health-helper` to write a summary in `test-results/comfyui-status/` (set `LOCAL_COMFY_URL` if needed).
+
+## FastVideo (Optional Alternative Provider)
+
+**NEW**: FastVideo provides an alternate local video generation path using `FastWan2.2-TI2V-5B` without ComfyUI workflows.
+
+### When to Use FastVideo
+- **Simpler setup**: No workflow JSON configuration needed
+- **Direct Python control**: Faster iteration for parameter tuning
+- **Research/experimentation**: Test different FastVideo model variants
+- **ComfyUI alternatives**: Backup when ComfyUI workflows need updates
+
+### Requirements
+- **Windows 10/11** with PowerShell 5.1+
+- **NVIDIA GPU**: 16GB+ VRAM (RTX 4090/3090 recommended)
+- **Python 3.12** with Conda
+- **CUDA 12.x** drivers installed
+- **Disk Space**: ~10GB for FastWan2.2-TI2V-5B model
+
+### Setup (One-Time)
+
+```powershell
+# 1. Create Conda environment
+conda create -n fastvideo python=3.12 -y
+conda activate fastvideo
+
+# 2. Install PyTorch with CUDA support
+pip install torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121
+
+# 3. Install FastVideo and dependencies
+pip install fastvideo fastapi uvicorn[standard] huggingface_hub pillow
+
+# 4. Download model (requires HuggingFace token if gated)
+huggingface-cli login  # If required
+$env:FASTVIDEO_HOME = "$env:USERPROFILE\fastvideo"
+mkdir -Force $env:FASTVIDEO_HOME\models
+
+huggingface-cli download FastVideo/FastWan2.2-TI2V-5B-Diffusers `
+  --local-dir $env:FASTVIDEO_HOME\models\FastWan2.2-TI2V-5B-Diffusers `
+  --cache-dir $env:FASTVIDEO_HOME\hf-cache `
+  --resume-download
+
+# 5. Validate setup (dry-run)
+pwsh scripts\run-fastvideo-server.ps1 -DryRun
+```
+
+### Usage
+
+```powershell
+# 1. Start FastVideo server (separate terminal)
+pwsh scripts\run-fastvideo-server.ps1
+# Server starts on http://127.0.0.1:8055
+# Health check: http://127.0.0.1:8055/health
+# API docs: http://127.0.0.1:8055/docs
+
+# 2. In React UI: Settings → Video Provider tab
+# - Select "FastVideo (Experimental)" from provider dropdown
+# - Configure: FPS (16), Frames (121), Resolution (1280x544)
+# - Test connection (validates server + model)
+
+# 3. Generate videos normally via UI
+# - System auto-routes to FastVideo when selected
+# - Progress tracked in browser console + sessionStorage
+```
+
+### Testing
+
+```powershell
+# Smoke test (8-frame clip, validates end-to-end)
+pwsh scripts\test-fastvideo-smoke.ps1
+
+# Integration tests (requires server running)
+npm test -- tests/integration/fastvideo.test.ts
+
+# Or skip if server not available
+SKIP_FASTVIDEO_TESTS=true npm test
+```
+
+### Performance Guidelines (RTX 3090)
+- **Frames**: Start with 8-16 for testing, up to 121 for production
+- **FPS**: 12-16 (balance quality/speed)
+- **Resolution**: 720x480 (fast), 1280x544 (default), 1280x720 (high quality)
+- **Generation time**: ~30-60s for 8 frames, 3-8 minutes for 121 frames
+- **VRAM usage**: Peaks at 14-16GB during generation
+
+### Troubleshooting
+
+**Server won't start:**
+- Check conda environment: `conda env list` (must see 'fastvideo')
+- Verify CUDA: `nvidia-smi` (should show GPU)
+- Model cache: Run with `-DryRun` flag to validate paths
+
+**CUDA OOM during generation:**
+- Reduce `numFrames` (e.g., 121 → 64)
+- Lower resolution (e.g., 1280x544 → 720x480)
+- Close other GPU processes (including LM Studio with GPU layers)
+- Use `attentionBackend: VIDEO_SPARSE_ATTN` (default)
+
+**Generation timeout:**
+- Normal for first run (model loading takes 1-2 minutes)
+- Subsequent runs much faster (model cached in VRAM)
+- Check server logs for Python errors
+
+**Network errors ("Cannot connect"):**
+- Verify server running: `curl http://127.0.0.1:8055/health`
+- Check firewall/antivirus not blocking port 8055
+- Try different port: `pwsh scripts\run-fastvideo-server.ps1 -Port 8056`
+
+### Provider Comparison
+
+| Feature | ComfyUI (Default) | FastVideo (Experimental) |
+|---------|-------------------|-------------------------|
+| **Setup complexity** | Medium (workflows) | Low (pip install) |
+| **Flexibility** | High (node graphs) | Medium (Python API) |
+| **Model support** | Multiple (WAN, SVD, etc.) | FastWan2.2 only |
+| **UI integration** | Full (keyframe + video) | Video only |
+| **Debugging** | Workflow JSON | Python logs |
+| **VRAM efficiency** | Good (optimized nodes) | Good (VIDEO_SPARSE_ATTN) |
+| **Community support** | Extensive | Growing |
+
+**Recommendation**: Use **ComfyUI** for production. Use **FastVideo** for experimentation or when ComfyUI workflows need updates.
 
 ## Run Locally
 

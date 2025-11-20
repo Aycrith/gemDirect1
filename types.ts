@@ -147,6 +147,7 @@ export interface SceneContinuityData {
   continuityResult?: ContinuityResult;
   frames?: string[];
   continuityScore?: SceneContinuityScore;
+  isAccepted?: boolean;  // Scene marked as final after passing coherence gate
 }
 
 export interface SceneContinuityScore {
@@ -266,6 +267,9 @@ export interface ComfyUIStatusSummary {
 }
 
 export interface LocalGenerationSettings {
+    // Video Provider Selection
+    videoProvider?: 'comfyui-local' | 'fastvideo-local';
+    
     // ComfyUI Configuration
     comfyUIUrl: string;
     comfyUIClientId: string;
@@ -274,6 +278,19 @@ export interface LocalGenerationSettings {
     mapping: WorkflowMapping;
     modelId?: string; // 'comfy-svd' | 'wan-video' | others later
     workflowProfiles?: Record<string, WorkflowProfile>;
+    
+    // FastVideo Configuration
+    fastVideo?: {
+        endpointUrl: string;
+        modelId: string;
+        fps: number;
+        numFrames: number;
+        height: number;
+        width: number;
+        seed?: number;
+        outputDir: string;
+        attentionBackend: string;
+    };
     
     // LLM Configuration
     llmProviderUrl?: string;

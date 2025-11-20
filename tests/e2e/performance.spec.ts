@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { dismissWelcomeDialog, ensureDirectorMode, loadProjectState } from '../fixtures/test-helpers';
 import { mockStoryBible } from '../fixtures/mock-data';
+import { capturePageLoadMetrics, startTiming, endTiming, formatMetrics, saveMetrics } from '../fixtures/performance-helpers';
 
 /**
  * Performance Benchmarking Test Suite

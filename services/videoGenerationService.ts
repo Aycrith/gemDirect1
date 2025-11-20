@@ -382,3 +382,74 @@ export function getSceneVideoManager(): SceneVideoManager {
 export function resetSceneVideoManager(): void {
     sceneVideoManager = null;
 }
+
+/**
+ * Queue video generation with automatic provider routing
+ * Routes to ComfyUI or FastVideo based on settings.videoProvider
+ * 
+ * @param settings Local generation settings
+ * @param payloads Generated payloads (JSON and text prompts)
+ * @param base64Image Keyframe image (base64)
+ * @param profileId Workflow profile ID (ComfyUI only)
+ * @param logCallback Optional logging callback
+ * @returns Provider-specific response
+ */
+export const queueVideoGeneration = async (
+    settings: LocalGenerationSettings,
+    payloads: { json: string; text: string; structured?: any[]; negativePrompt?: string },
+    base64Image: string,
+    profileId?: string,
+    logCallback?: (message: string, level?: 'info' | 'warn' | 'error') => void
+): Promise<any> => {
+    const provider = settings.videoProvider || 'comfyui-local';
+    const log = logCallback || console.log;
+
+    log(`[VideoGen] Using provider: ${provider}`, 'info');
+
+    if (provider === 'fastvideo-local') {
+        // Route to FastVideo
+        const { queueFastVideoPrompt, stripDataUrlPrefix, validateFastVideoConfig } = await import('./fastVideoService');
+        
+        // Validate FastVideo configuration
+        const errors = validateFastVideoConfig(settings);
+        if (errors.length > 0) {
+            throw new Error(`FastVideo configuration invalid:\n${errors.join('\n')}`);
+        }
+
+        // Extract prompt and negative prompt
+        const prompt = payloads.text || payloads.json;
+        const negativePrompt = payloads.negativePrompt || '';
+        const cleanedImage = base64Image ? stripDataUrlPrefix(base64Image) : undefined;
+
+        log(`[VideoGen] Queuing FastVideo generation`, 'info');
+        
+        return await queueFastVideoPrompt(
+            settings,
+            prompt,
+            negativePrompt,
+            cleanedImage,
+            logCallback
+        );
+    } else {
+        // Default: Route to ComfyUI
+        log(`[VideoGen] Queuing ComfyUI generation (profile: ${profileId || 'default'})`, 'info');
+        
+        // Import ComfyUI service dynamically to avoid circular dependency
+        const { queueComfyUIPrompt: comfyUIQueue } = await import('./comfyUIService');
+        
+        // Ensure all required fields for ComfyUI are present
+        const fullPayloads = {
+            json: payloads.json,
+            text: payloads.text,
+            structured: payloads.structured || [],
+            negativePrompt: payloads.negativePrompt || ''
+        };
+        
+        return await comfyUIQueue(
+            settings,
+            fullPayloads,
+            base64Image,
+            profileId
+        );
+    }
+};

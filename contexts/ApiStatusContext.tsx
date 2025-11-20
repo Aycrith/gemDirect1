@@ -19,12 +19,19 @@ const ApiStatusContext = createContext<ApiStatusContextValue | undefined>(undefi
 export const ApiStatusProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [apiStatus, setApiStatus] = useState<ApiStatusState>({ status: 'idle', message: '' });
 
-  const updateApiStatus = (status: ApiStatus, message: string) => {
+  const updateApiStatus = React.useCallback((status: ApiStatus, message: string) => {
     setApiStatus({ status, message });
-  };
+  }, []);
+  
+  // P2 Optimization (2025-11-20): Memoize context value to prevent unnecessary re-renders
+  const contextValue = React.useMemo(() => ({ 
+    apiStatus, 
+    setApiStatus, 
+    updateApiStatus 
+  }), [apiStatus, updateApiStatus]);
   
   return (
-    <ApiStatusContext.Provider value={{ apiStatus, setApiStatus, updateApiStatus }}>
+    <ApiStatusContext.Provider value={contextValue}>
       {children}
     </ApiStatusContext.Provider>
   );

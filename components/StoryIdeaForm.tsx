@@ -43,7 +43,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
     }, [onApiStateChange, onApiLog, planActions]);
 
     return (
-        <div ref={spotlightRef} className="max-w-3xl mx-auto glass-card p-8 rounded-xl shadow-2xl shadow-black/30 interactive-spotlight">
+        <div ref={spotlightRef} className="max-w-3xl mx-auto glass-card p-8 rounded-xl shadow-2xl shadow-black/30 interactive-spotlight" data-testid="StoryIdeaForm">
             <h2 className="text-2xl font-bold text-gray-100 mb-2 text-center">Start with an Idea</h2>
             <p className="text-gray-400 mb-6 text-center">What story do you want to create?</p>
             
@@ -69,6 +69,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                     <p className="text-xs text-gray-500 mt-1">Template guidance will enhance your story's narrative coherence.</p>
                 </div>
                 <textarea
+                    data-testid="story-idea-input"
                     aria-label="Story Idea"
                     value={idea}
                     onChange={(e) => setIdea(e.target.value)}

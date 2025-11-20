@@ -22,6 +22,9 @@ const ContinuityModal = lazy(() => import('./components/ContinuityModal'));
 const VisualBiblePanel = lazy(() => import('./components/VisualBiblePanel'));
 const ArtifactViewer = lazy(() => import('./components/ArtifactViewer'));
 
+// P1 Optimization (2025-11-20): Additional lazy loading for conditional components
+const PipelineGenerator = lazy(() => import('./components/PipelineGenerator')); // Only used in Quick Generate mode
+
 // Eager imports for critical path components
 import StoryIdeaForm from './components/StoryIdeaForm';
 import StoryBibleEditor from './components/StoryBibleEditor';
@@ -35,11 +38,10 @@ import SettingsIcon from './components/icons/SettingsIcon';
 import SparklesIcon from './components/icons/SparklesIcon';
 import SaveIcon from './components/icons/SaveIcon';
 import UploadCloudIcon from './components/icons/UploadCloudIcon';
+import BookOpenIcon from './components/icons/BookOpenIcon';
 import ProgressBar from './components/ProgressBar';
-import WelcomeGuideModal from './components/WelcomeGuideModal';
 import ComfyUICallbackProvider from './components/ComfyUICallbackProvider.clean';
 import ConfirmationModal from './components/ConfirmationModal';
-import PipelineGenerator from './components/PipelineGenerator';
 import { clearProjectData } from './utils/database';
 
 // Loading fallback component
@@ -85,10 +87,6 @@ const AppContent: React.FC = () => {
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
     const planActions = usePlanExpansionActions();
-
-    // Skip welcome dialog in Playwright test environment
-    const isPlaywrightTest = import.meta.env.VITE_PLAYWRIGHT_SKIP_WELCOME === 'true';
-    const shouldShowWelcome = !isPlaywrightTest && !hasSeenWelcome && !storyBible;
 
     // Effect for the interactive background gradient
     useEffect(() => {
@@ -254,6 +252,9 @@ const AppContent: React.FC = () => {
                 setHasSeenWelcome(true); // Assume user loading a project has seen the welcome screen
 
                 // Determine workflow stage from loaded data
+                // Always set mode to 'director' for imported projects to ensure consistent UI state
+                setMode('director');
+                
                 if (data.storyBible) {
                     if (data.directorsVision) {
                         if (data.scenes.length > 0) {
@@ -418,7 +419,7 @@ const AppContent: React.FC = () => {
                         </button>
                         {mode === 'director' && (
                             <button onClick={() => setIsVisualBibleOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors mr-2" aria-label="Open visual bible">
-                                📖
+                                <BookOpenIcon className="w-6 h-6 text-gray-400" />
                             </button>
                         )}
                         <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" aria-label="Open settings">
@@ -433,24 +434,26 @@ const AppContent: React.FC = () => {
                     {mode === 'quick' ? (
                         <>
                             <section className="mb-12">
-                                <PipelineGenerator onOpenInDirectorMode={(result, prompt) => {
-                                    // Create project state and load it
-                                    import('./utils/projectUtils').then(({ createQuickProjectState }) => {
-                                        const projectState = createQuickProjectState(result, prompt);
-                                        
-                                        // Load the project into Director Mode
-                                        setStoryBible(projectState.storyBible);
-                                        setDirectorsVision(projectState.directorsVision);
-                                        setScenes(projectState.scenes);
-                                        setScenesToReview(projectState.scenesToReview);
-                                        
-                                        // Switch to Director Mode
-                                        setMode('director');
-                                        setWorkflowStage('director');
-                                        
-                                        addToast('Project loaded in Director Mode! You can now refine your story.', 'success');
-                                    });
-                                }} />
+                                <Suspense fallback={<LoadingFallback message="Loading quick generate..." />}>
+                                    <PipelineGenerator onOpenInDirectorMode={(result, prompt) => {
+                                        // Create project state and load it
+                                        import('./utils/projectUtils').then(({ createQuickProjectState }) => {
+                                            const projectState = createQuickProjectState(result, prompt);
+                                            
+                                            // Load the project into Director Mode
+                                            setStoryBible(projectState.storyBible);
+                                            setDirectorsVision(projectState.directorsVision);
+                                            setScenes(projectState.scenes);
+                                            setScenesToReview(projectState.scenesToReview);
+                                            
+                                            // Switch to Director Mode
+                                            setMode('director');
+                                            setWorkflowStage('director');
+                                            
+                                            addToast('Project loaded in Director Mode! You can now refine your story.', 'success');
+                                        });
+                                    }} />
+                                </Suspense>
                             </section>
                             <Suspense fallback={<LoadingFallback message="Loading artifacts..." />}>
                                 <ArtifactViewer addToast={addToast} />
@@ -462,20 +465,22 @@ const AppContent: React.FC = () => {
                                 <section className="mb-8 p-4 bg-gray-800/30 rounded-lg border border-gray-700/50">
                                     <h2 className="text-lg font-semibold text-amber-400 mb-2">Quick Generate Sandbox</h2>
                                     <p className="text-sm text-gray-400 mb-4">For fast one-prompt to video experiments. Switch to Quick Generate mode for full focus.</p>
-                                    <PipelineGenerator onOpenInDirectorMode={(result, prompt) => {
-                                        // Create project state and load it
-                                        import('./utils/projectUtils').then(({ createQuickProjectState }) => {
-                                            const projectState = createQuickProjectState(result, prompt);
-                                            
-                                            // Load the project into current Director Mode session
-                                            setStoryBible(projectState.storyBible);
-                                            setDirectorsVision(projectState.directorsVision);
-                                            setScenes(projectState.scenes);
-                                            setScenesToReview(projectState.scenesToReview);
-                                            
-                                            addToast('Quick run imported! Refine your story in Director Mode.', 'success');
-                                        });
-                                    }} />
+                                    <Suspense fallback={<LoadingFallback message="Loading quick generate..." />}>
+                                        <PipelineGenerator onOpenInDirectorMode={(result, prompt) => {
+                                            // Create project state and load it
+                                            import('./utils/projectUtils').then(({ createQuickProjectState }) => {
+                                                const projectState = createQuickProjectState(result, prompt);
+                                                
+                                                // Load the project into current Director Mode session
+                                                setStoryBible(projectState.storyBible);
+                                                setDirectorsVision(projectState.directorsVision);
+                                                setScenes(projectState.scenes);
+                                                setScenesToReview(projectState.scenesToReview);
+                                                
+                                                addToast('Quick run imported! Refine your story in Director Mode.', 'success');
+                                            });
+                                        }} />
+                                    </Suspense>
                                 </section>
                             )}
                             <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
@@ -562,11 +567,6 @@ const AppContent: React.FC = () => {
                     isLoading={isExtending}
                 />
                 </Suspense>
-            )}
-            {shouldShowWelcome && (
-                <WelcomeGuideModal 
-                    onClose={() => setHasSeenWelcome(true)}
-                />
             )}
             {mode === 'director' && (
                 <Suspense fallback={null}>

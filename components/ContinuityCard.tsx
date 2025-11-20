@@ -11,9 +11,11 @@ import FilmIcon from './icons/FilmIcon';
 import ImageIcon from './icons/ImageIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
 import BookOpenIcon from './icons/BookOpenIcon';
+import CheckCircleIcon from './icons/CheckCircleIcon';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 import { useVisualBible } from '../utils/hooks';
 import { getSceneVisualBibleContext, computeSceneContinuityScore, CharacterContinuityIssue } from '../services/continuityVisualContext';
+import { checkCoherenceGate } from '../utils/coherenceGate';
 
 interface ContinuityCardProps {
   scene: Scene;
@@ -326,6 +328,61 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                                <FilmIcon className="w-4 h-4" /> Extend Timeline from this Scene
                             </button>
                         )}
+
+                        {/* Coherence Gate: Mark as Final */}
+                        {(() => {
+                            const coherenceCheck = checkCoherenceGate(data);
+                            return (
+                                <div className="mt-6 pt-6 border-t border-gray-700" data-testid="coherence-gate">
+                                    <div className={`p-4 rounded-lg border ${
+                                        coherenceCheck.passed 
+                                            ? 'bg-green-900/20 border-green-700/50' 
+                                            : 'bg-amber-900/20 border-amber-700/50'
+                                    }`}>
+                                        <div className="flex items-start gap-3 mb-3">
+                                            <CheckCircleIcon className={`w-5 h-5 mt-0.5 ${
+                                                coherenceCheck.passed ? 'text-green-400' : 'text-amber-400'
+                                            }`} />
+                                            <div className="flex-1">
+                                                <h5 className={`font-semibold mb-1 ${
+                                                    coherenceCheck.passed ? 'text-green-300' : 'text-amber-300'
+                                                }`}>
+                                                    Coherence Gate: {coherenceCheck.passed ? 'Passed' : 'Not Met'}
+                                                </h5>
+                                                <p className="text-sm text-gray-300">{coherenceCheck.message}</p>
+                                                {!coherenceCheck.passed && (
+                                                    <div className="mt-2 text-xs text-gray-400 p-2 bg-gray-900/40 rounded">
+                                                        <strong>Threshold:</strong> {(coherenceCheck.threshold * 100).toFixed(0)}% required
+                                                        {coherenceCheck.score > 0 && (
+                                                            <> | <strong>Current:</strong> {(coherenceCheck.score * 100).toFixed(0)}%</>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                if (coherenceCheck.passed) {
+                                                    setContinuityData(prev => ({ ...prev, isAccepted: true }));
+                                                    addToast(`Scene "${scene.title}" marked as final!`, 'success');
+                                                } else {
+                                                    addToast(coherenceCheck.message, 'error');
+                                                }
+                                            }}
+                                            disabled={!coherenceCheck.passed}
+                                            className={`w-full px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
+                                                coherenceCheck.passed
+                                                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                                                    : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                            }`}
+                                            data-testid="btn-mark-as-final"
+                                        >
+                                            {data.isAccepted ? '✓ Scene Finalized' : coherenceCheck.passed ? 'Mark Scene as Final' : 'Improve Score to Finalize'}
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 ) : (
                     <FeedbackCard title="Analysis & Feedback" content={data.videoAnalysis} isLoading={isLoading} />

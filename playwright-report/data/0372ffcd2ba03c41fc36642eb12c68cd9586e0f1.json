@@ -1,0 +1,64 @@
+{
+  "helper": "ComfyUIStatus",
+  "timestamp": "2025-11-19T06:15:59.052Z",
+  "comfyUrl": "http://127.0.0.1:8188",
+  "projectPath": "C:\\Dev\\gemDirect1",
+  "settingsPath": "C:\\Dev\\gemDirect1\\localGenSettings.json",
+  "probedEndpoints": {
+    "system_stats": {
+      "ok": true,
+      "durationMs": 60,
+      "error": null
+    },
+    "queue": {
+      "ok": true,
+      "durationMs": 3,
+      "error": null
+    }
+  },
+  "systemStats": {
+    "deviceCount": 1,
+    "devices": [
+      {
+        "name": "cuda:0 NVIDIA GeForce RTX 3090 : cudaMallocAsync",
+        "totalMB": null,
+        "freeMB": null,
+        "usedMB": null
+      }
+    ],
+    "durationMs": null
+  },
+  "queueState": {
+    "running": null,
+    "pending": null,
+    "blocked": null,
+    "latencyMs": null
+  },
+  "workflows": {
+    "hasWanT2I": true,
+    "hasWanI2V": true
+  },
+  "mappings": {
+    "wanT2I": {
+      "clipText": true,
+      "keyframeImageRequired": false,
+      "clipNodePresent": true,
+      "inferredClipNode": null
+    },
+    "wanI2V": {
+      "clipText": true,
+      "loadImage": true,
+      "keyframeImageRequired": true,
+      "clipNodePresent": true,
+      "loadNodePresent": true,
+      "inferredClipNode": null,
+      "inferredLoadNode": null
+    }
+  },
+  "warnings": [],
+  "logEntries": [
+    "2025-11-19T06:15:59.047Z [INFO] Probed /system_stats: ok=true duration=60ms",
+    "2025-11-19T06:15:59.051Z [INFO] Probed /queue: ok=true duration=3ms"
+  ],
+  "logPath": "C:/Dev/gemDirect1/logs/20251119-011556/test-results/comfyui-status/comfyui-status.log"
+}

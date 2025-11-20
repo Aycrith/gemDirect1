@@ -91,6 +91,8 @@ test.describe('WAN full journey (React → WAN video)', () => {
         await saveButton.click();
       }
       
+      // Wait for network idle before closing modal to prevent element detachment
+      await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
       await localGenModal.getByRole('button', { name: 'Close' }).click();
     }
 

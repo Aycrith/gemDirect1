@@ -34,7 +34,8 @@
 ## 📋 THE 5-MINUTE SUMMARY
 
 ### Current Status (Updated 2025-11-20)
-- ✅ **Working**: React UI, story generation, WAN2 video generation, telemetry collection
+- ✅ **Working**: React UI, story generation, WAN2 video generation (ComfyUI), telemetry collection
+- ✅ **NEW**: FastVideo alternate provider (optional, experimental - see README.md)
 - ✅ **Validated**: WAN2 pipeline generates MP4 files successfully (run 2025-11-19: 3/3 scenes)
 - ✅ **Tests**: ~44/50 Playwright tests passing (88%), minor UI/fixture issues only
 - ⚠️ **Performance**: React mount time 1581ms (581ms over 1000ms target)

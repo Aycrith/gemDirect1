@@ -69,8 +69,15 @@ export const UsageProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setUsage(initialState);
   }, []);
 
+  // P2 Optimization (2025-11-20): Memoize context value to prevent unnecessary re-renders
+  const contextValue = React.useMemo(() => ({ 
+    usage, 
+    logApiCall, 
+    clearUsage 
+  }), [usage, logApiCall, clearUsage]);
+
   return (
-    <UsageContext.Provider value={{ usage, logApiCall, clearUsage }}>
+    <UsageContext.Provider value={contextValue}>
       {children}
     </UsageContext.Provider>
   );

@@ -91,7 +91,7 @@ import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import ImageIcon from './icons/ImageIcon';
 import { generateVideoRequestPayloads } from '../services/payloadService';
-import { generateTimelineVideos, stripDataUrlPrefix, queueComfyUIPrompt } from '../services/comfyUIService';
+import { generateTimelineVideos, stripDataUrlPrefix, queueComfyUIPrompt, validateWorkflowAndMappings } from '../services/comfyUIService';
 import FinalPromptModal from './FinalPromptModal';
 import LocalGenerationStatusComponent from './LocalGenerationStatus';
 import TimelineIcon from './icons/TimelineIcon';
@@ -113,7 +113,7 @@ import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExp
 // TODO: Visual Bible integration not yet implemented
 // import ScenePlayer from './ScenePlayer';
 // import VisualBibleLinkModal from './VisualBibleLinkModal';
-// import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
+import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -637,6 +637,15 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         const sceneKeyframe = generatedImages[scene.id];
         if (!sceneKeyframe) {
             updateStatus({ status: 'error', message: 'Scene keyframe is required. Please generate a keyframe image first.', progress: 0 });
+            return;
+        }
+
+        // CRITICAL: Validate WAN I2V workflow has required mappings before queueing
+        try {
+            validateWorkflowAndMappings(localGenSettings, 'wan-i2v');
+        } catch (validationError) {
+            const errorMsg = validationError instanceof Error ? validationError.message : 'Workflow validation failed';
+            updateStatus({ status: 'error', message: `Workflow validation failed: ${errorMsg}. Please check ComfyUI settings.`, progress: 0 });
             return;
         }
 

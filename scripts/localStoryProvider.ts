@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
 import { type LLMStoryRequest, type LLMStoryResponse, type LLMRequestFormat } from './types/storyTypes';
+import { generateCorrelationId, logCorrelation } from '../utils/correlation.ts';
 
 // Increase default timeout for local LLM calls to allow slower local/stable LLMs
 // (LM Studio and similar) extra time to reply. Can be overridden via CLI/env.
@@ -67,13 +68,19 @@ const fetchDirectJsonStory = async (
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+        const correlationId = generateCorrelationId();
+        logCorrelation(correlationId, 'lm-studio-direct-json', { url, sceneCount: request.sceneCount });
+
         const body = {
             sceneCount: request.sceneCount,
             seed: request.seed,
         };
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Correlation-ID': correlationId,
+            },
             body: JSON.stringify(body),
             signal: controller.signal,
         });
@@ -126,9 +133,15 @@ const fetchOpenAIChatStory = async (
             body.seed = request.seed;
         }
 
+        const correlationId = generateCorrelationId();
+        logCorrelation(correlationId, 'lm-studio-openai-chat', { url, model, sceneCount: request.sceneCount });
+
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-Correlation-ID': correlationId,
+            },
             body: JSON.stringify(body),
             signal: controller.signal,
         });

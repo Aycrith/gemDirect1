@@ -2,8 +2,18 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion, DetailedShotResult, WorkflowMapping } from "../types";
 import { ApiStatus } from "../contexts/ApiStatusContext";
 import { loadTemplate } from "./templateLoader";
+import { generateCorrelationId, logCorrelation, networkTap } from "../utils/correlation";
 
-const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+// P2.6 Optimization (2025-11-20): Defer Gemini SDK initialization until first API call
+// Instead of creating GoogleGenAI instance at module load, use lazy initialization
+let ai: GoogleGenAI | null = null;
+const getAI = () => {
+  if (!ai) {
+    ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+  }
+  return ai;
+};
+
 const model = 'gemini-2.5-flash';
 const proModel = 'gemini-2.5-pro';
 const imageModel = 'gemini-2.5-flash-image';
@@ -40,12 +50,41 @@ export const withRetry = async <T>(
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<T> => {
+    // Generate correlation ID for this request chain
+    const correlationId = generateCorrelationId();
+    const startTime = Date.now();
+    
+    logCorrelation(
+        { correlationId, timestamp: startTime, source: 'frontend' },
+        `Starting ${context}`,
+        { model: modelName, attempt: 1 }
+    );
+
     let lastError: unknown = new Error(`API call failed for ${context}`);
     onStateChange?.('loading', `Requesting: ${context}...`);
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
             const { result, tokens } = await apiCall();
+            
+            // Log successful correlation
+            const duration = Date.now() - startTime;
+            logCorrelation(
+                { correlationId, timestamp: Date.now(), source: 'frontend' },
+                `Completed ${context}`,
+                { model: modelName, tokens, duration, attempt: attempt + 1 }
+            );
+            
+            // Add to network tap for correlation tracking
+            networkTap.add({
+                correlationId,
+                url: 'gemini-api',
+                method: 'POST',
+                status: 200,
+                duration,
+                timestamp: startTime,
+            });
+
             onStateChange?.('success', `${context} successful!`);
             logApiCall({ context, model: modelName, tokens, status: 'success' });
             return result;
@@ -79,7 +118,7 @@ const summarizationSystemInstruction = "You are an expert script supervisor. You
 
 const getPrunedContext = async (prompt: string, context: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string> => {
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel, // Use the more powerful model for summarization
             contents: prompt,
             config: {
@@ -221,7 +260,7 @@ ${template.content}`;
     };
     
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
@@ -265,7 +304,7 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
     };
 
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
@@ -332,7 +371,7 @@ export const generateAndDetailInitialShots = async (
     };
     
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: detailedShotsSchema },
@@ -357,7 +396,7 @@ export const suggestStoryIdeas = async (logApiCall: ApiLogCallback, onStateChang
     const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
     
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
@@ -395,7 +434,7 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible, logApiCall
     };
 
      const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
@@ -426,7 +465,7 @@ export const suggestNegativePrompts = async (directorsVision: string, sceneSumma
     const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
     
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
@@ -468,7 +507,7 @@ export const refineDirectorsVision = async (
     Return a single paragraph of the refined Director's Vision. It should be a more descriptive and professional version of the original idea, rich with cinematic terminology (e.g., mentioning camera work, color palettes, lighting styles, editing pace, sound design).`;
 
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { temperature: 0.7 },
@@ -513,7 +552,7 @@ export const refineStoryBibleSection = async (
     `;
 
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { temperature: 0.6 },
@@ -551,7 +590,7 @@ export const suggestCoDirectorObjectives = async (logline: string, sceneSummary:
 
     const responseSchema = { type: Type.ARRAY, items: { type: Type.STRING } };
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
@@ -634,7 +673,7 @@ export const getCoDirectorSuggestions = async (prunedContext: string, timelineSu
     };
     
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema, temperature: 0.7 },
@@ -707,7 +746,7 @@ export const batchProcessShotEnhancements = async (
     };
 
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
@@ -743,7 +782,7 @@ text, watermarks, logos, blurry, ugly, tiling, poorly drawn hands, poorly drawn 
 `;
 
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: imageModel,
             contents: { parts: [{ text: prompt }] },
             config: {
@@ -815,7 +854,7 @@ text, watermark, logo, signature, username, error, blurry, jpeg artifacts, low r
 `;
 
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: imageModel,
             contents: { parts: [{ text: prompt }] },
             config: {
@@ -858,7 +897,7 @@ export const analyzeVideoFrames = async (frames: string[], logApiCall: ApiLogCal
     ];
     
      const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: model, // Using flash for faster analysis
             contents: { parts: contents },
         });
@@ -947,7 +986,7 @@ export const scoreContinuity = async (prunedContext: string, scene: Scene, video
     };
 
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema },
@@ -1006,7 +1045,7 @@ export const generateNextSceneFromContinuity = async (
     };
 
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: model, // gemini-2.5-flash
             contents: { parts: [textPart, imagePart] },
             config: { responseMimeType: 'application/json', responseSchema: responseSchema, temperature: 0.6 }
@@ -1049,7 +1088,7 @@ export const updateSceneSummaryWithRefinements = async (
     };
 
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel,
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema, temperature: 0.5 },
@@ -1107,7 +1146,7 @@ export const generateWorkflowMapping = async (
     };
 
     const apiCall = async () => {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model: proModel, // Use gemini-2.5-pro for this complex reasoning task
             contents: prompt,
             config: { responseMimeType: 'application/json', responseSchema: responseSchema, temperature: 0.1 },

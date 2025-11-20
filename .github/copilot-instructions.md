@@ -15,7 +15,7 @@ AI-powered cinematic story generator creating production video timelines. Integr
 
 **Before making ANY changes**:
 1. Read `README.md` (5 minutes) - Project overview
-2. Read `Documentation/CURRENT_STATUS.md` (10 minutes) - Complete status
+2. Read `Documentation/PROJECT_STATUS_CONSOLIDATED.md` (15 minutes) - **Single source of truth**
 3. Read `START_HERE.md` (5 minutes) - Quick context
 4. Run `npm run check:health-helper` - Validates setup
 5. Run `npm test && npx playwright test` - Validates current state
@@ -31,9 +31,9 @@ AI-powered cinematic story generator creating production video timelines. Integr
 
 **Essential Files**:
 - `README.md` - Quick start, commands, status badges
+- `Documentation/PROJECT_STATUS_CONSOLIDATED.md` - **Single source of truth** (replaces CURRENT_STATUS.md)
 - `START_HERE.md` - 5-minute context summary
-- `Documentation/CURRENT_STATUS.md` - Complete project status
-- `AGENT_HANDOFF_CORRECTION_20251120.md` - Latest status correction
+- `AGENT_HANDOFF_PHASE2_COMPLETE_20251120.md` - Latest session handoff
 - `Documentation/Architecture/WORKFLOW_ARCHITECTURE_REFERENCE.md` - ComfyUI node mappings
 - `Testing/E2E/STORY_TO_VIDEO_TEST_CHECKLIST.md` - Testing protocols
 
@@ -176,6 +176,26 @@ VITE_LOCAL_LLM_TEMPERATURE=0.35
 - **Pre-flight validation**: Always call `comfyUIService.validateWorkflowAndMappings()` before queuing
 - **Health check helper**: Run `npm run check:health-helper` (or `node scripts/comfyui-status.ts`) to validate server, workflows, mappings, queue status
 
+### Workflow Profile Loading (IMPORTANT)
+**The `localGenSettings.json` file is NOT automatically loaded by the browser**. It's a reference/backup file. To load workflows into the browser:
+
+1. **Via Settings UI (Recommended)**:
+   - Open Settings (⚙️ icon) → ComfyUI Settings tab
+   - Click "Import from File" button in Workflow Profiles section
+   - Select `localGenSettings.json` to load all profiles at once
+   - Profiles load into browser's IndexedDB storage
+
+2. **Default behavior**:
+   - Browser creates empty workflow profiles on first load
+   - Profiles persist in IndexedDB via `usePersistentState` hook
+   - `localGenSettings.json` serves as configuration template only
+
+3. **Validation**:
+   - Workflow profiles show status: "✓ Ready", "⚠ Incomplete", or "○ Not configured"
+   - wan-t2i needs: CLIP text mapping
+   - wan-i2v needs: CLIP text mapping + Keyframe image mapping
+   - Check profile status before attempting keyframe/video generation
+
 ### Terminal Safety
 **NEVER use process-killing commands in shared terminals.** Use the safe wrapper:
 
@@ -268,10 +288,11 @@ Mirror these with `VITE_LOCAL_*` variants for React UI access.
 
 ### Finding Documentation
 **If you need to find a specific document**:
-1. Check `Documentation/CURRENT_STATUS.md` first (single source of truth)
+1. Check `Documentation/PROJECT_STATUS_CONSOLIDATED.md` first (single source of truth)
 2. Use directory structure above to navigate categories
 3. Each category has a README.md explaining contents
 4. Old handoff docs are in `Agents/Handoffs/` (archived, may be outdated)
+5. Historical root docs are in `docs/archived/root-docs-2025-11/` (superseded)
 | `scripts/comfyui-status.ts` | Pre-flight health checker |
 | `workflows/image_netayume_lumina_t2i.json` | WAN T2I workflow (keyframes) |
 | `workflows/video_wan2_2_5B_ti2v.json` | WAN I2V workflow (videos) |
@@ -351,9 +372,10 @@ Mirror these with `VITE_LOCAL_*` variants for React UI access.
 5. Do NOT create new handoff docs in root (use `Agents/Handoffs/` if needed)
 
 ## Documentation Resources
-- **Current Status**: `Documentation/CURRENT_STATUS.md` (ALWAYS READ FIRST)
+- **Current Status**: `Documentation/PROJECT_STATUS_CONSOLIDATED.md` (ALWAYS READ FIRST - single source of truth)
 - **Architecture**: `Documentation/Architecture/WORKFLOW_ARCHITECTURE_REFERENCE.md`
 - **Testing**: `Testing/E2E/STORY_TO_VIDEO_TEST_CHECKLIST.md`
 - **ComfyUI**: `Workflows/ComfyUI/COMFYUI_WORKFLOW_INDEX.md`
 - **Quick Start**: `START_HERE.md` (5-minute summary)
 - **Agent Guidelines**: This file (`.github/copilot-instructions.md`)
+- **Legacy Docs**: `docs/archived/root-docs-2025-11/` (superseded, for reference only)

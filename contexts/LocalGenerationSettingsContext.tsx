@@ -98,8 +98,11 @@ export const LocalGenerationSettingsProvider: React.FC<{ children: React.ReactNo
         }
     }, [settings]);
 
+    // P2 Optimization (2025-11-20): Memoize context value to prevent unnecessary re-renders
+    const contextValue = React.useMemo(() => ({ settings, setSettings }), [settings, setSettings]);
+
     return (
-        <LocalGenerationSettingsContext.Provider value={{ settings, setSettings }}>
+        <LocalGenerationSettingsContext.Provider value={contextValue}>
             {children}
         </LocalGenerationSettingsContext.Provider>
     );

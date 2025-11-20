@@ -1,5 +1,6 @@
 import type { StoryBible, HeroArc } from '../types';
 import * as localFallback from './localFallbackService';
+import { generateCorrelationId, logCorrelation } from '../utils/correlation';
 
 interface HeroArcTemplate {
   id: string;
@@ -57,6 +58,20 @@ const getLocalStoryProviderUrl = (): string | null => {
     if (typeof window !== 'undefined' && import.meta.env.DEV) {
       return '/api/local-llm';
     }
+    
+    // In production builds, do not silently switch to proxy route
+    // Browser fetch to direct URLs will likely fail due to CORS
+    if (typeof window !== 'undefined' && !import.meta.env.DEV) {
+      // Check if URL is a direct IP/host (not a relative path)
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        throw new Error(
+          `Production CORS error: Cannot fetch from ${url} directly in browser. ` +
+          'Please configure a reverse proxy or use server-side rendering for LLM calls. ' +
+          'See documentation for proxy setup instructions.'
+        );
+      }
+    }
+    
     return url;
   }
   
@@ -142,9 +157,17 @@ const callStoryProvider = async (
       stream: false,
     };
 
+    const correlationId = generateCorrelationId();
+    const corrContext = { correlationId, timestamp: Date.now(), source: 'lm-studio' as const };
+    logCorrelation(corrContext, 'story-generation-request', { providerUrl, model: body.model });
+
     const response = await fetch(providerUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Correlation-ID': correlationId,
+        'X-Request-ID': correlationId,
+      },
       body: JSON.stringify(body),
       signal: controller.signal,
     });

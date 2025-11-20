@@ -197,8 +197,8 @@ test.describe('Story Bible Generation', () => {
       });
     });
     
-    // Try to find story idea textarea - may not be visible in all workflow states
-    const ideaTextarea = page.locator('textarea[aria-label="Story Idea"], textarea[placeholder*="story"]').first();
+    // Try to find story idea textarea using stable testid - may not be visible in all workflow states
+    const ideaTextarea = page.getByTestId('story-idea-input');
     
     try {
       await ideaTextarea.waitFor({ state: 'visible', timeout: 5000 });

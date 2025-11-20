@@ -21,7 +21,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
     onSave,
     addToast = () => {}
 }) => {
-    const [activeTab, setActiveTab] = useState<'llm' | 'comfyui' | 'advanced'>('llm');
+    const [activeTab, setActiveTab] = useState<'llm' | 'video' | 'comfyui' | 'advanced'>('llm');
     const [formData, setFormData] = useState<LocalGenerationSettings>(settings);
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
         llm: { status: 'idle', message: '' },
@@ -151,12 +151,23 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
     const handleReset = () => {
         if (confirm('Reset all settings to defaults? This cannot be undone.')) {
             const defaults: LocalGenerationSettings = {
+                videoProvider: 'comfyui-local',
                 comfyUIUrl: 'http://127.0.0.1:8188',
                 comfyUIClientId: crypto.randomUUID(),
                 comfyUIWebSocketUrl: 'ws://127.0.0.1:8188/ws',
                 workflowJson: '',
                 mapping: {},
                 workflowProfiles: formData.workflowProfiles || {},
+                fastVideo: {
+                    endpointUrl: 'http://127.0.0.1:8055',
+                    modelId: 'FastVideo/FastWan2.2-TI2V-5B-Diffusers',
+                    fps: 16,
+                    numFrames: 121,
+                    height: 544,
+                    width: 1280,
+                    outputDir: 'artifacts/fastvideo',
+                    attentionBackend: 'VIDEO_SPARSE_ATTN'
+                },
                 llmProviderUrl: 'http://192.168.50.192:1234/v1/chat/completions',
                 llmModel: 'mistralai/mistral-7b-instruct-v0.3',
                 llmTemperature: 0.35,
@@ -239,6 +250,16 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                         }`}
                     >
                         🤖 LLM Settings
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('video')}
+                        className={`px-4 py-3 text-sm font-medium transition-colors ${
+                            activeTab === 'video' 
+                                ? 'text-amber-400 border-b-2 border-amber-400' 
+                                : 'text-gray-400 hover:text-gray-200'
+                        }`}
+                    >
+                        🎬 Video Provider
                     </button>
                     <button
                         onClick={() => setActiveTab('comfyui')}
@@ -378,6 +399,219 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                         </div>
                     )}
 
+                    {activeTab === 'video' && (
+                        <div className="space-y-6">
+                            <div className="bg-blue-900/20 border border-blue-700/30 rounded-lg p-4 mb-4">
+                                <h4 className="text-sm font-medium text-blue-300 mb-2">📹 Video Generation Provider</h4>
+                                <p className="text-xs text-gray-400">
+                                    Choose between ComfyUI (default, local workflows) or FastVideo (alternate local TI2V engine). 
+                                    ComfyUI requires workflow configuration below. FastVideo requires separate server setup.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                    Video Provider <span className="text-red-400">*</span>
+                                </label>
+                                <select
+                                    value={formData.videoProvider || 'comfyui-local'}
+                                    onChange={(e) => handleInputChange('videoProvider', e.target.value as 'comfyui-local' | 'fastvideo-local')}
+                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                >
+                                    <option value="comfyui-local">ComfyUI (Default)</option>
+                                    <option value="fastvideo-local">FastVideo (Experimental)</option>
+                                </select>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    {formData.videoProvider === 'fastvideo-local' 
+                                        ? 'FastVideo: Direct Python adapter for FastWan2.2-TI2V-5B'
+                                        : 'ComfyUI: Flexible workflow-based generation'}
+                                </p>
+                            </div>
+
+                            {formData.videoProvider === 'fastvideo-local' && (
+                                <div className="space-y-4 border-l-4 border-purple-500 pl-4">
+                                    <div className="bg-purple-900/20 border border-purple-700/30 rounded-lg p-3">
+                                        <p className="text-xs text-purple-300">
+                                            ⚠️ <strong>FastVideo Requirements:</strong> Conda environment 'fastvideo', NVIDIA GPU (16GB+ VRAM), 
+                                            FastWan2.2-TI2V-5B model downloaded. Start server with: <code className="text-purple-200">scripts/run-fastvideo-server.ps1</code>
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                                            Server Endpoint URL <span className="text-red-400">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={formData.fastVideo?.endpointUrl || 'http://127.0.0.1:8055'}
+                                            onChange={(e) => handleInputChange('fastVideo', { ...(formData.fastVideo || {}), endpointUrl: e.target.value })}
+                                            placeholder="http://127.0.0.1:8055"
+                                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">FastVideo adapter HTTP endpoint</p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                                            Model ID
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={formData.fastVideo?.modelId || 'FastVideo/FastWan2.2-TI2V-5B-Diffusers'}
+                                            onChange={(e) => handleInputChange('fastVideo', { ...(formData.fastVideo || {}), modelId: e.target.value })}
+                                            placeholder="FastVideo/FastWan2.2-TI2V-5B-Diffusers"
+                                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">HuggingFace model identifier</p>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                FPS (8-30)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={formData.fastVideo?.fps || 16}
+                                                onChange={(e) => handleInputChange('fastVideo', { ...(formData.fastVideo || {}), fps: Number(e.target.value) })}
+                                                min="8"
+                                                max="30"
+                                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                Frames (8-300)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={formData.fastVideo?.numFrames || 121}
+                                                onChange={(e) => handleInputChange('fastVideo', { ...(formData.fastVideo || {}), numFrames: Number(e.target.value) })}
+                                                min="8"
+                                                max="300"
+                                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                Width (256-1920)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={formData.fastVideo?.width || 1280}
+                                                onChange={(e) => handleInputChange('fastVideo', { ...(formData.fastVideo || {}), width: Number(e.target.value) })}
+                                                min="256"
+                                                max="1920"
+                                                step="64"
+                                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                Height (256-1080)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={formData.fastVideo?.height || 544}
+                                                onChange={(e) => handleInputChange('fastVideo', { ...(formData.fastVideo || {}), height: Number(e.target.value) })}
+                                                min="256"
+                                                max="1080"
+                                                step="64"
+                                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                                            Output Directory
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={formData.fastVideo?.outputDir || 'artifacts/fastvideo'}
+                                            onChange={(e) => handleInputChange('fastVideo', { ...(formData.fastVideo || {}), outputDir: e.target.value })}
+                                            placeholder="artifacts/fastvideo"
+                                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">Relative path for generated videos</p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                                            Attention Backend
+                                        </label>
+                                        <select
+                                            value={formData.fastVideo?.attentionBackend || 'VIDEO_SPARSE_ATTN'}
+                                            onChange={(e) => handleInputChange('fastVideo', { ...(formData.fastVideo || {}), attentionBackend: e.target.value })}
+                                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        >
+                                            <option value="VIDEO_SPARSE_ATTN">VIDEO_SPARSE_ATTN (Recommended)</option>
+                                            <option value="FLASH_ATTN">FLASH_ATTN</option>
+                                            <option value="XFORMERS">XFORMERS</option>
+                                        </select>
+                                        <p className="text-xs text-gray-500 mt-1">Memory optimization strategy</p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                                            Seed (optional)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={formData.fastVideo?.seed || ''}
+                                            onChange={(e) => handleInputChange('fastVideo', { ...(formData.fastVideo || {}), seed: e.target.value ? Number(e.target.value) : undefined })}
+                                            placeholder="Leave empty for random"
+                                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">Reproducible generation</p>
+                                    </div>
+
+                                    <div className="pt-4">
+                                        <button
+                                            onClick={async () => {
+                                                setConnectionStatus(prev => ({ ...prev, comfyui: { status: 'testing', message: 'Testing FastVideo...' } }));
+                                                try {
+                                                    const { checkFastVideoHealth } = await import('../services/fastVideoService');
+                                                    const health = await checkFastVideoHealth(formData);
+                                                    setConnectionStatus(prev => ({ 
+                                                        ...prev, 
+                                                        comfyui: { 
+                                                            status: 'success', 
+                                                            message: `Connected! Model: ${health.modelId.split('/').pop()} (${health.modelLoaded ? 'loaded' : 'not loaded'})` 
+                                                        } 
+                                                    }));
+                                                    addToast('FastVideo connection successful', 'success');
+                                                } catch (error: any) {
+                                                    setConnectionStatus(prev => ({ 
+                                                        ...prev, 
+                                                        comfyui: { 
+                                                            status: 'error', 
+                                                            message: error.message || 'Connection failed' 
+                                                        } 
+                                                    }));
+                                                    addToast('FastVideo connection failed', 'error');
+                                                }
+                                            }}
+                                            disabled={connectionStatus.comfyui.status === 'testing'}
+                                            className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            {connectionStatus.comfyui.status === 'testing' ? 'Testing...' : 'Test FastVideo Connection'}
+                                        </button>
+                                        {connectionStatus.comfyui.message && connectionStatus.comfyui.message.includes('FastVideo') && (
+                                            <div className={`mt-2 text-sm flex items-center gap-2 ${getStatusColor(connectionStatus.comfyui.status)}`}>
+                                                <span>{getStatusIcon(connectionStatus.comfyui.status)}</span>
+                                                <span>{connectionStatus.comfyui.message}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {activeTab === 'comfyui' && (
                         <div className="space-y-6">
                             <div className="space-y-4">
@@ -449,25 +683,89 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                             </div>
 
                             <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
-                                <h4 className="text-sm font-semibold text-gray-300 mb-2">Workflow Profiles</h4>
+                                <div className="flex justify-between items-center mb-3">
+                                    <h4 className="text-sm font-semibold text-gray-300">Workflow Profiles</h4>
+                                    <button
+                                        onClick={() => {
+                                            const input = document.createElement('input');
+                                            input.type = 'file';
+                                            input.accept = '.json';
+                                            input.onchange = async (e) => {
+                                                const file = (e.target as HTMLInputElement).files?.[0];
+                                                if (!file) return;
+                                                try {
+                                                    const text = await file.text();
+                                                    const data = JSON.parse(text);
+                                                    if (data.workflowProfiles) {
+                                                        handleInputChange('workflowProfiles', data.workflowProfiles);
+                                                        addToast('Workflow profiles imported successfully', 'success');
+                                                    } else {
+                                                        addToast('Invalid file: no workflowProfiles found', 'error');
+                                                    }
+                                                } catch (error) {
+                                                    addToast('Failed to import workflows: ' + (error as Error).message, 'error');
+                                                }
+                                            };
+                                            input.click();
+                                        }}
+                                        className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                                    >
+                                        Import from File
+                                    </button>
+                                </div>
                                 <div className="space-y-2 text-sm text-gray-400">
                                     {formData.workflowProfiles && Object.keys(formData.workflowProfiles).length > 0 ? (
-                                        Object.entries(formData.workflowProfiles).map(([id, profile]) => (
-                                            <div key={id} className="flex items-center justify-between py-2 border-b border-gray-700 last:border-0">
-                                                <div>
-                                                    <span className="font-medium text-gray-300">{profile.label || id}</span>
-                                                    <span className="text-xs text-gray-500 ml-2">({id})</span>
+                                        Object.entries(formData.workflowProfiles).map(([id, profile]) => {
+                                            const readiness = (() => {
+                                                if (!profile.workflowJson) return null;
+                                                const mapping = profile.mapping || {};
+                                                const mappedTypes = new Set(Object.values(mapping));
+                                                const hasText = mappedTypes.has('human_readable_prompt') || mappedTypes.has('full_timeline_json');
+                                                const hasKeyframe = mappedTypes.has('keyframe_image');
+                                                const isReady = id === 'wan-t2i' ? hasText : (hasText && hasKeyframe);
+                                                return { isReady, hasText, hasKeyframe };
+                                            })();
+
+                                            return (
+                                                <div key={id} className="flex items-center justify-between py-2 border-b border-gray-700 last:border-0">
+                                                    <div>
+                                                        <span className="font-medium text-gray-300">{profile.label || id}</span>
+                                                        <span className="text-xs text-gray-500 ml-2">({id})</span>
+                                                        {readiness && (
+                                                            <div className="flex gap-1 mt-1" data-testid={`wan-readiness-${id}`}>
+                                                                <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                                    readiness.hasText ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                                                                }`} title="CLIP text mapping for prompts">
+                                                                    {readiness.hasText ? '✓' : '✗'} CLIP
+                                                                </span>
+                                                                {id === 'wan-i2v' && (
+                                                                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                                        readiness.hasKeyframe ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                                                                    }`} title="LoadImage mapping for keyframe_image">
+                                                                        {readiness.hasKeyframe ? '✓' : '✗'} Keyframe
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <span className={`text-xs px-2 py-1 rounded ${
+                                                        readiness?.isReady ? 'bg-green-900/30 text-green-400' : 
+                                                        profile.workflowJson ? 'bg-amber-900/30 text-amber-400' : 'bg-gray-700 text-gray-400'
+                                                    }`}>
+                                                        {readiness?.isReady ? '✓ Ready' : profile.workflowJson ? '⚠ Incomplete' : '○ Not configured'}
+                                                    </span>
                                                 </div>
-                                                <span className={`text-xs px-2 py-1 rounded ${
-                                                    profile.workflowJson ? 'bg-green-900/30 text-green-400' : 'bg-gray-700 text-gray-400'
-                                                }`}>
-                                                    {profile.workflowJson ? '✓ Loaded' : '○ Not configured'}
-                                                </span>
-                                            </div>
-                                        ))
+                                            );
+                                        })
                                     ) : (
                                         <p className="text-gray-500">No workflow profiles configured</p>
                                     )}
+                                </div>
+                                <div className="mt-3 pt-3 border-t border-gray-700">
+                                    <p className="text-xs text-gray-500">
+                                        💡 To load workflows: Use "Import from File" button above to load from localGenSettings.json, 
+                                        or paste workflow JSON directly into the Advanced tab's mapping editor.
+                                    </p>
                                 </div>
                             </div>
                         </div>
