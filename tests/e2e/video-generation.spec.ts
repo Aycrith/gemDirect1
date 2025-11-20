@@ -40,23 +40,19 @@ test.describe('Video Generation (ComfyUI Integration)', () => {
     await page.waitForTimeout(1000);
   });
 
-  test.skip('settings modal provides access to local generation settings', async ({ page }) => {
-    // SKIPPED: Settings modal selector needs verification
-    // Look for settings gear icon or button
-    const settingsButton = page.locator('button[aria-label*="settings"], button[title*="settings"], button:has-text("Settings")').first();
+  test('settings modal provides access to local generation settings', async ({ page }) => {
+    // ENABLED: Settings button exists and was tested in earlier session
+    const settingsButton = page.locator('button[aria-label="Open settings"]').first();
     
-    if (await settingsButton.isVisible({ timeout: 5000 })) {
-      await settingsButton.click();
-      await page.waitForTimeout(500);
-      
-      // Check if modal opened
-      const modal = page.locator('[role="dialog"], .modal').first();
-      await expect(modal).toBeVisible({ timeout: 5000 });
-      
-      console.log('✅ Settings modal accessible');
-    } else {
-      console.log('⚠️ Settings button not found - may need UI update');
-    }
+    await expect(settingsButton).toBeVisible({ timeout: 5000 });
+    await settingsButton.click();
+    await page.waitForTimeout(500);
+    
+    // Check if settings modal opened with ComfyUI tab
+    const comfyUITab = page.locator('button:has-text("ComfyUI Settings")').first();
+    await expect(comfyUITab).toBeVisible({ timeout: 5000 });
+    
+    console.log('✅ Settings modal with ComfyUI settings accessible');
   });
 
   test('scene keyframe generation button exists', async ({ page }) => {

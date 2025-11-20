@@ -22,8 +22,30 @@ export default defineConfig(({ mode }) => {
                     });
                   },
                 },
+                // Proxy for LM Studio models endpoint (Settings Modal test connection)
+                '/api/local-llm-models': {
+                  target: env.VITE_LOCAL_STORY_PROVIDER_URL.replace('/v1/chat/completions', ''),
+                  changeOrigin: true,
+                  rewrite: (path) => path.replace(/^\/api\/local-llm-models/, '/v1/models'),
+                  configure: (proxy) => {
+                    proxy.on('proxyReq', (proxyReq) => {
+                      proxyReq.setHeader('Content-Type', 'application/json');
+                    });
+                  },
+                },
               }
             : {}),
+          // Proxy for ComfyUI system_stats endpoint (Settings Modal test connection)
+          '/api/comfyui-test': {
+            target: 'http://127.0.0.1:8188',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/api\/comfyui-test/, '/system_stats'),
+            configure: (proxy) => {
+              proxy.on('proxyReq', (proxyReq) => {
+                proxyReq.setHeader('Content-Type', 'application/json');
+              });
+            },
+          },
         },
       },
       plugins: [react()],

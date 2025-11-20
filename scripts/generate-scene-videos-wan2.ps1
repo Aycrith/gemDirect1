@@ -2,7 +2,9 @@ param(
   [string]$RunDir,
   [string]$ComfyUrl,
   [int]$MaxWaitSeconds = 0,
-  [int]$PollIntervalSeconds = 0
+  [int]$PollIntervalSeconds = 0,
+  [int]$MemoryCleanupInterval = 10,  # Clear ComfyUI memory every N scenes (0 = disable)
+  [string]$SceneFilter = ""  # Optional: Only process this specific scene ID (e.g., "scene-001")
 )
 
 # Use environment variables if parameters not provided
@@ -35,8 +37,10 @@ Try {
             .SYNOPSIS
               Check if a prompt has completed execution and detect errors.
             .DESCRIPTION
-              Queries ComfyUI history endpoint to determine prompt execution status.
+              Queries ComfyUI queue and history to determine prompt execution status.
               Returns status object with: status (pending/running/completed/error), error details if any.
+              
+              CRITICAL FIX: Check BOTH queue and history because of race condition during completion transition.
           #>
           param(
             [string]$ComfyUrl,
@@ -44,6 +48,45 @@ Try {
             [int]$TimeoutSec = 5
           )
   
+          $inQueue = $false
+          $queueCheckFailed = $false
+  
+          # STEP 1: Check if prompt is in the queue (running or pending)
+          try {
+            $queueUrl = "$ComfyUrl/queue"
+            $queue = Invoke-RestMethod -Uri $queueUrl -TimeoutSec $TimeoutSec -ErrorAction Stop
+            
+            # Check if prompt is currently executing
+            if ($queue.queue_running) {
+              foreach ($item in $queue.queue_running) {
+                if ($item[1] -eq $PromptId) {
+                  return @{
+                    status = 'running'
+                    message = 'Prompt currently executing'
+                  }
+                }
+              }
+            }
+            
+            # Check if prompt is in pending queue
+            if ($queue.queue_pending) {
+              foreach ($item in $queue.queue_pending) {
+                if ($item[1] -eq $PromptId) {
+                  return @{
+                    status = 'queued'
+                    message = 'Prompt waiting in queue'
+                  }
+                }
+              }
+            }
+            # If we got here, prompt is NOT in queue
+            $inQueue = $false
+          } catch {
+            # Queue check failed - can't determine if prompt is running
+            $queueCheckFailed = $true
+          }
+  
+          # STEP 2: Check history (contains completed/failed prompts)
           $historyUrl = "$ComfyUrl/history/$PromptId"
           try {
             $history = Invoke-RestMethod -Uri $historyUrl -TimeoutSec $TimeoutSec -ErrorAction Stop
@@ -68,21 +111,39 @@ Try {
                 }
               }
       
-              # Has history entry but no outputs or exception = still running or pending
+              # Has history entry but no outputs or exception = unusual state
               return @{
-                status = 'running'
-                message = 'Prompt execution in progress'
+                status = 'unknown'
+                message = 'Prompt in history but no outputs or errors'
               }
             }
           } catch {
-            Write-Warning "Failed to check prompt status at $historyUrl : $_"
+            # History check failed
+            if ($queueCheckFailed) {
+              # Both checks failed - can't determine status
+              return @{
+                status = 'unknown'
+                error = 'Queue and history API both failed'
+                message = 'Unable to determine prompt status'
+              }
+            }
+            # History check failed but queue check succeeded and prompt not in queue
+            # This could mean the prompt hasn't started yet
+          }
+  
+          # Prompt is not in queue and not in history
+          # If queue check succeeded, this means prompt hasn't started yet or is in transition
+          if ($queueCheckFailed) {
+            # Can't determine - queue check failed and history is empty
             return @{
               status = 'unknown'
-              error = $_.Exception.Message
-              message = 'Unable to determine prompt status'
+              error = 'Queue check failed, no history available'
+              message = 'Unable to determine if prompt has started'
             }
           }
   
+          # Queue is accessible and prompt is not there, also not in history
+          # Most likely: prompt hasn't been processed yet
           return @{
             status = 'pending'
             message = 'Prompt not yet started'
@@ -171,10 +232,39 @@ Try {
           exit 0
         }
 
+        # Apply scene filter if specified
+        if ($SceneFilter) {
+          Write-Host "[wan2] Filtering for scene: $SceneFilter"
+          $scenes = $scenes | Where-Object { $_.id -eq $SceneFilter }
+          if (-not $scenes -or $scenes.Count -eq 0) {
+            Write-Warning "[wan2] No scenes matched filter '$SceneFilter'"
+            exit 0
+          }
+        }
+        
         Write-Host "[wan2] Processing $($scenes.Count) scenes from story"
+        
+        # Memory cleanup counter
+        $sceneIndex = 0
 
         foreach ($sceneData in $scenes) {
           $sceneId = $sceneData.id
+          $sceneIndex++
+          
+          # Periodic memory cleanup to prevent leaks in long batches
+          if ($MemoryCleanupInterval -gt 0 -and $sceneIndex % $MemoryCleanupInterval -eq 0) {
+            Write-Host "[wan2] Triggering memory cleanup (scene $sceneIndex/$($scenes.Count))"
+            Add-RunSummaryLine "[Memory] Cleanup triggered after scene $sceneIndex"
+            
+            try {
+              # Call ComfyUI's free memory endpoint
+              Invoke-RestMethod -Uri "$ComfyUrl/free" -Method POST -TimeoutSec 10 -ErrorAction Stop | Out-Null
+              Write-Host "[wan2] Memory cleanup successful"
+              Start-Sleep -Seconds 2  # Brief pause for cleanup to complete
+            } catch {
+              Write-Warning "[wan2] Memory cleanup failed: $_ (continuing anyway)"
+            }
+          }
           
           # Early server health check per scene
           if (-not (Test-ComfyUIHealth $ComfyUrl)) {
@@ -409,96 +499,130 @@ Try {
             }
           }
 
-          # NEW: Intelligent polling with error detection and retry logic
-          $maxRetries = 3
-          $retryCount = 0
+          # EVENT-DRIVEN POLLING: Wait for execution completion, then retrieve file
+          # This eliminates race conditions by using ComfyUI history API as source of truth
           $videoFound = $false
-          $totalPollTime = 0
-  
-          while ($retryCount -lt $maxRetries -and -not $videoFound) {
-            $elapsed = 0
-            $pollInterval = $PollIntervalSeconds
-            $pollStart = Get-Date
-    
-            Write-Host "[$sceneId] Polling for video (attempt $($retryCount + 1)/$maxRetries, timeout=${MaxWaitSeconds}s)"
-            Add-RunSummaryLine "[Scene $sceneId] Wan2 polling started (attempt $($retryCount + 1)/$maxRetries)"
-    
-            while ($elapsed -lt $MaxWaitSeconds -and -not $videoFound) {
-              # Check ComfyUI output folder for generated video
-              # ComfyUI saves with flat filename_prefix pattern: video/scene-001_*.mp4 (not nested folders)
-              $comfyOutputRoot = Get-ComfyUIOutputPath
-              $sceneVideoSourcePattern = Join-Path $comfyOutputRoot "video\${sceneId}_*.mp4"
-      
-              try {
-                $generatedVideos = @(Get-ChildItem -Path $sceneVideoSourcePattern -ErrorAction SilentlyContinue)
-                if ($generatedVideos.Count -gt 0) {
-                  # Video found in ComfyUI output - copy it to target location
-                  $sourceVideo = $generatedVideos[0]
-                  $targetMp4 = Join-Path $sceneVideoDir "$sceneId.mp4"
+          $pollStart = Get-Date
+          $statusCheckInterval = $PollIntervalSeconds  # Use configured poll interval
+          $comfyOutputRoot = Get-ComfyUIOutputPath
           
-                  try {
-                    Copy-Item -Path $sourceVideo.FullName -Destination $targetMp4 -Force -ErrorAction Stop
+          Write-Host "[$sceneId] Waiting for ComfyUI execution to complete (timeout=${MaxWaitSeconds}s, check every ${statusCheckInterval}s)"
+          Add-RunSummaryLine "[Scene $sceneId] Wan2 polling started"
+          
+          # DIAGNOSTIC: Log initial state to help debug hangs
+          Write-Host "[$sceneId] Polling state: promptId=$promptId, comfyUrl=$ComfyUrl, maxWait=${MaxWaitSeconds}s" -ForegroundColor Gray
+          Add-RunSummaryLine "[Scene $sceneId] Wan2 polling state: promptId=$promptId maxWait=${MaxWaitSeconds}s interval=${statusCheckInterval}s"
+          
+          # Poll execution status until completed, error, or timeout
+          $executionCompleted = $false
+          $executionError = $false
+          $errorMessage = ""
+          
+          while (((Get-Date) - $pollStart).TotalSeconds -lt $MaxWaitSeconds) {
+            $elapsed = [math]::Round(((Get-Date) - $pollStart).TotalSeconds, 1)
+            
+            try {
+              # Check status FIRST before any logging to avoid false "running" states
+              $status = Check-PromptStatus -ComfyUrl $ComfyUrl -PromptId $promptId
+              
+              # Log to console (may buffer)
+              Write-Host "[$sceneId] Status: $($status.status) (${elapsed}s)" -ForegroundColor Gray
+              
+              # Log to file with error handling (critical for debugging)
+              try {
+                Add-RunSummaryLine "[Scene $sceneId] Wan2 status: $($status.status) (${elapsed}s)"
+              } catch {
+                # If logging fails, don't crash - just continue
+                Write-Warning "[$sceneId] Failed to write to run summary: $_"
+              }
+              
+              # Handle different states
+              if ($status.status -eq 'completed') {
+                $executionCompleted = $true
+                Write-Host "[$sceneId] ✓ ComfyUI execution completed (${elapsed}s)" -ForegroundColor Green
+                Add-RunSummaryLine "[Scene $sceneId] Wan2 execution completed (${elapsed}s)"
+                break
+              } elseif ($status.status -eq 'error') {
+                $executionError = $true
+                $errorMessage = $status.exception
+                Write-Warning "[$sceneId] ComfyUI execution error: $errorMessage"
+                Add-RunSummaryLine "[Scene $sceneId] Wan2 execution error: $errorMessage"
+                break
+              } elseif ($status.status -eq 'unknown') {
+                Write-Warning "[$sceneId] Status unknown: $($status.error) - continuing to poll"
+                Add-RunSummaryLine "[Scene $sceneId] Wan2 status unknown: $($status.error)"
+                # Continue polling - might be transient API issue
+              }
+              # Status is 'running', 'queued', or 'pending' - continue polling
+              
+            } catch {
+              # Catch ANY exception in the status check or logging
+              $errMsg = $_.Exception.Message
+              Write-Warning "[$sceneId] Polling iteration error: $errMsg"
+              try {
+                Add-RunSummaryLine "[Scene $sceneId] Wan2 polling error: $errMsg"
+              } catch {
+                # Even logging the error failed - serious problem but don't crash
+              }
+              # Continue polling - might recover
+            }
+            
+            # Progress update every 30 seconds
+            if ($elapsed -gt 0 -and [math]::Floor($elapsed) % 30 -eq 0) {
+              Write-Host "[$sceneId] Still generating... (${elapsed}s / ${MaxWaitSeconds}s)"
+              Add-RunSummaryLine "[Scene $sceneId] Wan2 still generating (${elapsed}s / ${MaxWaitSeconds}s)"
+            }
+            
+            Start-Sleep -Seconds $statusCheckInterval
+          }
+          
+          # Check for timeout
+          Add-RunSummaryLine "[Scene $sceneId] Wan2 polling loop exited: completed=$executionCompleted error=$executionError"
+          
+          if (-not $executionCompleted -and -not $executionError) {
+            $finalElapsed = [math]::Round(((Get-Date) - $pollStart).TotalSeconds, 1)
+            Write-Warning "[$sceneId] Timeout after ${finalElapsed}s - execution did not complete"
+            Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation failed: timeout after ${finalElapsed}s"
+          }
+          
+          # If execution completed successfully, check for video file
+          if ($executionCompleted) {
+            Write-Host "[$sceneId] Checking for video file..." -ForegroundColor Cyan
+            $videoPattern = Join-Path $comfyOutputRoot "video\${sceneId}_*.mp4"
+            
+            # Wait a moment for file system to sync
+            Start-Sleep -Seconds 2
+            
+            $videos = @(Get-ChildItem -Path $videoPattern -ErrorAction SilentlyContinue)
+            
+            if ($videos -and $videos.Count -gt 0) {
+              $sourceVideo = $videos[0]
+              $targetPath = Join-Path $sceneVideoDir "$sceneId.mp4"
+              
+              try {
+                Copy-Item -Path $sourceVideo.FullName -Destination $targetPath -Force -ErrorAction Stop
+                
+                if (Test-Path $targetPath) {
+                  $size = (Get-Item $targetPath).Length
+                  
+                  if ($size -gt 10240) {  # 10KB minimum for valid video
+                    $sizeMB = [math]::Round($size / 1MB, 2)
+                    $totalElapsed = [math]::Round(((Get-Date) - $pollStart).TotalSeconds, 1)
+                    Write-Host "[$sceneId] ✓ Video copied successfully: $($sourceVideo.Name) (${sizeMB} MB, ${totalElapsed}s total)" -ForegroundColor Green
+                    Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation succeeded: $targetPath (${totalElapsed}s, ${sizeMB} MB)"
                     $videoFound = $true
-                    Write-Host "[$sceneId] Video copied from ComfyUI output: $($sourceVideo.Name) -> $targetMp4"
-                    Add-RunSummaryLine "[Scene $sceneId] Wan2 video copied: $($sourceVideo.FullName) -> $targetMp4"
-                    break
-                  } catch {
-                    Write-Warning "[$sceneId] Failed to copy video: $_"
-                    Add-RunSummaryLine "[Scene $sceneId] Wan2 copy failed: $_"
+                  } else {
+                    Write-Warning "[$sceneId] Video file too small ($size bytes) - generation may have failed"
+                    Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation failed: file too small ($size bytes)"
                   }
                 }
               } catch {
-                Write-Warning "[$sceneId] Error checking for video file: $_"
+                Write-Warning "[$sceneId] Failed to copy video: $_"
+                Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation failed: copy error ($_)"
               }
-      
-              # Check prompt execution status (detect errors early)
-              $status = Check-PromptStatus -ComfyUrl $ComfyUrl -PromptId $promptId
-              if ($status.status -eq 'error') {
-                Write-Warning "[$sceneId] ComfyUI execution error detected: $($status.exception)"
-                Add-RunSummaryLine "[Scene $sceneId] Wan2 execution error: $($status.exception)"
-                break  # Don't retry on permanent errors
-              }
-      
-              if ($status.status -eq 'completed' -and -not $videoFound) {
-                Write-Warning "[$sceneId] Prompt marked as completed but no video file found. ComfyUI may not have produced output."
-                Add-RunSummaryLine "[Scene $sceneId] Wan2 execution completed without video output"
-                break  # Don't retry if completed without output
-              }
-
-              # Detect hard crash: status unknown + health probe fails
-              if ($status.status -eq 'unknown' -and -not (Test-ComfyUIHealth $ComfyUrl)) {
-                Write-Warning "[$sceneId] ComfyUI server appears to have crashed during polling (status=unknown, health probe failed)."
-                Add-RunSummaryLine "[Scene $sceneId] Wan2 aborted mid-poll: ComfyUI crash detected (exit=99)"
-                Add-RunSummaryLine "[Video] Wan2 overall aborted mid-run due to ComfyUI outage (exit=99)"
-                exit 99
-              }
-      
-              Start-Sleep -Seconds $pollInterval
-              $elapsed += $pollInterval
+            } else {
+              Write-Warning "[$sceneId] Execution completed but no video file found (likely cached/no-op)"
+              Add-RunSummaryLine "[Scene $sceneId] Wan2 execution completed without video output (cached)"
             }
-    
-            $pollDuration = [math]::Round(((Get-Date) - $pollStart).TotalSeconds, 1)
-            $totalPollTime += $pollDuration
-    
-            if (-not $videoFound) {
-              $retryCount++
-      
-              if ($retryCount -lt $maxRetries) {
-                # Exponential backoff: 2s, 4s, 8s between retries
-                $backoffSeconds = [math]::Pow(2, $retryCount)
-                Write-Host "[$sceneId] Video not found after ${pollDuration}s. Retrying in ${backoffSeconds}s (attempt $($retryCount + 1)/$maxRetries)"
-                Add-RunSummaryLine "[Scene $sceneId] Wan2 retry scheduled: backoff=${backoffSeconds}s attempt=$($retryCount + 1)/$maxRetries"
-                Start-Sleep -Seconds $backoffSeconds
-              } else {
-                Write-Warning "[$sceneId] Max retries ($maxRetries) exhausted. No video generated."
-                Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation failed after $maxRetries attempts (total time: ${totalPollTime}s)"
-              }
-            }
-          }
-  
-          if ($videoFound) {
-            Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation succeeded: $targetMp4 (total time: ${totalPollTime}s)"
-          } else {
-            Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation failed: No video after ${totalPollTime}s and $maxRetries attempts. Check ComfyUI logs."
           }
         }

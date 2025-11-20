@@ -266,12 +266,22 @@ export interface ComfyUIStatusSummary {
 }
 
 export interface LocalGenerationSettings {
+    // ComfyUI Configuration
     comfyUIUrl: string;
     comfyUIClientId: string;
+    comfyUIWebSocketUrl?: string;
     workflowJson: string; // Will store the FETCHED workflow
     mapping: WorkflowMapping;
     modelId?: string; // 'comfy-svd' | 'wan-video' | others later
     workflowProfiles?: Record<string, WorkflowProfile>;
+    
+    // LLM Configuration
+    llmProviderUrl?: string;
+    llmModel?: string;
+    llmTemperature?: number;
+    llmTimeoutMs?: number;
+    llmRequestFormat?: string;
+    llmSeed?: number;
 }
 
 export interface LocalGenerationAsset {

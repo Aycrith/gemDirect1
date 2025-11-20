@@ -717,8 +717,19 @@ export const trackPromptExecution = (
     }
 
     const normalizedUrl = comfyUIUrl.replace(/\/+$/, '');
-    const protocol = normalizedUrl.startsWith('https://') ? 'wss://' : 'ws://';
-    const wsUrl = `${protocol}${normalizedUrl.replace(/^https?:\/\//, '')}/ws?clientId=${comfyUIClientId}`;
+    
+    // Check if custom WebSocket URL is configured in settings (use provided settings directly)
+    let wsUrl: string;
+    
+    if (settings.comfyUIWebSocketUrl) {
+        // Use configured WebSocket URL
+        wsUrl = settings.comfyUIWebSocketUrl.replace(/\/+$/, '') + `?clientId=${comfyUIClientId}`;
+    } else {
+        // Auto-derive from HTTP URL
+        const protocol = normalizedUrl.startsWith('https://') ? 'wss://' : 'ws://';
+        wsUrl = `${protocol}${normalizedUrl.replace(/^https?:\/\//, '')}/ws?clientId=${comfyUIClientId}`;
+    }
+    
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -1039,7 +1050,21 @@ export const generateVideoFromShot = async (
                         clearInterval(pollInterval);
                         clearTimeout(timeout);
                         
-                        // Calculate duration: 25 frames @ 24fps = ~1.04 seconds
+                        // Frame count validation (SVD stability improvement)
+                        const MIN_FRAME_COUNT = 5; // Minimum acceptable frames for valid video
+                        const actualFrameCount = frameSequence.length;
+                        
+                        if (actualFrameCount > 0 && actualFrameCount < MIN_FRAME_COUNT) {
+                            const warningMsg = `${getSceneContext(promptId)} generated only ${actualFrameCount} frames (minimum ${MIN_FRAME_COUNT}). Video may be too short or generation incomplete.`;
+                            console.warn(warningMsg);
+                            reportProgress({ 
+                                status: 'warning', 
+                                message: warningMsg,
+                                progress: 100 
+                            });
+                        }
+                        
+                        // Calculate duration: frames @ 24fps
                         const frameDuration = frameSequence.length > 0 ? frameSequence.length / 24 : 1.04;
                         
                     resolve({

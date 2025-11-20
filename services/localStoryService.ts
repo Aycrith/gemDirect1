@@ -39,15 +39,27 @@ const DEFAULT_REQUEST_FORMAT = import.meta.env.VITE_LOCAL_LLM_REQUEST_FORMAT ?? 
 const DEFAULT_SEED = import.meta.env.VITE_LOCAL_LLM_SEED;
 const FALLBACK_TIMEOUT = 120000;
 
+const getSettings = () => {
+  if (typeof window !== 'undefined') {
+    return (window as any).__localGenSettings || {};
+  }
+  return {};
+};
+
 const getLocalStoryProviderUrl = (): string | null => {
-  const envValue = import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL ?? null;
-  if (envValue) {
+  const settings = getSettings();
+  
+  // Priority: settings > env > window.LOCAL_STORY_PROVIDER_URL
+  const url = settings.llmProviderUrl || import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL;
+  
+  if (url) {
     // In browser context during development, use Vite proxy to avoid CORS
     if (typeof window !== 'undefined' && import.meta.env.DEV) {
       return '/api/local-llm';
     }
-    return envValue;
+    return url;
   }
+  
   if (typeof window !== 'undefined') {
     const win = window as Window & { LOCAL_STORY_PROVIDER_URL?: string };
     return win.LOCAL_STORY_PROVIDER_URL ?? null;
@@ -110,21 +122,23 @@ const callStoryProvider = async (
     throw new Error('Global fetch is not available in this environment.');
   }
 
+  const settings = getSettings();
+  
   const controller = new AbortController();
-  const timeoutMs = Math.max(12000, Number(import.meta.env.VITE_LOCAL_LLM_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS) || FALLBACK_TIMEOUT);
+  const timeoutMs = Math.max(12000, settings.llmTimeoutMs || Number(import.meta.env.VITE_LOCAL_LLM_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS) || FALLBACK_TIMEOUT);
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const body = {
-      model: DEFAULT_MODEL,
-      temperature: DEFAULT_TEMPERATURE,
-      request_format: DEFAULT_REQUEST_FORMAT,
+      model: settings.llmModel || DEFAULT_MODEL,
+      temperature: settings.llmTemperature !== undefined ? settings.llmTemperature : DEFAULT_TEMPERATURE,
+      request_format: settings.llmRequestFormat || DEFAULT_REQUEST_FORMAT,
       messages: [
         { role: 'system', content: buildSystemMessage() },
         { role: 'user', content: buildUserMessage(idea, genre) }
       ],
       max_tokens: 1600,
-      seed: DEFAULT_SEED ? Number(DEFAULT_SEED) : undefined,
+      seed: settings.llmSeed !== undefined ? settings.llmSeed : (DEFAULT_SEED ? Number(DEFAULT_SEED) : undefined),
       stream: false,
     };
 

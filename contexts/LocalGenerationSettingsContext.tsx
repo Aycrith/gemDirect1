@@ -55,11 +55,17 @@ const normalizeWorkflowProfiles = (settings: LocalGenerationSettings): Record<st
 };
 
 export const DEFAULT_LOCAL_GENERATION_SETTINGS: LocalGenerationSettings = {
-    comfyUIUrl: '',
-    comfyUIClientId: '',
+    comfyUIUrl: 'http://127.0.0.1:8188',
+    comfyUIClientId: typeof crypto !== 'undefined' ? crypto.randomUUID() : '',
+    comfyUIWebSocketUrl: 'ws://127.0.0.1:8188/ws',
     workflowJson: '',
     mapping: {},
     workflowProfiles: createDefaultWorkflowProfiles(),
+    llmProviderUrl: 'http://192.168.50.192:1234/v1/chat/completions',
+    llmModel: 'mistralai/mistral-7b-instruct-v0.3',
+    llmTemperature: 0.35,
+    llmTimeoutMs: 120000,
+    llmRequestFormat: 'openai-chat',
 };
 
 type LocalGenerationSettingsContextValue = {
@@ -84,6 +90,13 @@ export const LocalGenerationSettingsProvider: React.FC<{ children: React.ReactNo
             }));
         }
     }, [settings, setSettings]);
+
+    // Make settings globally available for services
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            (window as any).__localGenSettings = settings;
+        }
+    }, [settings]);
 
     return (
         <LocalGenerationSettingsContext.Provider value={{ settings, setSettings }}>
