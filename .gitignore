@@ -64,3 +64,7 @@ test-results*.json
 test-run*.json
 /public/artifacts/
 /public/videos/
+
+# Python virtual environments (FastVideo)
+fastvideo-env/
+fastvideo-env-wsl/
