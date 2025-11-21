@@ -30,6 +30,7 @@ import StoryIdeaForm from './components/StoryIdeaForm';
 import StoryBibleEditor from './components/StoryBibleEditor';
 import DirectorsVisionForm from './components/DirectorsVisionForm';
 import SceneNavigator from './components/SceneNavigator';
+import GenerateSceneImagesButton from './components/GenerateSceneImagesButton';
 import WorkflowTracker from './components/WorkflowTracker';
 import Toast from './components/Toast';
 import ApiStatusIndicator from './components/ApiStatusIndicator';
@@ -187,6 +188,37 @@ const AppContent: React.FC = () => {
         setGeneratedImages(prev => ({ ...prev, [sceneId]: base64Image }));
     }, [setGeneratedImages]);
     
+    const handleDeleteScene = (sceneId: string) => {
+        const sceneIndex = scenes.findIndex(s => s.id === sceneId);
+        if (sceneIndex === -1) return;
+        
+        // Remove scene from list
+        const newScenes = scenes.filter(s => s.id !== sceneId);
+        setScenes(newScenes);
+        
+        // Clear active scene if it was deleted
+        if (activeSceneId === sceneId) {
+            // Select the previous scene, or the next one, or null if no scenes left
+            const newActiveId = newScenes[sceneIndex - 1]?.id || newScenes[0]?.id || null;
+            setActiveSceneId(newActiveId);
+        }
+        
+        // Clean up related data
+        setGeneratedImages(prev => {
+            const updated = { ...prev };
+            delete updated[sceneId];
+            return updated;
+        });
+        
+        setScenesToReview(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(sceneId);
+            return newSet;
+        });
+        
+        addToast('Scene deleted', 'info');
+    };
+
     const handleExtendTimeline = (sceneId: string, lastFrame: string) => {
         setContinuityModal({ sceneId, lastFrame });
     };
@@ -303,38 +335,49 @@ const AppContent: React.FC = () => {
                 return storyBible && <DirectorsVisionForm onSubmit={(vision) => handleGenerateScenes(vision, addToast, setGeneratedImages, updateSceneStatus)} isLoading={isProjectLoading} storyBible={storyBible} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
             case 'director':
                 return (
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                        <div className="lg:col-span-1">
-                            <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} scenesToReview={scenesToReview} sceneStatuses={sceneStatuses} />
-                        </div>
-                        <div className="lg:col-span-3">
-                            {activeScene ? (
-                                <Suspense fallback={<LoadingFallback message="Loading timeline editor..." />}>
-                                    <TimelineEditor 
-                                        key={activeScene.id} 
-                                        scene={activeScene} 
-                                        onUpdateScene={(updatedScene) => {
-                                            const newScenes = scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
-                                            setScenes(newScenes);
-                                        }} 
-                                        directorsVision={directorsVision} 
-                                        storyBible={storyBible!} 
-                                        onApiStateChange={updateApiStatus} 
-                                        onApiLog={logApiCall} 
-                                        scenes={scenes}
-                                        onApplySuggestion={handleApplySuggestion}
-                                        generatedImages={generatedImages}
-                                        generatedShotImages={generatedShotImages}
-                                        setGeneratedShotImages={setGeneratedShotImages}
-                                        onSceneKeyframeGenerated={handleSceneKeyframeGenerated}
-                                        localGenSettings={localGenSettings}
-                                        localGenStatus={localGenStatus}
-                                        setLocalGenStatus={setLocalGenStatus}
-                                        isRefined={refinedSceneIds.has(activeScene.id)}
-                                        onUpdateSceneSummary={handleUpdateSceneSummary}
-                                    />
-                                </Suspense>
-                            ) : <p>Select a scene</p>}
+                    <div className="space-y-6">
+                        <GenerateSceneImagesButton
+                            scenes={scenes}
+                            directorsVision={directorsVision}
+                            generatedImages={generatedImages}
+                            onImagesGenerated={setGeneratedImages}
+                            onApiLog={logApiCall}
+                            onApiStateChange={updateApiStatus}
+                            setGenerationProgress={setGenerationProgress}
+                        />
+                        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                            <div className="lg:col-span-1">
+                                <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} onDeleteScene={handleDeleteScene} scenesToReview={scenesToReview} sceneStatuses={sceneStatuses} generatedImages={generatedImages} />
+                            </div>
+                            <div className="lg:col-span-3">
+                                {activeScene ? (
+                                    <Suspense fallback={<LoadingFallback message="Loading timeline editor..." />}>
+                                        <TimelineEditor 
+                                            key={activeScene.id} 
+                                            scene={activeScene} 
+                                            onUpdateScene={(updatedScene) => {
+                                                const newScenes = scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
+                                                setScenes(newScenes);
+                                            }} 
+                                            directorsVision={directorsVision} 
+                                            storyBible={storyBible!} 
+                                            onApiStateChange={updateApiStatus} 
+                                            onApiLog={logApiCall} 
+                                            scenes={scenes}
+                                            onApplySuggestion={handleApplySuggestion}
+                                            generatedImages={generatedImages}
+                                            generatedShotImages={generatedShotImages}
+                                            setGeneratedShotImages={setGeneratedShotImages}
+                                            onSceneKeyframeGenerated={handleSceneKeyframeGenerated}
+                                            localGenSettings={localGenSettings}
+                                            localGenStatus={localGenStatus}
+                                            setLocalGenStatus={setLocalGenStatus}
+                                            isRefined={refinedSceneIds.has(activeScene.id)}
+                                            onUpdateSceneSummary={handleUpdateSceneSummary}
+                                        />
+                                    </Suspense>
+                                ) : <p>Select a scene</p>}
+                            </div>
                         </div>
                     </div>
                 );
@@ -364,10 +407,6 @@ const AppContent: React.FC = () => {
         }
     };
     
-    if (isProjectLoading && workflowStage === 'idea') {
-        return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading project...</div>;
-    }
-
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
             <header className="p-4 flex justify-between items-center sticky top-0 bg-gray-900/80 backdrop-blur-md z-30 border-b border-amber-500/20">
