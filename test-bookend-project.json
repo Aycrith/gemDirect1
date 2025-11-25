@@ -1,0 +1,54 @@
+{
+  "storyBible": {
+    "logline": "A street musician discovers magic in the subway tunnels.",
+    "characters": "- Alex: A talented but struggling musician seeking recognition.\n- The Shadows: Mysterious entities that respond to music.",
+    "setting": "A retrofuturistic subway system where music has power.",
+    "plotOutline": "Act I - Discovery of magical echoes in the tunnels.\nAct II - Learning to harness the power through music.\nAct III - Confrontation with those who would silence the magic."
+  },
+  "directorsVision": "Moody neo-noir aesthetic with warm practical lighting, handheld intimacy, and emphasis on reflections and shadows. Film grain and anamorphic lens flares enhance the dreamlike quality.",
+  "scenes": [
+    {
+      "id": "scene_bookend_test_001",
+      "title": "The Discovery - Subway Platform",
+      "summary": "Alex plays guitar alone on an empty subway platform at night. As the music echoes through the tunnels, mysterious shadows begin to respond, dancing in rhythm with the melody.",
+      "temporalContext": {
+        "startMoment": "Alex sits on a worn bench, tuning his guitar under flickering fluorescent lights. The platform is empty, last train departed.",
+        "endMoment": "The shadows have fully materialized, swirling around Alex in a mesmerizing dance. His eyes widen with wonder and fear as he realizes the music has awakened something ancient."
+      },
+      "timeline": {
+        "shots": [
+          {
+            "id": "shot_bookend_001_1",
+            "description": "Wide establishing shot of the empty subway platform. Flickering lights cast long shadows. Alex sits alone on a bench, his guitar case open beside him.",
+            "order": 0
+          },
+          {
+            "id": "shot_bookend_001_2", 
+            "description": "Medium close-up on Alex's hands as they begin to strum the guitar. The first notes echo through the tunnel, reverberating off tile walls.",
+            "order": 1
+          },
+          {
+            "id": "shot_bookend_001_3",
+            "description": "POV shot looking down the dark tunnel as shadows begin to shift and move in response to the music. Subtle at first, then more pronounced.",
+            "order": 2
+          }
+        ],
+        "shotEnhancers": {},
+        "transitions": [
+          {"type": "Cut"},
+          {"type": "Dissolve"}
+        ],
+        "negativePrompt": "text, watermark, blurry, low quality, deformed, static image, no movement"
+      },
+      "order": 0
+    }
+  ],
+  "generatedImages": {},
+  "generatedShotImages": {},
+  "continuityData": {},
+  "localGenSettings": {
+    "comfyUIUrl": "http://127.0.0.1:8188",
+    "comfyUIClientId": "gemDirect",
+    "keyframeMode": "bookend"
+  }
+}

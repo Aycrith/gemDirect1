@@ -23,8 +23,10 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
     const renderCountRef = useRef(0);
     const prevImagesRef = useRef<Record<string, KeyframeData>>({});
     
-    // DEBUG: Track re-renders and image updates
+    // DEBUG: Track re-renders and image updates (development only)
     useEffect(() => {
+        if (!import.meta.env.DEV) return;
+        
         renderCountRef.current++;
         const imageCount = Object.keys(generatedImages).length;
         const imageIds = Object.keys(generatedImages).sort().join(', ');
@@ -73,11 +75,12 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                             >
                                 <button
                                     onClick={() => onSelectScene(scene.id)}
-                                    className={`relative w-full text-left p-3 rounded-md transition-all duration-200 text-sm ring-1 flex items-start gap-3 ${
+                                    className={`scene-nav-item relative w-full text-left p-3 rounded-md transition-all duration-200 text-sm ring-1 flex items-start gap-3 min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 ${
                                             activeSceneId === scene.id 
                                                 ? 'bg-amber-600 text-white font-semibold shadow-lg shadow-amber-500/20 ring-transparent' 
                                                 : `bg-gray-700/50 hover:bg-gray-700/80 text-gray-300 ${needsReview ? 'ring-yellow-500/80 hover:ring-yellow-500' : 'ring-transparent hover:ring-amber-500/50'}`
                                         }`}
+                                    aria-current={activeSceneId === scene.id ? 'true' : undefined}
                                     >
                                         {needsReview && (
                                         <div className="absolute top-2 right-2" title="This scene is flagged for review based on changes elsewhere.">

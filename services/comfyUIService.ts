@@ -48,6 +48,20 @@ export interface WorkflowGenerationMetadata {
 
 const DEFAULT_FETCH_TIMEOUT_MS = 12000;
 
+// ============================================================================
+// GRACE PERIOD CONFIGURATION - Video Pipeline Race Condition Fix
+// ============================================================================
+// When ComfyUI queue empties, we wait this long for WebSocket to deliver assets.
+// This accommodates variable generation times across different GPUs/systems.
+// Adjust these values based on your hardware:
+//   - RTX 3090: 30-60s typical, 60s grace is safe
+//   - RTX 4090: 20-40s typical, 60s grace is safe  
+//   - Slower GPUs: May need 120s+ grace period
+const GRACE_PERIOD_MS = 60_000;        // 60 seconds after queue empties to wait for asset download
+const POLL_INTERVAL_MS = 2_000;        // 2 seconds between queue polls
+const FALLBACK_FETCH_ENABLED = true;   // If grace period expires, try fetching from history API
+const DEBUG_VIDEO_PIPELINE = false;    // Set to true for verbose pipeline debugging
+
 /**
  * Normalize ComfyUI URLs for DEV mode proxy routing.
  * In development, routes all ComfyUI requests through Vite proxy to avoid CORS issues.
@@ -958,6 +972,22 @@ export const trackPromptExecution = (
                         if (downloadedAssets.length > 0) {
                             const imageAssets = downloadedAssets.filter(asset => asset.type === 'image');
                             const videoAssets = downloadedAssets.filter(asset => asset.type === 'video');
+                            
+                            // CRITICAL: Validate first asset has valid data URL
+                            const primaryData = downloadedAssets[0].data;
+                            const isValidDataUrl = typeof primaryData === 'string' && 
+                                (primaryData.startsWith('data:video/') || primaryData.startsWith('data:image/'));
+                            
+                            if (!isValidDataUrl) {
+                                console.error(`[trackPromptExecution] ❌ Invalid data URL for promptId=${promptId.slice(0,8)}... Type: ${typeof primaryData}, Preview: ${typeof primaryData === 'string' ? primaryData.slice(0, 100) : 'N/A'}`);
+                                onProgress({ 
+                                    status: 'error', 
+                                    message: `Asset data invalid: expected data URL, received ${typeof primaryData === 'string' ? primaryData.slice(0, 50) : typeof primaryData}` 
+                                });
+                                ws.close();
+                                return;
+                            }
+                            
                             const finalOutput: LocalGenerationStatus['final_output'] = {
                                 type: downloadedAssets[0].type,
                                 data: downloadedAssets[0].data,
@@ -1154,101 +1184,328 @@ export const generateVideoFromShot = async (
         // NOTE: Updated to handle PNG frame sequence output from simplified SVD workflow
         // The workflow outputs PNG images (one per frame) instead of a single video file
         return new Promise((resolve, reject) => {
+            // ============================================================================
+            // STATE TRACKING - Shared mutable state for WebSocket/Polling coordination
+            // ============================================================================
             let outputData: any = null;
             let frameSequence: string[] = [];
+            let isAssetDownloadComplete = false;  // Set true when WebSocket delivers valid data URL
+            let gracePeriodStartTime: number | null = null;  // Timestamp when grace period started
+            let isResolved = false;  // Prevent double resolution
             
+            const logPipeline = (tag: string, message: string, data?: any) => {
+                if (DEBUG_VIDEO_PIPELINE) {
+                    const timestamp = new Date().toISOString().slice(11, 23);
+                    const dataStr = data ? ` | ${JSON.stringify(data)}` : '';
+                    console.log(`[${timestamp}] [PIPELINE:${tag}] ${message}${dataStr}`);
+                }
+            };
+            
+            logPipeline('INIT', `Starting video generation for shot ${shot.id}`, { promptId: promptId.slice(0, 8) });
+            
+            // ============================================================================
+            // PROGRESS CALLBACK - Receives updates from WebSocket (trackPromptExecution)
+            // ============================================================================
             const wrappedOnProgress = (update: Partial<LocalGenerationStatus>) => {
+                logPipeline('PROGRESS', `Received update: status=${update.status}`, {
+                    hasOutput: !!update.final_output,
+                    message: update.message?.slice(0, 50)
+                });
+                
                 reportProgress(update);
                 
                 // Capture output when generation completes
                 if (update.final_output) {
                     outputData = update.final_output;
+                    logPipeline('PROGRESS', 'final_output received', {
+                        type: outputData.type,
+                        filename: outputData.filename,
+                        dataLength: outputData.data?.length,
+                        dataPrefix: typeof outputData.data === 'string' ? outputData.data.slice(0, 30) : 'N/A'
+                    });
+                    
                     // Handle both video file output and PNG frame sequences
                     if (Array.isArray(outputData.images)) {
                         frameSequence = outputData.images;
+                        logPipeline('PROGRESS', `Frame sequence captured: ${frameSequence.length} frames`);
+                    }
+                    
+                    // CRITICAL: Validate data URL and set completion flag
+                    const dataUrl = outputData.data;
+                    const isValidDataUrl = typeof dataUrl === 'string' && 
+                        (dataUrl.startsWith('data:video/') || dataUrl.startsWith('data:image/'));
+                    
+                    if (isValidDataUrl) {
+                        isAssetDownloadComplete = true;
+                        logPipeline('PROGRESS', '✅ Asset download complete - valid data URL received');
+                    } else {
+                        logPipeline('PROGRESS', '⚠️ final_output received but data is NOT a valid data URL', {
+                            received: typeof dataUrl === 'string' ? dataUrl.slice(0, 50) : typeof dataUrl
+                        });
                     }
                 }
             };
 
             trackExecution(settings, promptId, wrappedOnProgress);
+            logPipeline('INIT', 'WebSocket tracking started');
 
-            // Set timeout for safety (max 5 minutes per shot)
-        const timeout = setTimeout(() => {
-            const message = `${getSceneContext(promptId)} timed out (5 minutes exceeded) while waiting for output`;
-            reject(new Error(message));
-        }, 5 * 60 * 1000);
+            // ============================================================================
+            // TIMEOUT - Safety timeout (max 5 minutes per shot)
+            // ============================================================================
+            const timeout = setTimeout(() => {
+                if (isResolved) return;
+                isResolved = true;
+                const message = `${getSceneContext(promptId)} timed out (5 minutes exceeded) while waiting for output`;
+                logPipeline('TIMEOUT', `❌ ${message}`);
+                reject(new Error(message));
+            }, 5 * 60 * 1000);
 
-            // Poll for completion (alternative to WebSocket-only tracking)
+            // ============================================================================
+            // FALLBACK FETCH - Retrieve output from ComfyUI history API
+            // ============================================================================
+            const attemptFallbackFetch = async (): Promise<boolean> => {
+                if (!FALLBACK_FETCH_ENABLED) {
+                    logPipeline('FALLBACK', 'Fallback fetch disabled');
+                    return false;
+                }
+                
+                logPipeline('FALLBACK', `Attempting history API fetch for promptId=${promptId.slice(0, 8)}...`);
+                
+                try {
+                    const baseUrl = getComfyUIBaseUrl(settings.comfyUIUrl);
+                    const historyResponse = await fetchWithTimeout(`${baseUrl}/history/${promptId}`, {}, 10000);
+                    
+                    if (!historyResponse.ok) {
+                        logPipeline('FALLBACK', `History API returned ${historyResponse.status}`);
+                        return false;
+                    }
+                    
+                    const historyData = await historyResponse.json();
+                    const promptHistory = historyData[promptId];
+                    
+                    if (!promptHistory) {
+                        logPipeline('FALLBACK', 'No history entry found for promptId');
+                        return false;
+                    }
+                    
+                    const status = promptHistory.status;
+                    if (status?.status_str !== 'success' || !status?.completed) {
+                        logPipeline('FALLBACK', `History status not complete: ${status?.status_str}`);
+                        return false;
+                    }
+                    
+                    // Extract outputs from history
+                    const outputs = promptHistory.outputs || {};
+                    const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [];
+                    
+                    for (const [nodeId, nodeOutput] of Object.entries(outputs)) {
+                        const output = nodeOutput as any;
+                        if (output.images) assetSources.push({ entries: output.images, resultType: 'image' });
+                        if (output.videos) assetSources.push({ entries: output.videos, resultType: 'video' });
+                        if (output.gifs) assetSources.push({ entries: output.gifs, resultType: 'video' });
+                    }
+                    
+                    if (assetSources.length === 0) {
+                        logPipeline('FALLBACK', 'No asset sources found in history');
+                        return false;
+                    }
+                    
+                    // Download assets
+                    const downloadedAssets: LocalGenerationAsset[] = [];
+                    for (const source of assetSources) {
+                        const entries = source.entries;
+                        if (!Array.isArray(entries) || entries.length === 0) continue;
+                        
+                        const assets = await Promise.all(
+                            entries.map(async (entry) => ({
+                                type: source.resultType,
+                                data: await fetchAssetAsDataURL(
+                                    settings.comfyUIUrl,
+                                    entry.filename,
+                                    entry.subfolder,
+                                    entry.type || 'output'
+                                ),
+                                filename: entry.filename,
+                            }))
+                        );
+                        downloadedAssets.push(...assets);
+                    }
+                    
+                    if (downloadedAssets.length === 0) {
+                        logPipeline('FALLBACK', 'No assets downloaded from history');
+                        return false;
+                    }
+                    
+                    // Validate data URL
+                    const primaryData = downloadedAssets[0].data;
+                    const isValidDataUrl = typeof primaryData === 'string' && 
+                        (primaryData.startsWith('data:video/') || primaryData.startsWith('data:image/'));
+                    
+                    if (!isValidDataUrl) {
+                        logPipeline('FALLBACK', `Downloaded asset has invalid data URL: ${typeof primaryData === 'string' ? primaryData.slice(0, 50) : typeof primaryData}`);
+                        return false;
+                    }
+                    
+                    // Success! Populate outputData
+                    outputData = {
+                        type: downloadedAssets[0].type,
+                        data: downloadedAssets[0].data,
+                        filename: downloadedAssets[0].filename,
+                        assets: downloadedAssets,
+                    };
+                    
+                    if (downloadedAssets.some(a => a.type === 'image')) {
+                        outputData.images = downloadedAssets.filter(a => a.type === 'image').map(a => a.data);
+                        frameSequence = outputData.images;
+                    }
+                    
+                    isAssetDownloadComplete = true;
+                    logPipeline('FALLBACK', `✅ Successfully fetched ${downloadedAssets.length} assets from history`);
+                    return true;
+                    
+                } catch (e) {
+                    const errMsg = e instanceof Error ? e.message : String(e);
+                    logPipeline('FALLBACK', `❌ Fallback fetch failed: ${errMsg}`);
+                    return false;
+                }
+            };
+
+            // ============================================================================
+            // POLLING LOOP - Main completion detection with grace period
+            // ============================================================================
             const pollInterval = setInterval(async () => {
+                if (isResolved) {
+                    clearInterval(pollInterval);
+                    return;
+                }
+                
                 try {
                     const queueInfo = await pollQueueInfo(settings.comfyUIUrl);
-                    // If queue is empty and we have output, we're done
-                    if (queueInfo.queue_running === 0 && queueInfo.queue_pending === 0) {
-                        // Hardened validation: ensure we have actual output data
-                        if (!outputData) {
-                            clearInterval(pollInterval);
-                            clearTimeout(timeout);
-                            const errorMsg = `${getSceneContext(promptId)} queue completed but no output data was received. Generation may have failed silently.`;
-                            reportProgress({ status: 'error', message: errorMsg });
-                            reject(new Error(errorMsg));
-                            return;
-                        }
-
-                        // Validate we have either frames or a filename
-                        const hasFrames = frameSequence.length > 0;
-                        const hasFilename = outputData.filename && outputData.filename.trim().length > 0;
+                    const queueEmpty = queueInfo.queue_running === 0 && queueInfo.queue_pending === 0;
+                    
+                    logPipeline('POLL', `Queue status: running=${queueInfo.queue_running}, pending=${queueInfo.queue_pending}`, {
+                        queueEmpty,
+                        hasOutputData: !!outputData,
+                        isAssetDownloadComplete,
+                        gracePeriodActive: gracePeriodStartTime !== null
+                    });
+                    
+                    // ============================================================================
+                    // CASE 1: Asset download complete - resolve immediately
+                    // ============================================================================
+                    if (isAssetDownloadComplete && outputData) {
+                        logPipeline('POLL', '✅ Asset download complete, resolving Promise');
                         
-                        if (!hasFrames && !hasFilename) {
-                            clearInterval(pollInterval);
-                            clearTimeout(timeout);
-                            const errorMsg = `${getSceneContext(promptId)} completed but produced no frames or filename. Output may be empty or invalid.`;
-                            reportProgress({ status: 'error', message: errorMsg });
-                            reject(new Error(errorMsg));
-                            return;
-                        }
-
                         clearInterval(pollInterval);
                         clearTimeout(timeout);
+                        isResolved = true;
                         
-                        // Frame count validation (SVD stability improvement)
-                        const MIN_FRAME_COUNT = 5; // Minimum acceptable frames for valid video
+                        // Frame count validation
+                        const MIN_FRAME_COUNT = 5;
                         const actualFrameCount = frameSequence.length;
-                        
                         if (actualFrameCount > 0 && actualFrameCount < MIN_FRAME_COUNT) {
-                            const warningMsg = `${getSceneContext(promptId)} generated only ${actualFrameCount} frames (minimum ${MIN_FRAME_COUNT}). Video may be too short or generation incomplete.`;
+                            const warningMsg = `${getSceneContext(promptId)} generated only ${actualFrameCount} frames (minimum ${MIN_FRAME_COUNT}). Video may be too short.`;
                             console.warn(warningMsg);
-                            // Use 'complete' status but include warning in message
-                            // (video was generated, just with potential quality issues)
+                            reportProgress({ status: 'complete', message: `⚠️ ${warningMsg}`, progress: 100 });
+                        }
+                        
+                        const videoData = outputData.data;
+                        const frameDuration = frameSequence.length > 0 ? frameSequence.length / 24 : 1.04;
+                        
+                        resolve({
+                            videoPath: videoData,
+                            duration: frameDuration,
+                            filename: outputData.filename || `gemdirect1_shot_${shot.id}.mp4`,
+                            frames: frameSequence.length > 0 ? frameSequence : undefined,
+                            workflowMeta: (promptResponse as any)?.workflowMeta,
+                            queueSnapshot: (promptResponse as any)?.queueSnapshot,
+                            systemResources: resourceMessage,
+                        });
+                        return;
+                    }
+                    
+                    // ============================================================================
+                    // CASE 2: Queue empty but no data yet - start/continue grace period
+                    // ============================================================================
+                    if (queueEmpty && !isAssetDownloadComplete) {
+                        if (gracePeriodStartTime === null) {
+                            gracePeriodStartTime = Date.now();
+                            logPipeline('GRACE', `🕐 Queue empty, starting grace period (${GRACE_PERIOD_MS / 1000}s)...`);
                             reportProgress({ 
-                                status: 'complete', 
-                                message: `⚠️ ${warningMsg}`,
-                                progress: 100 
+                                status: 'running', 
+                                message: 'Fetching final output...',
+                                progress: 95 
                             });
                         }
                         
-                        // Calculate duration: frames @ 24fps
-                        const frameDuration = frameSequence.length > 0 ? frameSequence.length / 24 : 1.04;
+                        const elapsed = Date.now() - gracePeriodStartTime;
+                        const remaining = Math.max(0, GRACE_PERIOD_MS - elapsed);
                         
-                    resolve({
-                        videoPath: outputData.data || `gemdirect1_shot_${shot.id}`,
-                        duration: frameDuration,
-                        filename: outputData.filename || `gemdirect1_shot_${shot.id}.mp4`,
-                        frames: frameSequence.length > 0 ? frameSequence : undefined,
-                        workflowMeta: (promptResponse as any)?.workflowMeta,
-                        queueSnapshot: (promptResponse as any)?.queueSnapshot,
-                        systemResources: resourceMessage,
-                    });
+                        logPipeline('GRACE', `Grace period: ${Math.round(elapsed / 1000)}s elapsed, ${Math.round(remaining / 1000)}s remaining`);
+                        
+                        // Grace period expired - try fallback then fail
+                        if (elapsed >= GRACE_PERIOD_MS) {
+                            logPipeline('GRACE', '⏰ Grace period expired, attempting fallback fetch...');
+                            
+                            const fallbackSuccess = await attemptFallbackFetch();
+                            
+                            if (fallbackSuccess && outputData && isAssetDownloadComplete) {
+                                logPipeline('GRACE', '✅ Fallback fetch successful, resolving Promise');
+                                
+                                clearInterval(pollInterval);
+                                clearTimeout(timeout);
+                                isResolved = true;
+                                
+                                const videoData = outputData.data;
+                                const frameDuration = frameSequence.length > 0 ? frameSequence.length / 24 : 1.04;
+                                
+                                resolve({
+                                    videoPath: videoData,
+                                    duration: frameDuration,
+                                    filename: outputData.filename || `gemdirect1_shot_${shot.id}.mp4`,
+                                    frames: frameSequence.length > 0 ? frameSequence : undefined,
+                                    workflowMeta: (promptResponse as any)?.workflowMeta,
+                                    queueSnapshot: (promptResponse as any)?.queueSnapshot,
+                                    systemResources: resourceMessage,
+                                });
+                                return;
+                            }
+                            
+                            // Fallback failed - reject with detailed error
+                            clearInterval(pollInterval);
+                            clearTimeout(timeout);
+                            isResolved = true;
+                            
+                            const errorMsg = `${getSceneContext(promptId)} grace period expired (${GRACE_PERIOD_MS / 1000}s) and fallback fetch failed. No valid video data received.`;
+                            logPipeline('GRACE', `❌ ${errorMsg}`);
+                            reportProgress({ status: 'error', message: errorMsg });
+                            reject(new Error(errorMsg));
+                            return;
+                        }
+                    }
+                    
+                    // ============================================================================
+                    // CASE 3: Queue not empty - reset grace period and continue polling
+                    // ============================================================================
+                    if (!queueEmpty && gracePeriodStartTime !== null) {
+                        logPipeline('POLL', 'Queue no longer empty, resetting grace period');
+                        gracePeriodStartTime = null;
+                    }
+                    
+                } catch (e) {
+                    // Don't fail on transient poll errors during grace period
+                    const errorMessage = e instanceof Error ? e.message : String(e);
+                    logPipeline('POLL', `⚠️ Poll error (continuing): ${errorMessage}`);
+                    
+                    // Only fail if we're not in grace period and error persists
+                    if (gracePeriodStartTime === null) {
+                        // First poll error - be lenient, start a mini grace period
+                        gracePeriodStartTime = Date.now();
+                        logPipeline('POLL', 'Poll error triggered mini grace period');
+                    }
                 }
-            } catch (e) {
-                clearInterval(pollInterval);
-                clearTimeout(timeout);
-                const errorMessage = e instanceof Error ? e.message : String(e);
-                const contextMessage = `${getSceneContext(promptId)} queue polling failed: ${errorMessage}`;
-                reportProgress({ status: 'error', message: contextMessage });
-                reject(new Error(contextMessage));
-            }
-        }, 2000);
-    });
+            }, POLL_INTERVAL_MS);
+        });
 
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1592,6 +1849,21 @@ const waitForComfyCompletion = (
                     if (downloadedAssets.length > 0) {
                         const imageAssets = downloadedAssets.filter(asset => asset.type === 'image');
                         const videoAssets = downloadedAssets.filter(asset => asset.type === 'video');
+                        
+                        // CRITICAL: Validate first asset has valid data URL before proceeding
+                        const primaryData = downloadedAssets[0].data;
+                        const isValidDataUrl = typeof primaryData === 'string' && 
+                            (primaryData.startsWith('data:video/') || primaryData.startsWith('data:image/'));
+                        
+                        if (!isValidDataUrl) {
+                            console.error(`[waitForComfyCompletion] Invalid data URL received. Type: ${typeof primaryData}, Preview: ${typeof primaryData === 'string' ? primaryData.slice(0, 100) : 'N/A'}`);
+                            finished = true;
+                            clearTimeout(timeout);
+                            clearInterval(pollingInterval);
+                            reject(new Error(`Asset fetch returned invalid data (not a data URL). Expected 'data:video/...' or 'data:image/...', received: ${typeof primaryData === 'string' ? primaryData.slice(0, 50) : typeof primaryData}`));
+                            return;
+                        }
+                        
                         const finalOutput: LocalGenerationStatus['final_output'] = {
                             type: downloadedAssets[0].type,
                             data: downloadedAssets[0].data,
@@ -2066,9 +2338,12 @@ export async function generateVideoFromBookendsSequential(
         settings,
         startPromptResponse.prompt_id,
         (state) => {
+            // Only forward progress updates, not completion status (prevents premature UI completion)
+            const { status: _status, final_output: _finalOutput, ...progressState } = state;
             onStateChange({
                 phase: 'bookend-start-video',
-                ...state,
+                status: 'running',
+                ...progressState,
                 message: `Generating start video: ${state.progress || 0}%`
             });
         }
@@ -2106,9 +2381,12 @@ export async function generateVideoFromBookendsSequential(
         settings,
         endPromptResponse.prompt_id,
         (state) => {
+            // Only forward progress updates, not completion status (prevents premature UI completion)
+            const { status: _status, final_output: _finalOutput, ...progressState } = state;
             onStateChange({
                 phase: 'bookend-end-video',
-                ...state,
+                status: 'running',
+                ...progressState,
                 message: `Generating end video: ${state.progress || 0}%`
             });
         }

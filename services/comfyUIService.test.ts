@@ -123,7 +123,8 @@ describe('generateVideoFromShot', () => {
         message: 'Generation complete!',
         final_output: {
           type: 'image',
-          data: 'gemdirect1_shot_shot-42',
+          // Use valid data URL format - the pipeline validates this now
+          data: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
           filename: 'gemdirect1_shot_shot-42.png',
           images: frames,
         } as any,
@@ -183,7 +184,8 @@ describe('generateVideoFromShot', () => {
       callback({
         status: 'complete',
         message: 'done',
-        final_output: { type: 'video', data: 'blob://result', filename: 'shot.mp4' },
+        // Use a valid data URL format instead of blob://result
+        final_output: { type: 'video', data: 'data:video/mp4;base64,AAAA', filename: 'shot.mp4' },
       });
     });
 

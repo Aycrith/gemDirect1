@@ -207,6 +207,272 @@
   .animate-toast-progress {
     animation: toast-progress 5s linear forwards;
   }
+
+  /* ============================================
+     BASE UI IMPROVEMENTS - Always active
+     These styles work without any feature flag
+     ============================================ */
+  
+  /* Context Bar - Sticky breadcrumb navigation (always active) */
+  .context-bar {
+    height: 56px;
+    background: rgba(17, 24, 39, 0.95);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(251, 191, 36, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    position: sticky;
+    top: 64px; /* Below main header */
+    z-index: 25;
+  }
+  
+  .context-bar__breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    color: #9ca3af;
+  }
+  
+  .context-bar__breadcrumb {
+    color: #9ca3af;
+    transition: color 0.15s ease;
+  }
+  
+  .context-bar__breadcrumb--clickable {
+    cursor: pointer;
+  }
+  
+  .context-bar__breadcrumb--clickable:hover {
+    color: #fbbf24;
+  }
+  
+  .context-bar__breadcrumb-separator {
+    color: #4b5563;
+  }
+  
+  .context-bar__breadcrumb--current {
+    color: #fbbf24;
+    font-weight: 500;
+  }
+  
+  /* Shot Card - Enhanced visual hierarchy (always active) */
+  .shot-card {
+    background: rgba(31, 41, 55, 0.6);
+    border: 1px solid rgba(75, 85, 99, 0.5);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+  }
+  
+  .shot-card:hover {
+    border-color: rgba(251, 191, 36, 0.5);
+    background: rgba(55, 65, 81, 0.5);
+    box-shadow: 0 4px 12px rgba(251, 191, 36, 0.1);
+  }
+  
+  .shot-card:focus-within {
+    outline: 2px solid #fbbf24;
+    outline-offset: 2px;
+  }
+  
+  /* Skeleton loading animation (always active) */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      rgba(55, 65, 81, 0.4) 0%,
+      rgba(75, 85, 99, 0.6) 50%,
+      rgba(55, 65, 81, 0.4) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+    border-radius: 4px;
+  }
+  
+  @keyframes skeleton-pulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  
+  /* Status Chip - Consistent status indicators (always active) */
+  .status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  
+  .status-chip--info {
+    background: rgba(96, 165, 250, 0.15);
+    color: #60a5fa;
+  }
+  
+  .status-chip--success {
+    background: rgba(74, 222, 128, 0.15);
+    color: #4ade80;
+  }
+  
+  .status-chip--warning {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+  }
+  
+  .status-chip--error {
+    background: rgba(248, 113, 113, 0.15);
+    color: #f87171;
+  }
+  
+  .status-chip--generating {
+    background: rgba(167, 139, 250, 0.15);
+    color: #a78bfa;
+  }
+  
+  /* Action rail - Grouped action buttons (always active) */
+  .action-rail {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: rgba(31, 41, 55, 0.4);
+    border-radius: 8px;
+    border: 1px solid rgba(75, 85, 99, 0.4);
+  }
+  
+  .action-rail__divider {
+    width: 1px;
+    height: 24px;
+    background: rgba(75, 85, 99, 0.5);
+  }
+  
+  /* Drawer - Slide-in panel (always active) */
+  .drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 480px;
+    background: rgba(17, 24, 39, 0.98);
+    border-left: 1px solid rgba(75, 85, 99, 0.5);
+    transform: translateX(100%);
+    transition: transform 0.3s ease;
+    z-index: 50;
+    overflow-y: auto;
+  }
+  
+  .drawer--open {
+    transform: translateX(0);
+  }
+  
+  .drawer__backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 49;
+    pointer-events: none;
+  }
+  
+  .drawer__backdrop--visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ============================================
+     UI REFRESH SCOPE - Enhanced improvements
+     Toggle via VITE_UI_REFRESH_ENABLED env var
+     Adds extra polish when .ui-refresh class is present
+     ============================================ */
+  
+  /* Design Tokens (available when flag enabled for CSS variable usage) */
+  .ui-refresh {
+    /* Spacing scale (4px base) */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    
+    /* Typography scale */
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-md: 1rem;
+    --text-lg: 1.25rem;
+    --text-xl: 1.5rem;
+    
+    /* Status colors */
+    --status-info: #60a5fa;
+    --status-info-bg: rgba(96, 165, 250, 0.15);
+    --status-success: #4ade80;
+    --status-success-bg: rgba(74, 222, 128, 0.15);
+    --status-warning: #fbbf24;
+    --status-warning-bg: rgba(251, 191, 36, 0.15);
+    --status-error: #f87171;
+    --status-error-bg: rgba(248, 113, 113, 0.15);
+    --status-generating: #a78bfa;
+    --status-generating-bg: rgba(167, 139, 250, 0.15);
+    
+    /* Surface colors */
+    --surface-primary: rgba(17, 24, 39, 0.8);
+    --surface-secondary: rgba(31, 41, 55, 0.6);
+    --surface-elevated: rgba(55, 65, 81, 0.5);
+    
+    /* Borders */
+    --border-subtle: rgba(75, 85, 99, 0.5);
+    --border-accent: rgba(251, 191, 36, 0.5);
+    
+    /* Touch target minimum (44px for accessibility) */
+    --touch-target-min: 44px;
+  }
+  
+  /* Focus-visible styles for keyboard navigation (enhanced) */
+  .ui-refresh button:focus-visible,
+  .ui-refresh [role="button"]:focus-visible,
+  .ui-refresh a:focus-visible {
+    outline: 2px solid #fbbf24;
+    outline-offset: 2px;
+  }
+  
+  /* Ensure minimum touch targets */
+  .ui-refresh .touch-target {
+    min-height: var(--touch-target-min);
+    min-width: var(--touch-target-min);
+  }
+  
+  /* Scene Navigator improvements */
+  .ui-refresh .scene-nav-item {
+    min-height: var(--touch-target-min);
+    padding: var(--space-3);
+    transition: all 0.15s ease;
+  }
+  
+  .ui-refresh .scene-nav-item:focus-visible {
+    outline: 2px solid #fbbf24;
+    outline-offset: -2px;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .drawer {
+      max-width: 100%;
+    }
+    
+    .context-bar {
+      padding: 0 12px;
+    }
+    
+    .context-bar__breadcrumbs {
+      font-size: 0.75rem;
+    }
+  }
 </style>
 </head>
   <body class="text-gray-200 antialiased">

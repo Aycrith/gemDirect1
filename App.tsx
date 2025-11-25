@@ -39,6 +39,7 @@ import WorkflowTracker from './components/WorkflowTracker';
 import Toast from './components/Toast';
 import ApiStatusIndicator from './components/ApiStatusIndicator';
 import ErrorBoundary from './components/ErrorBoundary';
+import ContextBar from './components/ContextBar';
 import BarChartIcon from './components/icons/BarChartIcon';
 import SettingsIcon from './components/icons/SettingsIcon';
 import SparklesIcon from './components/icons/SparklesIcon';
@@ -60,6 +61,9 @@ const LoadingFallback: React.FC<{ message?: string }> = ({ message = 'Loading...
 );
 
 const AppContent: React.FC = () => {
+    // UI Refresh feature flag - enables new presentation layer improvements
+    const uiRefreshEnabled = import.meta.env.VITE_UI_REFRESH_ENABLED === 'true';
+    
     const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0, task: '' });
     const { 
         workflowStage, setWorkflowStage, storyBible, setStoryBible, 
@@ -434,6 +438,7 @@ const AppContent: React.FC = () => {
                                             setLocalGenStatus={setLocalGenStatus}
                                             isRefined={refinedSceneIds.has(activeScene.id)}
                                             onUpdateSceneSummary={handleUpdateSceneSummary}
+                                            uiRefreshEnabled={uiRefreshEnabled}
                                         />
                                     </Suspense>
                                 ) : <p>Select a scene</p>}
@@ -468,7 +473,7 @@ const AppContent: React.FC = () => {
     };
     
     return (
-        <div className="min-h-screen bg-gray-900 text-gray-200 font-sans" data-testid="app-container">
+        <div className={`min-h-screen bg-gray-900 text-gray-200 font-sans ${uiRefreshEnabled ? 'ui-refresh' : ''}`} data-testid="app-container">
             <header className="p-4 flex justify-between items-center sticky top-0 bg-gray-900/80 backdrop-blur-md z-30 border-b border-amber-500/20">
                 <div className="flex items-center gap-3">
                     <SparklesIcon className="w-7 h-7 text-amber-400" />
@@ -527,6 +532,29 @@ const AppContent: React.FC = () => {
                     </div>
                 </div>
             </header>
+            
+            {/* Context Bar - sticky below header in Director Mode */}
+            {mode === 'director' && workflowStage === 'director' && (
+                <ContextBar 
+                    breadcrumbs={[
+                        { label: 'Director Mode', onClick: () => setActiveSceneId(null) },
+                        ...(activeScene ? [{ label: `Scene ${scenes.findIndex(s => s.id === activeScene.id) + 1}: ${activeScene.title}` }] : [])
+                    ]}
+                    status={(() => {
+                        const activeImageStatus = activeSceneId ? sceneImageStatuses[activeSceneId] : null;
+                        if (activeImageStatus?.status === 'generating') {
+                            return { variant: 'generating' as const, label: 'Generating...' };
+                        }
+                        if (activeImageStatus?.status === 'error') {
+                            return { variant: 'error' as const, label: 'Generation Failed' };
+                        }
+                        if (activeImageStatus?.status === 'complete') {
+                            return { variant: 'success' as const, label: 'Ready' };
+                        }
+                        return undefined;
+                    })()}
+                />
+            )}
             
             <main className="py-8 sm:py-12">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

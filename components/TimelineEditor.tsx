@@ -7,6 +7,8 @@ import PlusIcon from './icons/PlusIcon';
 import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import ImageIcon from './icons/ImageIcon';
+import StatusChip from './StatusChip';
+import ShotCardSkeleton from './ShotCardSkeleton';
 import { generateVideoRequestPayloads } from '../services/payloadService';
 import { generateTimelineVideos, stripDataUrlPrefix, queueComfyUIPrompt, validateWorkflowAndMappings, generateVideoFromBookendsSequential, generateSceneBookendsLocally } from '../services/comfyUIService';
 import { generateSceneTransitionContext } from '../services/sceneTransitionService';
@@ -133,6 +135,7 @@ interface TimelineEditorProps {
     setLocalGenStatus: React.Dispatch<React.SetStateAction<Record<string, LocalGenerationStatus>>>;
     isRefined: boolean;
     onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
+    uiRefreshEnabled?: boolean;
 }
 
 const TimelineItem: React.FC<{
@@ -158,56 +161,73 @@ const TimelineItem: React.FC<{
         <div 
             ref={spotlightRef} 
             draggable
-            className={`bg-gray-800/50 p-4 rounded-lg border border-gray-700/80 transition-all duration-200 flex gap-4 interactive-spotlight ${isDragging ? 'dragging' : 'hover:shadow-lg hover:shadow-amber-500/10'}`}
+            className={`shot-card bg-gray-800/60 p-4 rounded-lg border border-gray-700/60 transition-all duration-200 flex gap-4 interactive-spotlight focus-within:ring-2 focus-within:ring-amber-400 focus-within:ring-offset-2 focus-within:ring-offset-gray-900 ${isDragging ? 'dragging' : 'hover:shadow-lg hover:shadow-amber-500/10 hover:border-gray-600'}`}
+            role="article"
+            aria-label={`Shot ${index + 1}`}
         >
             {imageUrl && (
-                <div className="w-1/4 flex-shrink-0">
+                <div className="w-1/4 flex-shrink-0 min-w-[80px]">
                     <img src={`data:image/jpeg;base64,${imageUrl}`} alt={`Preview for shot ${index + 1}`} className="rounded-md aspect-square object-cover" />
                     <button
                         onClick={() => onLinkToVisualBible(shot.id, imageUrl)}
-                        className="mt-1 w-full px-2 py-1 bg-amber-600 text-white text-xs rounded-md hover:bg-amber-700 transition-colors"
+                        className="mt-1 w-full px-2 py-1 bg-amber-600 text-white text-xs rounded-md hover:bg-amber-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 min-h-[32px]"
                     >
                         Add to Visual Bible
                     </button>
                 </div>
             )}
-            <div className="flex-grow">
+            <div className="flex-grow min-w-0">
                 <div className="flex justify-between items-start gap-4">
-                    <div className="flex-grow">
-                        <label className="block text-sm font-bold text-gray-300 mb-2 cursor-grab flex items-center gap-2">
-                            Shot {index + 1}
+                    <div className="flex-grow min-w-0">
+                        <label className="block text-sm font-bold text-gray-300 mb-2 cursor-grab flex items-center gap-2 flex-wrap">
+                            <span>Shot {index + 1}</span>
                             {hasVisualBibleLinks && (
                                 <span className="px-1 py-0.5 bg-amber-600/20 text-amber-300 text-xs rounded border border-amber-600/30" title="Linked to Visual Bible">
                                     VB
                                 </span>
+                            )}
+                            {isGeneratingImage && (
+                                <StatusChip status="generating" label="Generating..." />
                             )}
                         </label>
                         <textarea
                             value={shot.description}
                             onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
                             rows={3}
-                            className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-2"
+                            className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
                             placeholder="Describe the shot..."
+                            aria-label={`Description for shot ${index + 1}`}
                         />
                     </div>
-                    <div className="flex flex-col items-end gap-2 mt-8">
+                    {/* Action buttons - grouped for better visual hierarchy */}
+                    <div className="action-rail flex flex-col items-end gap-2 mt-8 p-2 bg-gray-800/40 rounded-lg border border-gray-700/40" role="toolbar" aria-label="Shot actions">
                         <button
                             onClick={() => setIsControlsVisible(!isControlsVisible)}
-                            className={`p-2 rounded-full transition-colors ${isControlsVisible ? 'bg-amber-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+                            className={`p-2 rounded-full transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${isControlsVisible ? 'bg-amber-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
                             aria-label="Toggle creative controls"
+                            aria-expanded={isControlsVisible}
                         >
                             <SparklesIcon className="w-5 h-5" />
                         </button>
-                         <button onClick={() => onGenerateImage(shot.id)} disabled={isGeneratingImage} className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-wait" aria-label="Generate shot preview">
+                         <button 
+                            onClick={() => onGenerateImage(shot.id)} 
+                            disabled={isGeneratingImage} 
+                            className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-wait min-h-[44px] min-w-[44px] flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400" 
+                            aria-label="Generate shot preview"
+                        >
                             {isGeneratingImage ? <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <ImageIcon className="w-5 h-5" />}
                         </button>
-                        <button onClick={() => onDeleteShot(shot.id)} className="p-2 rounded-full bg-red-800/50 hover:bg-red-700 text-red-300 transition-colors" aria-label="Delete shot">
+                        <button 
+                            onClick={() => onDeleteShot(shot.id)} 
+                            className="p-2 rounded-full bg-red-800/50 hover:bg-red-700 text-red-300 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400" 
+                            aria-label="Delete shot"
+                        >
                             <TrashIcon className="w-5 h-5" />
                         </button>
                     </div>
                 </div>
                 {isControlsVisible && (
-                    <div className="mt-4 pt-4 border-t border-gray-700/50 fade-in">
+                    <div className="mt-4 pt-4 border-t border-gray-700/50 fade-in" role="region" aria-label="Creative controls">
                         <CreativeControls value={enhancers} onChange={(newEnhancers) => onEnhancersChange(shot.id, newEnhancers)} />
                     </div>
                 )}
@@ -233,7 +253,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     localGenStatus,
     setLocalGenStatus,
     isRefined,
-    onUpdateSceneSummary
+    onUpdateSceneSummary,
+    uiRefreshEnabled = false
 }) => {
     const [timeline, setTimeline] = useState<TimelineData>(scene.timeline);
     const [coDirectorResult, setCoDirectorResult] = useState<any | null>(null);
@@ -244,6 +265,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
     const [isBatchProcessing, setIsBatchProcessing] = useState<false | 'description' | 'enhancers'>(false);
+    const [isGeneratingInitialShots, setIsGeneratingInitialShots] = useState(false);
     const [isTemplateGuidanceOpen, setIsTemplateGuidanceOpen] = useState(false);
     const [linkModalState, setLinkModalState] = useState<{ isOpen: boolean; imageData: string; sceneId?: string; shotId?: string } | null>(null);
     
@@ -438,6 +460,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     };
 
     const handleGenerateAndDetailInitialShots = async () => {
+        setIsGeneratingInitialShots(true);
         try {
             const narrativeContext = getNarrativeContext(scene.id);
             const prunedContext = await planActions.getPrunedContextForShotGeneration(storyBible, narrativeContext, scene.summary, directorsVision, onApiLog, onApiStateChange);
@@ -457,6 +480,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             updateTimeline({ shots: newShots, transitions: newTransitions, shotEnhancers: newEnhancers });
         } catch (error) {
             console.error("Failed to generate and detail initial shots:", error);
+        } finally {
+            setIsGeneratingInitialShots(false);
         }
     };
     
@@ -598,7 +623,16 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     updateStatus
                 );
 
-                if (videoPath) {
+                // Validate that videoPath is actually a data URL, not a filename
+                const isValidDataUrl = typeof videoPath === 'string' && 
+                    (videoPath.startsWith('data:video/') || videoPath.startsWith('data:image/'));
+                
+                if (videoPath && !isValidDataUrl) {
+                    console.error('[PIPELINE:BOOKEND] videoPath is not a valid data URL:', 
+                        typeof videoPath === 'string' ? videoPath.slice(0, 100) : typeof videoPath);
+                }
+
+                if (videoPath && isValidDataUrl) {
                     updateStatus({ 
                         status: 'complete', 
                         progress: 100, 
@@ -608,6 +642,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             data: videoPath,
                             filename: 'bookend_sequence.mp4'
                         }
+                    });
+                } else {
+                    updateStatus({
+                        status: 'error',
+                        progress: 100,
+                        message: videoPath 
+                            ? 'Bookend video generated but data is invalid (received filename instead of data URL)'
+                            : 'Bookend video generation failed - no output received'
                     });
                 }
             } else {
@@ -672,15 +714,26 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
                 const lastShotId = timeline.shots[totalShots - 1]?.id;
                 const finalResult = lastShotId ? results[lastShotId] : undefined;
-                const finalOutput = finalResult && finalResult.videoPath ? {
+                
+                // Validate that videoPath is actually a data URL, not a filename
+                const isValidDataUrl = typeof finalResult?.videoPath === 'string' && 
+                    (finalResult.videoPath.startsWith('data:video/') || finalResult.videoPath.startsWith('data:image/'));
+                
+                if (finalResult?.videoPath && !isValidDataUrl) {
+                    console.error('[PIPELINE] videoPath is not a valid data URL:', finalResult.videoPath.slice(0, 100));
+                }
+                
+                const finalOutput = finalResult && finalResult.videoPath && isValidDataUrl ? {
                     type: 'video' as const,
                     data: finalResult.videoPath,
                     filename: finalResult.filename
                 } : undefined;
 
                 updateStatus({
-                    status: 'complete',
-                    message: `Generated ${totalShots} ${totalShots === 1 ? 'shot' : 'shots'} successfully.`,
+                    status: finalOutput ? 'complete' : 'error',
+                    message: finalOutput 
+                        ? `Generated ${totalShots} ${totalShots === 1 ? 'shot' : 'shots'} successfully.`
+                        : `Generation completed but video data is invalid (received filename instead of data URL)`,
                     progress: 100,
                     final_output: finalOutput
                 });
@@ -814,15 +867,39 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
             const lastShotId = timeline.shots[totalShots - 1]?.id;
             const finalResult = lastShotId ? results[lastShotId] : undefined;
-            const finalOutput = finalResult && finalResult.videoPath ? {
+            
+            // Diagnostic logging for video pipeline debugging
+            console.log('[handleGenerateVideoWithAI] Final result analysis:', {
+                lastShotId,
+                hasResult: !!finalResult,
+                videoPathType: typeof finalResult?.videoPath,
+                videoPathPrefix: finalResult?.videoPath?.slice(0, 50),
+                isValidDataUrl: finalResult?.videoPath?.startsWith('data:video/') || finalResult?.videoPath?.startsWith('data:image/'),
+                filename: finalResult?.filename
+            });
+            
+            // Validate that videoPath is actually a data URL, not a filename
+            const isValidDataUrl = typeof finalResult?.videoPath === 'string' && 
+                (finalResult.videoPath.startsWith('data:video/') || finalResult.videoPath.startsWith('data:image/'));
+            
+            if (finalResult?.videoPath && !isValidDataUrl) {
+                console.error('[handleGenerateVideoWithAI] ❌ CRITICAL: videoPath is not a valid data URL!', {
+                    received: finalResult.videoPath.slice(0, 100),
+                    expected: 'data:video/mp4;base64,... or data:image/...'
+                });
+            }
+            
+            const finalOutput = finalResult && finalResult.videoPath && isValidDataUrl ? {
                 type: 'video' as const,
                 data: finalResult.videoPath,
                 filename: finalResult.filename
             } : undefined;
 
             updateStatus({
-                status: 'complete',
-                message: `Generated ${totalShots} ${totalShots === 1 ? 'shot' : 'shots'} successfully.`,
+                status: finalOutput ? 'complete' : 'error',
+                message: finalOutput 
+                    ? `Generated ${totalShots} ${totalShots === 1 ? 'shot' : 'shots'} successfully.`
+                    : `Generation completed but video data is invalid (received filename instead of data URL)`,
                 progress: 100,
                 final_output: finalOutput
             });
@@ -1162,7 +1239,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     )}
                 </div>
             )}
-            {timeline.shots.length === 0 && (
+            {timeline.shots.length === 0 && !isGeneratingInitialShots && (
                 <GuidedAction
                     title="Your Scene is an Empty Canvas"
                     description="Let's bring it to life. Use the AI to generate an initial, detailed shot list based on your Story Bible and Director's Vision."
@@ -1171,6 +1248,15 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     icon={<TimelineIcon className="w-12 h-12" />}
                     buttonProps={{ 'data-testid': 'btn-generate-shots' }}
                 />
+            )}
+
+            {/* Show skeleton placeholders during initial shot generation */}
+            {isGeneratingInitialShots && (
+                <div className="space-y-4" data-testid="shot-skeletons">
+                    <ShotCardSkeleton />
+                    <ShotCardSkeleton />
+                    <ShotCardSkeleton />
+                </div>
             )}
 
             {timeline.shots.length > 0 && (
@@ -1375,6 +1461,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 isOpen={isPromptModalOpen}
                 onClose={() => setIsPromptModalOpen(false)}
                 payloads={promptsToExport}
+                asDrawer={uiRefreshEnabled}
              />
             
             {isTemplateGuidanceOpen && templateContext.selectedTemplate && (
