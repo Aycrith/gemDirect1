@@ -18,15 +18,28 @@ const toastStyles = {
 
 const Toast: React.FC<{ toasts: ToastMessage[]; removeToast: (id: number) => void }> = ({ toasts, removeToast }) => {
     return (
-        <div className="fixed top-5 right-5 z-50 space-y-3 w-80">
+        <div className="fixed top-20 right-5 z-50 space-y-3 w-80">
             {toasts.map(toast => (
                 <div
                     key={toast.id}
-                    className={`flex items-center gap-3 p-3 rounded-lg shadow-lg border backdrop-blur-md animate-fade-in-right ${toastStyles[toast.type]}`}
+                    className={`relative flex items-center gap-3 p-3 rounded-lg shadow-lg border backdrop-blur-md animate-fade-in-right overflow-hidden ${toastStyles[toast.type]}`}
                 >
+                    {/* Auto-dismiss progress bar */}
+                    <div 
+                        className="absolute bottom-0 left-0 h-1 bg-current opacity-30 animate-toast-progress"
+                        style={{ animationDuration: '5s' }}
+                    />
+                    
                     {toastIcons[toast.type]}
                     <p className="text-sm font-medium flex-1">{toast.message}</p>
-                    <button onClick={() => removeToast(toast.id)} className="text-gray-400 hover:text-white rounded-full w-5 h-5 flex items-center justify-center">&times;</button>
+                    <button 
+                        onClick={() => removeToast(toast.id)} 
+                        className="text-gray-400 hover:text-white hover:bg-white/10 rounded-full w-6 h-6 flex items-center justify-center text-xl font-bold transition-colors"
+                        aria-label="Close notification"
+                        title="Dismiss notification"
+                    >
+                        &times;
+                    </button>
                 </div>
             ))}
         </div>

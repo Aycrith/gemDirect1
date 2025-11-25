@@ -247,7 +247,7 @@ test.describe('Full E2E Pipeline', () => {
     console.log('\n=== PHASE 3: Generate Keyframe ===');
     
     // Step 4: Generate keyframe for first scene (mock ComfyUI T2I)
-    const generateKeyframeButton = page.locator('button:has-text("Generate Keyframe"), button:has-text("Generate Image")').first();
+    const generateKeyframeButton = page.locator('button:text-matches("Generate \\d+ Keyframes?")').first();
     if (await generateKeyframeButton.isVisible({ timeout: 5000 })) {
       await generateKeyframeButton.click();
       console.log('[Pipeline] Keyframe generation started (mocked)...');
@@ -371,7 +371,7 @@ test.describe('Full E2E Pipeline', () => {
     });
     
     // Try to generate keyframe
-    const generateButton = page.locator('button:has-text("Generate Keyframe"), button:has-text("Generate Image")').first();
+    const generateButton = page.locator('button:text-matches("Generate \\d+ Keyframes?")').first();
     
     if (await generateButton.isVisible({ timeout: 5000 })) {
       await generateButton.click();

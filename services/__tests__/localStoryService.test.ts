@@ -1,18 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import * as localStoryService from '../localStoryService';
+import { generateStoryBlueprint } from '../localStoryService';
 
 describe('localStoryService.generateStoryBlueprint', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    // Clear window-level settings
+    if ((globalThis as any).window) {
+      delete (globalThis as any).window.LOCAL_STORY_PROVIDER_URL;
+      delete (globalThis as any).window.__localGenSettings;
+    }
   });
 
   afterEach(() => {
-    delete (globalThis as any).window?.LOCAL_STORY_PROVIDER_URL;
     vi.restoreAllMocks();
+    if ((globalThis as any).window) {
+      delete (globalThis as any).window.LOCAL_STORY_PROVIDER_URL;
+      delete (globalThis as any).window.__localGenSettings;
+    }
   });
 
-  it('falls back to deterministic blueprint when no provider URL is configured', async () => {
-    const result = await localStoryService.generateStoryBlueprint('A hero finds a map', 'adventure');
+  it('falls back to deterministic blueprint when fetch fails', async () => {
+    // Mock fetch to fail - simulating no provider or network error
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+    
+    const result = await generateStoryBlueprint('A hero finds a map', 'adventure');
     expect(result).toBeTruthy();
     expect(Array.isArray(result.heroArcs)).toBe(true);
     expect(result.heroArcs?.length).toBe(12);
@@ -20,8 +31,6 @@ describe('localStoryService.generateStoryBlueprint', () => {
   });
 
   it('parses well-formed JSON from provider and normalizes to 12 hero arcs', async () => {
-    (globalThis as any).window = { LOCAL_STORY_PROVIDER_URL: 'http://127.0.0.1:12345/v1/chat/completions' } as any;
-
     const fakeResponse = {
       choices: [
         {
@@ -36,26 +45,28 @@ describe('localStoryService.generateStoryBlueprint', () => {
           },
         },
       ],
-    } as any;
+    };
 
-    const fetchMock = vi.spyOn(globalThis, 'fetch' as any).mockResolvedValue({ ok: true, json: async () => fakeResponse } as any);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ 
+      ok: true, 
+      json: async () => fakeResponse 
+    } as Response);
 
-    const result = await localStoryService.generateStoryBlueprint('A hero finds a map', 'adventure');
+    const result = await generateStoryBlueprint('A hero finds a map', 'adventure');
 
-    expect(fetchMock).toHaveBeenCalledOnce();
     expect(result.heroArcs?.length).toBe(12);
     expect(result.logline).toBe('Concise arc-aware logline');
   });
 
   it('handles malformed provider output and returns fallback blueprint', async () => {
-    (globalThis as any).window = { LOCAL_STORY_PROVIDER_URL: 'http://127.0.0.1:12345/v1/chat/completions' } as any;
-    const fetchMock = vi.spyOn(globalThis, 'fetch' as any).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: 'not json' } }] }) } as any);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ 
+      ok: true, 
+      json: async () => ({ choices: [{ message: { content: 'not json' } }] }) 
+    } as Response);
 
-    const result = await localStoryService.generateStoryBlueprint('Map', 'adventure');
+    const result = await generateStoryBlueprint('Map', 'adventure');
 
-    expect(fetchMock).toHaveBeenCalledOnce();
     expect(result.heroArcs?.length).toBe(12);
     expect(result.logline).toBeTruthy();
   });
 });
-

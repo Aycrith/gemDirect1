@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
+import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion, KeyframeData } from '../types';
 import ContinuityCard from './ContinuityCard';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import GuideCard from './GuideCard';
@@ -12,7 +12,7 @@ interface ContinuityDirectorProps {
   scenes: Scene[];
   storyBible: StoryBible;
   directorsVision: string;
-  generatedImages: Record<string, string>;
+  generatedImages: Record<string, KeyframeData>;
   continuityData: Record<string, SceneContinuityData>;
   setContinuityData: React.Dispatch<React.SetStateAction<Record<string, SceneContinuityData>>>;
   addToast: (message: string, type: ToastMessage['type']) => void;

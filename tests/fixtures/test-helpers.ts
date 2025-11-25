@@ -93,36 +93,46 @@ export async function loadProjectState(page: Page, state: any) {
     return new Promise((resolve) => {
       const request = indexedDB.open('cinematic-story-db', 1);
       
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as any).result;
-        if (!db.objectStoreNames.contains('misc')) {
-          db.createObjectStore('misc');
-        }
-      };
-      
       request.onsuccess = () => {
         const db = request.result;
-        const tx = db.transaction('misc', 'readwrite');
-        const store = tx.objectStore('misc');
         
-        // Store each piece of state
+        // Use proper stores for each data type
+        const stores = ['storyBible', 'scenes', 'misc'];
+        const tx = db.transaction(stores, 'readwrite');
+        
+        // Store bible in storyBible store
         if (projectState.storyBible) {
-          store.put(projectState.storyBible, 'storyBible');
+          const bibleStore = tx.objectStore('storyBible');
+          bibleStore.put(projectState.storyBible, 'current');
         }
+        
+        // Store scenes in scenes store (with order index)
+        if (projectState.scenes && Array.isArray(projectState.scenes)) {
+          const sceneStore = tx.objectStore('scenes');
+          projectState.scenes.forEach((scene: any, index: number) => {
+            sceneStore.put({ ...scene, order: index });
+          });
+        }
+        
+        // Store everything else in misc store
+        const miscStore = tx.objectStore('misc');
         if (projectState.directorsVision) {
-          store.put(projectState.directorsVision, 'directorsVision');
-        }
-        if (projectState.scenes) {
-          store.put(projectState.scenes, 'scenes');
+          miscStore.put(projectState.directorsVision, 'directorsVision');
         }
         if (projectState.workflowStage) {
-          store.put(projectState.workflowStage, 'workflowStage');
+          miscStore.put(projectState.workflowStage, 'workflowStage');
+        }
+        if (projectState.mode) {
+          miscStore.put(projectState.mode, 'mode');
+        }
+        if (projectState.activeSceneId) {
+          miscStore.put(projectState.activeSceneId, 'activeSceneId');
         }
         if (projectState.generatedImages) {
-          store.put(projectState.generatedImages, 'generatedImages');
+          miscStore.put(projectState.generatedImages, 'generatedImages');
         }
         if (projectState.localGenStatus) {
-          store.put(projectState.localGenStatus, 'localGenStatus');
+          miscStore.put(projectState.localGenStatus, 'localGenStatus');
         }
         
         tx.oncomplete = () => {
@@ -130,6 +140,17 @@ export async function loadProjectState(page: Page, state: any) {
           console.log('[Test Helper] IndexedDB state loaded successfully');
           resolve(true);
         };
+        
+        tx.onerror = () => {
+          db.close();
+          console.error('[Test Helper] Failed to load IndexedDB state');
+          resolve(false);
+        };
+      };
+      
+      request.onerror = () => {
+        console.error('[Test Helper] Failed to open IndexedDB');
+        resolve(false);
       };
     });
   }, state);

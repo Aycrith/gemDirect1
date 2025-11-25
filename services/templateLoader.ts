@@ -4,13 +4,15 @@
  * Loads genre-specific prompt templates and applies them to scene generation.
  * Integrates with quality validators (coherence, diversity, similarity).
  * 
+ * Browser-compatible: Uses fetch() for loading templates.
+ * Templates are served from /docs/prompts/v1.0/
+ * 
  * Usage:
  *   const template = await loadTemplate('sci-fi');
  *   const enhancedPrompt = template.apply(userPrompt);
  */
 
-import * as fs from 'fs/promises';
-import * as path from 'path';
+// Browser-compatible: no Node.js imports
 
 export interface TemplateMetadata {
   id: string;
@@ -82,15 +84,17 @@ const templateCache: Map<string, Template> = new Map();
 let manifestCache: TemplatesManifest | null = null;
 
 /**
- * Get the templates directory path
+ * Get the templates base URL for fetching
+ * In browser: relative path from public root
+ * In tests/Node: uses test fixtures or mocks
  */
-function getTemplatesDir(): string {
-  const envPath = process.env.PROMPT_TEMPLATES_DIR;
-  if (envPath) return envPath;
-
-  // Default: <project-root>/docs/prompts/v1.0
-  const projectRoot = path.resolve(__dirname, '../../..');
-  return path.join(projectRoot, 'docs', 'prompts', 'v1.0');
+function getTemplatesBaseUrl(): string {
+  // Check for custom path override (useful for testing)
+  if (typeof process !== 'undefined' && process.env?.PROMPT_TEMPLATES_DIR) {
+    return process.env.PROMPT_TEMPLATES_DIR;
+  }
+  // Default: relative path for browser fetch
+  return '/docs/prompts/v1.0';
 }
 
 /**
@@ -100,10 +104,13 @@ export async function loadManifest(): Promise<TemplatesManifest> {
   if (manifestCache) return manifestCache;
 
   try {
-    const manifestPath = path.join(getTemplatesDir(), 'TEMPLATES_MANIFEST.json');
-    const content = await fs.readFile(manifestPath, 'utf-8');
-    manifestCache = JSON.parse(content);
-    return manifestCache;
+    const manifestUrl = `${getTemplatesBaseUrl()}/TEMPLATES_MANIFEST.json`;
+    const response = await fetch(manifestUrl);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    manifestCache = await response.json();
+    return manifestCache!;
   } catch (error) {
     console.error(`[TemplateLoader] Failed to load manifest: ${error}`);
     throw new Error(`Cannot load templates manifest: ${(error as Error).message}`);
@@ -133,9 +140,13 @@ export async function loadTemplate(genreOrId: string): Promise<Template> {
       throw new Error(`Template not found: ${genreOrId}. Available: ${manifest.templates.map(t => t.id).join(', ')}`);
     }
 
-    // Load template file
-    const templatePath = path.join(getTemplatesDir(), metadata.path);
-    const content = await fs.readFile(templatePath, 'utf-8');
+    // Load template file via fetch
+    const templateUrl = `${getTemplatesBaseUrl()}/${metadata.path}`;
+    const response = await fetch(templateUrl);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    const content = await response.text();
 
     // Extract mandatory elements guide
     const mandatoryMatch = content.match(/=== MANDATORY ELEMENTS ===[\s\S]*?(?=\n===|$)/);

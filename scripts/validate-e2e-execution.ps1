@@ -86,18 +86,18 @@ Write-Host ""
 
 # 5. Success determination
 $expectedScenes = 3
-$expectedFramesPerScene = 25
+$expectedFramesPerScene = 49
 $allSuccessful = $sceneExecutions.Count -eq $expectedScenes -and $totalFrames -eq ($expectedScenes * $expectedFramesPerScene)
 
 if ($allSuccessful) {
     Write-Host "[OK] VALIDATION PASSED" -ForegroundColor Green
     Write-Host "   - All 3 scenes executed successfully"
-    Write-Host "   - All 75 frames generated (25 per scene)"
+    Write-Host "   - All 147 frames generated (49 per scene)"
     Write-Host "   - ComfyUI history verified"
     exit 0
 } else {
     $sceneStatus = if ($sceneExecutions.Count -ge $expectedScenes) { "[OK]" } else { "[FAIL] ($($sceneExecutions.Count)/$expectedScenes)" }
-    $frameStatus = if ($totalFrames -ge ($expectedScenes * $expectedFramesPerScene)) { "[OK]" } else { "[FAIL] ($totalFrames/75)" }
+    $frameStatus = if ($totalFrames -ge ($expectedScenes * $expectedFramesPerScene)) { "[OK]" } else { "[FAIL] ($totalFrames/147)" }
     
     Write-Host "⚠️ PARTIAL EXECUTION" -ForegroundColor Yellow
     Write-Host "   Scenes: $sceneStatus"

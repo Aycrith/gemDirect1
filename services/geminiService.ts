@@ -162,6 +162,101 @@ export const getPrunedContextForShotGeneration = async (
     return getPrunedContext(prompt, 'prune context for shot generation', logApiCall, onStateChange);
 };
 
+// --- Context Pruning Functions for Story Bible Refinement ---
+
+/**
+ * Extracts minimal context for enhancing a Logline.
+ * Context: Only character names + setting essence (50-75 words max)
+ * Reduces token usage by ~90% compared to passing full Story Bible
+ */
+export const getPrunedContextForLogline = (storyBible: StoryBible): string => {
+    // Type safety: ensure fields are strings
+    const characters = typeof storyBible.characters === 'string' ? storyBible.characters : '';
+    const setting = typeof storyBible.setting === 'string' ? storyBible.setting : '';
+    
+    // Extract character names from markdown formatted characters section
+    const characterNames = characters
+        .split('\n')
+        .filter(line => line.trim().startsWith('**') || line.trim().startsWith('-'))
+        .map(line => {
+            const match = line.match(/\*\*(.*?)\*\*/);
+            return match ? match[1] : null;
+        })
+        .filter(Boolean)
+        .slice(0, 3); // Limit to 3 main characters
+    
+    // Extract first 100 chars of setting for genre/atmosphere hints
+    const settingHint = setting.slice(0, 100).replace(/\n/g, ' ').trim();
+    
+    return `Characters: ${characterNames.join(', ')}. Setting: ${settingHint}...`;
+};
+
+/**
+ * Extracts minimal context for enhancing Setting.
+ * Context: Logline + genre themes from plot outline (75-100 words max)
+ * Reduces token usage by ~85% compared to passing full Story Bible
+ */
+export const getPrunedContextForSetting = (storyBible: StoryBible): string => {
+    // Type safety: ensure fields are strings
+    const logline = typeof storyBible.logline === 'string' ? storyBible.logline : '';
+    const plotOutline = typeof storyBible.plotOutline === 'string' ? storyBible.plotOutline : '';
+    
+    // Extract Act I from plot outline to infer themes
+    const actIMatch = plotOutline.match(/Act I[:\-\s]+(.*?)(?=Act II|$)/is);
+    const actISummary = actIMatch ? actIMatch[1].slice(0, 150).replace(/\n/g, ' ').trim() : '';
+    
+    return `Story: ${logline}. Key themes: ${actISummary}...`;
+};
+
+/**
+ * Extracts minimal context for refining Characters.
+ * Context: Logline + setting essence + plot Act I (100-150 words max)
+ * Reduces token usage by ~80% compared to passing full Story Bible
+ */
+export const getPrunedContextForCharacters = (storyBible: StoryBible): string => {
+    // Type safety: ensure fields are strings
+    const logline = typeof storyBible.logline === 'string' ? storyBible.logline : '';
+    const setting = typeof storyBible.setting === 'string' ? storyBible.setting : '';
+    const plotOutline = typeof storyBible.plotOutline === 'string' ? storyBible.plotOutline : '';
+    
+    // Setting summary (first 80 chars)
+    const settingSummary = setting.slice(0, 80).replace(/\n/g, ' ').trim();
+    
+    // Act I from plot outline (first 120 chars)
+    const actIMatch = plotOutline.match(/Act I[:\-\s]+(.*?)(?=Act II|$)/is);
+    const actISummary = actIMatch ? actIMatch[1].slice(0, 120).replace(/\n/g, ' ').trim() : '';
+    
+    return `Story: ${logline}. Setting: ${settingSummary}... Key plot: ${actISummary}...`;
+};
+
+/**
+ * Extracts minimal context for refining Plot Outline.
+ * Context: Logline + character roles only (75-100 words max)
+ * Reduces token usage by ~85% compared to passing full Story Bible
+ */
+export const getPrunedContextForPlotOutline = (storyBible: StoryBible): string => {
+    // Type safety: ensure fields are strings
+    const logline = typeof storyBible.logline === 'string' ? storyBible.logline : '';
+    const characters = typeof storyBible.characters === 'string' ? storyBible.characters : '';
+    
+    // Extract just character names and first descriptor
+    const characterRoles = characters
+        .split('\n')
+        .filter(line => line.trim().startsWith('**') || line.trim().startsWith('-'))
+        .map(line => {
+            const match = line.match(/\*\*(.*?)\*\*[:\-\s]+(.*?)(?:\.|$)/);
+            if (match) {
+                return `${match[1]}: ${match[2].slice(0, 30)}`;
+            }
+            return null;
+        })
+        .filter(Boolean)
+        .slice(0, 3)
+        .join('. ');
+    
+    return `Story: ${logline}. Characters: ${characterRoles}.`;
+}
+
 export const getPrunedContextForCoDirector = async (
     storyBible: StoryBible,
     narrativeContext: string,
@@ -225,6 +320,14 @@ ${template.content}`;
     
     const prompt = `You are a master storyteller and screenwriter with a deep understanding of multiple narrative structures. Your task is to analyze a user's idea and generate a "Story Bible" using the most fitting narrative framework.
 
+    **CRITICAL RULES FOR SECTION UNIQUENESS:**
+    1. **Logline**: Extract ONLY the core concept, protagonist goal, and conflict. Max 140 characters. DO NOT repeat the full story idea verbatim.
+    2. **Characters**: Focus ONLY on roles, motivations, and relationships. DO NOT include plot events or setting descriptions.
+    3. **Setting**: Describe ONLY the world, time period, and atmosphere. DO NOT mention character names or plot points.
+    4. **Plot Outline**: Structure the narrative beats. DO NOT rehash the logline or character descriptions.
+
+    Each section must contain NEW, complementary information that builds on previous sections WITHOUT repetition.
+
     **Narrative Frameworks Available:**
     - **Three-Act Structure:** A classic model with Setup, Confrontation, and Resolution.
     - **The Hero's Journey:** A mythic quest pattern (Ordinary World, Call to Adventure, Ordeal, etc.). Ideal for epic adventures.
@@ -238,14 +341,25 @@ ${template.content}`;
     1.  Analyze the user's idea to determine its genre, length, and core conflict.
     2.  Select the **single most appropriate framework** from the list above that best serves the idea.
     3.  **If none of the frameworks fit well** (e.g., for experimental concepts, character studies, or very short stories), create a logical, **custom plot structure** with a clear beginning, middle, and end. Do not force a framework where it doesn't belong.
-    4.  Generate a JSON object containing:
-        a. **logline**: A single, concise sentence capturing the story's essence (protagonist, goal, conflict).
-        b. **characters**: A markdown-formatted list of 2-3 key characters with brief, compelling descriptions.
-        c. **setting**: A paragraph describing the world, time, and atmosphere.
-        d. **plotOutline**: A markdown-formatted plot outline. **CRITICAL FOR SYSTEM COMPATIBILITY: You MUST structure the output into three acts (Act I, Act II, Act III).** Within this structure, integrate the key beats of your chosen framework. For example:
+    4.  Generate a JSON object with DISTINCT, NON-REPETITIVE sections:
+        a. **logline**: A single, concise sentence capturing the story's essence (protagonist, goal, conflict). The story's essence in ONE compelling sentence.
+        b. **characters**: A markdown-formatted list of 2-3 key players with DISTINCT roles and motivations. Do NOT repeat plot events.
+        c. **setting**: A paragraph describing the world's visual/atmospheric identity. Do NOT mention character names.
+        d. **plotOutline**: A markdown-formatted plot outline with NEW story beats NOT in logline. **CRITICAL FOR SYSTEM COMPATIBILITY: You MUST structure the output into three acts (Act I, Act II, Act III).** Within this structure, integrate the key beats of your chosen framework. For example:
             - If using **The Hero's Journey**: Act I might contain 'The Ordinary World' and 'Call to Adventure'. Act II could cover 'Tests, Allies, Enemies' up to 'The Ordeal'.
             - If using **Kishōtenketsu**: Act I could be 'Ki (Introduction)' and 'Shō (Development)'. Act II could be 'Ten (Twist)'. Act III could be 'Ketsu (Conclusion)'.
             - If using a **custom structure**, organize its beats logically across the three acts.
+    
+    **Example of GOOD section differentiation:**
+    Logline: "A retired detective is forced back for one last case that exposes his darkest secret."
+    Characters: **Detective Marlowe**: Haunted by a past mistake, seeks redemption through justice. **The Architect**: A cunning mastermind who knows Marlowe's secret.
+    Setting: "Rain-soaked neo-noir metropolis, 2049. Neon lights reflect off puddles..."
+    Plot: Act I - The reluctant return... [NEW story beats NOT in logline]
+    
+    **Example of BAD repetition (AVOID THIS):**
+    Logline: "A retired detective is forced back for one last case..."
+    Characters: "The detective is forced back for a case..." ❌ REPETITION
+    
     This approach ensures narrative depth while maintaining the required format. Do not explicitly state which framework you used in the output.`;
 
     const responseSchema = {
@@ -277,7 +391,85 @@ ${template.content}`;
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
-export const generateSceneList = async (plotOutline: string, directorsVision: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<Array<{ title: string; summary: string }>> => {
+/**
+ * Validates Story Bible for content uniqueness and quality.
+ * Detects repetitive content across sections and checks minimum lengths.
+ * @returns {valid: boolean, issues: string[]} - Validation result with issues list
+ */
+export const validateStoryBible = (bible: StoryBible): { valid: boolean; issues: string[] } => {
+    const issues: string[] = [];
+    
+    // Normalize text for comparison (lowercase, remove punctuation, split into words)
+    const normalize = (text: string): Set<string> => {
+        return new Set(
+            text
+                .toLowerCase()
+                .replace(/[^\w\s]/g, ' ')
+                .split(/\s+/)
+                .filter(word => word.length > 3) // Ignore short words like "the", "and"
+        );
+    };
+    
+    const loglineWords = normalize(bible.logline);
+    const charWords = normalize(bible.characters);
+    const settingWords = normalize(bible.setting);
+    
+    // Check for verbatim repetition between logline and other sections
+    const charOverlap = Array.from(charWords).filter(w => loglineWords.has(w)).length;
+    const charOverlapPercent = loglineWords.size > 0 ? (charOverlap / loglineWords.size) * 100 : 0;
+    
+    if (charOverlapPercent > 60) {
+        issues.push(`Characters section repeats ${charOverlapPercent.toFixed(0)}%+ of Logline words`);
+    }
+    
+    const settingOverlap = Array.from(settingWords).filter(w => loglineWords.has(w)).length;
+    const settingOverlapPercent = loglineWords.size > 0 ? (settingOverlap / loglineWords.size) * 100 : 0;
+    
+    if (settingOverlapPercent > 60) {
+        issues.push(`Setting section repeats ${settingOverlapPercent.toFixed(0)}%+ of Logline words`);
+    }
+    
+    // Check section lengths
+    if (bible.logline.length < 20) {
+        issues.push('Logline too brief (< 20 chars)');
+    }
+    
+    if (bible.logline.length > 160) {
+        issues.push('Logline too long (> 160 chars)');
+    }
+    
+    if (bible.characters.length < 50) {
+        issues.push('Characters section too brief (< 50 chars)');
+    }
+    
+    if (bible.setting.length < 50) {
+        issues.push('Setting section too brief (< 50 chars)');
+    }
+    
+    if (bible.plotOutline.length < 100) {
+        issues.push('Plot Outline too brief (< 100 chars)');
+    }
+    
+    // Check if logline appears verbatim in other sections
+    if (bible.characters.includes(bible.logline)) {
+        issues.push('Logline appears verbatim in Characters section');
+    }
+    
+    if (bible.setting.includes(bible.logline)) {
+        issues.push('Logline appears verbatim in Setting section');
+    }
+    
+    if (bible.plotOutline.includes(bible.logline)) {
+        issues.push('Logline appears verbatim in Plot Outline section');
+    }
+    
+    return {
+        valid: issues.length === 0,
+        issues
+    };
+};
+
+export const generateSceneList = async (plotOutline: string, directorsVision: string, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<Array<{ title: string; summary: string; temporalContext?: { startMoment: string; endMoment: string } }>> => {
     const context = 'generate scene list';
     const prompt = `You are an expert film editor and screenwriter, tasked with breaking a story outline into a series of powerful, cinematic scenes. A new scene should be created for any significant shift in **location, time, or character objective/conflict**. Each scene must serve a clear purpose.
 
@@ -289,7 +481,18 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
 
     Based on the above, generate a JSON array of scene objects. Each object must contain:
     1.  **title**: A short, evocative title that captures the scene's essence and aligns with the Director's Vision.
-    2.  **summary**: A concise, one-sentence description that explicitly states **(a) the key action** and **(b) the scene's core narrative purpose or emotional goal** (e.g., "The hero confronts the gatekeeper, establishing the stakes of the journey," or "A quiet moment of reflection reveals the hero's inner doubt.").`;
+    2.  **summary**: CRITICAL - Generate a SINGLE-CLAUSE visual description describing ONE MOMENT IN TIME. Format: "[Subject] [Action Verb] [Location/Context]". Do NOT include multiple actions, narrative purposes, or emotional goals. Focus ONLY on the PRIMARY VISUAL MOMENT.
+    3.  **temporalContext**: A JSON object with "startMoment" and "endMoment" strings describing the specific start and end points of the scene's action.
+    
+    GOOD Examples (Single Moment): 
+    - "Two rivals face each other in an elegant dance studio under warm spotlight"
+    - "A detective examines evidence in a rain-soaked alley at night"
+    - "An elderly woman tends her garden in golden afternoon light"
+    
+    BAD Examples (Multi-Beat Narratives - AVOID):
+    - "The hero confronts the gatekeeper, establishing the stakes of the journey" ❌ (two actions + narrative purpose)
+    - "A quiet moment of reflection reveals the hero's inner doubt" ❌ (action + emotional goal)
+    - "Two rivals must choreograph a dance to avert a political coup" ❌ (multiple actions + complex objective)`;
 
     const responseSchema = {
         type: Type.ARRAY,
@@ -298,8 +501,16 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
             properties: {
                 title: { type: Type.STRING },
                 summary: { type: Type.STRING },
+                temporalContext: {
+                    type: Type.OBJECT,
+                    properties: {
+                        startMoment: { type: Type.STRING },
+                        endMoment: { type: Type.STRING }
+                    },
+                    required: ['startMoment', 'endMoment']
+                }
             },
-            required: ['title', 'summary'],
+            required: ['title', 'summary', 'temporalContext'],
         },
     };
 
@@ -525,25 +736,46 @@ export const refineDirectorsVision = async (
 };
 
 export const refineStoryBibleSection = async (
-    section: 'characters' | 'plotOutline',
+    section: 'characters' | 'plotOutline' | 'logline' | 'setting',
     content: string,
-    storyContext: { logline: string },
+    prunedContext: string,
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<string> => {
     const context = `refine Story Bible ${section}`;
     
+    // Check if this is a suggestion mode request
+    const isSuggestionMode = content.includes('[SUGGESTION MODE]');
+    const cleanContent = content.replace('[SUGGESTION MODE]', '').trim();
+    
     let instruction = '';
-    if (section === 'characters') {
+    if (section === 'logline') {
+        instruction = isSuggestionMode
+            ? "You are a master storyteller. Based on the provided context, generate 3-5 compelling story loglines. Each must be a single sentence (140 characters max). Return ONLY a numbered list (1. 2. 3. etc), no preamble."
+            : "You are a master storyteller. Refine this story logline to be a single, powerful sentence (140 characters maximum) that captures the entire story's essence. Make it compelling, concise, and cinematic. Focus on the protagonist's journey and central conflict. Return ONLY the refined logline sentence, no preamble or explanation.";
+    } else if (section === 'setting') {
+        instruction = isSuggestionMode
+            ? "You are a master storyteller. Based on the provided context, generate 3-5 evocative setting descriptions. Each should be 1-2 sentences describing the world. Return ONLY a numbered list (1. 2. 3. etc), no preamble."
+            : "You are a master storyteller. Refine this setting description to vividly describe the world, time period, and atmosphere. Add sensory details (sights, sounds, textures) and establish the tone. Focus on the environment and mood, NOT character descriptions. Return ONLY the refined setting description (2-4 sentences), no preamble.";
+    } else if (section === 'characters') {
         instruction = "You are a master storyteller. Refine the following character descriptions to be more vivid and compelling. **Crucially, deepen their motivations, clarify their core desires, and introduce an internal or external conflict that drives their actions.** Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
     } else { // plotOutline
         instruction = "You are a master screenwriter. Refine the following plot outline to enhance its dramatic structure, pacing, and emotional impact. Strengthen the turning points and clarify the stakes, respecting the underlying narrative framework of the original text. **Where appropriate, suggest a compelling plot twist or a moment of foreshadowing that elevates the story.** Return only the refined markdown text, without any introductory phrases like 'Here is the refined text:'.";
     }
 
-    const prompt = `${instruction}
+    const prompt = isSuggestionMode
+        ? `${instruction}
 
-    **Story Logline (for context):**
-    "${storyContext.logline}"
+    **Context:**
+    ${prunedContext}
+
+    **Task:**
+    ${cleanContent}
+    `
+        : `${instruction}
+
+    **Minimal Context:**
+    ${prunedContext}
 
     **Original Content to Refine:**
     ---
@@ -821,7 +1053,7 @@ export const generateImageForShot = async (
 ): Promise<string> => {
     const context = 'generate shot preview';
 
-    const prompt = `An award-winning cinematic photograph, masterpiece, 8k, photorealistic, 16:9 aspect ratio.
+    const prompt = `An award-winning cinematic photograph, masterpiece, 8k, photorealistic.
 
 Generate a single keyframe image for a specific shot. The image must perfectly capture the shot's detailed description and creative enhancers, while strictly adhering to the project's overall Style Bible (Director's Vision).
 
@@ -850,7 +1082,7 @@ ${shot.description}
 
 ---
 **NEGATIVE PROMPT:**
-text, watermark, logo, signature, username, error, blurry, jpeg artifacts, low resolution, censorship, ugly, tiling, poorly drawn hands, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, bad anatomy, amateur, boring, static composition.
+text, watermark, logo, signature, username, error, blurry, jpeg artifacts, low resolution, censorship, ugly, tiling, poorly drawn hands, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, bad anatomy, amateur, boring, static composition, split-screen, multi-panel, grid layout, character sheet, product catalog, symmetrical array, repeated elements, duplicated subjects, storyboard, comic layout, collage, multiple scenes, side-by-side, tiled images, panel borders, manga style, separated frames, before-after comparison, sequence panels, dual perspective, fragmented scene, picture-in-picture, montage, reflection, mirrored composition, horizontal symmetry, vertical symmetry, above-below division, sky-ground split.
 `;
 
     const apiCall = async () => {

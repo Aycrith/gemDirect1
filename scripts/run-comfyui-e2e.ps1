@@ -145,7 +145,15 @@ if (-not (Test-Path $storyScript)) {
 }
 
 try {
-    $storyResult = node --loader ts-node/esm $storyScript --output $storyDir --scenes 3 2>&1
+    # Build story generation command with optional custom story idea
+    $storyCmd = "npx tsx `"$storyScript`" --output `"$storyDir`" --scenes 3"
+    if ($env:CUSTOM_STORY_IDEA) {
+        $storyCmd += " --customStoryIdea `"$env:CUSTOM_STORY_IDEA`""
+        Write-Summary "Using custom story idea: $env:CUSTOM_STORY_IDEA"
+    }
+    
+    Write-Summary "Executing: $storyCmd"
+    $storyResult = Invoke-Expression $storyCmd 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Summary "ERROR: Story generation failed (exit code $LASTEXITCODE)"
         Write-Summary "Output: $storyResult"
@@ -364,6 +372,37 @@ if (Test-Path $metricsScript) {
     } catch {
         Write-Summary "WARNING: Validation metrics failed: $_"
     }
+}
+
+# ============================================================================
+# STEP 4.5: Video Quality Validation (FFprobe-based)
+# ============================================================================
+Write-Header "STEP 4.5: Video Quality Validation"
+
+$qualityScript = Join-Path $PSScriptRoot 'validate-video-quality.ts'
+if (Test-Path $qualityScript) {
+    try {
+        Write-Summary "Running video quality validation (FFprobe)..."
+        $qualityOutput = node --loader ts-node/esm $qualityScript --run-dir $runDir 2>&1
+        
+        # Extract summary line from output
+        $summaryLine = $qualityOutput | Select-String -Pattern "^\s*\d+/\d+\s+videos\s+passed" | Select-Object -First 1
+        if ($summaryLine) {
+            Write-Summary "Quality: $($summaryLine.Line.Trim())"
+        }
+        
+        $qualityPath = Join-Path $runDir 'test-results\video-validation\validation-results.json'
+        if (Test-Path $qualityPath) {
+            $qualityResults = Get-Content $qualityPath -Raw | ConvertFrom-Json
+            $passed = ($qualityResults | Where-Object { $_.valid -eq $true }).Count
+            $failed = ($qualityResults | Where-Object { $_.valid -eq $false }).Count
+            Write-Summary "Quality Results: passed=$passed failed=$failed"
+        }
+    } catch {
+        Write-Summary "WARNING: Video quality validation failed: $_"
+    }
+} else {
+    Write-Summary "SKIP: validate-video-quality.ts not found"
 }
 
 # ============================================================================

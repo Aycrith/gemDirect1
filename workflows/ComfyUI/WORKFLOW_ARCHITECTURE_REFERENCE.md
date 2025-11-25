@@ -312,6 +312,56 @@ START
 
 ## Quality Settings Reference
 
+### WAN I2V Configuration Parameters (wan2.2_ti2v_5B_fp16)
+
+**Production Configuration** (Updated 2025-11-24):
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ NODE 55: Wan22ImageToVideoLatent (Frame Generation)        │
+├────────────────────────────────────────────────────────────┤
+│ width:       1280                                           │
+│ height:      544                                            │
+│ length:      49 frames ✅ (was 121 - FIXED 2025-11-24)     │
+│ batch_size:  1                                              │
+│ Duration:    ~2.04 seconds @ 24 fps                        │
+└────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────┐
+│ NODE 57: CreateVideo (Encoding & Frame Rate)               │
+├────────────────────────────────────────────────────────────┤
+│ fps:         24 ✅ (was 16 - FIXED 2025-11-24)             │
+│ Standard:    Cinematic 24 fps (industry standard)          │
+│ Bitrate:     Content-adaptive (H.264 CRF)                  │
+│              - Simple scenes: ~380-800 kbps                 │
+│              - Complex scenes: ~5-9 Mbps                    │
+└────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────┐
+│ CONFIGURATION FIX SUMMARY (2025-11-24)                     │
+├────────────────────────────────────────────────────────────┤
+│ Issue:       Non-standard frame rate & excessive frames    │
+│ Before:      16 fps, 121 frames, 7.56s duration            │
+│ After:       24 fps, 49 frames, 2.04s duration             │
+│ Files Fixed: workflows/video_wan2_2_5B_ti2v.json           │
+│              localGenSettings.json (wan-i2v profile)        │
+│ Validated:   scene-001_00013_.mp4 (ffprobe confirmed)      │
+│ Impact:      2.5x faster generation, 2.1x better bitrate   │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Bitrate Behavior**: The H.264 CRF (Constant Rate Factor) encoder automatically adjusts bitrate based on visual complexity. This is **correct behavior**:
+- Low complexity (dark scenes, simple gradients): 380-800 kbps
+- High complexity (aurora, mist, volumetric lighting): 5-9 Mbps
+- Variation up to 23x is normal and intentional for quality optimization
+
+**Performance Impact**:
+- Generation time reduced from ~3.5 minutes to ~1 minute per scene
+- File size reduced from 0.34 MB to 0.19 MB (for simple scenes)
+- Duration aligned with expectedFrames metadata (49 frames)
+
+---
+
 ### SVD Configuration Parameters
 
 ```

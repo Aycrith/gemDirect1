@@ -40,10 +40,16 @@ const parseArgs = (): CliOptions => {
         } else if (arg === '--llmRequestFormat' && args[i + 1]) {
             options.llmRequestFormat = args[i + 1] as CliOptions['llmRequestFormat'];
             i += 1;
+        } else if (arg === '--customStoryIdea' && args[i + 1]) {
+            options.customStoryIdea = args[i + 1];
+            i += 1;
         }
     }
 
     options.providerUrl = process.env.LOCAL_STORY_PROVIDER_URL ?? options.providerUrl;
+    if (!options.customStoryIdea && process.env.CUSTOM_STORY_IDEA) {
+        options.customStoryIdea = process.env.CUSTOM_STORY_IDEA;
+    }
     if (!options.localLLMSeed && process.env.LOCAL_LLM_SEED) {
         options.localLLMSeed = process.env.LOCAL_LLM_SEED;
     }

@@ -2,6 +2,12 @@ import React, { useState, useCallback } from 'react';
 import { StoryBible } from '../types';
 import { marked } from 'marked';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
+import { 
+    getPrunedContextForLogline, 
+    getPrunedContextForSetting, 
+    getPrunedContextForCharacters, 
+    getPrunedContextForPlotOutline 
+} from '../services/geminiService';
 import BookOpenIcon from './icons/BookOpenIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import SaveIcon from './icons/SaveIcon';
@@ -66,6 +72,9 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
 
     const [previewContent, setPreviewContent] = useState({ characters: '', plotOutline: '' });
     const [isPreviewLoading, setIsPreviewLoading] = useState({ characters: false, plotOutline: false });
+    const [isEnhancing, setIsEnhancing] = useState({ logline: false, setting: false });
+    const [suggestions, setSuggestions] = useState({ logline: [] as string[], setting: [] as string[] });
+    const [isSuggesting, setIsSuggesting] = useState({ logline: false, setting: false });
     const planActions = usePlanExpansionActions();
 
     const handleFieldChange = (field: keyof StoryBible, value: string) => {
@@ -86,10 +95,15 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
         setIsPreviewLoading(prev => ({ ...prev, [section]: true }));
         setPreviewContent(prev => ({ ...prev, [section]: '' })); // Clear previous preview
         try {
+            // Use pruned context instead of full Story Bible
+            const prunedContext = section === 'characters'
+                ? getPrunedContextForCharacters(editableBible)
+                : getPrunedContextForPlotOutline(editableBible);
+            
             const refinedText = await planActions.refineStoryBibleSection(
                 section,
                 currentContent,
-                { logline: editableBible.logline },
+                prunedContext,
                 onApiLog,
                 onApiStateChange
             );
@@ -118,6 +132,77 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
             if (section === 'plotOutline') setPlotTab('edit');
         }
     };
+
+    const handleEnhanceField = useCallback(async (field: 'logline' | 'setting') => {
+        const currentContent = editableBible[field];
+        if (!currentContent.trim()) return;
+        
+        setIsEnhancing(prev => ({ ...prev, [field]: true }));
+        try {
+            // Use pruned context instead of full Story Bible (80-90% token reduction)
+            const prunedContext = field === 'logline'
+                ? getPrunedContextForLogline(editableBible)
+                : getPrunedContextForSetting(editableBible);
+            
+            // Use refineStoryBibleSection with correct field type and current content
+            const enhanced = await planActions.refineStoryBibleSection(
+                field, // Pass actual field type ('logline' or 'setting')
+                currentContent, // Pass current content directly, not contextPrompt
+                prunedContext,
+                onApiLog,
+                onApiStateChange
+            );
+            
+            // Extract just the refined text (remove any preamble)
+            const cleanedEnhanced = enhanced.replace(/^.*?(logline|setting):?\s*/i, '').trim();
+            handleFieldChange(field, cleanedEnhanced || enhanced);
+        } catch(e) {
+            console.error(e);
+        } finally {
+            setIsEnhancing(prev => ({ ...prev, [field]: false }));
+        }
+    }, [editableBible, planActions, onApiLog, onApiStateChange]);
+
+    const handleSuggestField = useCallback(async (field: 'logline' | 'setting') => {
+        setIsSuggesting(prev => ({ ...prev, [field]: true }));
+        setSuggestions(prev => ({ ...prev, [field]: [] }));
+        try {
+            // Use pruned context for suggestions (80-90% token reduction)
+            const prunedContext = field === 'logline'
+                ? getPrunedContextForLogline(editableBible)
+                : getPrunedContextForSetting(editableBible);
+            
+            // Generate field-specific suggestions using refinement API
+            // Pass empty content with special marker to trigger suggestion mode
+            const suggestionPrompt = field === 'logline'
+                ? `[SUGGESTION MODE] Generate 3-5 compelling story loglines. Each should be a single sentence (140 chars max). Return a numbered list.`
+                : `[SUGGESTION MODE] Generate 3-5 evocative setting descriptions. Each should be 1-2 sentences. Return a numbered list.`;
+            
+            const result = await planActions.refineStoryBibleSection(
+                field, // Pass actual field type for field-specific suggestions
+                suggestionPrompt,
+                prunedContext,
+                onApiLog,
+                onApiStateChange
+            );
+            
+            // Parse the numbered list into individual suggestions
+            const lines = result.split('\n').filter(line => line.trim());
+            const parsedSuggestions = lines
+                .map(line => line.replace(/^\d+\.?\s*/, '').trim())
+                .filter(line => line.length > 10)
+                .slice(0, 5);
+            
+            setSuggestions(prev => ({ 
+                ...prev, 
+                [field]: parsedSuggestions.length > 0 ? parsedSuggestions : ['Failed to generate suggestions. Please try again.'] 
+            }));
+        } catch(e) {
+            console.error(e);
+        } finally {
+            setIsSuggesting(prev => ({ ...prev, [field]: false }));
+        }
+    }, [editableBible, planActions, onApiLog, onApiStateChange]);
 
     const hasChanges = JSON.stringify(storyBible) !== JSON.stringify(editableBible);
 
@@ -172,13 +257,66 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
             </GuideCard>
 
             <div ref={spotlightRef} className="glass-card p-8 rounded-xl space-y-6 interactive-spotlight">
-                <EditableField 
-                    label="Logline" 
-                    description="A single, powerful sentence that captures your entire story. This is your north star."
-                    value={editableBible.logline} 
-                    onChange={(v) => handleFieldChange('logline', v)} 
-                    rows={2} 
-                />
+                <div>
+                    <div className="flex justify-between items-center mb-2">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300">Logline</label>
+                            <p className="text-xs text-gray-400 mt-1">A single, powerful sentence that captures your entire story. This is your north star.</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {editableBible.logline.trim() ? (
+                                <button
+                                    type="button"
+                                    onClick={() => handleEnhanceField('logline')}
+                                    disabled={isEnhancing.logline}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-amber-600/50 text-amber-200 hover:bg-amber-600/80 disabled:bg-gray-600 disabled:text-gray-400"
+                                >
+                                    {isEnhancing.logline ? (
+                                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    ) : (
+                                        <SparklesIcon className="w-3 h-3" />
+                                    )}
+                                    Enhance
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => handleSuggestField('logline')}
+                                    disabled={isSuggesting.logline}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-yellow-600/50 text-yellow-200 hover:bg-yellow-600/80 disabled:bg-gray-600 disabled:text-gray-400"
+                                >
+                                    {isSuggesting.logline ? (
+                                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    ) : (
+                                        <SparklesIcon className="w-3 h-3" />
+                                    )}
+                                    Suggest
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    <textarea
+                        value={editableBible.logline}
+                        placeholder="e.g., A retired detective is pulled back for one last case that threatens to unravel his past."
+                        onChange={(e) => handleFieldChange('logline', e.target.value)}
+                        rows={2}
+                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+                    />
+                    {suggestions.logline.length > 0 && (
+                        <div className="space-y-2 mt-3">
+                            {suggestions.logline.map((s, i) => (
+                                <button 
+                                    key={i} 
+                                    onClick={() => { handleFieldChange('logline', s); setSuggestions(prev => ({ ...prev, logline: [] })); }} 
+                                    className="text-left text-sm text-amber-400 hover:text-amber-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-amber-500 hover:shadow-lg hover:shadow-amber-500/20 transform hover:-translate-y-1"
+                                    style={{ animationDelay: `${i * 100}ms` }}
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
                 
                 <div>
                     <div className="flex justify-between items-center mb-2">
@@ -205,13 +343,66 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                     ) : renderPreviewPane('characters')}
                 </div>
 
-                <EditableField 
-                    label="Setting" 
-                    description="Describe the world, time, and atmosphere. What does it feel like to be there?"
-                    value={editableBible.setting} 
-                    onChange={(v) => handleFieldChange('setting', v)} 
-                    rows={4} 
-                />
+                <div>
+                    <div className="flex justify-between items-center mb-2">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-300">Setting</label>
+                            <p className="text-xs text-gray-400 mt-1">Describe the world, time, and atmosphere. What does it feel like to be there?</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {editableBible.setting.trim() ? (
+                                <button
+                                    type="button"
+                                    onClick={() => handleEnhanceField('setting')}
+                                    disabled={isEnhancing.setting}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-amber-600/50 text-amber-200 hover:bg-amber-600/80 disabled:bg-gray-600 disabled:text-gray-400"
+                                >
+                                    {isEnhancing.setting ? (
+                                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    ) : (
+                                        <SparklesIcon className="w-3 h-3" />
+                                    )}
+                                    Enhance
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => handleSuggestField('setting')}
+                                    disabled={isSuggesting.setting}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-yellow-600/50 text-yellow-200 hover:bg-yellow-600/80 disabled:bg-gray-600 disabled:text-gray-400"
+                                >
+                                    {isSuggesting.setting ? (
+                                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    ) : (
+                                        <SparklesIcon className="w-3 h-3" />
+                                    )}
+                                    Suggest
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    <textarea
+                        value={editableBible.setting}
+                        placeholder="e.g., A rain-slicked, neon-lit metropolis in the year 2049, where technology and decay coexist."
+                        onChange={(e) => handleFieldChange('setting', e.target.value)}
+                        rows={4}
+                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+                    />
+                    {suggestions.setting.length > 0 && (
+                        <div className="space-y-2 mt-3">
+                            {suggestions.setting.map((s, i) => (
+                                <button 
+                                    key={i} 
+                                    onClick={() => { handleFieldChange('setting', s); setSuggestions(prev => ({ ...prev, setting: [] })); }} 
+                                    className="text-left text-sm text-amber-400 hover:text-amber-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-amber-500 hover:shadow-lg hover:shadow-amber-500/20 transform hover:-translate-y-1"
+                                    style={{ animationDelay: `${i * 100}ms` }}
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
                 
                 <div>
                     <div className="flex justify-between items-center mb-2">

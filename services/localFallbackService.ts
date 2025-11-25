@@ -43,6 +43,11 @@ const fallbackEnhancers: Partial<Omit<CreativeEnhancers, 'transitions'>> = {
 };
 
 const truncate = (value: string, limit: number): string => {
+    // Type safety: ensure value is actually a string
+    if (typeof value !== 'string') {
+        console.warn('[localFallbackService] truncate received non-string value:', typeof value, value);
+        return String(value || '').slice(0, limit);
+    }
     if (value.length <= limit) return value;
     return `${value.slice(0, limit - 1).trim()}…`;
 };
@@ -111,6 +116,17 @@ const buildSceneTitle = (base: string, index: number): string => {
     return `${titleCase(clean) || 'Key Beat'} Scene ${index + 1}`;
 };
 
+const generateTemporalContext = (summary: string): { startMoment: string; endMoment: string } => {
+    const sentences = summary.split('.').filter(s => s.trim().length > 0);
+    const start = sentences[0] ? sentences[0].trim() : 'Scene begins';
+    const lastSentence = sentences[sentences.length - 1];
+    const end = lastSentence ? lastSentence.trim() : 'Scene concludes';
+    return {
+        startMoment: start,
+        endMoment: end
+    };
+};
+
 const extractProtagonist = (idea: string): string => {
     const keywords = pickKeywords(idea);
     return keywords[0] || 'The Protagonist';
@@ -164,20 +180,24 @@ export const generateStoryBible = async (idea: string, genre: string = 'sci-fi')
     };
 };
 
-export const generateSceneList = async (plotOutline: string, directorsVision: string): Promise<Array<{ title: string; summary: string }>> => {
+export const generateSceneList = async (plotOutline: string, directorsVision: string): Promise<Array<{ title: string; summary: string; temporalContext: { startMoment: string; endMoment: string } }>> => {
     const acts = deriveActs(plotOutline);
-    const scenes: Array<{ title: string; summary: string }> = [];
+    const scenes: Array<{ title: string; summary: string; temporalContext: { startMoment: string; endMoment: string } }> = [];
     acts.forEach((act, index) => {
         const segments = act.split(/\n-/).map(segment => segment.replace(/^-/, '').trim()).filter(Boolean);
         const baseSummary = segments[0] || `Key developments escalate in act ${index + 1}.`;
+        const summary1 = `${enhanceSentence(baseSummary)} Visual tone leans into ${directorsVision.split('.')[0] || 'the director\'s guidance'}.`;
         scenes.push({
             title: `Act ${index + 1}: ${buildSceneTitle(baseSummary, index)}`,
-            summary: `${enhanceSentence(baseSummary)} Visual tone leans into ${directorsVision.split('.')[0] || 'the director\'s guidance'}.`
+            summary: summary1,
+            temporalContext: generateTemporalContext(summary1)
         });
         if (segments[1]) {
+            const summary2 = `${enhanceSentence(segments[1])} Build connective tissue toward the upcoming reversal.`;
             scenes.push({
                 title: `Act ${index + 1}: Secondary Beat ${index + 1}`,
-                summary: `${enhanceSentence(segments[1])} Build connective tissue toward the upcoming reversal.`
+                summary: summary2,
+                temporalContext: generateTemporalContext(summary2)
             });
         }
     });
@@ -254,12 +274,19 @@ export const refineDirectorsVision = async (vision: string, storyBible: StoryBib
     return `${enhanceSentence(trimmed)} Emphasize consistent visual motifs, controlled color language, and intentional lensing to reinforce theme.${loglineTouchpoint}`;
 };
 
-export const refineStoryBibleSection = async (section: 'characters' | 'plotOutline', content: string, storyContext: StoryBible | { logline: string }): Promise<string> => {
+export const refineStoryBibleSection = async (section: 'characters' | 'plotOutline' | 'logline' | 'setting', content: string, prunedContext: string): Promise<string> => {
     const base = content.trim();
-    const loglineReference = storyContext?.logline ? ` (Anchored to the story's promise: "${truncate(storyContext.logline, 80)}")` : '';
-    return section === 'characters'
-        ? `${base}\n\nEach character now has a clear internal drive, external obstacle, and evolving relationship arc.${loglineReference}`
-        : `${base}\n\nHighlight the emotional stakes at each turn and ensure scene transitions carry deliberate momentum.${loglineReference}`;
+    const contextReference = prunedContext ? ` (Context: ${truncate(prunedContext, 80)})` : '';
+    
+    if (section === 'logline') {
+        return `${base} ${contextReference}`.slice(0, 140);
+    } else if (section === 'setting') {
+        return `${base} The atmosphere pulses with tangible energy and visual detail.${contextReference}`;
+    } else if (section === 'characters') {
+        return `${base}\n\nEach character now has a clear internal drive, external obstacle, and evolving relationship arc.${contextReference}`;
+    } else { // plotOutline
+        return `${base}\n\nHighlight the emotional stakes at each turn and ensure scene transitions carry deliberate momentum.${contextReference}`;
+    }
 };
 
 export const suggestCoDirectorObjectives = async (
@@ -270,7 +297,7 @@ export const suggestCoDirectorObjectives = async (
     return [
         `Amplify the dramatic tension hinted at in the logline by sharpening conflict in the moment where ${truncate(sceneSummary, 80)}.`,
         `Layer visual callbacks from the director's vision—use lighting and framing to echo ${truncate(directorsVision, 70)}.`,
-        DEFAULT_OBJECTIVES[2]
+        DEFAULT_OBJECTIVES[2] || 'Refine pacing to build momentum into the climax.'
     ];
 };
 

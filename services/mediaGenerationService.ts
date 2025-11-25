@@ -66,9 +66,26 @@ const geminiActions: MediaGenerationActions = {
 
 const createLocalActions = (settings?: LocalGenerationSettings): MediaGenerationActions => {
     const ensureSettings = (): LocalGenerationSettings => {
-        if (!settings || !settings.comfyUIUrl || !settings.workflowJson) {
-            throw new Error('Local generation settings are incomplete. Please configure ComfyUI in Settings.');
+        if (!settings) {
+            throw new Error('Local generation settings not configured. Please configure in Settings.');
         }
+        
+        if (!settings.comfyUIUrl) {
+            throw new Error('ComfyUI server URL not configured. Please configure in Settings → ComfyUI Settings.');
+        }
+        
+        // Check if we have either a direct workflowJson OR workflow profiles with at least one configured profile
+        const hasDirectWorkflow = Boolean(settings.workflowJson);
+        const hasWorkflowProfiles = Boolean(
+            settings.workflowProfiles && 
+            Object.keys(settings.workflowProfiles).length > 0 &&
+            Object.values(settings.workflowProfiles).some(profile => profile.workflowJson)
+        );
+        
+        if (!hasDirectWorkflow && !hasWorkflowProfiles) {
+            throw new Error('No ComfyUI workflows configured for local generation. To use ComfyUI: Settings → ComfyUI Settings → Import from File. Or skip keyframes and use "Export Prompts" to generate elsewhere.');
+        }
+        
         return settings;
     };
 

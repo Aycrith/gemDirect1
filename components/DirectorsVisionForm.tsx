@@ -73,7 +73,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
                     <li>Once you have a concept, use the <strong>Enhance</strong> button to let the AI flesh it out with more cinematic language.</li>
                 </ul>
                 <p className="mt-3 font-semibold text-gray-300">What's Next?</p>
-                <p>After submitting your vision, the AI will generate a list of scenes and a cinematic keyframe image for each one, bringing your story to life visually for the first time.</p>
+<p>After submitting your vision, the AI will generate a list of scenes with titles and summaries. You can then review and refine them before generating keyframe images in the next step.</p>
             </GuideCard>
 
             <form onSubmit={handleSubmit} className="mt-6">

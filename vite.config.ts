@@ -46,6 +46,21 @@ export default defineConfig(({ mode }) => {
               });
             },
           },
+          // Proxy for ComfyUI API endpoints (workflow execution, image upload, queue)
+          '/api/comfyui': {
+            target: 'http://127.0.0.1:8188',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/api\/comfyui/, ''),
+            ws: true, // Enable WebSocket proxying
+            configure: (proxy) => {
+              proxy.on('proxyReq', (proxyReq, req) => {
+                // Preserve content-type for multipart/form-data (image uploads)
+                if (!req.headers['content-type']?.includes('multipart')) {
+                  proxyReq.setHeader('Content-Type', 'application/json');
+                }
+              });
+            },
+          },
         },
       },
       plugins: [react()],
@@ -58,10 +73,21 @@ export default defineConfig(({ mode }) => {
           '@': path.resolve(__dirname, '.'),
         }
       },
+      // Exclude Node.js-only modules from browser build
+      // These are only used in Node.js scripts/tests, not in browser code
+      optimizeDeps: {
+        exclude: ['fs', 'path', 'child_process', 'fs/promises']
+      },
       build: {
-        // P0 Optimization: Bundle optimization for better cold start performance
-        // Target: Reduce 766KB main chunk, improve -0.8s cold start
+        // Treat Node.js built-in modules as external
         rollupOptions: {
+          external: [
+            'fs',
+            'path', 
+            'child_process',
+            'fs/promises',
+            /utils\/videoSplicer/  // Exclude video splicer (Node.js only, used via dynamic import)
+          ],
           output: {
             manualChunks: {
               // Vendor chunk: React and core dependencies

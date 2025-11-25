@@ -1,5 +1,17 @@
 import { ReactNode } from "react";
 
+// Keyframe data types for bookend workflow support
+export type KeyframeData = string | { start: string; end: string };
+
+// Type guard functions for KeyframeData
+export function isSingleKeyframe(data: KeyframeData): data is string {
+  return typeof data === 'string';
+}
+
+export function isBookendKeyframe(data: KeyframeData): data is { start: string; end: string } {
+  return typeof data === 'object' && 'start' in data && 'end' in data;
+}
+
 export interface Shot {
   id: string;
   title?: string;
@@ -43,6 +55,25 @@ export interface Scene {
     heroArcOrder?: number;
     shotPurpose?: string;
     heroMoment?: boolean;
+    
+    // Bookend workflow support (optional for backward compatibility)
+    keyframeMode?: 'single' | 'bookend'; // Default: 'single'
+    keyframeStart?: string;  // Base64 image data for start keyframe
+    keyframeEnd?: string;    // Base64 image data for end keyframe
+    temporalContext?: {      // Temporal metadata for bookends
+        startMoment: string;   // E.g., "Explorer approaches artifact"
+        endMoment: string;     // E.g., "Artifact begins glowing"
+        duration?: number;     // Shot duration in seconds (optional)
+    };
+}
+
+export interface SceneImageGenerationStatus {
+    status: 'idle' | 'generating' | 'complete' | 'error';
+    progress?: number; // 0-100
+    error?: string;
+    startedAt?: number; // Unix timestamp
+    completedAt?: number; // Unix timestamp
+    promptLength?: number; // For debugging
 }
 
 export interface StoryBible {
@@ -278,6 +309,11 @@ export interface LocalGenerationSettings {
     mapping: WorkflowMapping;
     modelId?: string; // 'comfy-svd' | 'wan-video' | others later
     workflowProfiles?: Record<string, WorkflowProfile>;
+    
+    // Keyframe Generation Mode
+    keyframeMode?: 'single' | 'bookend'; // Default: 'single'
+    imageWorkflowProfile?: string; // Profile ID for keyframe generation (e.g., 'wan-t2i')
+    videoWorkflowProfile?: string; // Profile ID for video generation (e.g., 'wan-i2v')
     
     // FastVideo Configuration
     fastVideo?: {

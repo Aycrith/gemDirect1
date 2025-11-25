@@ -134,6 +134,21 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
     const [filteredTelemetry, setFilteredTelemetry] = useState<TelemetrySnapshot[]>([]);
     const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
     const [regeneratingScenes, setRegeneratingScenes] = useState<Set<string>>(new Set());
+    
+    // Collapsible sections state
+    const [expandedSections, setExpandedSections] = useState({
+        queueConfig: false,
+        llmArtifacts: false,
+        scenesTable: false,
+        sceneDetails: false,
+        historicalData: false,
+        recommendations: false,
+        vitestLogs: false
+    });
+    
+    const toggleSection = (section: keyof typeof expandedSections) => {
+        setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+    };
 
     // Generate recommendations from artifact telemetry
     useEffect(() => {
@@ -243,10 +258,11 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
     const comfyLogHref = comfyHelper?.Log ? toFileUri(comfyHelper.Log) : undefined;
 
     return (
-        <section className="mt-6 bg-gray-900 border border-emerald-500/20 rounded-2xl p-5 shadow-xl shadow-emerald-900/10 text-sm text-gray-200 space-y-4">
+        <section className="mt-6 bg-gray-900 border border-emerald-500/20 rounded-2xl p-5 shadow-xl shadow-emerald-900/10 text-sm text-gray-200">
+            {/* Compact Header - Always Visible */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                    <p className="text-xs uppercase tracking-wide text-emerald-300">Latest artifact snapshot</p>
+                    <p className="text-xs uppercase tracking-wide text-emerald-300">Latest Artifact Snapshot</p>
                     <h2 className="text-xl font-semibold text-gray-100">Run {artifact.RunId}</h2>
                     <p className="text-xs text-gray-500">{runTimestamp.toLocaleString()} · {artifact.RunDir}</p>
                 </div>
@@ -263,228 +279,185 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                         className="px-3 py-1 rounded-lg border border-cyan-400/60 text-xs text-cyan-200 hover:bg-cyan-500/10"
                         onClick={() => setShowWarningsOnly((prev) => !prev)}
                     >
-                        {showWarningsOnly ? 'Show all scenes' : 'Show warnings only'}
+                        {showWarningsOnly ? 'Show all' : 'Warnings only'}
                     </button>
-                    {/* TODO: Filter/Export buttons - TelemetryFilterPanel/ExportDialog not yet implemented */}
+                </div>
+            </div>
+            
+            {/* Quick Summary - Always Visible */}
+            <div className="mt-4 grid gap-3 md:grid-cols-3 text-xs">
+                <div className="bg-gray-950/40 border border-gray-700 rounded-lg p-3">
+                    <p className="text-gray-400 uppercase tracking-wide mb-1">Story</p>
+                    <p className="text-sm text-gray-100 line-clamp-2">{artifact.Story.Logline}</p>
+                </div>
+                <div className="bg-gray-950/40 border border-gray-700 rounded-lg p-3">
+                    <p className="text-gray-400 uppercase tracking-wide mb-1">Scenes</p>
+                    <p className="text-sm text-gray-100">{artifact.Scenes.length} total · {artifact.Scenes.filter(s => s.Success).length} successful</p>
+                </div>
+                <div className="bg-gray-950/40 border border-gray-700 rounded-lg p-3">
+                    <p className="text-gray-400 uppercase tracking-wide mb-1">Status</p>
+                    <p className="text-sm text-emerald-300">{storyLLM?.status ?? 'Unknown'}</p>
                 </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-1">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide">Logline</p>
-                    <p className="text-sm text-gray-100">{artifact.Story.Logline}</p>
-                </div>
-                <div className="space-y-1">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide">Director's vision</p>
-                    <p className="text-sm text-gray-100">{artifact.Story.DirectorsVision}</p>
-                </div>
-                <div className="space-y-1">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide">LLM status</p>
-                    {storyLLM ? (
-                        <div className="text-sm text-gray-200 space-y-0.5">
-                            <p className="text-emerald-300 font-semibold">{storyLLM.status ?? 'unknown'}</p>
-                            {storyLLM.providerUrl && <p className="text-[11px] text-gray-400 truncate">{storyLLM.providerUrl}</p>}
-                            <p className="text-[11px] text-gray-500">
-                                seed: {storyLLM.seed ?? 'n/a'} · duration: {storyLLM.durationMs ? `${storyLLM.durationMs}ms` : 'n/a'}
-                            </p>
-                            {storyLLM.error && <p className="text-[11px] text-amber-300">error: {storyLLM.error}</p>}
-                        </div>
-                    ) : (
-                        <p className="text-sm text-gray-500">No LLM metadata</p>
-                    )}
-                </div>
-            </div>
-            {artifact.Story.Warnings && artifact.Story.Warnings.length > 0 && (
-                <div className="bg-amber-500/10 border border-amber-400/30 rounded-lg p-3 text-xs text-amber-100 space-y-1">
-                    {artifact.Story.Warnings.map((warning) => (
-                        <p key={warning}>⚠ {warning}</p>
-                    ))}
-                </div>
-            )}
-
-            {/* Telemetry & Queue Policy Cards - Enhanced Section */}
-            <div className="grid gap-4 md:grid-cols-2">
-                {/* Queue Policy */}
-                <div className="bg-gray-950/60 border border-emerald-500/30 rounded-lg p-4 space-y-1 text-xs text-gray-300">
-                    {queuePolicy ? (
-                        <QueuePolicyCard queueConfig={queuePolicy} title="Queue Configuration" />
-                    ) : (
-                        <div>
-                            <p className="text-[11px] uppercase tracking-wide text-emerald-300">Queue policy</p>
-                            <p className="text-gray-400">No queue configuration available</p>
-                        </div>
-                    )}
-                </div>
-
-                {/* Fallback Warnings - Per Run */}
-                <div className="bg-gray-950/60 border border-orange-500/30 rounded-lg p-4 space-y-1 text-xs text-gray-300">
-                    {artifact.Scenes && artifact.Scenes.length > 0 ? (
-                        (() => {
-                            // Aggregate warnings from all scenes
-                            const firstScene = artifact.Scenes[0];
-                            return (
-                                <FallbackWarningsCard
-                                    exitReason={firstScene.Telemetry?.HistoryExitReason}
-                                    executionSuccessDetected={firstScene.Telemetry?.ExecutionSuccessDetected}
-                                    postExecutionTimeoutReached={firstScene.Telemetry?.HistoryPostExecutionTimeoutReached}
-                                    title="Run Fallback Warnings"
-                                />
-                            );
-                        })()
-                    ) : (
-                        <div>
-                            <p className="text-[11px] uppercase tracking-wide text-orange-300">Fallback warnings</p>
-                            <p className="text-gray-400">No scenes available</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-                <div className="bg-gray-950/60 border border-emerald-500/30 rounded-lg p-4 space-y-1 text-xs text-gray-300">
-                    <p className="text-[11px] uppercase tracking-wide text-emerald-300">Queue policy</p>
-                    <div className="text-sm text-gray-100">Scene retry budget: {queuePolicy?.SceneRetryBudget ?? 'n/a'}</div>
-                    <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-400">
-                        <div>History wait: {queuePolicy?.HistoryMaxWaitSeconds ?? 'n/a'}s</div>
-                        <div>Poll interval: {queuePolicy?.HistoryPollIntervalSeconds ?? 'n/a'}s</div>
-                        <div>History attempts: {historyAttemptsLabel}</div>
-                        <div>Post-exec timeout: {queuePolicy?.PostExecutionTimeoutSeconds ?? 'n/a'}s</div>
-                    </div>
-                </div>
-                <div className="bg-gray-950/60 border border-cyan-500/30 rounded-lg p-4 space-y-1 text-xs text-gray-300">
-                    <p className="text-[11px] uppercase tracking-wide text-cyan-300">LLM & run artifacts</p>
-                    <div className="grid gap-0.5">
-                        <span className="text-[11px] text-gray-500">Provider</span>
-                        <span className="text-sm text-gray-100 truncate">{storyLLM?.providerUrl ?? 'n/a'}</span>
-                    </div>
-                    <div className="grid gap-0.5">
-                        <span className="text-[11px] text-gray-500">Model</span>
-                        <span className="text-sm text-gray-100">{storyLLM?.model ?? 'n/a'}</span>
-                    </div>
-                    <div className="grid gap-0.5 md:grid-cols-2 md:gap-4 text-[11px] text-gray-400">
-                        <span>Format: {storyLLM?.requestFormat ?? 'n/a'}</span>
-                        <span>Temperature: {storyLLM?.temperature ?? 'auto'}</span>
-                    </div>
-                    <div className="grid gap-0.5 md:grid-cols-2 md:gap-4 text-[11px] text-gray-400">
-                        <span>Seed: {storyLLM?.seed ?? 'n/a'}</span>
-                        <span>Duration: {storyLLM?.durationMs ?? 'n/a'}ms</span>
-                    </div>
-                    <div className="text-[11px] text-gray-400">
-                        Scenes requested: {storyLLM?.scenesRequested ?? 'n/a'}
-                        {storyLLM?.scenesReceived != null && ` · received ${storyLLM.scenesReceived}`}
-                    </div>
-                    {storyLLM?.error && (
-                        <div className="text-amber-300 text-[11px]">LLM error: {storyLLM.error}</div>
-                    )}
-                    {artifact.Story.HealthCheck && (
-                        <div className="space-y-1 text-[11px]">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-gray-500 uppercase tracking-wide">Health check</span>
-                                <span
-                                    className={`${getHealthBadgeClass(
-                                        artifact.Story.HealthCheck.Status?.toLowerCase(),
-                                    )} px-2 py-0.5 rounded-full text-[10px] font-semibold`}
-                                >
-                                    {artifact.Story.HealthCheck.Status ?? 'unknown'}
-                                </span>
+            
+            {/* Collapsible Details Section */}
+            <div className="mt-4 space-y-2">
+                
+                {/* Queue Configuration & Fallback Warnings (Collapsible) */}
+                <details className="bg-gray-950/40 border border-gray-700 rounded-lg">
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-300 hover:text-gray-100 flex items-center justify-between">
+                        <span>🔧 Queue Configuration & Policies</span>
+                        <span className="text-xs text-gray-500">Click to expand</span>
+                    </summary>
+                    <div className="px-4 pb-4 space-y-3">
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {/* Queue Policy */}
+                            <div className="bg-gray-950/60 border border-emerald-500/30 rounded-lg p-4 space-y-1 text-xs text-gray-300">
+                                {queuePolicy ? (
+                                    <QueuePolicyCard queueConfig={queuePolicy} title="Queue Configuration" />
+                                ) : (
+                                    <div>
+                                        <p className="text-[11px] uppercase tracking-wide text-emerald-300">Queue policy</p>
+                                        <p className="text-gray-400">No queue configuration available</p>
+                                    </div>
+                                )}
                             </div>
-                            {artifact.Story.HealthCheck.Url && (
-                                <div className="text-gray-400">
-                                    Endpoint:&nbsp;
-                                    <span className="text-gray-100">{artifact.Story.HealthCheck.Url}</span>
-                                </div>
-                            )}
-                            {artifact.Story.HealthCheck.Override && (
-                                <div className="text-gray-400">
-                                    Override: <span className="text-gray-100">{artifact.Story.HealthCheck.Override}</span>
-                                </div>
-                            )}
-                            {artifact.Story.HealthCheck.Models != null && (
-                                <div className="text-gray-400">Models: {artifact.Story.HealthCheck.Models}</div>
-                            )}
-                            {artifact.Story.HealthCheck.SkipReason && (
-                                <div className="text-gray-400">Skip reason: {artifact.Story.HealthCheck.SkipReason}</div>
-                            )}
-                            {artifact.Story.HealthCheck.Error && (
-                                <div className="text-amber-300 text-[11px]">Health error: {artifact.Story.HealthCheck.Error}</div>
-                            )}
-                        </div>
-                    )}
-                    <div className="text-[11px] text-gray-500">
-                        Run: {artifact.RunId}
-                    </div>
-                    <div className="text-[11px] text-gray-500">
-                        Directory: {artifact.RunDir}
-                    </div>
-                    <div className="text-[11px] text-gray-500">
-                        Archive: {artifact.Archive}
-                    </div>
-                    {artifact.Story.StoryDir && (
-                        <div className="text-[11px] text-gray-500">Story dir: {artifact.Story.StoryDir}</div>
-                    )}
-                    {(mappingSummaryHref || mappingLogHref || comfySummaryHref || comfyLogHref) && (
-                        <div className="space-y-1 text-[11px] text-emerald-200">
-                            <div className="text-emerald-300 font-semibold">Helper summaries & logs</div>
-                            {mappingSummaryHref && (
-                                <a
-                                    className="block truncate max-w-[20vw] text-emerald-200 underline hover:text-emerald-100"
-                                    href={mappingSummaryHref}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    title={mappingHelper?.Summary}
-                                >
-                                    Mapping preflight summary
-                                </a>
-                            )}
-                            {mappingLogHref && (
-                                <a
-                                    className="block truncate max-w-[20vw] text-emerald-200 underline hover:text-emerald-100"
-                                    href={mappingLogHref}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    title={mappingHelper?.Log}
-                                >
-                                    Mapping preflight log
-                                </a>
-                            )}
-                            {comfySummaryHref && (
-                                <a
-                                    className="block truncate max-w-[20vw] text-emerald-200 underline hover:text-emerald-100"
-                                    href={comfySummaryHref}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    title={comfyHelper?.Summary}
-                                >
-                                    ComfyUI status summary
-                                </a>
-                            )}
-                            {comfyLogHref && (
-                                <a
-                                    className="block truncate max-w-[20vw] text-emerald-200 underline hover:text-emerald-100"
-                                    href={comfyLogHref}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    title={comfyHelper?.Log}
-                                >
-                                    ComfyUI status log
-                                </a>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
 
-            <div className="overflow-auto text-xs">
-                <table className="min-w-full text-left text-gray-200 border-separate border-spacing-y-2">
-                    <thead className="text-emerald-300">
-                        <tr>
-                            <th className="px-2 py-1">Scene</th>
-                            <th className="px-2 py-1">Frames</th>
-                            <th className="px-2 py-1">History</th>
-                            <th className="px-2 py-1">Telemetry</th>
-                            <th className="px-2 py-1">Status</th>
-                        </tr>
-                    </thead>
+                            {/* Fallback Warnings */}
+                            <div className="bg-gray-950/60 border border-orange-500/30 rounded-lg p-4 space-y-1 text-xs text-gray-300">
+                                {artifact.Scenes && artifact.Scenes.length > 0 ? (
+                                    (() => {
+                                        const firstScene = artifact.Scenes[0];
+                                        return (
+                                            <FallbackWarningsCard
+                                                exitReason={firstScene.Telemetry?.HistoryExitReason}
+                                                executionSuccessDetected={firstScene.Telemetry?.ExecutionSuccessDetected}
+                                                postExecutionTimeoutReached={firstScene.Telemetry?.HistoryPostExecutionTimeoutReached}
+                                                title="Run Fallback Warnings"
+                                            />
+                                        );
+                                    })()
+                                ) : (
+                                    <div>
+                                        <p className="text-[11px] uppercase tracking-wide text-orange-300">Fallback warnings</p>
+                                        <p className="text-gray-400">No scenes available</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                {/* LLM & Run Artifacts (Collapsible) */}
+                <details className="bg-gray-950/40 border border-gray-700 rounded-lg">
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-300 hover:text-gray-100 flex items-center justify-between">
+                        <span>🤖 LLM & Run Artifacts</span>
+                        <span className="text-xs text-gray-500">Click to expand</span>
+                    </summary>
+                    <div className="px-4 pb-4">
+                        <div className="bg-gray-950/60 border border-cyan-500/30 rounded-lg p-4 space-y-1 text-xs text-gray-300">
+                            <p className="text-[11px] uppercase tracking-wide text-cyan-300">LLM & Run Artifacts</p>
+                            <div className="grid gap-0.5">
+                                <span className="text-[11px] text-gray-500">Provider</span>
+                                <span className="text-sm text-gray-100 truncate">{storyLLM?.providerUrl ?? 'n/a'}</span>
+                            </div>
+                            <div className="grid gap-0.5">
+                                <span className="text-[11px] text-gray-500">Model</span>
+                                <span className="text-sm text-gray-100">{storyLLM?.model ?? 'n/a'}</span>
+                            </div>
+                            <div className="grid gap-0.5 md:grid-cols-2 md:gap-4 text-[11px] text-gray-400">
+                                <span>Format: {storyLLM?.requestFormat ?? 'n/a'}</span>
+                                <span>Temperature: {storyLLM?.temperature ?? 'auto'}</span>
+                            </div>
+                            <div className="grid gap-0.5 md:grid-cols-2 md:gap-4 text-[11px] text-gray-400">
+                                <span>Seed: {storyLLM?.seed ?? 'n/a'}</span>
+                                <span>Duration: {storyLLM?.durationMs ?? 'n/a'}ms</span>
+                            </div>
+                            <div className="text-[11px] text-gray-400">
+                                Scenes requested: {storyLLM?.scenesRequested ?? 'n/a'}
+                                {storyLLM?.scenesReceived != null && ` · received ${storyLLM.scenesReceived}`}
+                            </div>
+                            {storyLLM?.error && (
+                                <div className="text-amber-300 text-[11px]">LLM error: {storyLLM.error}</div>
+                            )}
+                            {artifact.Story.HealthCheck && (
+                                <div className="space-y-1 text-[11px] mt-2 pt-2 border-t border-gray-700">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-gray-500 uppercase tracking-wide">Health check</span>
+                                        <span
+                                            className={`${getHealthBadgeClass(
+                                                artifact.Story.HealthCheck.Status?.toLowerCase(),
+                                            )} px-2 py-0.5 rounded-full text-[10px] font-semibold`}
+                                        >
+                                            {artifact.Story.HealthCheck.Status ?? 'unknown'}
+                                        </span>
+                                    </div>
+                                    {artifact.Story.HealthCheck.Url && (
+                                        <div className="text-gray-400">
+                                            Endpoint: <span className="text-gray-100">{artifact.Story.HealthCheck.Url}</span>
+                                        </div>
+                                    )}
+                                    {artifact.Story.HealthCheck.Models != null && (
+                                        <div className="text-gray-400">Models: {artifact.Story.HealthCheck.Models}</div>
+                                    )}
+                                </div>
+                            )}
+                            <div className="mt-2 pt-2 border-t border-gray-700 space-y-0.5">
+                                <div className="text-[11px] text-gray-500">Run: {artifact.RunId}</div>
+                                <div className="text-[11px] text-gray-500">Directory: {artifact.RunDir}</div>
+                                {artifact.Story.StoryDir && (
+                                    <div className="text-[11px] text-gray-500">Story dir: {artifact.Story.StoryDir}</div>
+                                )}
+                            </div>
+                            {(mappingSummaryHref || mappingLogHref || comfySummaryHref || comfyLogHref) && (
+                                <div className="space-y-1 text-[11px] text-emerald-200 mt-2 pt-2 border-t border-gray-700">
+                                    <div className="text-emerald-300 font-semibold">Helper Summaries & Logs</div>
+                                    {mappingSummaryHref && (
+                                        <a
+                                            className="block truncate text-emerald-200 underline hover:text-emerald-100"
+                                            href={mappingSummaryHref}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            title={mappingHelper?.Summary}
+                                        >
+                                            Mapping preflight summary
+                                        </a>
+                                    )}
+                                    {comfySummaryHref && (
+                                        <a
+                                            className="block truncate text-emerald-200 underline hover:text-emerald-100"
+                                            href={comfySummaryHref}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            title={comfyHelper?.Summary}
+                                        >
+                                            ComfyUI status summary
+                                        </a>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </details>
+
+                {/* Scenes Table (Collapsible) */}
+                <details className="bg-gray-950/40 border border-gray-700 rounded-lg">
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-300 hover:text-gray-100 flex items-center justify-between">
+                        <span>📊 Scenes Overview Table</span>
+                        <span className="text-xs text-gray-500">Click to expand</span>
+                    </summary>
+                    <div className="px-4 pb-4 overflow-auto text-xs">
+                        <table className="min-w-full text-left text-gray-200 border-separate border-spacing-y-2">
+                            <thead className="text-emerald-300">
+                                <tr>
+                                    <th className="px-2 py-1">Scene</th>
+                                    <th className="px-2 py-1">Frames</th>
+                                    <th className="px-2 py-1">History</th>
+                                    <th className="px-2 py-1">Telemetry</th>
+                                    <th className="px-2 py-1">Status</th>
+                                </tr>
+                            </thead>
                     <tbody>
                         {scenesToDisplay.map((scene) => {
                             const telemetrySummary = buildTelemetrySummary(scene);
@@ -605,13 +578,20 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                             );
                         })}
                     </tbody>
-                </table>
-                {scenesToDisplay.length === 0 && (
-                    <div className="text-center text-xs text-gray-500 py-4">No scenes match the current filter.</div>
-                )}
-            </div>
+                        </table>
+                        {scenesToDisplay.length === 0 && (
+                            <div className="text-center text-xs text-gray-500 py-4">No scenes match the current filter.</div>
+                        )}
+                    </div>
+                </details>
 
-            <div className="space-y-3 text-xs text-gray-300">
+                {/* Scene Details (Collapsible) */}
+                <details className="bg-gray-950/40 border border-gray-700 rounded-lg">
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-300 hover:text-gray-100 flex items-center justify-between">
+                        <span>🎬 Detailed Scene Information</span>
+                        <span className="text-xs text-gray-500">Click to expand</span>
+                    </summary>
+                    <div className="px-4 pb-4 space-y-3 text-xs text-gray-300">
                 {artifact.Scenes.map((scene) => {
                     const historyConfig = scene.HistoryConfig;
                     const historyConfigAttemptsLabel =
@@ -777,11 +757,18 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                             </div>
                         </div>
                     </details>
-                    );
-                })}
-            </div>
+                        );
+                    })}
+                    </div>
+                </details>
 
-            <div className="grid gap-4 md:grid-cols-2 text-xs text-gray-400">
+                {/* Vitest Logs (Collapsible) */}
+                <details className="bg-gray-950/40 border border-gray-700 rounded-lg">
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-300 hover:text-gray-100 flex items-center justify-between">
+                        <span>🧪 Test Logs & Results</span>
+                        <span className="text-xs text-gray-500">Click to expand</span>
+                    </summary>
+                    <div className="px-4 pb-4 grid gap-4 md:grid-cols-2 text-xs text-gray-400">
                 <div>
                     <p className="text-gray-500 text-[11px] uppercase tracking-wide">Vitest logs</p>
                     <p className="text-gray-200 text-[12px]">{artifact.VitestLogs.ComfyUI}</p>
@@ -811,16 +798,18 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                     {artifact.Story.StoryDir && (
                         <p className="text-gray-500 text-[11px]">Story dir: {artifact.Story.StoryDir}</p>
                     )}
-                </div>
-            </div>
+                    </div>
+                    </div>
+                </details>
 
-            {/* TODO: Telemetry Filter Panel - component not yet implemented */}
-
-            {/* AI Recommendations Section */}
+            {/* AI Recommendations Section (Collapsible) */}
             {recommendations.length > 0 && (
-                <div className="border-t border-gray-700 pt-6">
-                    <h3 className="text-gray-400 text-[11px] uppercase tracking-wide mb-4">AI Recommendations</h3>
-                    <div className="space-y-3">
+                <details className="bg-gray-950/40 border border-gray-700 rounded-lg">
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-300 hover:text-gray-100 flex items-center justify-between">
+                        <span>💡 AI Recommendations ({recommendations.length})</span>
+                        <span className="text-xs text-gray-500">Click to expand</span>
+                    </summary>
+                    <div className="px-4 pb-4 space-y-3">
                         {recommendations.map((rec, idx) => (
                             <div
                                 key={idx}
@@ -856,14 +845,17 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                             </div>
                         ))}
                     </div>
-                </div>
+                </details>
             )}
 
-            {/* Historical Telemetry Section - Wave 2 */}
+            {/* Historical Telemetry Section - Wave 2 (Collapsible) */}
             {dbInitialized && historicalRuns.length > 0 && (
-                <div className="space-y-4 mt-6">
-                    <div className="border-t border-gray-700 pt-6">
-                        <h3 className="text-gray-400 text-[11px] uppercase tracking-wide mb-4">Historical Analysis (Wave 2)</h3>
+                <details className="bg-gray-950/40 border border-gray-700 rounded-lg">
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-300 hover:text-gray-100 flex items-center justify-between">
+                        <span>📈 Historical Analysis ({historicalRuns.length} runs)</span>
+                        <span className="text-xs text-gray-500">Click to expand</span>
+                    </summary>
+                    <div className="px-4 pb-4 space-y-4">
 
                         {/* Run-level Comparison */}
                         <div className="mb-6">
@@ -947,17 +939,10 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                             </div>
                         )}
                     </div>
-                </div>
+                </details>
             )}
-
-            {/* Empty State for Historical Data */}
-            {dbInitialized && historicalRuns.length === 0 && (
-                <div className="mt-6 pt-6 border-t border-gray-700 text-center text-gray-500 text-[11px]">
-                    <p>Historical telemetry data will appear here after additional runs are completed</p>
-                </div>
-            )}
-
-            {/* TODO: Export Dialog - component not yet implemented */}
+            
+            </div>{/* End collapsible sections */}
         </section>
     );
 };

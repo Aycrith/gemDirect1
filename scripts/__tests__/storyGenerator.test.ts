@@ -69,7 +69,7 @@ describe('story generator helpers', () => {
             prompt: 'Prompt',
             mood: 'Mood',
             keyframePath: '/tmp/foo.png',
-            expectedFrames: 25,
+            expectedFrames: 49,
             negativePrompt: 'neg',
         };
         const { story } = buildStoryPayload([dummyScene], response as any, llmMeta, warnings);
@@ -125,7 +125,7 @@ describe('story generator helpers', () => {
             prompt: 'Prompt',
             mood: 'Calm',
             keyframePath: '/tmp/keyframe.png',
-            expectedFrames: 25,
+            expectedFrames: 49,
             negativePrompt: 'neg',
         };
         const { story } = buildStoryPayload([dummyScene], null, llmMeta, warnings);

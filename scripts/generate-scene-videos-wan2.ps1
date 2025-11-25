@@ -26,10 +26,15 @@ Try {
 
         function Add-RunSummaryLine {
           param([string]$Message)
-          $summaryPath = Join-Path $RunDir 'run-summary.txt'
-          if (-not (Test-Path $summaryPath)) { return }
-          $line = "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $Message
-          Add-Content -Path $summaryPath -Value $line
+          try {
+            $summaryPath = Join-Path $RunDir 'run-summary.txt'
+            if (-not (Test-Path $summaryPath)) { return }
+            $line = "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $Message
+            Add-Content -Path $summaryPath -Value $line -ErrorAction Stop
+          } catch {
+            # File write failed - log to console but don't crash
+            Write-Warning "Failed to write to run-summary.txt: $($_.Exception.Message)"
+          }
         }
 
         function Check-PromptStatus {
@@ -330,10 +335,29 @@ Try {
           if ($promptPayload.'6' -and $promptPayload.'6'.inputs) {
             $promptPayload.'6'.inputs.text = $humanPrompt
             Write-Host "[$sceneId] Injected human prompt into node 6"
+            Add-RunSummaryLine "[Scene $sceneId] Wan2 prompt injection: positive prompt injected into node 6 ($($humanPrompt.Length) chars)"
           }
           if ($promptPayload.'7' -and $promptPayload.'7'.inputs) {
             $promptPayload.'7'.inputs.text = $negativePrompt
             Write-Host "[$sceneId] Injected negative prompt into node 7"
+            Add-RunSummaryLine "[Scene $sceneId] Wan2 prompt injection: negative prompt injected into node 7 ($($negativePrompt.Length) chars)"
+          }
+          
+          # Log CFG and seed values from KSampler node (typically node 3)
+          if ($promptPayload.'3' -and $promptPayload.'3'.inputs) {
+            $cfg = $promptPayload.'3'.inputs.cfg
+            $seed = $promptPayload.'3'.inputs.seed
+            $steps = $promptPayload.'3'.inputs.steps
+            $samplerName = $promptPayload.'3'.inputs.sampler_name
+            
+            if ($null -ne $cfg) {
+              Write-Host "[$sceneId] CFG value confirmed: $cfg"
+              Add-RunSummaryLine "[Scene $sceneId] Wan2 CFG: $cfg (sampler: $samplerName, steps: $steps)"
+            }
+            if ($null -ne $seed) {
+              Write-Host "[$sceneId] Seed value: $seed"
+              Add-RunSummaryLine "[Scene $sceneId] Wan2 seed: $seed"
+            }
           }
   
           $loadImageNode = $null
@@ -525,15 +549,20 @@ Try {
               # Check status FIRST before any logging to avoid false "running" states
               $status = Check-PromptStatus -ComfyUrl $ComfyUrl -PromptId $promptId
               
-              # Log to console (may buffer)
-              Write-Host "[$sceneId] Status: $($status.status) (${elapsed}s)" -ForegroundColor Gray
+              # Log to console only every 10 seconds to avoid overwhelming output buffer
+              $shouldLogToConsole = ($elapsed -eq 0) -or ([math]::Floor($elapsed) % 10 -eq 0)
+              if ($shouldLogToConsole) {
+                Write-Host "[$sceneId] Status: $($status.status) (${elapsed}s)" -ForegroundColor Gray
+              }
               
-              # Log to file with error handling (critical for debugging)
-              try {
-                Add-RunSummaryLine "[Scene $sceneId] Wan2 status: $($status.status) (${elapsed}s)"
-              } catch {
-                # If logging fails, don't crash - just continue
-                Write-Warning "[$sceneId] Failed to write to run summary: $_"
+              # Log to file every 10 seconds to reduce I/O and prevent overwhelming the log
+              if ($shouldLogToConsole) {
+                try {
+                  Add-RunSummaryLine "[Scene $sceneId] Wan2 status: $($status.status) (${elapsed}s)"
+                } catch {
+                  # If logging fails, don't crash - just continue
+                  Write-Warning "[$sceneId] Failed to write to run summary: $_"
+                }
               }
               
               # Handle different states
@@ -577,12 +606,27 @@ Try {
           }
           
           # Check for timeout
-          Add-RunSummaryLine "[Scene $sceneId] Wan2 polling loop exited: completed=$executionCompleted error=$executionError"
+          $finalElapsed = [math]::Round(((Get-Date) - $pollStart).TotalSeconds, 1)
+          Add-RunSummaryLine "[Scene $sceneId] Wan2 polling loop exited: completed=$executionCompleted error=$executionError elapsed=${finalElapsed}s"
           
+          # CRITICAL: If polling exited without detecting completion, do a final check
+          # This handles cases where script was interrupted or status check failed
           if (-not $executionCompleted -and -not $executionError) {
-            $finalElapsed = [math]::Round(((Get-Date) - $pollStart).TotalSeconds, 1)
-            Write-Warning "[$sceneId] Timeout after ${finalElapsed}s - execution did not complete"
-            Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation failed: timeout after ${finalElapsed}s"
+            Write-Host "[$sceneId] Polling exited without completion - performing final status check..." -ForegroundColor Yellow
+            try {
+              $finalStatus = Check-PromptStatus -ComfyUrl $ComfyUrl -PromptId $promptId
+              if ($finalStatus.status -eq 'completed') {
+                Write-Host "[$sceneId] ✓ Final check: execution DID complete" -ForegroundColor Green
+                Add-RunSummaryLine "[Scene $sceneId] Wan2 final check: execution completed (detected after loop exit)"
+                $executionCompleted = $true
+              } else {
+                Write-Warning "[$sceneId] Timeout after ${finalElapsed}s - execution did not complete (final status: $($finalStatus.status))"
+                Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation failed: timeout after ${finalElapsed}s (final status: $($finalStatus.status))"
+              }
+            } catch {
+              Write-Warning "[$sceneId] Final status check failed: $($_.Exception.Message)"
+              Add-RunSummaryLine "[Scene $sceneId] Wan2 final status check failed: $($_.Exception.Message)"
+            }
           }
           
           # If execution completed successfully, check for video file

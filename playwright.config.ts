@@ -23,7 +23,7 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 10_000,
   } : {
-    // Start Vite dev server (default port 3000)
+    // Start Vite dev server (on port 3000)
     // VITE env vars injected to configure LM Studio (welcome dialog removed from code)
     command: 'npm run dev',
     port: 3000,
@@ -31,9 +31,9 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       NODE_ENV: 'development',
-      // Local LM Studio (Mistral) configuration for tests - use env-driven or localhost default
-      VITE_LOCAL_STORY_PROVIDER_URL: process.env.VITE_LOCAL_STORY_PROVIDER_URL || 'http://127.0.0.1:1234/v1/chat/completions',
-      VITE_LOCAL_LLM_MODEL: process.env.VITE_LOCAL_LLM_MODEL || 'mistralai/mistral-7b-instruct-v0.3',
+      // Local LM Studio (Mistral) configuration for tests - use network IP for reliability
+      VITE_LOCAL_STORY_PROVIDER_URL: process.env.VITE_LOCAL_STORY_PROVIDER_URL || 'http://192.168.50.192:1234/v1/chat/completions',
+      VITE_LOCAL_LLM_MODEL: process.env.VITE_LOCAL_LLM_MODEL || 'mistralai/mistral-nemo-instruct-2407',
       VITE_LOCAL_LLM_REQUEST_FORMAT: process.env.VITE_LOCAL_LLM_REQUEST_FORMAT || 'openai-chat',
       VITE_LOCAL_LLM_TEMPERATURE: process.env.VITE_LOCAL_LLM_TEMPERATURE || '0.35',
       VITE_LOCAL_LLM_TIMEOUT_MS: process.env.VITE_LOCAL_LLM_TIMEOUT_MS || '120000',

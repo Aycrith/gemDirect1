@@ -3,38 +3,7 @@ import { MediaGenerationProvider } from '../types';
 import { usePersistentState } from '../utils/hooks';
 import { createMediaGenerationActions, MediaGenerationActions } from '../services/mediaGenerationService';
 import { useLocalGenerationSettings } from './LocalGenerationSettingsContext';
-
-const DEFAULT_MEDIA_PROVIDERS: MediaGenerationProvider[] = [
-    {
-        id: 'gemini-image',
-        label: 'Gemini Image (Default)',
-        description: 'Use Google Gemini Flash Image for remote keyframes and concept art.',
-        isAvailable: true,
-        isDefault: true,
-        capabilities: { images: true, video: false },
-    },
-    {
-        id: 'comfyui-local',
-        label: 'Local ComfyUI',
-        description: 'Leverage the configured ComfyUI server for local renders.',
-        isAvailable: true,
-        capabilities: { images: true, video: true },
-    },
-    {
-        id: 'flux-pro',
-        label: 'Flux Pro',
-        description: 'Third-party diffusion model integration (coming soon).',
-        isAvailable: false,
-        disabledReason: 'Pending API integration work.',
-        capabilities: { images: true, video: false },
-    },
-];
-
-const FALLBACK_PROVIDER = DEFAULT_MEDIA_PROVIDERS.find(provider => provider.isDefault && provider.isAvailable)
-    ?? DEFAULT_MEDIA_PROVIDERS.find(provider => provider.isAvailable)
-    ?? DEFAULT_MEDIA_PROVIDERS[0];
-
-const STORAGE_KEY = 'mediaGeneration.provider.selected';
+import { DEFAULT_MEDIA_PROVIDERS, FALLBACK_MEDIA_PROVIDER, MEDIA_PROVIDER_STORAGE_KEY } from '../utils/contextConstants';
 
 type MediaGenerationProviderContextValue = {
     providers: MediaGenerationProvider[];
@@ -48,7 +17,7 @@ type MediaGenerationProviderContextValue = {
 const MediaGenerationProviderContext = createContext<MediaGenerationProviderContextValue | undefined>(undefined);
 
 export const MediaGenerationProviderProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [selectedProviderId, setSelectedProviderId] = usePersistentState<string>(STORAGE_KEY, FALLBACK_PROVIDER.id);
+    const [selectedProviderId, setSelectedProviderId] = usePersistentState<string>(MEDIA_PROVIDER_STORAGE_KEY, FALLBACK_MEDIA_PROVIDER.id);
     const { settings: localGenerationSettings } = useLocalGenerationSettings();
 
     const providers = DEFAULT_MEDIA_PROVIDERS;
@@ -59,10 +28,20 @@ export const MediaGenerationProviderProvider: React.FC<{ children: React.ReactNo
     );
 
     const fallbackProvider = useMemo(() => {
-        // If local ComfyUI settings are configured, prefer comfyui-local
-        if (localGenerationSettings?.comfyUIUrl && localGenerationSettings?.workflowJson) {
+        // CRITICAL: If local ComfyUI settings are configured, prefer comfyui-local
+        // This prevents "API rate limit exceeded" errors when using local generation
+        const hasDirectWorkflow = Boolean(localGenerationSettings?.workflowJson);
+        const hasWorkflowProfiles = Boolean(
+            localGenerationSettings?.workflowProfiles && 
+            Object.keys(localGenerationSettings.workflowProfiles).length > 0 &&
+            Object.values(localGenerationSettings.workflowProfiles).some(profile => profile.workflowJson)
+        );
+        const isComfyUIConfigured = localGenerationSettings?.comfyUIUrl && (hasDirectWorkflow || hasWorkflowProfiles);
+        
+        if (isComfyUIConfigured) {
             const localProvider = providers.find(provider => provider.id === 'comfyui-local');
             if (localProvider && localProvider.isAvailable) {
+                console.log('[MediaGenerationProvider] Local ComfyUI configured - preferring local generation');
                 return localProvider;
             }
         }
@@ -81,6 +60,15 @@ export const MediaGenerationProviderProvider: React.FC<{ children: React.ReactNo
         if (!fallbackProvider) {
             return;
         }
+        
+        // CRITICAL FIX: Auto-switch to local provider when ComfyUI becomes available
+        // This prevents users from being stuck on Gemini and getting rate limit errors
+        if (fallbackProvider.id === 'comfyui-local' && selectedProviderId === 'gemini-image') {
+            console.log('[MediaGenerationProvider] ComfyUI now configured - auto-switching from Gemini to local generation');
+            setSelectedProviderId(fallbackProvider.id);
+            return;
+        }
+        
         if (!selected || !selected.isAvailable) {
             if (selectedProviderId !== fallbackProvider.id) {
                 setSelectedProviderId(fallbackProvider.id);

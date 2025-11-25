@@ -18,6 +18,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
     const [genre, setGenre] = useState<string>('sci-fi');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
+    const [isEnhancing, setIsEnhancing] = useState(false);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
     const planActions = usePlanExpansionActions();
 
@@ -41,6 +42,32 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
             setIsSuggesting(false);
         }
     }, [onApiStateChange, onApiLog, planActions]);
+
+    const handleEnhance = useCallback(async () => {
+        if (!idea.trim()) return;
+        setIsEnhancing(true);
+        try {
+            // Create a context-aware prompt for enhancing the story idea
+            const enhancePrompt = `Enhance this story idea to make it more compelling, specific, and cinematic. Add concrete details about the protagonist, conflict, and stakes. Keep it concise (2-3 sentences max).\n\nOriginal idea: ${idea}\n\nReturn only the enhanced version, no preamble.`;
+            
+            // At this stage, no Story Bible exists yet, so pass empty string for prunedContext
+            const enhanced = await planActions.refineStoryBibleSection(
+                'plotOutline',
+                enhancePrompt,
+                '',
+                onApiLog,
+                onApiStateChange
+            );
+            
+            // Clean up any preamble the LLM might have added
+            const cleaned = enhanced.replace(/^(Enhanced version:|Here's the enhanced version:|Improved idea:)\s*/i, '').trim();
+            setIdea(cleaned || enhanced);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsEnhancing(false);
+        }
+    }, [idea, planActions, onApiLog, onApiStateChange]);
 
     return (
         <div ref={spotlightRef} className="max-w-3xl mx-auto glass-card p-8 rounded-xl shadow-2xl shadow-black/30 interactive-spotlight" data-testid="StoryIdeaForm">
@@ -68,15 +95,32 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                     </select>
                     <p className="text-xs text-gray-500 mt-1">Template guidance will enhance your story's narrative coherence.</p>
                 </div>
-                <textarea
-                    data-testid="story-idea-input"
-                    aria-label="Story Idea"
-                    value={idea}
-                    onChange={(e) => setIdea(e.target.value)}
-                    rows={4}
-                    className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
-                    placeholder="e.g., A space explorer finds an ancient artifact that could save humanity, but it's guarded by a sentient AI."
-                />
+                <div className="relative">
+                    <textarea
+                        data-testid="story-idea-input"
+                        aria-label="Story Idea"
+                        value={idea}
+                        onChange={(e) => setIdea(e.target.value)}
+                        rows={4}
+                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+                        placeholder="e.g., A space explorer finds an ancient artifact that could save humanity, but it's guarded by a sentient AI."
+                    />
+                    {idea.trim() && (
+                        <button
+                            type="button"
+                            onClick={handleEnhance}
+                            disabled={isEnhancing}
+                            className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-amber-600/50 text-amber-200 hover:bg-amber-600/80 disabled:bg-gray-600 disabled:text-gray-400"
+                        >
+                            {isEnhancing ? (
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            ) : (
+                                <SparklesIcon className="w-4 h-4" />
+                            )}
+                            Enhance
+                        </button>
+                    )}
+                </div>
                 <button
                     type="submit"
                     disabled={isLoading || !idea.trim()}

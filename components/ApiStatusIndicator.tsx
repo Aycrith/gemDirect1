@@ -67,10 +67,13 @@ const ApiStatusIndicator: React.FC = () => {
 
   return (
     <div
+      data-testid="api-status-indicator"
       className={`fixed bottom-4 left-4 z-50 flex items-center gap-3 p-3 rounded-lg shadow-lg border backdrop-blur-sm bg-gray-900/80 transition-all duration-300 animate-fade-in ${color}`}
     >
       {icon}
-      <p className="text-sm font-medium text-gray-200">{message}</p>
+      <p className="text-sm font-medium text-gray-200" data-testid="api-status-message">
+        {message}
+      </p>
     </div>
   );
 };

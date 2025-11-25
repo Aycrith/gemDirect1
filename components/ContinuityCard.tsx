@@ -1,5 +1,5 @@
 import React from 'react';
-import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion } from '../types';
+import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion, KeyframeData } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
 
 import FileUpload from './FileUpload';
@@ -23,7 +23,7 @@ interface ContinuityCardProps {
   storyBible: StoryBible;
   narrativeContext: string;
   directorsVision: string;
-  generatedImage: string;
+  generatedImage: KeyframeData;
   data: SceneContinuityData;
   setContinuityData: (updater: (prev: SceneContinuityData) => SceneContinuityData | SceneContinuityData) => void;
   addToast: (message: string, type: ToastMessage['type']) => void;
@@ -192,7 +192,20 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                 {generatedImage && (
                     <div className="mb-4">
                         <h4 className="text-sm font-semibold text-gray-300 mb-2 flex items-center"><ImageIcon className="w-4 h-4 mr-2 text-amber-400" />Scene Keyframe</h4>
-                        <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover border border-gray-600"/>
+                        {typeof generatedImage === 'string' ? (
+                            <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover border border-gray-600"/>
+                        ) : (
+                            <div className="flex gap-1">
+                                <div className="relative flex-1">
+                                    <img src={`data:image/jpeg;base64,${generatedImage.start}`} alt={`Start Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover border border-gray-600"/>
+                                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs text-center py-1 rounded-b-lg">Start</div>
+                                </div>
+                                <div className="relative flex-1">
+                                    <img src={`data:image/jpeg;base64,${generatedImage.end}`} alt={`End Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover border border-gray-600"/>
+                                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs text-center py-1 rounded-b-lg">End</div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
                 {data.videoSrc ? (

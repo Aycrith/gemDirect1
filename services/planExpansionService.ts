@@ -8,6 +8,7 @@ import {
     suggestDirectorsVisions as llmSuggestDirectorsVisions,
     refineDirectorsVision as llmRefineDirectorsVision,
     suggestCoDirectorObjectives as llmSuggestCoDirectorObjectives,
+    refineStoryBibleSection as llmRefineStoryBibleSection,
 } from './localStoryService';
 import { StoryBible, Scene, TimelineData, BatchShotTask, Shot, CreativeEnhancers, BatchShotResult, DetailedShotResult, CoDirectorResult, ContinuityResult, WorkflowMapping } from '../types';
 
@@ -45,7 +46,7 @@ export type PlanExpansionActions = {
         directorsVision: string,
         logApiCall: ApiLogCallback,
         onStateChange?: ApiStateChangeCallback
-    ) => Promise<Array<{ title: string; summary: string }>>;
+    ) => Promise<Array<{ title: string; summary: string; temporalContext?: { startMoment: string; endMoment: string } }>>;
     generateAndDetailInitialShots: (
         prunedContext: string,
         logApiCall: ApiLogCallback,
@@ -75,7 +76,7 @@ export type PlanExpansionActions = {
     refineStoryBibleSection: (
         section: 'characters' | 'plotOutline',
         content: string,
-        storyContext: StoryBible | { logline: string },
+        prunedContext: string,
         logApiCall: ApiLogCallback,
         onStateChange?: ApiStateChangeCallback
     ) => Promise<string>;
@@ -202,7 +203,7 @@ const localActions: PlanExpansionActions = {
     suggestDirectorsVisions: (storyBible, logApiCall, onStateChange) => runLocal('suggest visions', () => llmSuggestDirectorsVisions(storyBible), logApiCall, onStateChange),
     suggestNegativePrompts: (directorsVision, sceneSummary, logApiCall, onStateChange) => runLocal('suggest negative prompts', () => localFallback.suggestNegativePrompts(), logApiCall, onStateChange),
     refineDirectorsVision: (vision, storyBible, logApiCall, onStateChange) => runLocal('refine director vision', () => llmRefineDirectorsVision(vision, storyBible), logApiCall, onStateChange),
-    refineStoryBibleSection: (section, content, storyContext, logApiCall, onStateChange) => runLocal('refine story bible section', () => localFallback.refineStoryBibleSection(section, content, storyContext), logApiCall, onStateChange),
+    refineStoryBibleSection: (section, content, prunedContext, logApiCall, onStateChange) => runLocal('refine story bible section', () => llmRefineStoryBibleSection(section, content, prunedContext), logApiCall, onStateChange),
     suggestCoDirectorObjectives: (logline, sceneSummary, directorsVision, logApiCall, onStateChange) => runLocal('suggest Co-Director objectives', () => llmSuggestCoDirectorObjectives(logline, sceneSummary, directorsVision), logApiCall, onStateChange),
     getCoDirectorSuggestions: (prunedContext, timelineSummary, objective, logApiCall, onStateChange) => runLocal('get Co-Director suggestions', () => localFallback.getCoDirectorSuggestions(prunedContext, timelineSummary, objective), logApiCall, onStateChange),
     batchProcessShotEnhancements: (tasks, _prunedContext, logApiCall, onStateChange) => runLocal('batch process shots', () => localFallback.batchProcessShotEnhancements(tasks), logApiCall, onStateChange),

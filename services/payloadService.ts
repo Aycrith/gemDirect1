@@ -101,3 +101,103 @@ export const generateVideoRequestPayloads = (
 
     return { json, text: fullTextPrompt.trim(), structured: structuredPayload, negativePrompt: timeline.negativePrompt || '' };
 };
+
+/**
+ * Bookend workflow: Prompts for temporal start/end keyframes
+ */
+const BOOKEND_START_PREFIX = 
+  'OPENING FRAME: Generate the FIRST MOMENT of this scene. ' +
+  'Show the INITIAL STATE before action begins. ' +
+  'WIDE ESTABLISHING SHOT: EXACTLY ONE UNIFIED CINEMATIC SCENE...';
+
+const BOOKEND_END_PREFIX = 
+  'CLOSING FRAME: Generate the FINAL MOMENT of this scene. ' +
+  'Show the CONCLUDING STATE after action completes. ' +
+  'WIDE ESTABLISHING SHOT: EXACTLY ONE UNIFIED CINEMATIC SCENE...';
+
+export interface BookendPayloads {
+  start: {
+    json: string;
+    text: string;
+    structured: Record<string, any>;
+    negativePrompt: string;
+  };
+  end: {
+    json: string;
+    text: string;
+    structured: Record<string, any>;
+    negativePrompt: string;
+  };
+}
+
+/**
+ * Generates start and end keyframe prompts for bookend workflow
+ * @param sceneSummary Brief summary of the scene
+ * @param storyContext Story bible or narrative context
+ * @param directorsVision Visual style guide
+ * @param temporalContext Start and end moments for the scene
+ * @param negativePrompt Negative prompt to apply
+ * @returns Separate payloads for start and end keyframes
+ */
+export function generateBookendPayloads(
+  sceneSummary: string,
+  storyContext: string,
+  directorsVision: string,
+  temporalContext: { startMoment: string; endMoment: string },
+  negativePrompt: string
+): BookendPayloads {
+  const baseContext = `${storyContext}\n\nVisual Style: ${directorsVision}`;
+  
+  const startPrompt = `${BOOKEND_START_PREFIX}
+
+SCENE OPENING: ${temporalContext.startMoment}
+
+${sceneSummary}
+
+${baseContext}`;
+
+  const endPrompt = `${BOOKEND_END_PREFIX}
+
+SCENE CONCLUSION: ${temporalContext.endMoment}
+
+${sceneSummary}
+
+${baseContext}`;
+
+  return {
+    start: {
+      json: JSON.stringify({ 
+        prompt: startPrompt,
+        metadata: {
+          type: 'bookend_start',
+          scene: sceneSummary,
+          moment: temporalContext.startMoment
+        }
+      }),
+      text: startPrompt,
+      structured: { 
+        prompt: startPrompt,
+        type: 'bookend_start',
+        moment: temporalContext.startMoment
+      },
+      negativePrompt
+    },
+    end: {
+      json: JSON.stringify({ 
+        prompt: endPrompt,
+        metadata: {
+          type: 'bookend_end',
+          scene: sceneSummary,
+          moment: temporalContext.endMoment
+        }
+      }),
+      text: endPrompt,
+      structured: { 
+        prompt: endPrompt,
+        type: 'bookend_end',
+        moment: temporalContext.endMoment
+      },
+      negativePrompt
+    }
+  };
+}

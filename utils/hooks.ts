@@ -4,6 +4,7 @@ import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineDat
 import { useApiStatus } from '../contexts/ApiStatusContext';
 import { useUsage } from '../contexts/UsageContext';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
+import { validateSceneProgression, type SceneProgressionError } from '../services/sceneProgressionValidator';
 import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
 
 const persistentStateDebugEnabled = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_DEBUG_PERSISTENT_STATE ?? 'false') === 'true';
@@ -14,33 +15,89 @@ const debugPersistentState = (...args: unknown[]) => {
 };
 
 /**
- * A custom hook that syncs a state with IndexedDB.
+ * A custom hook that syncs a state with IndexedDB and sessionStorage.
+ * sessionStorage provides immediate synchronous access during hot reloads,
+ * while IndexedDB provides long-term persistence.
+ * 
  * @param key The key to use for storing the value in the database.
  * @param initialValue The initial value of the state.
  * @returns A state and a setter function, similar to useState.
  */
 export function usePersistentState<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
-    const [state, setState] = useState<T>(initialValue);
-    const [isLoaded, setIsLoaded] = useState(false);
-    const prevStateRef = useRef<T>(initialValue);
+    // Try to load from sessionStorage synchronously BEFORE first render
+    // This prevents flash of empty state during Vite HMR
+    const getInitialState = (): T => {
+        try {
+            const sessionData = sessionStorage.getItem(`gemDirect_${key}`);
+            if (sessionData) {
+                const parsed = JSON.parse(sessionData);
+                debugPersistentState(`[usePersistentState(${key})] Loaded from sessionStorage:`, parsed);
+                // Handle Set deserialization
+                if (initialValue instanceof Set && Array.isArray(parsed)) {
+                    return new Set(parsed) as T;
+                }
+                return parsed;
+            }
+        } catch (error) {
+            debugPersistentState(`[usePersistentState(${key})] Failed to load from sessionStorage:`, error);
+        }
+        return initialValue;
+    };
 
-    // Load initial data from DB on mount
+    const [state, setState] = useState<T>(getInitialState);
+    const [isLoaded, setIsLoaded] = useState(false);
+    const prevStateRef = useRef<T>(state);
+    const loadedFromSession = useRef(false);
+
+    // Check if we loaded from sessionStorage (has data)
+    useEffect(() => {
+        try {
+            const sessionData = sessionStorage.getItem(`gemDirect_${key}`);
+            if (sessionData) {
+                loadedFromSession.current = true;
+                debugPersistentState(`[usePersistentState(${key})] Detected sessionStorage data, will skip IndexedDB load`);
+            }
+        } catch (error) {
+            // Ignore sessionStorage errors
+        }
+    }, [key]);
+
+    // Load initial data from IndexedDB on mount ONLY if sessionStorage was empty
     useEffect(() => {
         let isMounted = true;
         const load = async () => {
-            const data = await db.getData(key);
-            if (isMounted && data !== undefined && data !== null) {
-                // Handle Set deserialization
-                if (initialValue instanceof Set && Array.isArray(data)) {
-                    const newSet = new Set(data) as T;
-                    setState(newSet);
-                    prevStateRef.current = newSet;
-                } else {
-                    setState(data);
-                    prevStateRef.current = data;
+            try {
+                // CRITICAL FIX: Don't overwrite sessionStorage data with IndexedDB data
+                // This prevents race condition during Vite HMR where IndexedDB has stale data
+                if (loadedFromSession.current) {
+                    debugPersistentState(`[usePersistentState(${key})] Skipping IndexedDB load - using sessionStorage data`);
+                    setIsLoaded(true);
+                    return;
+                }
+
+                const data = await db.getData(key);
+                if (isMounted && data !== undefined && data !== null) {
+                    // Handle Set deserialization
+                    if (initialValue instanceof Set && Array.isArray(data)) {
+                        const newSet = new Set(data) as T;
+                        setState(newSet);
+                        prevStateRef.current = newSet;
+                    } else {
+                        setState(data);
+                        prevStateRef.current = data;
+                    }
+                    debugPersistentState(`[usePersistentState(${key})] Loaded from IndexedDB (no sessionStorage data)`);
+                }
+            } catch (error) {
+                // Silently handle storage errors - use sessionStorage/initialValue as fallback
+                if (persistentStateDebugEnabled) {
+                    console.warn(`[usePersistentState(${key})] Failed to load from IndexedDB:`, error);
+                }
+            } finally {
+                if (isMounted) {
+                    setIsLoaded(true);
                 }
             }
-            setIsLoaded(true);
         };
         load();
         return () => { isMounted = false; };
@@ -70,20 +127,40 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
         }
 
         if (persistentStateDebugEnabled) {
-            debugPersistentState(`[usePersistentState(${key})] Save effect triggered. isLoaded:`, isLoaded, 'state:', JSON.stringify(state));
+            debugPersistentState(`[usePersistentState(${key})] Save effect triggered. isLoaded:`, isLoaded);
         }
         
-        // Handle Set serialization
+        // Save to BOTH sessionStorage (synchronous) and IndexedDB (async)
+        // sessionStorage ensures immediate availability during hot reloads
+        try {
+            const dataToSave = state instanceof Set ? Array.from(state) : state;
+            sessionStorage.setItem(`gemDirect_${key}`, JSON.stringify(dataToSave));
+            debugPersistentState(`[usePersistentState(${key})] Saved to sessionStorage`);
+        } catch (sessionError) {
+            if (persistentStateDebugEnabled) {
+                console.warn(`[usePersistentState(${key})] Failed to save to sessionStorage:`, sessionError);
+            }
+        }
+
+        // Handle Set serialization for IndexedDB
         if (state instanceof Set) {
             if (persistentStateDebugEnabled) {
-                debugPersistentState(`[usePersistentState(${key})] Saving Set to DB:`, Array.from(state));
+                debugPersistentState(`[usePersistentState(${key})] Saving Set to IndexedDB:`, Array.from(state));
             }
-            db.saveData(key, Array.from(state));
+            db.saveData(key, Array.from(state)).catch(err => {
+                if (persistentStateDebugEnabled) {
+                    console.warn(`[usePersistentState(${key})] Failed to save Set to IndexedDB:`, err);
+                }
+            });
         } else {
             if (persistentStateDebugEnabled) {
-                debugPersistentState(`[usePersistentState(${key})] Saving to DB:`, JSON.stringify(state));
+                debugPersistentState(`[usePersistentState(${key})] Saving to IndexedDB`);
             }
-            db.saveData(key, state);
+            db.saveData(key, state).catch(err => {
+                if (persistentStateDebugEnabled) {
+                    console.warn(`[usePersistentState(${key})] Failed to save to IndexedDB:`, err);
+                }
+            });
         }
 
         prevStateRef.current = state;
@@ -141,7 +218,7 @@ export function useSceneGenerationWatcher(scenes: Scene[]) {
  * A custom hook to manage the core project data lifecycle.
  */
 export function useProjectData(setGenerationProgress: React.Dispatch<React.SetStateAction<{ current: number, total: number, task: string }>>) {
-    const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('idea');
+    const [workflowStage, setWorkflowStage] = usePersistentState<WorkflowStage>('workflowStage', 'idea');
     const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
     const [directorsVision, setDirectorsVision] = useState<string>('');
     const [scenes, setScenes] = useState<Scene[]>([]);
@@ -156,31 +233,50 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
     // Initial data load
     useEffect(() => {
         const loadData = async () => {
-            setIsLoading(true);
-            const bible = await db.getStoryBible();
-            const vision = await db.getData('directorsVision');
-            const sceneList = await db.getAllScenes();
-            
-            if (bible) {
-                setStoryBible(bible);
-                if (vision) {
-                    setDirectorsVision(vision);
-                    if (sceneList.length > 0) {
-                        setScenes(sceneList);
-                        setWorkflowStage('director');
-                    } else {
-                        setWorkflowStage('vision');
-                    }
-                } else {
-                    setWorkflowStage('bible');
-                }
-            } else {
-                setWorkflowStage('idea');
+            try {
+                setIsLoading(true);
+                const bible = await db.getStoryBible();
+                const vision = await db.getData('directorsVision');
+                const sceneList = await db.getAllScenes();
+                
+                if (bible) setStoryBible(bible);
+                if (vision) setDirectorsVision(vision);
+                if (sceneList.length > 0) setScenes(sceneList);
+            } catch (error) {
+                console.error('[useProjectData] Failed to load initial data from IndexedDB:', error);
+                // Continue with empty state - user can still create new project
+            } finally {
+                // Always clear loading state, even if IndexedDB fails
+                setIsLoading(false);
             }
-            setIsLoading(false);
         };
         loadData();
     }, []);
+
+    // Sync workflow stage with loaded data (handles fixtures and manual stage changes)
+    useEffect(() => {
+        if (isLoading) return; // Don't sync during initial load
+        
+        // Determine minimum required stage based on current data
+        let minRequiredStage: WorkflowStage = 'idea';
+        if (storyBible) {
+            minRequiredStage = 'bible';
+            if (scenes.length > 0) {
+                // Once scenes exist, user must have gone through vision stage
+                minRequiredStage = 'director';
+            }
+        }
+        
+        // Only auto-advance if current stage is behind the minimum required
+        // This allows manual navigation forward (e.g., bible -> vision) without auto-reset
+        const stageOrder: WorkflowStage[] = ['idea', 'bible', 'vision', 'director', 'review'];
+        const currentStageIndex = stageOrder.indexOf(workflowStage);
+        const minRequiredStageIndex = stageOrder.indexOf(minRequiredStage);
+        
+        if (currentStageIndex < minRequiredStageIndex) {
+            setWorkflowStage(minRequiredStage);
+        }
+    }, [isLoading, storyBible, scenes.length, workflowStage, setWorkflowStage]);
 
     // Persist core data on change
     useEffect(() => {
@@ -197,18 +293,30 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
 
     const handleGenerateStoryBible = useCallback(async (idea: string, genre: string = 'sci-fi', addToast: (message: string, type: ToastMessage['type']) => void) => {
         setIsLoading(true);
+        
+        // Safety timeout: ensure loading state clears even if async operation hangs
+        const safetyTimeoutMs = 150000; // 150 seconds max wait
+        const safetyTimer = setTimeout(() => {
+            console.error('[handleGenerateStoryBible] Safety timeout triggered - clearing stuck loading state');
+            setIsLoading(false);
+            addToast('Story Bible generation timed out. Please try again or check your network connection.', 'error');
+        }, safetyTimeoutMs);
+        
         try {
             const bible = await planActions.generateStoryBible(idea, genre, logApiCall, updateApiStatus);
+            clearTimeout(safetyTimer);
             setStoryBible(bible);
             setWorkflowStage('bible');
             addToast('Story Bible generated successfully!', 'success');
         } catch (e) {
+            clearTimeout(safetyTimer);
             console.error(e);
             addToast(e instanceof Error ? e.message : 'Failed to generate Story Bible.', 'error');
         } finally {
+            clearTimeout(safetyTimer);
             setIsLoading(false);
         }
-    }, [logApiCall, updateApiStatus]);
+    }, [logApiCall, updateApiStatus, planActions, setWorkflowStage]);
 
     const handleGenerateScenes = useCallback(async (
         vision: string, 
@@ -216,74 +324,132 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         setGeneratedImages: React.Dispatch<React.SetStateAction<Record<string, string>>>,
         updateSceneStatus?: (sceneId: string, status: SceneGenerationStatus, progress?: number, error?: string) => void
     ) => {
-        if (!storyBible) return;
+        console.log('[handleGenerateScenes] START - Vision length:', vision?.length || 0);
+        console.log('[handleGenerateScenes] Story Bible present:', !!storyBible);
+        
+        if (!storyBible) {
+            console.error('[handleGenerateScenes] ABORT - No story bible available');
+            addToast('Story Bible is missing. Please generate a Story Bible first.', 'error');
+            return;
+        }
+
+        console.log('[handleGenerateScenes] Setting loading state and storing vision');
         setIsLoading(true);
         setDirectorsVision(vision);
-        try {
-            const sceneList = await planActions.generateSceneList(storyBible.plotOutline, vision, logApiCall, updateApiStatus);
-            const newScenes: Scene[] = sceneList.map(s => ({
-                id: `scene_${Date.now()}_${Math.random()}`,
-                title: s.title,
-                summary: s.summary,
-                timeline: { shots: [], shotEnhancers: {}, transitions: [], negativePrompt: '' },
-            }));
-            setScenes(newScenes);
-            setWorkflowStage('director');
-            
-            // Mark all scenes as pending
-            newScenes.forEach(s => {
-                updateSceneStatus?.(s.id, 'pending', 0);
-            });
-            
-            addToast(`${newScenes.length} scenes generated! Now generating keyframe images.`, 'info');
-            
-            setGenerationProgress({ current: 0, total: newScenes.length, task: 'Generating Scene Keyframes...' });
-
-            let successes = 0;
-            for (let i = 0; i < newScenes.length; i++) {
-                const scene = newScenes[i];
-                try {
-                    // Mark as generating
-                    updateSceneStatus?.(scene.id, 'generating', 10);
-                    
-                    const taskMessage = `Generating keyframe for scene: "${scene.title}"`;
-                    setGenerationProgress(prev => ({ ...prev, current: i + 1, task: taskMessage }));
-                    
-                    const image = await mediaActions.generateKeyframeForScene(vision, scene.summary, scene.id, logApiCall, updateApiStatus);
-                    
-                    setGeneratedImages(prev => ({ ...prev, [scene.id]: image }));
-                    
-                    // Mark as complete
-                    updateSceneStatus?.(scene.id, 'complete', 100);
-                    successes++;
-                } catch (e) {
-                    console.error(`Failed to generate keyframe for scene "${scene.title}":`, e);
-                    // Mark as failed
-                    updateSceneStatus?.(scene.id, 'failed', 0, e instanceof Error ? e.message : 'Unknown error');
-                }
-
-                // Add a delay after each request (except the last) to stay well under RPM limits.
-                if (i < newScenes.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 1100)); // ~55 RPM max
-                }
-            }
-            
-            setGenerationProgress({ current: 0, total: 0, task: '' }); // Reset progress bar
-
-            if (successes === newScenes.length) {
-                addToast('All scene keyframes generated successfully!', 'success');
-            } else {
-                 addToast(`Generated ${successes}/${newScenes.length} keyframes. Some images failed due to API errors.`, successes > 0 ? 'info' : 'error');
-            }
-
-        } catch (e) {
-            console.error(e);
-            addToast(e instanceof Error ? e.message : 'Failed to generate scenes.', 'error');
-        } finally {
+        
+        // Safety timeout: ensure loading state clears even if async operation hangs
+        const safetyTimeoutMs = 180000; // 180 seconds max wait (longer than Story Bible due to scene generation complexity)
+        const safetyTimer = setTimeout(() => {
+            console.error('[handleGenerateScenes] Safety timeout triggered - clearing stuck loading state');
             setIsLoading(false);
             setGenerationProgress({ current: 0, total: 0, task: '' });
+            addToast('Scene generation timed out. Please try again or check your network connection.', 'error');
+            updateApiStatus('error', 'Generation timed out');
+        }, safetyTimeoutMs);
+        
+        try {
+            // Progressive feedback: Step 1 - Analyzing vision
+            console.log('[handleGenerateScenes] Step 1: Analyzing Director\'s Vision');
+            updateApiStatus('loading', 'Analyzing your Director\'s Vision...');
+            await new Promise(resolve => setTimeout(resolve, 500)); // Brief pause for UX
+            
+            // Progressive feedback: Step 2 - Generating scene list
+            console.log('[handleGenerateScenes] Step 2: Calling generateSceneList');
+            updateApiStatus('loading', 'Generating scene list from plot outline...');
+            
+            const sceneList = await planActions.generateSceneList(
+                storyBible.plotOutline, 
+                vision, 
+                logApiCall, 
+                updateApiStatus
+            );
+            
+            console.log('[handleGenerateScenes] Scene list received:', sceneList?.length || 0, 'scenes');
+            
+            if (!sceneList || sceneList.length === 0) {
+                console.warn('[handleGenerateScenes] Empty scene list returned');
+                throw new Error('No scenes were generated. Please try again with a different vision.');
+            }
+            
+            // Progressive feedback: Step 3 - Creating scene objects
+            console.log('[handleGenerateScenes] Step 3: Creating scene objects');
+            updateApiStatus('loading', `Creating ${sceneList.length} scenes...`);
+            setGenerationProgress({ current: 0, total: sceneList.length, task: 'Creating scenes' });
+            
+            const newScenes: Scene[] = sceneList.map((s, idx) => {
+                console.log(`[handleGenerateScenes] Creating scene ${idx + 1}/${sceneList.length}: "${s.title}"`);
+                setGenerationProgress({ 
+                    current: idx + 1, 
+                    total: sceneList.length, 
+                    task: `Scene: ${s.title.slice(0, 30)}...` 
+                });
+                
+                return {
+                    id: `scene_${Date.now()}_${Math.random()}`,
+                    title: s.title,
+                    summary: s.summary,
+                    temporalContext: s.temporalContext,
+                    timeline: { shots: [], shotEnhancers: {}, transitions: [], negativePrompt: '' },
+                };
+            });
+            
+            console.log('[handleGenerateScenes] Step 4: Updating state with new scenes');
+            setScenes(newScenes);
+            
+            // NEW: Validate scene progression
+            console.log('[handleGenerateScenes] Step 4.5: Validating scene progression');
+            const progressionValidation = validateSceneProgression(newScenes, storyBible);
+            
+            if (!progressionValidation.isValid) {
+                console.warn('[Scene Progression] Validation errors:', progressionValidation.errors);
+            }
+            
+            if (progressionValidation.warnings.length > 0) {
+                console.warn('[Scene Progression] Validation warnings:', progressionValidation.warnings);
+                // TODO: Store warnings for UI display (requires App.tsx state integration)
+                // For now, just log them - they'll be visible in console
+            }
+            
+            console.log('[Scene Progression] Metadata:', progressionValidation.metadata);
+            
+            console.log('[handleGenerateScenes] Step 5: Transitioning workflow stage to "director"');
+            setWorkflowStage('director');
+            
+            // Mark all scenes as ready for review (no auto-generation)
+            console.log('[handleGenerateScenes] Step 6: Marking scenes as complete');
+            newScenes.forEach((s, idx) => {
+                updateSceneStatus?.(s.id, 'complete', 100);
+                console.log(`[handleGenerateScenes] Scene ${idx + 1} marked complete: ${s.id}`);
+            });
+            
+            console.log('[handleGenerateScenes] Step 7: Showing success notification');
+            updateApiStatus('success', `${newScenes.length} scenes ready for review!`);
+            addToast(`${newScenes.length} scenes generated! Review and refine them, then generate images when ready.`, 'success');
+            
+            console.log('[handleGenerateScenes] SUCCESS - Complete');
+
+        } catch (e) {
+            clearTimeout(safetyTimer);
+            console.error('[handleGenerateScenes] ERROR caught:', e);
+            console.error('[handleGenerateScenes] Error details:', {
+                message: e instanceof Error ? e.message : 'Unknown error',
+                stack: e instanceof Error ? e.stack : undefined
+            });
+            
+            updateApiStatus('error', e instanceof Error ? e.message : 'Failed to generate scenes');
+            addToast(e instanceof Error ? e.message : 'Failed to generate scenes.', 'error');
+            
+            // Reset to vision stage for retry
+            console.log('[handleGenerateScenes] Resetting to "vision" stage for retry');
+            setWorkflowStage('vision');
+        } finally {
+            clearTimeout(safetyTimer);
+            console.log('[handleGenerateScenes] FINALLY - Cleaning up');
+            setIsLoading(false);
+            setGenerationProgress({ current: 0, total: 0, task: '' });
+            console.log('[handleGenerateScenes] END');
         }
-    }, [storyBible, logApiCall, updateApiStatus, setGenerationProgress, planActions, mediaActions]);
+    }, [storyBible, logApiCall, updateApiStatus, setGenerationProgress, planActions]);
 
 
     const applySuggestions = useCallback((suggestions: Suggestion[], sceneIdToUpdate?: string, addToast?: (message: string, type: ToastMessage['type']) => void) => {

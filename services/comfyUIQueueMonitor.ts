@@ -7,6 +7,23 @@
 
 import { ComfyUIWorkflowEvent, ComfyUISceneData } from './comfyUICallbackService';
 
+/**
+ * Normalize ComfyUI URLs for DEV mode proxy routing.
+ * In development, routes all ComfyUI requests through Vite proxy to avoid CORS issues.
+ * In production, uses direct URLs.
+ * 
+ * @param url - The ComfyUI URL from settings (e.g., http://127.0.0.1:8188)
+ * @returns Proxy path in DEV mode (/api/comfyui) or original URL in production
+ */
+const getComfyUIBaseUrl = (url: string): string => {
+    // In development, use Vite proxy to avoid CORS issues with localhost/127.0.0.1
+    if (import.meta.env.DEV) {
+        return '/api/comfyui';
+    }
+    // In production, use direct URL
+    return url.endsWith('/') ? url.slice(0, -1) : url;
+};
+
 export interface ComfyUIQueueItem {
   number: number;
   outputs: Record<string, any>;
@@ -129,7 +146,8 @@ export class ComfyUIQueueMonitor {
     if (!this.comfyUIUrl) return null;
 
     try {
-      const response = await fetch(`${this.comfyUIUrl}/history`, {
+      const baseUrl = getComfyUIBaseUrl(this.comfyUIUrl);
+      const response = await fetch(`${baseUrl}/history`, {
         mode: 'cors'
       });
 

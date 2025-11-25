@@ -23,6 +23,7 @@ export interface CliOptions {
     localLLMModel?: string;
     localLLMTemperature?: number;
     llmRequestFormat?: LLMRequestFormat;
+    customStoryIdea?: string;
 }
 
 export interface GeneratedScene {
@@ -90,7 +91,7 @@ export const SAMPLE_SCENES: Array<LLMScenePayload> = [
             'Ultra-wide cinematic shot of a courier silhouetted on a floating rail bridge, vaporous aurora and neon mist swirling beneath, volumetric lighting, shallow haze, 1970s film grain',
         mood: 'Resolute, breathless',
         cameraMovement: 'Slow, deliberate dolly forward across the bridge line',
-        expectedFrames: 25,
+        expectedFrames: 49,
     },
     {
         title: 'Archive Heartbeat',
@@ -99,7 +100,7 @@ export const SAMPLE_SCENES: Array<LLMScenePayload> = [
             'Slow dolly shot through a vaulted archive lit by cascading holograms, bronze shelves, reflective marble floor, micro drones tracing glowing calligraphy, richly saturated cinematic palette',
         mood: 'Wondrous, reverent',
         cameraMovement: 'Floating steadicam between marble columns',
-        expectedFrames: 25,
+        expectedFrames: 49,
     },
     {
         title: 'Rainlight Market',
@@ -108,7 +109,7 @@ export const SAMPLE_SCENES: Array<LLMScenePayload> = [
             'Handheld tracking shot weaving through a rain-soaked bazaar, bioluminescent fabric stalls, reflections on stone, warm lanterns contrasted with cool cyan signage, shallow depth of field',
         mood: 'Alive, kinetic',
         cameraMovement: 'Handheld chase through crowd',
-        expectedFrames: 25,
+        expectedFrames: 49,
     },
 ];
 
@@ -164,7 +165,7 @@ export const buildGeneratedScene = async (
         prompt: template.prompt,
         mood: template.mood ?? 'Unspecified',
         keyframePath,
-        expectedFrames: template.expectedFrames ?? 25,
+        expectedFrames: template.expectedFrames ?? 49,
         negativePrompt: normalizeNegativePrompt(template.negativePrompt),
         cameraMovement: template.cameraMovement,
         palette: template.palette,
@@ -264,6 +265,7 @@ export const generateStoryAssets = async (options: CliOptions) => {
                     format: resolvedRequestFormat,
                     model: resolvedModel,
                     temperature: resolvedOptions.localLLMTemperature,
+                    customStoryIdea: resolvedOptions.customStoryIdea,
                 });
                 llmMetadata.status = 'success';
                 llmMetadata.scenesReceived = llmResponse?.scenes?.length ?? 0;

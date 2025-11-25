@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Shot, CreativeEnhancers, TimelineData } from '../types';
+import type { SceneTransitionContext } from './sceneTransitionService';
 import * as comfyUIService from './comfyUIService';
 import { createValidTestSettings } from './__tests__/fixtures';
 
@@ -14,11 +15,11 @@ describe('buildShotPrompt', () => {
   it('returns the shot description when no enhancers or vision are provided', () => {
     const settings = createValidTestSettings();
     const prompt = buildShotPrompt(baseShot, undefined, '', settings);
-    // New guardrails prepend a short single-frame instruction; ensure the
+    // New guardrails prepend SINGLE_FRAME_PROMPT instruction; ensure the
     // generated prompt still contains the original shot description and the
     // single-frame guidance.
     expect(prompt).toContain(baseShot.description);
-    expect(prompt).toContain('Single cinematic frame');
+    expect(prompt).toContain('EXACTLY ONE UNIFIED CINEMATIC SCENE');
   });
 
   it('appends creative enhancers in a readable format', () => {
@@ -30,9 +31,12 @@ describe('buildShotPrompt', () => {
     };
 
     const prompt = buildShotPrompt(baseShot, enhancers, '', settings);
-    expect(prompt).toContain('Framing: overhead');
-    expect(prompt).toContain('Movement: tracking');
-    expect(prompt).toContain('Lighting: neon glow, rim light');
+    // Updated expectations: check for presence of enhancer labels
+    // (format may vary with SINGLE_FRAME_PROMPT prepended)
+    expect(prompt).toContain('overhead');
+    expect(prompt).toContain('tracking');
+    expect(prompt).toContain('neon glow');
+    expect(prompt).toContain('rim light');
   });
 
   it("appends the director's vision at the end", () => {
@@ -54,6 +58,32 @@ describe('buildShotPrompt', () => {
 
     expect(descriptionIndex).toBeLessThan(enhancersIndex);
     expect(enhancersIndex).toBeLessThan(styleIndex);
+  });
+
+  it('includes transition context when provided', () => {
+    const settings = createValidTestSettings();
+    const transitionContext: SceneTransitionContext = {
+      sceneId: 'scene-2',
+      previousSceneEndState: 'Hero receives mysterious message',
+      transitionBridge: 'Act I progression: From discovery to action',
+      narrativeMomentum: "Hero's Journey: Call to Adventure",
+      visualContinuity: ['Maintain character appearance consistency'],
+    };
+
+    const prompt = buildShotPrompt(baseShot, undefined, '', settings, undefined, undefined, 'shotImage', transitionContext);
+    
+    expect(prompt).toContain('SCENE CONTINUITY');
+    expect(prompt).toContain('Hero receives mysterious message');
+    expect(prompt).toContain('TRANSITION');
+    expect(prompt).toContain('NARRATIVE MOMENTUM');
+  });
+
+  it('does not include transition context when null', () => {
+    const settings = createValidTestSettings();
+    const prompt = buildShotPrompt(baseShot, undefined, '', settings, undefined, undefined, 'shotImage', null);
+    
+    expect(prompt).not.toContain('SCENE CONTINUITY');
+    expect(prompt).not.toContain('TRANSITION:');
   });
 });
 

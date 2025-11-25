@@ -69,7 +69,8 @@ export const TemplateContextProvider: React.FC<TemplateContextProviderProps> = (
     setCoveredElements(new Set());
   }, []);
   
-  const value: TemplateContextValue = {
+  // P2 Optimization (2025-11-25): Memoize context value to prevent unnecessary re-renders
+  const value = useMemo<TemplateContextValue>(() => ({
     selectedTemplate,
     mandatoryElements,
     coveredElements,
@@ -78,7 +79,15 @@ export const TemplateContextProvider: React.FC<TemplateContextProviderProps> = (
     setSelectedTemplate,
     updateCoveredElements,
     resetCoverage,
-  };
+  }), [
+    selectedTemplate,
+    mandatoryElements,
+    coveredElements,
+    elementCoverage,
+    coveragePercentage,
+    updateCoveredElements,
+    resetCoverage,
+  ]);
   
   return (
     <TemplateContext.Provider value={value}>

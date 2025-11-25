@@ -1,72 +1,12 @@
-import React, { createContext, useContext, useEffect } from 'react';
-import { LocalGenerationSettings, WorkflowProfile, WorkflowProfileMetadata } from '../types';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { LocalGenerationSettings } from '../types';
 import { usePersistentState } from '../utils/hooks';
-
-const WORKFLOW_PROFILE_DEFINITIONS: Array<{ id: string; label: string }> = [
-    { id: 'wan-t2i', label: 'WAN Text→Image (Keyframe)' },
-    { id: 'wan-i2v', label: 'WAN Text+Image→Video' },
-];
-const PRIMARY_WORKFLOW_PROFILE_ID = 'wan-i2v';
-
-const createDefaultProfileMetadata = (): WorkflowProfileMetadata => ({
-    lastSyncedAt: Date.now(),
-    highlightMappings: [],
-    missingMappings: [],
-    warnings: [],
-});
-
-const createDefaultWorkflowProfiles = (): Record<string, WorkflowProfile> =>
-    WORKFLOW_PROFILE_DEFINITIONS.reduce((acc, def) => {
-        acc[def.id] = {
-            id: def.id,
-            label: def.label,
-            workflowJson: '',
-            mapping: {},
-            metadata: createDefaultProfileMetadata(),
-        };
-        return acc;
-    }, {} as Record<string, WorkflowProfile>);
-
-const normalizeWorkflowProfiles = (settings: LocalGenerationSettings): Record<string, WorkflowProfile> => {
-    const source = settings.workflowProfiles ?? {};
-        const primaryJson = source[PRIMARY_WORKFLOW_PROFILE_ID]?.workflowJson ?? settings.workflowJson ?? '';
-        const primaryMapping = source[PRIMARY_WORKFLOW_PROFILE_ID]?.mapping ?? (settings.mapping ?? {});
-        const primaryMetadata = source[PRIMARY_WORKFLOW_PROFILE_ID]?.metadata;
-
-        return WORKFLOW_PROFILE_DEFINITIONS.reduce((acc, def) => {
-            const previous = source[def.id];
-            acc[def.id] = {
-                id: def.id,
-                label: def.label,
-                workflowJson:
-                    previous?.workflowJson ??
-                    (def.id === PRIMARY_WORKFLOW_PROFILE_ID ? primaryJson : ''),
-                mapping:
-                    previous?.mapping ??
-                    (def.id === PRIMARY_WORKFLOW_PROFILE_ID ? primaryMapping : {}),
-                metadata:
-                    previous?.metadata ??
-                    (def.id === PRIMARY_WORKFLOW_PROFILE_ID
-                        ? primaryMetadata ?? createDefaultProfileMetadata()
-                        : createDefaultProfileMetadata()),
-            };
-            return acc;
-        }, {} as Record<string, WorkflowProfile>);
-};
-
-export const DEFAULT_LOCAL_GENERATION_SETTINGS: LocalGenerationSettings = {
-    comfyUIUrl: 'http://127.0.0.1:8188',
-    comfyUIClientId: typeof crypto !== 'undefined' ? crypto.randomUUID() : '',
-    comfyUIWebSocketUrl: 'ws://127.0.0.1:8188/ws',
-    workflowJson: '',
-    mapping: {},
-    workflowProfiles: createDefaultWorkflowProfiles(),
-    llmProviderUrl: 'http://192.168.50.192:1234/v1/chat/completions',
-    llmModel: 'mistralai/mistral-7b-instruct-v0.3',
-    llmTemperature: 0.35,
-    llmTimeoutMs: 120000,
-    llmRequestFormat: 'openai-chat',
-};
+import { 
+    WORKFLOW_PROFILE_DEFINITIONS, 
+    PRIMARY_WORKFLOW_PROFILE_ID, 
+    normalizeWorkflowProfiles, 
+    DEFAULT_LOCAL_GENERATION_SETTINGS 
+} from '../utils/contextConstants';
 
 type LocalGenerationSettingsContextValue = {
     settings: LocalGenerationSettings;
@@ -77,10 +17,44 @@ const LocalGenerationSettingsContext = createContext<LocalGenerationSettingsCont
 
 export const LocalGenerationSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [settings, setSettings] = usePersistentState<LocalGenerationSettings>('localGenSettings', DEFAULT_LOCAL_GENERATION_SETTINGS);
+    const [isInitialized, setIsInitialized] = useState(false);
 
+    // ONE-TIME normalization on mount (Phase 1 Fix: 2025-11-23)
+    // Previous issue: useEffect with [settings, setSettings] dependencies caused race condition
+    // where imported profiles were overwritten by normalization before persistence.
+    // Solution: Run normalization only once on mount, not on every settings change.
     useEffect(() => {
+        if (isInitialized) {
+            console.log('[LocalGenSettings] ✅ Already initialized - skipping normalization check');
+            return; // Only run once
+        }
+        
+        console.log('[LocalGenSettings] 🔍 One-time initialization check triggered');
+        console.log('[LocalGenSettings]    Profile keys:', Object.keys(settings.workflowProfiles || {}));
+        
         const hasAllProfiles = WORKFLOW_PROFILE_DEFINITIONS.every(def => Boolean(settings.workflowProfiles?.[def.id]));
+        console.log('[LocalGenSettings]    hasAllProfiles:', hasAllProfiles);
+        
         if (!hasAllProfiles) {
+            // Only normalize if profiles are actually missing/incomplete
+            // Check if any existing profile has actual workflow data
+            const hasRealWorkflows = settings.workflowProfiles && 
+                Object.values(settings.workflowProfiles).some(p => {
+                    const hasData = p?.workflowJson && p.workflowJson.length > 100;
+                    console.log('[LocalGenSettings]      Profile:', p?.id, 'hasData:', hasData, 'jsonLength:', p?.workflowJson?.length);
+                    return hasData;
+                });
+            
+            console.log('[LocalGenSettings]    hasRealWorkflows:', hasRealWorkflows);
+            
+            if (hasRealWorkflows) {
+                // Profiles have real data but structure is incomplete - don't normalize
+                console.info('[LocalGenSettings] ✅ SKIP normalization - profiles have workflow data');
+                setIsInitialized(true);
+                return;
+            }
+            
+            console.warn('[LocalGenSettings] ⚠️  NORMALIZING - initializing with empty defaults');
             const normalized = normalizeWorkflowProfiles(settings);
             setSettings(prev => ({
                 ...prev,
@@ -88,8 +62,12 @@ export const LocalGenerationSettingsProvider: React.FC<{ children: React.ReactNo
                 workflowJson: normalized[PRIMARY_WORKFLOW_PROFILE_ID]?.workflowJson ?? prev.workflowJson,
                 mapping: normalized[PRIMARY_WORKFLOW_PROFILE_ID]?.mapping ?? prev.mapping,
             }));
+        } else {
+            console.log('[LocalGenSettings] ✅ All profiles present on mount - no normalization needed');
         }
-    }, [settings, setSettings]);
+        
+        setIsInitialized(true);
+    }, [isInitialized]); // CRITICAL FIX: Only depends on init flag, not settings
 
     // Make settings globally available for services
     useEffect(() => {

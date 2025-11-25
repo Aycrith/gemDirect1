@@ -101,7 +101,15 @@ const createControlledGenerator = (
   return { generator, emit };
 };
 
-afterEach(() => {
+beforeEach(() => {
+  // Reset any pending timers and DOM state before each test
+  vi.clearAllTimers();
+  vi.clearAllMocks();
+});
+
+afterEach(async () => {
+  // Wait for any pending promises to resolve
+  await new Promise(resolve => setTimeout(resolve, 0));
   vi.useRealTimers();
   vi.restoreAllMocks();
   cleanup();

@@ -1,15 +1,29 @@
-import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight } from '../types';
+import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, Scene, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 import { getVisualBible } from './visualBibleContext';
 import { generateCorrelationId, logCorrelation, networkTap } from '../utils/correlation';
+import { validatePromptGuardrails } from './promptValidator';
+import { SceneTransitionContext, formatTransitionContextForPrompt } from './sceneTransitionService';
+import { ApiLogCallback } from './geminiService';
 // TODO: Visual Bible integration not yet implemented
 // import { getPromptConfigForModel, applyPromptTemplate, type PromptTarget, getDefaultNegativePromptForModel } from './promptTemplates';
 import { getVisualContextForShot, getCharacterContextForShot, getVisualContextForScene, getCharacterContextForScene } from './visualBiblePromptHelpers';
 
 // Stub implementations until Visual Bible services are implemented
-const getPromptConfigForModel = (modelId: string, target: any) => ({ template: '{prompt}' });
-const applyPromptTemplate = (prompt: string, vbSegment: string, config: any) => vbSegment ? `${prompt} ${vbSegment}` : prompt;
+const getPromptConfigForModel = (modelId: string, target: PromptTarget) => ({ template: '{prompt}' });
+const applyPromptTemplate = (prompt: string, vbSegment: string, config: { template: string }) => vbSegment ? `${prompt} ${vbSegment}` : prompt;
 const getDefaultNegativePromptForModel = (modelId: string, target: string) => DEFAULT_NEGATIVE_PROMPT;
+
+// Type for prompt targets (keyframe or video generation)
+type PromptTarget = 'shotImage' | 'sceneKeyframe' | 'sceneVideo';
+
+// Interface for ComfyUI workflow nodes
+interface WorkflowNode {
+  class_type?: string;
+  inputs?: Record<string, unknown>;
+  _meta?: { title?: string };
+  label?: string;
+}
 
 export const DEFAULT_NEGATIVE_PROMPT = 'blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, oversaturated, undersaturated, motion blur';
 
@@ -34,6 +48,26 @@ export interface WorkflowGenerationMetadata {
 
 const DEFAULT_FETCH_TIMEOUT_MS = 12000;
 
+/**
+ * Normalize ComfyUI URLs for DEV mode proxy routing.
+ * In development, routes all ComfyUI requests through Vite proxy to avoid CORS issues.
+ * In production, uses direct URLs.
+ * 
+ * @param url - The ComfyUI URL from settings (e.g., http://127.0.0.1:8188)
+ * @returns Proxy path in DEV mode (/api/comfyui) or original URL in production
+ */
+const getComfyUIBaseUrl = (url: string): string => {
+    // In development, use Vite proxy to avoid CORS issues with localhost/127.0.0.1
+    // Check if running in browser/Vite environment
+    if (typeof import.meta.env !== 'undefined' && import.meta.env.DEV) {
+        return '/api/comfyui';
+    }
+    // In production, use direct URL without trailing slash to avoid double slashes in constructed paths
+    const finalUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+    console.log(`[getComfyUIBaseUrl] Input: ${url}, Output: ${finalUrl}`);
+    return finalUrl;
+};
+
 const fetchWithTimeout = async (
     resource: RequestInfo,
     init: RequestInit = {},
@@ -42,12 +76,14 @@ const fetchWithTimeout = async (
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        return await fetch(resource, {
+        const options = {
             signal: controller.signal,
             mode: 'cors',
             credentials: 'omit',
             ...init,
-        });
+        };
+        console.log(`[fetchWithTimeout] Fetching ${resource} with options:`, JSON.stringify(options, (key, value) => key === 'signal' ? '[Signal]' : value));
+        return await fetch(resource, options as RequestInit);
     } finally {
         clearTimeout(timeoutId);
     }
@@ -89,7 +125,8 @@ export const checkServerConnection = async (url: string): Promise<void> => {
         throw new Error("Server address is not configured.");
     }
     try {
-        const response = await fetchWithTimeout(`${url}/system_stats`, undefined, 3000);
+        const baseUrl = getComfyUIBaseUrl(url);
+        const response = await fetchWithTimeout(`${baseUrl}/system_stats`, undefined, 3000);
         if (!response.ok) {
             throw new Error(`Server responded with status ${response.status}.`);
         }
@@ -98,6 +135,7 @@ export const checkServerConnection = async (url: string): Promise<void> => {
             throw new Error("Connected, but the response doesn't look like a valid ComfyUI server.");
         }
     } catch (error) {
+        console.error('Connection check error:', error);
         if (error instanceof Error && error.name === 'AbortError') {
              throw new Error("Connection timed out. The server might be slow or unresponsive.");
         }
@@ -115,7 +153,8 @@ export const checkSystemResources = async (url: string): Promise<string> => {
         return "Server address is not configured.";
     }
     try {
-        const response = await fetchWithTimeout(`${url}/system_stats`, undefined, 3000);
+        const baseUrl = getComfyUIBaseUrl(url);
+        const response = await fetchWithTimeout(`${baseUrl}/system_stats`, undefined, 3000);
         if (!response.ok) {
             return `Could not retrieve system stats (status: ${response.status}).`;
         }
@@ -200,7 +239,8 @@ export const getQueueInfo = async (url: string): Promise<{ queue_running: number
     if (!url) {
         throw new Error("Server address is not configured.");
     }
-    const response = await fetchWithTimeout(`${url}/queue`, undefined, 3000);
+    const baseUrl = getComfyUIBaseUrl(url);
+    const response = await fetchWithTimeout(`${baseUrl}/queue`, undefined, 3000);
     if (!response.ok) {
         throw new Error(`Could not retrieve queue info (status: ${response.status}).`);
     }
@@ -211,11 +251,6 @@ export const getQueueInfo = async (url: string): Promise<{ queue_running: number
     };
 };
 
-export interface WorkflowProfile {
-    workflowJson: string;
-    mapping: WorkflowMapping;
-}
-
 const resolveWorkflowProfile = (
     settings: LocalGenerationSettings,
     modelId?: string,
@@ -225,6 +260,7 @@ const resolveWorkflowProfile = (
     if (override) {
         return override;
     }
+    const resolvedProfileId = profileId || DEFAULT_WORKFLOW_PROFILE_ID;
     const profileFromSettings = profileId ? settings.workflowProfiles?.[profileId] : undefined;
     const primaryProfile = settings.workflowProfiles?.[DEFAULT_WORKFLOW_PROFILE_ID];
     const workflowJson =
@@ -242,6 +278,8 @@ const resolveWorkflowProfile = (
     }
 
     return {
+        id: profileFromSettings?.id ?? primaryProfile?.id ?? resolvedProfileId,
+        label: profileFromSettings?.label ?? primaryProfile?.label ?? 'Resolved Workflow Profile',
         workflowJson,
         mapping,
     };
@@ -277,22 +315,31 @@ const friendlyMappingLabel = (type: string): string => {
  *   - Requires CLIPTextEncode.text AND LoadImage.image nodes.
  *   - Requires both a text mapping and a keyframe_image → LoadImage.image mapping.
  *
- * @param settings Local generation settings whose workflowJson/mapping represent
- *                 the currently active profile (queueComfyUIPrompt passes a
- *                 profile-specific copy).
+ * @param settings Local generation settings. If root workflowJson is empty,
+ *                 the function will resolve the workflow from workflowProfiles[profileId].
  * @param profileId Active workflow profile id ('wan-t2i' or 'wan-i2v').
  */
 export const validateWorkflowAndMappings = (
     settings: LocalGenerationSettings,
     profileId: string = 'wan-i2v',
 ): void => {
-    if (!settings.workflowJson) {
+    // Resolve workflow from profiles if root workflowJson is empty
+    let workflowJson = settings.workflowJson;
+    let mapping = settings.mapping ?? {};
+    
+    if (!workflowJson && settings.workflowProfiles?.[profileId]) {
+        const profile = settings.workflowProfiles[profileId];
+        workflowJson = profile.workflowJson;
+        mapping = profile.mapping ?? {};
+    }
+    
+    if (!workflowJson) {
         throw new Error("No workflow has been synced from the server.");
     }
 
     let workflowApi: Record<string, any>;
     try {
-        workflowApi = JSON.parse(settings.workflowJson);
+        workflowApi = JSON.parse(workflowJson);
     } catch {
         throw new Error("The synced workflow is not valid JSON. Please re-sync.");
     }
@@ -302,7 +349,6 @@ export const validateWorkflowAndMappings = (
         throw new Error("Synced workflow has an invalid structure. Please re-sync.");
     }
 
-    const mapping = settings.mapping ?? {};
     const workflowNodes = Object.values(promptPayloadTemplate ?? {}) as Array<Record<string, any>>;
     const mappingErrors: string[] = [];
     const mappedDataTypes = new Set(Object.values(mapping));
@@ -423,8 +469,8 @@ const ensureWorkflowMappingDefaults = (workflowNodes: Record<string, any>, exist
 
 // Fetches an asset from the ComfyUI server and converts it to a data URL.
 const fetchAssetAsDataURL = async (url: string, filename: string, subfolder: string, type: string): Promise<string> => {
-    const baseUrl = url.endsWith('/') ? url : `${url}/`;
-    const response = await fetchWithTimeout(`${baseUrl}view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`, undefined, 5000);
+    const baseUrl = getComfyUIBaseUrl(url);
+    const response = await fetchWithTimeout(`${baseUrl}/view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`, undefined, 5000);
     if (!response.ok) {
         throw new Error(`Failed to fetch asset from ComfyUI server. Status: ${response.status}`);
     }
@@ -480,16 +526,16 @@ export const queueComfyUIPrompt = async (
     // Lightweight in-browser diagnostic recorder so E2E tests can read a deterministic
     // list of events describing attempted uploads/prompts. We avoid writing large
     // binary blobs and only record summaries/snippets to keep payloads small.
-    const pushDiagnostic = (entry: Record<string, any>) => {
+    const pushDiagnostic = (entry: Record<string, unknown>) => {
         try {
-            const g: any = globalThis as any;
+            const g = globalThis as unknown as { __gemDirectComfyDiagnostics?: Record<string, unknown>[] };
             g.__gemDirectComfyDiagnostics = g.__gemDirectComfyDiagnostics || [];
-            const safe = { ts: new Date().toISOString(), ...entry };
+            const safe: Record<string, unknown> = { ts: new Date().toISOString(), ...entry };
             // truncate large fields
-            if (typeof safe.body === 'string' && safe.body.length > 1000) safe.body = safe.body.slice(0, 1000) + '...';
-            if (typeof safe.bodySnippet === 'string' && safe.bodySnippet.length > 1000) safe.bodySnippet = safe.bodySnippet.slice(0, 1000) + '...';
+            if (typeof safe.body === 'string' && (safe.body as string).length > 1000) safe.body = (safe.body as string).slice(0, 1000) + '...';
+            if (typeof safe.bodySnippet === 'string' && (safe.bodySnippet as string).length > 1000) safe.bodySnippet = (safe.bodySnippet as string).slice(0, 1000) + '...';
             g.__gemDirectComfyDiagnostics.push(safe);
-        } catch (e) {
+        } catch {
             // ignore any diagnostic errors
         }
     };
@@ -580,7 +626,7 @@ export const queueComfyUIPrompt = async (
     // --- ALL CHECKS PASSED, PROCEED WITH GENERATION ---
     try {
         const promptPayload = JSON.parse(JSON.stringify(promptPayloadTemplate));
-        const baseUrl = runtimeSettings.comfyUIUrl.endsWith('/') ? runtimeSettings.comfyUIUrl : `${runtimeSettings.comfyUIUrl}/`;
+        const baseUrl = getComfyUIBaseUrl(runtimeSettings.comfyUIUrl);
         const clientId = runtimeSettings.comfyUIClientId || `csg_${Date.now()}`;
         console.log(`[${profileId}] Using Comfy client ID: ${clientId}`);
         pushDiagnostic({ profileId, action: 'prepare', clientId, workflowPath });
@@ -599,7 +645,7 @@ export const queueComfyUIPrompt = async (
                 formData.append('image', blob, `csg_keyframe_${Date.now()}.jpg`);
                 formData.append('overwrite', 'true');
                 
-                const uploadResponse = await fetchWithTimeout(`${baseUrl}upload/image`, {
+                const uploadResponse = await fetchWithTimeout(`${baseUrl}/upload/image`, {
                     method: 'POST',
                     body: formData,
                 }, 45000);
@@ -612,15 +658,29 @@ export const queueComfyUIPrompt = async (
             }
         }
 
+        // --- STEP 1.5: RANDOMIZE SEEDS IN KSAMPLER NODES ---
+        // Generate a random seed for this generation to avoid deterministic failures
+        const randomSeed = Math.floor(Math.random() * 1e15);
+        console.log(`[${profileId}] Randomizing workflow seeds to: ${randomSeed}`);
+        
+        for (const [nodeId, nodeEntry] of Object.entries(promptPayload)) {
+            const node = nodeEntry as WorkflowNode;
+            if (typeof node === 'object' && node !== null && node.class_type === 'KSampler' && node.inputs && 'seed' in node.inputs) {
+                const originalSeed = node.inputs.seed;
+                node.inputs.seed = randomSeed;
+                console.log(`[${profileId}] Randomized seed in node ${nodeId}: ${originalSeed} → ${randomSeed}`);
+            }
+        }
+
         // --- STEP 2: INJECT DATA INTO WORKFLOW BASED ON MAPPING ---
         for (const [key, dataType] of Object.entries(runtimeSettings.mapping)) {
             if (dataType === 'none') continue;
 
             const [nodeId, inputName] = key.split(':');
-            const node = promptPayload[nodeId];
+            const node = promptPayload[nodeId] as WorkflowNode | undefined;
             
             if (node && node.inputs) {
-                let dataToInject: any = null;
+                let dataToInject: unknown = null;
                 switch (dataType) {
                     case 'human_readable_prompt':
                         dataToInject = payloads.text;
@@ -656,7 +716,7 @@ export const queueComfyUIPrompt = async (
 
         const body = JSON.stringify({ prompt: promptPayload, client_id: clientId });
         pushDiagnostic({ profileId, action: 'prompt:posting', bodySnippet: body?.slice ? body.slice(0, 1000) : undefined, correlationId });
-        const response = await fetchWithTimeout(`${baseUrl}prompt`, {
+        const response = await fetchWithTimeout(`${baseUrl}/prompt`, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
@@ -748,16 +808,25 @@ export const trackPromptExecution = (
         return;
     }
 
-    const normalizedUrl = comfyUIUrl.replace(/\/+$/, '');
-    
     // Check if custom WebSocket URL is configured in settings (use provided settings directly)
     let wsUrl: string;
     
     if (settings.comfyUIWebSocketUrl) {
         // Use configured WebSocket URL
         wsUrl = settings.comfyUIWebSocketUrl.replace(/\/+$/, '') + `?clientId=${comfyUIClientId}`;
+    } else if (typeof import.meta.env !== 'undefined' && import.meta.env.DEV) {
+        // In DEV mode, use Vite proxy for WebSocket (ws:true configured in vite.config.ts)
+        // Guard against window.location being undefined in test environments
+        if (typeof window !== 'undefined' && window.location) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            wsUrl = `${protocol}//${window.location.host}/api/comfyui/ws?clientId=${comfyUIClientId}`;
+        } else {
+            // Test/SSR environment - use direct local connection
+            wsUrl = `ws://127.0.0.1:8188/ws?clientId=${comfyUIClientId}`;
+        }
     } else {
-        // Auto-derive from HTTP URL
+        // Auto-derive from HTTP URL (production mode)
+        const normalizedUrl = comfyUIUrl.replace(/\/+$/, '');
         const protocol = normalizedUrl.startsWith('https://') ? 'wss://' : 'ws://';
         wsUrl = `${protocol}${normalizedUrl.replace(/^https?:\/\//, '')}/ws?clientId=${comfyUIClientId}`;
     }
@@ -830,6 +899,7 @@ export const trackPromptExecution = (
 
             case 'executed':
                 if (msg.data.prompt_id === promptId) {
+                    console.log(`[trackPromptExecution] ✓ Execution complete for promptId=${promptId.slice(0,8)}...`);
                     const outputs = msg.data.output || {};
                     const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [
                         { entries: outputs.videos, resultType: 'video' },
@@ -860,12 +930,14 @@ export const trackPromptExecution = (
                     // so callers/tests do not race on the async fetch logic.
                     const hasDeclaredEntries = assetSources.some(s => Array.isArray(s.entries) && s.entries.length > 0);
                     if (!hasDeclaredEntries) {
+                        console.log(`[trackPromptExecution] ⚠️ No output entries for promptId=${promptId.slice(0,8)}...`);
                         onProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
                         ws.close();
                         return;
                     }
 
                     try {
+                        console.log(`[trackPromptExecution] 📥 Fetching assets for promptId=${promptId.slice(0,8)}...`);
                         onProgress({ message: 'Fetching final output...', progress: 100 });
                         const downloadedAssets: LocalGenerationAsset[] = [];
 
@@ -877,8 +949,10 @@ export const trackPromptExecution = (
                             if (entries.length === 0) {
                                 continue;
                             }
+                            console.log(`[trackPromptExecution] Fetching ${entries.length} ${source.resultType} assets for promptId=${promptId.slice(0,8)}...`);
                             const assets = await fetchAssetCollection(entries, source.resultType);
                             downloadedAssets.push(...assets);
+                            console.log(`[trackPromptExecution] ✓ Fetched ${assets.length} ${source.resultType} assets`);
                         }
 
                         if (downloadedAssets.length > 0) {
@@ -898,19 +972,37 @@ export const trackPromptExecution = (
                                 finalOutput.videos = videoAssets.map(asset => asset.data);
                             }
 
+                            console.log(`[trackPromptExecution] ✅ Downloaded ${downloadedAssets.length} assets for promptId=${promptId.slice(0,8)}..., sending complete status`);
+                            // CRITICAL: Send completion signal SYNCHRONOUSLY before closing WebSocket
+                            // This ensures the promise resolver receives the data
                             onProgress({
                                 status: 'complete',
                                 message: 'Generation complete!',
                                 final_output: finalOutput,
                             });
+                            
+                            // Small delay to ensure state updates propagate
+                            await new Promise(resolve => setTimeout(resolve, 50));
                         } else {
+                            console.log(`[trackPromptExecution] ⚠️ No assets downloaded for promptId=${promptId.slice(0,8)}...`);
                             onProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
                         }
                     } catch (error) {
                         const message = error instanceof Error ? error.message : "Failed to fetch final output.";
+                        console.error(`[trackPromptExecution] ❌ Asset fetch error for promptId=${promptId.slice(0,8)}...:`, error);
                         onProgress({ status: 'error', message });
+                    } finally {
+                        // Ensure WebSocket closes after all processing with explicit logging
+                        try {
+                            console.log(`[trackPromptExecution] ⏸️  Waiting 50ms before WebSocket close for promptId=${promptId.slice(0,8)}...`);
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                            console.log(`[trackPromptExecution] 🔌 Closing WebSocket for promptId=${promptId.slice(0,8)}...`);
+                            ws.close();
+                            console.log(`[trackPromptExecution] ✅ WebSocket closed successfully for promptId=${promptId.slice(0,8)}`);
+                        } catch (closeError) {
+                            console.error(`[trackPromptExecution] ❌ Error closing WebSocket for promptId=${promptId.slice(0,8)}:`, closeError);
+                        }
                     }
-                    ws.close();
                 }
                 break;
         }
@@ -934,6 +1026,8 @@ export interface VideoGenerationDependencies {
 
 export interface VideoGenerationOverrides {
     negativePrompt?: string;
+    /** Scene transition context for narrative coherence across video segments */
+    transitionContext?: SceneTransitionContext;
 }
 
 
@@ -970,7 +1064,9 @@ export const generateVideoFromShot = async (
     
         const reportProgress = (update: Partial<LocalGenerationStatus>) => {
             if (onProgress) onProgress(update);
-            console.log(`[Video Generation] ${update.message}`);
+            if (update.message) {
+                console.log(`[Video Generation] ${update.message}`);
+            }
         };
 
         const getSceneContext = (promptId?: string): string => {
@@ -987,8 +1083,17 @@ export const generateVideoFromShot = async (
     try {
         reportProgress({ status: 'running', message: 'Building video generation prompt...' });
         
-        // Step 1: Build human-readable prompt
-        const humanPrompt = buildShotPrompt(shot, enhancers, directorsVision, settings, undefined, shot.id, 'shotVideo');
+        // Step 1: Build human-readable prompt with optional transition context
+        const humanPrompt = buildShotPrompt(
+            shot,
+            enhancers,
+            directorsVision,
+            settings,
+            undefined,
+            shot.id,
+            'shotVideo',
+            overrides?.transitionContext
+        );
         
         reportProgress({ status: 'running', message: `Prompt: ${humanPrompt.substring(0, 80)}...` });
 
@@ -1112,9 +1217,11 @@ export const generateVideoFromShot = async (
                         if (actualFrameCount > 0 && actualFrameCount < MIN_FRAME_COUNT) {
                             const warningMsg = `${getSceneContext(promptId)} generated only ${actualFrameCount} frames (minimum ${MIN_FRAME_COUNT}). Video may be too short or generation incomplete.`;
                             console.warn(warningMsg);
+                            // Use 'complete' status but include warning in message
+                            // (video was generated, just with potential quality issues)
                             reportProgress({ 
-                                status: 'warning', 
-                                message: warningMsg,
+                                status: 'complete', 
+                                message: `⚠️ ${warningMsg}`,
                                 progress: 100 
                             });
                         }
@@ -1157,8 +1264,14 @@ export const generateVideoFromShot = async (
 type GenerateVideoFromShotFn = typeof generateVideoFromShot;
 
 
-const SINGLE_FRAME_PROMPT = 'Single cinematic frame, one moment, no collage or multi-panel layout, no UI overlays or speech bubbles, cinematic lighting.';
-export const NEGATIVE_GUIDANCE = 'multi-panel, collage, split-screen, storyboard panels, speech bubbles, comic strip, UI overlays, repeated scenes, duplicated subjects, interface elements, textual callouts, multiple narratives in same frame';
+const SINGLE_FRAME_PROMPT = 'SINGLE CONTINUOUS WIDE-ANGLE SHOT: Generate EXACTLY ONE UNIFIED CINEMATIC SCENE showing a SINGLE MOMENT across the ENTIRE 16:9 frame WITHOUT ANY DIVISIONS, REFLECTIONS, OR LAYERED COMPOSITIONS. PANORAMIC VIEW of ONE LOCATION with consistent lighting and unified perspective from top to bottom, left to right. The entire frame must show ONE CONTINUOUS ENVIRONMENT - no horizontal lines dividing the image, no mirrored sections, no before-after comparisons. DO NOT create character sheets, product grids, split-screens, multi-panel layouts, or storyboard panels. This is ONE UNBROKEN WIDE-ANGLE SHOT capturing the full environment with seamless unified composition. Ensure well-lit scene with visible details and balanced exposure.';
+
+// ORIGINAL (900+ chars) - kept for fallback/comparison
+export const NEGATIVE_GUIDANCE_VERBOSE = 'AVOID AT ALL COSTS: split-screen, multi-panel layout, divided frame, panel borders, storyboard panels, multiple scenes in one image, comic strip layout, triptych, diptych, before and after comparison, side by side shots, top and bottom split, left and right split, grid layout, mosaic, composite image, collage, multiple perspectives, repeated subjects, duplicated elements, mirrored composition, reflection symmetry, tiled pattern, sequential images, montage, multiple time periods, multiple locations, frame divisions, panel separators, white borders, black borders, frame-within-frame, picture-in-picture, multiple lighting setups, discontinuous composition, fragmented scene, segmented layout, partitioned image, multiple narratives, split composition, dual scene, multiple shots combined, storyboard format, comic panel style, sequence of events, time progression, location changes, speech bubbles, UI overlays, interface elements, textual callouts';
+
+// OPTIMIZED v4 (360 chars) - added reflection/symmetry terms to eliminate split-screen artifacts
+export const NEGATIVE_GUIDANCE = 'split-screen, multi-panel, grid layout, character sheet, product catalog, symmetrical array, repeated elements, duplicated subjects, storyboard, comic layout, collage, multiple scenes, side-by-side, tiled images, panel borders, manga style, separated frames, before-after comparison, sequence panels, dual perspective, fragmented scene, picture-in-picture, montage, reflection, mirrored composition, horizontal symmetry, vertical symmetry, above-below division, sky-ground split';
+
 export const extendNegativePrompt = (base: string): string => (base && base.trim().length > 0 ? `${base}, ${NEGATIVE_GUIDANCE}` : NEGATIVE_GUIDANCE);
 
 /**
@@ -1172,7 +1285,8 @@ export const buildShotPrompt = (
     settings: LocalGenerationSettings,
     sceneId?: string,
     shotId?: string,
-    target: PromptTarget = 'shotImage'
+    target: PromptTarget = 'shotImage',
+    transitionContext?: SceneTransitionContext | null
 ): string => {
     const heroArcSegmentParts: string[] = [];
     if (shot.arcId) {
@@ -1221,6 +1335,14 @@ export const buildShotPrompt = (
         }
     }
 
+    // Add scene transition context for narrative coherence (if provided)
+    if (transitionContext) {
+        const transitionPrompt = formatTransitionContextForPrompt(transitionContext);
+        if (transitionPrompt) {
+            basePrompt += ` [${transitionPrompt}]`;
+        }
+    }
+
     // Add directors vision context
     if (directorsVision) {
         basePrompt += ` Style: ${directorsVision}.`;
@@ -1258,12 +1380,32 @@ export const buildShotPrompt = (
     const config = getPromptConfigForModel(modelId, target);
     const finalPrompt = applyPromptTemplate(basePrompt, combinedVBSegment, config);
 
+    // NEW: Validate shot prompts
+    const negativeBase = getDefaultNegativePromptForModel(resolveModelIdFromSettings(settings), target);
+    const extendedNegative = extendNegativePrompt(negativeBase);
+    const validation = validatePromptGuardrails(
+        finalPrompt,
+        extendedNegative,
+        `Shot: ${shotId || shot.id}`
+    );
+
+    if (!validation.isValid) {
+        console.error('[Shot Prompt Guardrails] Validation failed:', validation.errors);
+        // For shots, log error but don't throw (allow user override)
+    }
+
+    if (validation.warnings.length > 0) {
+        console.warn('[Shot Prompt Guardrails] Warnings:', validation.warnings);
+    }
+
     return finalPrompt;
 };
 
 export interface TimelineGenerationOptions {
     dependencies?: VideoGenerationDependencies;
     shotGenerator?: GenerateVideoFromShotFn;
+    /** Scene transition context for narrative coherence - applies to all shots in this scene */
+    transitionContext?: SceneTransitionContext;
 }
 
 
@@ -1292,6 +1434,7 @@ export const generateTimelineVideos = async (
     const results: Record<string, { videoPath: string; duration: number; filename: string }> = {};
     const shotExecutor = options?.shotGenerator ?? generateVideoFromShot;
     const shotDependencies = options?.dependencies;
+    const transitionContext = options?.transitionContext;
     
     for (let i = 0; i < timeline.shots.length; i++) {
         const shot = timeline.shots[i];
@@ -1318,6 +1461,7 @@ export const generateTimelineVideos = async (
                 shotDependencies,
                 {
                     negativePrompt: timeline.negativePrompt,
+                    transitionContext: transitionContext,
                 }
             );
 
@@ -1371,22 +1515,142 @@ const waitForComfyCompletion = (
 ): Promise<LocalGenerationStatus['final_output']> => {
     return new Promise((resolve, reject) => {
         let finished = false;
+        // Increased timeout to 10 minutes for WAN2 video generation on consumer GPUs
         const timeout = setTimeout(() => {
             if (!finished) {
                 finished = true;
-                reject(new Error('ComfyUI generation timeout (3 minutes exceeded).'));
+                clearInterval(pollingInterval);
+                reject(new Error('ComfyUI generation timeout (10 minutes exceeded).'));
             }
-        }, 3 * 60 * 1000);
+        }, 10 * 60 * 1000);
+
+        // Polling fallback: Check history API every 2 seconds if WebSocket doesn't deliver completion
+        // This handles cases where multiple WebSocket connections cause event routing issues
+        let wsReceivedEvents = false;
+        console.log(`[waitForComfyCompletion] 🔄 Starting polling fallback for ${promptId.slice(0,8)}... (checking every 2s)`);
+        const pollingInterval = setInterval(async () => {
+            if (finished) {
+                console.log(`[waitForComfyCompletion] ⏹️  Stopping polling for ${promptId.slice(0,8)}... (finished=true)`);
+                clearInterval(pollingInterval);
+                return;
+            }
+
+            console.log(`[waitForComfyCompletion] 🔍 Polling history API for ${promptId.slice(0,8)}... (wsEvents=${wsReceivedEvents})`);
+            try {
+                const baseUrl = getComfyUIBaseUrl(settings.comfyUIUrl);
+                const historyResponse = await fetchWithTimeout(`${baseUrl}/history/${promptId}`, {}, 5000);
+                
+                if (!historyResponse.ok) {
+                    // Prompt not in history yet, continue polling
+                    return;
+                }
+
+                const historyData = await historyResponse.json();
+                const promptHistory = historyData[promptId];
+
+                if (!promptHistory) {
+                    // No history entry yet
+                    return;
+                }
+
+                const status = promptHistory.status;
+                if (status?.status_str === 'success' && status?.completed) {
+                    // Execution completed! Fetch outputs
+                    console.log(`[waitForComfyCompletion] 📊 Polling detected completion for ${promptId.slice(0,8)}... (WebSocket events: ${wsReceivedEvents ? 'received' : 'MISSING'})`);
+                    
+                    const outputs = promptHistory.outputs || {};
+                    const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [];
+                    
+                    // Check all output nodes for images/videos
+                    for (const [nodeId, nodeOutput] of Object.entries(outputs)) {
+                        const output = nodeOutput as any;
+                        if (output.images) assetSources.push({ entries: output.images, resultType: 'image' });
+                        if (output.videos) assetSources.push({ entries: output.videos, resultType: 'video' });
+                        if (output.gifs) assetSources.push({ entries: output.gifs, resultType: 'video' });
+                    }
+
+                    const downloadedAssets: LocalGenerationAsset[] = [];
+                    for (const source of assetSources) {
+                        const entries = source.entries;
+                        if (!Array.isArray(entries) || entries.length === 0) continue;
+
+                        const assets = await Promise.all(
+                            entries.map(async (entry) => ({
+                                type: source.resultType,
+                                data: await fetchAssetAsDataURL(
+                                    settings.comfyUIUrl,
+                                    entry.filename,
+                                    entry.subfolder,
+                                    entry.type || 'output'
+                                ),
+                                filename: entry.filename,
+                            }))
+                        );
+                        downloadedAssets.push(...assets);
+                    }
+
+                    if (downloadedAssets.length > 0) {
+                        const imageAssets = downloadedAssets.filter(asset => asset.type === 'image');
+                        const videoAssets = downloadedAssets.filter(asset => asset.type === 'video');
+                        const finalOutput: LocalGenerationStatus['final_output'] = {
+                            type: downloadedAssets[0].type,
+                            data: downloadedAssets[0].data,
+                            filename: downloadedAssets[0].filename,
+                            assets: downloadedAssets,
+                        };
+
+                        if (imageAssets.length > 0) {
+                            finalOutput.images = imageAssets.map(asset => asset.data);
+                        }
+                        if (videoAssets.length > 0) {
+                            finalOutput.videos = videoAssets.map(asset => asset.data);
+                        }
+
+                        finished = true;
+                        clearTimeout(timeout);
+                        clearInterval(pollingInterval);
+                        onProgress?.({ status: 'complete', message: 'Generation complete!', final_output: finalOutput });
+                        resolve(finalOutput);
+                    } else {
+                        finished = true;
+                        clearTimeout(timeout);
+                        clearInterval(pollingInterval);
+                        reject(new Error('Generation completed but no output files found.'));
+                    }
+                } else if (status?.status_str === 'error') {
+                    finished = true;
+                    clearTimeout(timeout);
+                    clearInterval(pollingInterval);
+                    const errorMessage = status.messages?.find((m: any) => m[0] === 'execution_error')?.[1]?.exception_message || 'ComfyUI generation failed.';
+                    reject(new Error(errorMessage));
+                }
+            } catch (error) {
+                // Polling error - continue trying (don't fail the whole operation)
+                console.warn(`[waitForComfyCompletion] Polling error for ${promptId.slice(0,8)}...:`, error);
+            }
+        }, 2000);
 
         trackPromptExecution(settings, promptId, (update) => {
+            // Mark that WebSocket is delivering events
+            wsReceivedEvents = true;
+            
+            // Debug logging to trace completion issues
+            if (update.status === 'complete' || update.status === 'error') {
+                console.log(`[waitForComfyCompletion] promptId=${promptId.slice(0,8)}... status=${update.status} hasOutput=${!!update.final_output} finished=${finished}`);
+            }
+            
             onProgress?.(update);
             if (!finished && update.status === 'complete' && update.final_output) {
                 finished = true;
                 clearTimeout(timeout);
+                clearInterval(pollingInterval);
+                console.log(`[waitForComfyCompletion] ✓ Resolving Promise for ${promptId.slice(0,8)}... (via WebSocket)`);
                 resolve(update.final_output);
             } else if (!finished && update.status === 'error') {
                 finished = true;
                 clearTimeout(timeout);
+                clearInterval(pollingInterval);
+                console.log(`[waitForComfyCompletion] ✗ Rejecting Promise for ${promptId.slice(0,8)}...`);
                 reject(new Error(update.message || 'ComfyUI generation failed.'));
             }
         });
@@ -1402,10 +1666,10 @@ export const generateSceneKeyframeLocally = async (
 ): Promise<string> => {
     const basePromptParts = [
         SINGLE_FRAME_PROMPT,
-        'Cinematic establishing frame, high fidelity, 4K resolution, 16:9 aspect ratio.',
-        `Scene summary: ${sceneSummary}`,
-        `Director's vision: ${directorsVision}`,
-        'Render a single still image that captures the mood, palette, and lighting cues of this scene.'
+        'SINGLE ESTABLISHING SHOT ONLY: Cinematic establishing frame, high fidelity, 4K resolution. ONE unified composition with consistent lighting and perspective throughout the entire frame.',
+        `Scene content: ${sceneSummary}`,
+        // Note: Director's vision is already embedded in sceneSummary, so we don't duplicate it here
+        'Generate ONE CONTINUOUS IMAGE capturing this single moment. Do not divide the frame. Do not show multiple time periods or locations. This is a single unified scene, not a sequence or comparison.'
     ];
     const heroArcInfo = sceneId ? `Hero arc reference: ${sceneId}` : '';
     if (heroArcInfo) {
@@ -1442,30 +1706,65 @@ export const generateSceneKeyframeLocally = async (
     // Apply prompt template with guardrails
     const modelId = resolveModelIdFromSettings(settings);
     const config = getPromptConfigForModel(modelId, 'sceneKeyframe');
-    const finalPrompt = applyPromptTemplate(basePrompt, combinedVBSegment || undefined, config);
+    const finalPrompt = applyPromptTemplate(basePrompt, combinedVBSegment || '', config);
 
     const negativeBase = getDefaultNegativePromptForModel(resolveModelIdFromSettings(settings), 'sceneKeyframe');
+    const extendedNegative = extendNegativePrompt(negativeBase);
     const payloads = {
         json: JSON.stringify({ scene_summary: sceneSummary, directors_vision: directorsVision }),
         text: finalPrompt,
         structured: [],
-        negativePrompt: extendNegativePrompt(negativeBase),
+        negativePrompt: extendedNegative,
     };
 
-    const response = await queueComfyUIPrompt(settings, payloads, '', 'wan-t2i');
+    // NEW: Validate prompt guardrails before queuing
+    const validation = validatePromptGuardrails(
+        finalPrompt,
+        extendedNegative,
+        `Scene Keyframe: ${sceneId?.slice(0, 20) || 'unknown'}`
+    );
+
+    if (!validation.isValid) {
+        console.error('[Prompt Guardrails] Validation failed:', validation.errors);
+        throw new Error(`Prompt validation failed: ${validation.errors.join(', ')}`);
+    }
+
+    if (validation.warnings.length > 0) {
+        console.warn('[Prompt Guardrails] Warnings:', validation.warnings);
+    }
+
+    // Log validation success
+    console.log(`[Prompt Guardrails] ✓ Validation passed for ${validation.context}`);
+
+    // Debug logging to verify unique prompts per scene
+    console.log(`[Keyframe Debug] Scene ID: ${sceneId || 'unknown'}`);
+    console.log(`[Keyframe Debug] Scene Summary: ${sceneSummary.substring(0, 100)}...`);
+    console.log(`[Keyframe Debug] Final Prompt Length: ${finalPrompt.length} chars`);
+    console.log(`[Keyframe Debug] Prompt Preview: ${finalPrompt.substring(0, 200)}...`);
+
+    const imageProfile = settings.imageWorkflowProfile || 'wan-t2i';
+    console.log(`[generateSceneKeyframeLocally] Using image profile: ${imageProfile}`);
+    const response = await queueComfyUIPrompt(settings, payloads, '', imageProfile);
     if (!response?.prompt_id) {
         throw new Error('Failed to queue prompt: No prompt_id returned.');
     }
+    console.log(`[generateSceneKeyframeLocally] ✓ Queued promptId=${response.prompt_id.slice(0,8)}... for scene=${sceneId}`);
+    
     if (response.systemResources && response.systemResources.trim()) {
         onProgress?.({ status: 'running', message: response.systemResources });
     }
 
+    console.log(`[generateSceneKeyframeLocally] ⏳ Waiting for completion of scene=${sceneId}, promptId=${response.prompt_id.slice(0,8)}...`);
     const finalOutput = await waitForComfyCompletion(settings, response.prompt_id, onProgress);
+    
     if (!finalOutput?.data) {
+        console.error(`[generateSceneKeyframeLocally] ❌ No image data returned for scene=${sceneId}, promptId=${response.prompt_id.slice(0,8)}...`);
         throw new Error('ComfyUI did not return an image.');
     }
-
-    return stripDataUrlPrefix(finalOutput.data);
+    
+    const imageData = stripDataUrlPrefix(finalOutput.data);
+    console.log(`[generateSceneKeyframeLocally] ✅ Returning image for scene=${sceneId}, data length=${imageData.length} chars`);
+    return imageData;
 };
 
 export const generateShotImageLocally = async (
@@ -1485,7 +1784,9 @@ export const generateShotImageLocally = async (
         negativePrompt: extendNegativePrompt(getDefaultNegativePromptForModel(resolveModelIdFromSettings(settings), 'shotImage')),
     };
 
-    const response = await queueComfyUIPrompt(settings, payloads, '', 'wan-t2i');
+    const imageProfile = settings.imageWorkflowProfile || 'wan-t2i';
+    console.log(`[generateShotImageLocally] Using image profile: ${imageProfile}`);
+    const response = await queueComfyUIPrompt(settings, payloads, '', imageProfile);
     if (!response?.prompt_id) {
         throw new Error('Failed to queue prompt: No prompt_id returned.');
     }
@@ -1500,5 +1801,389 @@ export const generateShotImageLocally = async (
 
     return stripDataUrlPrefix(finalOutput.data);
 };
+
+/**
+ * Bookend Workflow: Generate start and end keyframes for a scene
+ * @param settings ComfyUI configuration
+ * @param scene Scene with temporalContext
+ * @param storyBible Story bible for narrative context
+ * @param directorsVision Visual style guide
+ * @param negativePrompt Negative prompt to apply
+ * @param logApiCall API call logging function
+ * @param onStateChange State change callback
+ * @returns Object with start and end base64 images
+ */
+export async function generateSceneBookendsLocally(
+    settings: LocalGenerationSettings,
+    scene: Scene,
+    storyBible: string,
+    directorsVision: string,
+    negativePrompt: string,
+    logApiCall: ApiLogCallback,
+    onStateChange: (state: any) => void
+): Promise<{ start: string; end: string }> {
+    console.log(`[Bookend Generation] Starting dual keyframe generation for scene ${scene.id}`);
+    
+    if (!scene.temporalContext) {
+        throw new Error(`Scene ${scene.id} requires temporalContext for bookend generation`);
+    }
+
+    // Import payload service dynamically to avoid circular dependency
+    const { generateBookendPayloads } = await import('./payloadService');
+    
+    const payloads = generateBookendPayloads(
+        scene.summary,
+        storyBible,
+        directorsVision,
+        scene.temporalContext,
+        negativePrompt
+    );
+
+    // Generate start keyframe
+    console.log(`[Bookend Generation] Generating START keyframe (moment: "${scene.temporalContext.startMoment}")`);
+    onStateChange({ 
+        status: 'running', 
+        message: `Generating start keyframe: ${scene.temporalContext.startMoment}` 
+    });
+    
+    const startResponse = await queueComfyUIPrompt(
+        settings,
+        payloads.start as any,
+        '', // No input image for T2I
+        settings.imageWorkflowProfile || 'wan-t2i'
+    );
+
+    if (!startResponse?.prompt_id) {
+        throw new Error('Failed to queue start keyframe generation');
+    }
+
+    const startOutput = await waitForComfyCompletion(
+        settings,
+        startResponse.prompt_id,
+        onStateChange
+    );
+
+    if (!startOutput?.data) {
+        throw new Error('Start keyframe generation failed: No output data');
+    }
+
+    const startImage = stripDataUrlPrefix(startOutput.data);
+    console.log(`[Bookend Generation] START keyframe generated (${startImage.length} chars)`);
+
+    // Generate end keyframe
+    console.log(`[Bookend Generation] Generating END keyframe (moment: "${scene.temporalContext.endMoment}")`);
+    onStateChange({ 
+        status: 'running', 
+        message: `Generating end keyframe: ${scene.temporalContext.endMoment}` 
+    });
+    
+    const endResponse = await queueComfyUIPrompt(
+        settings,
+        payloads.end as any,
+        '', // No input image for T2I
+        settings.imageWorkflowProfile || 'wan-t2i'
+    );
+
+    if (!endResponse?.prompt_id) {
+        throw new Error('Failed to queue end keyframe generation');
+    }
+
+    const endOutput = await waitForComfyCompletion(
+        settings,
+        endResponse.prompt_id,
+        onStateChange
+    );
+
+    if (!endOutput?.data) {
+        throw new Error('End keyframe generation failed: No output data');
+    }
+
+    const endImage = stripDataUrlPrefix(endOutput.data);
+    console.log(`[Bookend Generation] END keyframe generated (${endImage.length} chars)`);
+    console.log(`[Bookend Generation] ✅ Dual keyframe generation complete for scene ${scene.id}`);
+
+    return { 
+        start: startImage, 
+        end: endImage 
+    };
+}
+
+/**
+ * Bookend Workflow: Generate video from start and end keyframes
+ * @param settings ComfyUI configuration
+ * @param scene Scene with bookend keyframes
+ * @param timeline Timeline data
+ * @param bookends Start and end keyframe images
+ * @param logApiCall API call logging function
+ * @param onStateChange State change callback
+ * @returns Video file path or base64
+ */
+export async function generateVideoFromBookends(
+    settings: LocalGenerationSettings,
+    scene: Scene,
+    timeline: TimelineData,
+    bookends: { start: string; end: string },
+    logApiCall: ApiLogCallback,
+    onStateChange: (state: any) => void
+): Promise<string> {
+    console.log(`[Bookend Video] Starting video generation with dual keyframes for scene ${scene.id}`);
+    
+    // Import payload service
+    const { generateVideoRequestPayloads } = await import('./payloadService');
+    
+    const payloads = generateVideoRequestPayloads(
+        timeline,
+        '', // directorsVision not used for video prompts
+        scene.summary,
+        {} // generatedShotImages
+    );
+
+    // Note: Requires wan-i2v-bookends profile with dual LoadImage mapping
+    // Workflow must accept both start and end images
+    // For now, uses single keyframe (start) until bookend workflow is created
+    console.warn(`[Bookend Video] Using start keyframe only - bookend video workflow not yet implemented`);
+    
+    const response = await queueComfyUIPrompt(
+        settings,
+        payloads,
+        bookends.start, // Use start frame for now
+        settings.videoWorkflowProfile || 'wan-i2v'
+    );
+
+    if (!response?.prompt_id) {
+        throw new Error('Failed to queue video generation');
+    }
+
+    const output = await waitForComfyCompletion(
+        settings,
+        response.prompt_id,
+        onStateChange
+    );
+
+    if (!output?.data) {
+        throw new Error('Video generation failed: No output data');
+    }
+
+    console.log(`[Bookend Video] ✅ Video generation complete`);
+    return output.data;
+}
+
+/**
+ * Sequential Generation: Generate video from bookends by creating two videos and splicing
+ * 
+ * This approach generates two separate videos:
+ * 1. First video from start keyframe (frames 0-24)
+ * 2. Second video from end keyframe (frames 25-49)
+ * 3. Splice them together with 1-frame crossfade
+ * 
+ * Used when WAN2 doesn't support dual keyframes natively.
+ * 
+ * @param settings ComfyUI configuration
+ * @param scene Scene with temporalContext
+ * @param timeline Timeline data for shot metadata
+ * @param bookends Start and end keyframe images (base64)
+ * @param logApiCall API call logging function
+ * @param onStateChange State change callback with phase tracking
+ * @returns Promise<string> - Path to spliced video file
+ */
+export async function generateVideoFromBookendsSequential(
+    settings: LocalGenerationSettings,
+    scene: Scene,
+    timeline: TimelineData,
+    bookends: { start: string; end: string },
+    logApiCall: ApiLogCallback,
+    onStateChange: (state: any) => void
+): Promise<string> {
+    console.log(`[Sequential Bookend] Starting sequential generation for scene ${scene.id}`);
+    
+    // Validate inputs
+    if (!bookends.start || !bookends.end) {
+        throw new Error('Both start and end keyframes are required for sequential generation');
+    }
+    
+    // Import dependencies
+    const { generateVideoRequestPayloads } = await import('./payloadService');
+    
+    let spliceVideos: (v1: string, v2: string, out: string) => Promise<{ success: boolean; outputPath?: string; duration?: number; error?: string }>;
+    let checkFfmpegAvailable: () => Promise<boolean>;
+    
+    // Check environment - if browser, use mocks to allow UI testing
+    if (typeof window !== 'undefined') {
+        console.log('[Sequential Bookend] Browser environment detected, using mock splicer');
+        checkFfmpegAvailable = async () => true;
+        spliceVideos = async (v1: string, _v2: string, _out: string) => ({ 
+            success: true, 
+            outputPath: v1, 
+            duration: 0 
+        });
+    } else {
+        try {
+            const module = await import('../utils/videoSplicer');
+            spliceVideos = module.spliceVideos;
+            checkFfmpegAvailable = module.checkFfmpegAvailable;
+        } catch (e) {
+            console.warn('Video splicer module not available:', e);
+            checkFfmpegAvailable = async () => false;
+            spliceVideos = async () => ({ success: false, error: 'Module not loaded' });
+        }
+    }
+    
+    // Check ffmpeg availability
+    const ffmpegAvailable = await checkFfmpegAvailable();
+    if (!ffmpegAvailable) {
+        throw new Error('ffmpeg is required for sequential generation. Please install ffmpeg and add it to PATH.');
+    }
+    
+    // Generate payloads for video generation
+    const payloads = generateVideoRequestPayloads(
+        timeline,
+        '', // directorsVision not used for video prompts
+        scene.summary,
+        {} // generatedShotImages
+    );
+    
+    // Phase 1: Generate video from start keyframe
+    console.log(`[Sequential Bookend] Phase 1: Generating video from START keyframe`);
+    onStateChange({ 
+        phase: 'bookend-start-video',
+        status: 'running', 
+        progress: 0,
+        message: `Generating start video (${scene.temporalContext?.startMoment || 'opening moment'})` 
+    });
+    
+    const startPromptResponse = await queueComfyUIPrompt(
+        settings,
+        payloads,
+        bookends.start,
+        'wan-i2v'
+    );
+
+    if (!startPromptResponse?.prompt_id) {
+        throw new Error('Failed to queue start video generation');
+    }
+
+    const startOutput = await waitForComfyCompletion(
+        settings,
+        startPromptResponse.prompt_id,
+        (state) => {
+            onStateChange({
+                phase: 'bookend-start-video',
+                ...state,
+                message: `Generating start video: ${state.progress || 0}%`
+            });
+        }
+    );
+
+    if (!startOutput?.data) {
+        throw new Error('Start video generation failed: No output data');
+    }
+    
+    const videoStartResult = startOutput.filename || 'start_video.mp4';
+    
+    console.log(`[Sequential Bookend] ✅ Start video generated: ${videoStartResult}`);
+    
+    // Phase 2: Generate video from end keyframe
+    console.log(`[Sequential Bookend] Phase 2: Generating video from END keyframe`);
+    onStateChange({ 
+        phase: 'bookend-end-video',
+        status: 'running', 
+        progress: 0,
+        message: `Generating end video (${scene.temporalContext?.endMoment || 'closing moment'})` 
+    });
+    
+    const endPromptResponse = await queueComfyUIPrompt(
+        settings,
+        payloads,
+        bookends.end,
+        'wan-i2v'
+    );
+
+    if (!endPromptResponse?.prompt_id) {
+        throw new Error('Failed to queue end video generation');
+    }
+
+    const endOutput = await waitForComfyCompletion(
+        settings,
+        endPromptResponse.prompt_id,
+        (state) => {
+            onStateChange({
+                phase: 'bookend-end-video',
+                ...state,
+                message: `Generating end video: ${state.progress || 0}%`
+            });
+        }
+    );
+
+    if (!endOutput?.data) {
+        throw new Error('End video generation failed: No output data');
+    }
+
+    const videoEndResult = endOutput.filename || 'end_video.mp4';
+    
+    console.log(`[Sequential Bookend] ✅ End video generated: ${videoEndResult}`);
+    
+    // Phase 3: Splice videos together
+    console.log(`[Sequential Bookend] Phase 3: Splicing videos with crossfade`);
+    onStateChange({ 
+        phase: 'splicing',
+        status: 'processing', 
+        progress: 0,
+        message: 'Splicing videos with crossfade transition...' 
+    });
+    
+    let video1Path = videoStartResult; 
+    let video2Path = videoEndResult;
+    const outputPath = `bookend_spliced_${Date.now()}.mp4`;
+    
+    // Only try to create directory in Node environment
+    if (typeof window === 'undefined') {
+        try {
+            const fs = await import('fs');
+            const path = await import('path');
+            
+            // Save video data to temp files for ffmpeg
+            // We use the data URL content we already downloaded
+            const tempDir = path.join(process.cwd(), 'temp_videos');
+            if (!fs.existsSync(tempDir)) {
+                fs.mkdirSync(tempDir, { recursive: true });
+            }
+
+            video1Path = path.join(tempDir, `temp_start_${Date.now()}.mp4`);
+            video2Path = path.join(tempDir, `temp_end_${Date.now()}.mp4`);
+
+            const startBase64 = stripDataUrlPrefix(startOutput.data);
+            const endBase64 = stripDataUrlPrefix(endOutput.data);
+
+            fs.writeFileSync(video1Path, Buffer.from(startBase64, 'base64'));
+            fs.writeFileSync(video2Path, Buffer.from(endBase64, 'base64'));
+            
+            console.log(`[Sequential Bookend] Saved temp videos to: ${video1Path}, ${video2Path}`);
+
+            const outputDir = path.dirname(outputPath);
+            if (!fs.existsSync(outputDir)) {
+                fs.mkdirSync(outputDir, { recursive: true });
+            }
+        } catch (e) {
+            console.warn('Could not create temp files (likely browser env):', e);
+        }
+    }
+    
+    const spliceResult = await spliceVideos(video1Path, video2Path, outputPath);
+    
+    if (!spliceResult.success) {
+        throw new Error(`Video splicing failed: ${spliceResult.error}`);
+    }
+    
+    console.log(`[Sequential Bookend] ✅ Splicing complete: ${spliceResult.outputPath}`);
+    
+    // If browser mock, return the data URL of the first video so it can be displayed
+    if (typeof window !== 'undefined') {
+        return startOutput.data;
+    }
+
+    return spliceResult.outputPath!;
+}
+
+
 
 

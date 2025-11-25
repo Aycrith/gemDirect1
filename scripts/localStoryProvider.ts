@@ -15,6 +15,7 @@ interface FetchOptions {
     format?: LLMRequestFormat;
     model?: string;
     temperature?: number;
+    customStoryIdea?: string;
 }
 
 interface OpenAIChatResponse {
@@ -111,10 +112,13 @@ const fetchOpenAIChatStory = async (
         const temperature = options.temperature ?? DEFAULT_CHAT_TEMPERATURE;
         const systemPrompt =
             'You are the cinematic story generator for gemDirect1. Produce cohesive sci-fi short films with three-act energy, highlight director intentions, moods, palettes, and camera motion.';
+        const storyIdeaPrompt = options.customStoryIdea 
+            ? `Story idea: "${options.customStoryIdea}". Generate ${request.sceneCount} cinematic scenes based on this concept.`
+            : `Generate ${request.sceneCount} cinematic scenes for a high-end story-to-video pipeline.`;
         const userPrompt = [
-            `Generate ${request.sceneCount} cinematic scenes for a high-end story-to-video pipeline.`,
+            storyIdeaPrompt,
             'Return JSON with: storyId (string), logline (string), directorsVision (string), scenes (array).',
-            'Each scene requires: title, summary, prompt, mood, cameraMovement, palette, expectedFrames (25), negativePrompt (list common issues), generator metadata optional.',
+            'Each scene requires: title, summary, prompt, mood, cameraMovement, palette, expectedFrames (49), negativePrompt (list common issues), generator metadata optional.',
             request.seed ? `Honor deterministic tone using seed ${request.seed}.` : 'Seed can be random but keep tone coherent.',
             'Do NOT include explanations or prose outside the JSON object. Respond with strict JSON, no markdown fences.',
         ].join(' ');

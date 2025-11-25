@@ -197,6 +197,16 @@
     0%, 100% { transform: rotate(0deg); }
     50% { transform: rotate(3deg); }
   }
+
+  /* Toast Progress Animation */
+  @keyframes toast-progress {
+    from { width: 100%; }
+    to { width: 0%; }
+  }
+
+  .animate-toast-progress {
+    animation: toast-progress 5s linear forwards;
+  }
 </style>
 </head>
   <body class="text-gray-200 antialiased">

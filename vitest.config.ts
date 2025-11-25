@@ -6,11 +6,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'happy-dom',
-    setupFiles: [],
+    setupFiles: ['./vitest.setup.ts'],
     include: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx'],
     // Exclude Playwright end-to-end specs so Vitest doesn't try to run them.
     // Run E2E tests separately with: npx playwright test
-    exclude: ['node_modules', 'dist', 'tests/e2e/**', '**/*.integration.test.ts'],
+    exclude: ['node_modules', 'dist', 'tests/e2e/**', 'tests/manual/**', '**/*.integration.test.ts'],
     pool: 'forks',
     maxWorkers: 1,
     isolate: false,

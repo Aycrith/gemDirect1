@@ -31,9 +31,9 @@ AI-powered cinematic story generator creating production video timelines. Integr
 
 **Essential Files**:
 - `README.md` - Quick start, commands, status badges
-- `Documentation/PROJECT_STATUS_CONSOLIDATED.md` - **Single source of truth** (replaces CURRENT_STATUS.md)
+- `Documentation/PROJECT_STATUS_CONSOLIDATED.md` - **Single source of truth** (updated 2025-11-22)
 - `START_HERE.md` - 5-minute context summary
-- `AGENT_HANDOFF_PHASE2_COMPLETE_20251120.md` - Latest session handoff
+- `AGENT_HANDOFF_TEST_IMPROVEMENTS_20251122.md` - Latest session handoff (test suite improvements)
 - `Documentation/Architecture/WORKFLOW_ARCHITECTURE_REFERENCE.md` - ComfyUI node mappings
 - `Testing/E2E/STORY_TO_VIDEO_TEST_CHECKLIST.md` - Testing protocols
 
@@ -163,7 +163,7 @@ npx playwright test --debug              # Debug mode
 ```powershell
 VITE_PLAYWRIGHT_SKIP_WELCOME=true
 VITE_LOCAL_STORY_PROVIDER_URL=http://192.168.50.192:1234/v1/chat/completions
-VITE_LOCAL_LLM_MODEL=mistralai/mistral-7b-instruct-v0.3
+VITE_LOCAL_LLM_MODEL=mistralai/mistral-nemo-instruct-2407
 VITE_LOCAL_LLM_REQUEST_FORMAT=openai-chat
 VITE_LOCAL_LLM_TEMPERATURE=0.35
 ```
@@ -273,26 +273,28 @@ Mirror these with `VITE_LOCAL_*` variants for React UI access.
 ### Documentation (Organized 2025-11-20)
 | Path | Purpose |
 |------|---------|
-| `Documentation/CURRENT_STATUS.md` | Complete project status, metrics, known issues |
+| `Documentation/PROJECT_STATUS_CONSOLIDATED.md` | **Single source of truth** - updated 2025-11-22 |
 | `Documentation/Guides/` | User guides, quick starts, setup instructions |
 | `Documentation/Architecture/` | System architecture, data flow, workflow mappings |
 | `Documentation/References/` | Quick references, indexes, API docs |
 | `Development_History/Phases/` | Phase completion reports (Phase 1-7) |
 | `Development_History/Sessions/` | Session summaries, status reports |
 | `Development_History/Milestones/` | Major milestones, deployment reports |
-| `Agents/Handoffs/` | Agent handoff documents (archived) |
 | `Testing/E2E/` | End-to-end test reports |
 | `Testing/Reports/` | Validation and verification reports |
 | `Testing/Strategies/` | Testing strategies, coverage plans |
 | `Workflows/ComfyUI/` | ComfyUI-specific documentation |
+| `docs/archived/` | Archived documentation (superseded) |
 
 ### Finding Documentation
 **If you need to find a specific document**:
-1. Check `Documentation/PROJECT_STATUS_CONSOLIDATED.md` first (single source of truth)
+1. Check `Documentation/PROJECT_STATUS_CONSOLIDATED.md` first (single source of truth, updated 2025-11-22)
 2. Use directory structure above to navigate categories
 3. Each category has a README.md explaining contents
-4. Old handoff docs are in `Agents/Handoffs/` (archived, may be outdated)
-5. Historical root docs are in `docs/archived/root-docs-2025-11/` (superseded)
+4. **Archived docs** are in `docs/archived/` (superseded - for historical reference only):
+   - `docs/archived/handoffs-2025-11/` - Early agent handoffs (pre-Nov 19)
+   - `docs/archived/root-docs-2025-11/` - Session docs (Nov 19-21, 44 files archived 2025-11-22)
+5. **Current handoff**: `AGENT_HANDOFF_TEST_IMPROVEMENTS_20251122.md` (test suite 100% pass rate achievement)
 | `scripts/comfyui-status.ts` | Pre-flight health checker |
 | `workflows/image_netayume_lumina_t2i.json` | WAN T2I workflow (keyframes) |
 | `workflows/video_wan2_2_5B_ti2v.json` | WAN I2V workflow (videos) |
@@ -334,14 +336,15 @@ Mirror these with `VITE_LOCAL_*` variants for React UI access.
 ## Best Practices for Future Development
 
 ### Documentation Workflow
-1. **Always check CURRENT_STATUS.md first** - Single source of truth for project state
+1. **Always check PROJECT_STATUS_CONSOLIDATED.md first** - Single source of truth (updated 2025-11-22)
 2. **Update docs alongside code changes** - Don't let docs drift
 3. **Place new docs in correct category**:
    - Guides → `Documentation/Guides/`
    - Architecture changes → `Documentation/Architecture/`
    - Session notes → `Development_History/Sessions/`
    - Test results → `Testing/Reports/`
-4. **Keep root directory clean** - Only README.md, START_HERE.md, TODO.md, and active handoff docs
+4. **Keep root directory clean** - Only README.md, START_HERE.md, TODO.md, and current handoff
+   - Archive old handoffs to `docs/archived/root-docs-2025-11/` when superseded
 
 ### Code Quality Standards
 - ✅ All API calls through service layer (never direct from components)
@@ -365,17 +368,19 @@ Mirror these with `VITE_LOCAL_*` variants for React UI access.
 - Update CURRENT_STATUS.md for significant changes
 
 ### Agent Handoff Protocol
-1. Read `Documentation/CURRENT_STATUS.md` for current state
+1. Read `Documentation/PROJECT_STATUS_CONSOLIDATED.md` for current state (updated 2025-11-22)
 2. Read `START_HERE.md` for quick context
-3. Create session summary in `Development_History/Sessions/`
-4. Update `Documentation/CURRENT_STATUS.md` with new metrics
-5. Do NOT create new handoff docs in root (use `Agents/Handoffs/` if needed)
+3. Read latest handoff: `AGENT_HANDOFF_TEST_IMPROVEMENTS_20251122.md`
+4. Create session summary in `Development_History/Sessions/`
+5. Update `Documentation/PROJECT_STATUS_CONSOLIDATED.md` with new metrics
+6. Keep root handoff docs minimal - archive old ones to `docs/archived/root-docs-2025-11/` when superseded
 
 ## Documentation Resources
-- **Current Status**: `Documentation/PROJECT_STATUS_CONSOLIDATED.md` (ALWAYS READ FIRST - single source of truth)
+- **Current Status**: `Documentation/PROJECT_STATUS_CONSOLIDATED.md` (ALWAYS READ FIRST - updated 2025-11-22)
+- **Latest Handoff**: `AGENT_HANDOFF_TEST_IMPROVEMENTS_20251122.md` (test suite 100% pass rate achievement)
 - **Architecture**: `Documentation/Architecture/WORKFLOW_ARCHITECTURE_REFERENCE.md`
 - **Testing**: `Testing/E2E/STORY_TO_VIDEO_TEST_CHECKLIST.md`
 - **ComfyUI**: `Workflows/ComfyUI/COMFYUI_WORKFLOW_INDEX.md`
 - **Quick Start**: `START_HERE.md` (5-minute summary)
 - **Agent Guidelines**: This file (`.github/copilot-instructions.md`)
-- **Legacy Docs**: `docs/archived/root-docs-2025-11/` (superseded, for reference only)
+- **Archived Docs**: `docs/archived/` (historical reference only, 44 files archived 2025-11-22)

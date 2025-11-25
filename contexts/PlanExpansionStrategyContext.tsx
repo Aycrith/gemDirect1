@@ -2,34 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo } fro
 import { PlanExpansionStrategy } from '../types';
 import { usePersistentState } from '../utils/hooks';
 import { createPlanExpansionActions, PlanExpansionActions } from '../services/planExpansionService';
-
-const PREFER_LOCAL_LLM = Boolean(import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL);
-
-const LOCAL_STRATEGY: PlanExpansionStrategy = {
-    id: 'local-drafter',
-    label: 'Local Drafter (LM Studio)',
-    description: 'Use your local LM Studio instance for story generation and refinement.',
-    isAvailable: true,
-    isDefault: PREFER_LOCAL_LLM,
-};
-
-const GEMINI_STRATEGY: PlanExpansionStrategy = {
-    id: 'gemini-plan',
-    label: 'Gemini (Default)',
-    description: 'Use Gemini models for story planning and outline expansion.',
-    isAvailable: true,
-    isDefault: !PREFER_LOCAL_LLM,
-};
-
-const DEFAULT_PLAN_STRATEGIES: PlanExpansionStrategy[] = PREFER_LOCAL_LLM
-    ? [LOCAL_STRATEGY, GEMINI_STRATEGY]
-    : [GEMINI_STRATEGY, LOCAL_STRATEGY];
-
-const FALLBACK_STRATEGY = DEFAULT_PLAN_STRATEGIES.find(strategy => strategy.isDefault && strategy.isAvailable)
-    ?? DEFAULT_PLAN_STRATEGIES.find(strategy => strategy.isAvailable)
-    ?? DEFAULT_PLAN_STRATEGIES[0];
-
-const STORAGE_KEY = 'planExpansion.strategy.selected';
+import { DEFAULT_PLAN_STRATEGIES, FALLBACK_PLAN_STRATEGY, PLAN_STRATEGY_STORAGE_KEY } from '../utils/contextConstants';
 
 type PlanExpansionStrategyContextValue = {
     strategies: PlanExpansionStrategy[];
@@ -43,7 +16,7 @@ type PlanExpansionStrategyContextValue = {
 const PlanExpansionStrategyContext = createContext<PlanExpansionStrategyContextValue | undefined>(undefined);
 
 export const PlanExpansionStrategyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [selectedStrategyId, setSelectedStrategyId] = usePersistentState<string>(STORAGE_KEY, FALLBACK_STRATEGY.id);
+    const [selectedStrategyId, setSelectedStrategyId] = usePersistentState<string>(PLAN_STRATEGY_STORAGE_KEY, FALLBACK_PLAN_STRATEGY.id);
 
     const strategies = DEFAULT_PLAN_STRATEGIES;
 

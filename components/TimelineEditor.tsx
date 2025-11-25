@@ -1,5 +1,36 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
+import CreativeControls from './CreativeControls';
+import TransitionSelector from './TransitionSelector';
+import CoDirector from './CoDirector';
+import PlusIcon from './icons/PlusIcon';
+import TrashIcon from './icons/TrashIcon';
+import SparklesIcon from './icons/SparklesIcon';
+import ImageIcon from './icons/ImageIcon';
+import { generateVideoRequestPayloads } from '../services/payloadService';
+import { generateTimelineVideos, stripDataUrlPrefix, queueComfyUIPrompt, validateWorkflowAndMappings, generateVideoFromBookendsSequential, generateSceneBookendsLocally } from '../services/comfyUIService';
+import { generateSceneTransitionContext } from '../services/sceneTransitionService';
+import { isBookendKeyframe, isSingleKeyframe, type KeyframeData } from '../types';
+import FinalPromptModal from './FinalPromptModal';
+import LocalGenerationStatusComponent from './LocalGenerationStatus';
+import TimelineIcon from './icons/TimelineIcon';
+import RefreshCwIcon from './icons/RefreshCwIcon';
+import Tooltip from './Tooltip';
+import SaveIcon from './icons/SaveIcon';
+import CheckCircleIcon from './icons/CheckCircleIcon';
+import { useInteractiveSpotlight, useArtifactMetadata, type SceneTelemetryMetadata, useVisualBible } from '../utils/hooks';
+import GuidedAction from './GuidedAction';
+import GuideCard from './GuideCard';
+import CompassIcon from './icons/CompassIcon';
+import NegativePromptSuggestions from './NegativePromptSuggestions';
+import TemplateGuidancePanel from './TemplateGuidancePanel';
+import MandatoryElementsChecklist from './MandatoryElementsChecklist';
+import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
+import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
+import { useTemplateContext } from '../contexts/TemplateContext';
+import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
+import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
+
 // TODO: import { usePipeline } from '../contexts/PipelineContext'; // Not yet implemented
 
 const formatVramValue = (value?: number | string | null): string => {
@@ -83,37 +114,6 @@ const buildTimelineTelemetryChips = (telemetry?: SceneTelemetryMetadata): string
     }
     return chips;
 };
-import CreativeControls from './CreativeControls';
-import TransitionSelector from './TransitionSelector';
-import CoDirector from './CoDirector';
-import PlusIcon from './icons/PlusIcon';
-import TrashIcon from './icons/TrashIcon';
-import SparklesIcon from './icons/SparklesIcon';
-import ImageIcon from './icons/ImageIcon';
-import { generateVideoRequestPayloads } from '../services/payloadService';
-import { generateTimelineVideos, stripDataUrlPrefix, queueComfyUIPrompt, validateWorkflowAndMappings } from '../services/comfyUIService';
-import FinalPromptModal from './FinalPromptModal';
-import LocalGenerationStatusComponent from './LocalGenerationStatus';
-import TimelineIcon from './icons/TimelineIcon';
-import RefreshCwIcon from './icons/RefreshCwIcon';
-import Tooltip from './Tooltip';
-import SaveIcon from './icons/SaveIcon';
-import CheckCircleIcon from './icons/CheckCircleIcon';
-import { useInteractiveSpotlight, useArtifactMetadata, type SceneTelemetryMetadata, useVisualBible } from '../utils/hooks';
-import GuidedAction from './GuidedAction';
-import GuideCard from './GuideCard';
-import CompassIcon from './icons/CompassIcon';
-import NegativePromptSuggestions from './NegativePromptSuggestions';
-import TemplateGuidancePanel from './TemplateGuidancePanel';
-import MandatoryElementsChecklist from './MandatoryElementsChecklist';
-import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
-import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
-import { useTemplateContext } from '../contexts/TemplateContext';
-import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
-// TODO: Visual Bible integration not yet implemented
-// import ScenePlayer from './ScenePlayer';
-// import VisualBibleLinkModal from './VisualBibleLinkModal';
-import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
 
 interface TimelineEditorProps {
     scene: Scene;
@@ -124,10 +124,10 @@ interface TimelineEditorProps {
     onApiLog: ApiLogCallback;
     scenes: Scene[];
     onApplySuggestion: (suggestion: Suggestion, sceneId: string) => void;
-    generatedImages: Record<string, string>;
+    generatedImages: Record<string, KeyframeData>;
     generatedShotImages: Record<string, string>;
     setGeneratedShotImages: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-    onSceneKeyframeGenerated?: (sceneId: string, base64Image: string) => void;
+    onSceneKeyframeGenerated?: (sceneId: string, data: KeyframeData) => void;
     localGenSettings: LocalGenerationSettings;
     localGenStatus: Record<string, LocalGenerationStatus>;
     setLocalGenStatus: React.Dispatch<React.SetStateAction<Record<string, LocalGenerationStatus>>>;
@@ -162,7 +162,7 @@ const TimelineItem: React.FC<{
         >
             {imageUrl && (
                 <div className="w-1/4 flex-shrink-0">
-                    <img src={`data:image/jpeg;base64,${imageUrl}`} alt={`Preview for shot ${index + 1}`} className="rounded-md aspect-video object-cover" />
+                    <img src={`data:image/jpeg;base64,${imageUrl}`} alt={`Preview for shot ${index + 1}`} className="rounded-md aspect-square object-cover" />
                     <button
                         onClick={() => onLinkToVisualBible(shot.id, imageUrl)}
                         className="mt-1 w-full px-2 py-1 bg-amber-600 text-white text-xs rounded-md hover:bg-amber-700 transition-colors"
@@ -312,109 +312,34 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const mediaActions = useMediaGenerationActions();
 
     const ensureSceneAssets = useCallback(async () => {
-        let resolvedSceneKeyframe = sceneKeyframe;
+        const resolvedSceneKeyframe = sceneKeyframe;
         const shotImages: Record<string, string> = { ...generatedShotImages };
 
+        // Check if scene keyframe exists
         if (!resolvedSceneKeyframe) {
-            onApiStateChange('loading', 'Generating base scene keyframe...');
-            // Instrumentation: emit lightweight, structured logs so E2E can detect a client-side
-            // attempt to generate a keyframe. We both push to a global array (readable via page.evaluate)
-            // and write a console.info line with a stable prefix so Playwright can capture it from
-            // the browser console.
-            try {
-                const diag = {
-                    event: 'call-generateKeyframeForScene',
-                    sceneId: scene.id,
-                    summaryPreview: (scene.summary || '').slice(0, 200),
-                    ts: Date.now(),
-                };
-                try { (window as any).__gemDirectClientDiagnostics = (window as any).__gemDirectClientDiagnostics || []; (window as any).__gemDirectClientDiagnostics.push(diag); } catch (e) { /* ignore */ }
-                try { console.info('GEMDIRECT-INSTRUMENT:' + JSON.stringify(diag)); } catch (e) { /* ignore */ }
-            } catch (e) {
-                // swallow instrumentation errors to avoid blocking generation
-            }
-
-            const generated = await mediaActions.generateKeyframeForScene(
-                directorsVision,
-                scene.summary,
-                onApiLog,
-                onApiStateChange
-            );
-
-            // Emit result instrumentation
-            try {
-                const res = {
-                    event: 'result-generateKeyframeForScene',
-                    sceneId: scene.id,
-                    length: typeof generated === 'string' ? generated.length : 0,
-                    ts: Date.now(),
-                };
-                try { (window as any).__gemDirectClientDiagnostics = (window as any).__gemDirectClientDiagnostics || []; (window as any).__gemDirectClientDiagnostics.push(res); } catch (e) { /* ignore */ }
-                try { console.info('GEMDIRECT-INSTRUMENT:' + JSON.stringify(res)); } catch (e) { /* ignore */ }
-            } catch (e) {
-                /* ignore */
-            }
-            resolvedSceneKeyframe = stripDataUrlPrefix(generated);
-            onSceneKeyframeGenerated?.(scene.id, resolvedSceneKeyframe);
+            throw new Error('Scene keyframe image is required before generating videos. Please generate scene images first using the "Generate Keyframes" button above.');
         }
 
-        const missingShots = timeline.shots.filter((shot) => !shotImages[shot.id]);
-        if (missingShots.length > 0) {
-            const newlyGenerated: Record<string, string> = {};
-            for (const shot of missingShots) {
-                const enhancers = timeline.shotEnhancers[shot.id];
-                // Instrumentation for shot-level image generation
-                try {
-                    const diagShot = { event: 'call-generateImageForShot', sceneId: scene.id, shotId: shot.id, ts: Date.now() };
-                    try { (window as any).__gemDirectClientDiagnostics = (window as any).__gemDirectClientDiagnostics || []; (window as any).__gemDirectClientDiagnostics.push(diagShot); } catch (e) { /* ignore */ }
-                    try { console.info('GEMDIRECT-INSTRUMENT:' + JSON.stringify(diagShot)); } catch (e) { /* ignore */ }
-                } catch (e) { /* ignore */ }
-
-                const generated = await mediaActions.generateImageForShot(
-                    shot,
-                    enhancers,
-                    directorsVision,
-                    scene.summary,
-                    scene.id,
-                    onApiLog,
-                    onApiStateChange
-                );
-
-                try {
-                    const diagShotRes = { event: 'result-generateImageForShot', sceneId: scene.id, shotId: shot.id, length: typeof generated === 'string' ? generated.length : 0, ts: Date.now() };
-                    try { (window as any).__gemDirectClientDiagnostics = (window as any).__gemDirectClientDiagnostics || []; (window as any).__gemDirectClientDiagnostics.push(diagShotRes); } catch (e) { /* ignore */ }
-                    try { console.info('GEMDIRECT-INSTRUMENT:' + JSON.stringify(diagShotRes)); } catch (e) { /* ignore */ }
-                } catch (e) { /* ignore */ }
-                const normalized = stripDataUrlPrefix(generated);
-                shotImages[shot.id] = normalized;
-                newlyGenerated[shot.id] = normalized;
+        // Use scene keyframe as fallback for shots that don't have specific images
+        // This allows video generation to proceed without shot-specific images
+        timeline.shots.forEach((shot) => {
+            if (!shotImages[shot.id]) {
+                if (isBookendKeyframe(resolvedSceneKeyframe)) {
+                    shotImages[shot.id] = resolvedSceneKeyframe.start;
+                } else {
+                    shotImages[shot.id] = resolvedSceneKeyframe;
+                }
             }
-            if (Object.keys(newlyGenerated).length > 0) {
-                setGeneratedShotImages((prev) => ({ ...prev, ...newlyGenerated }));
-            }
-        }
-
-        if (!resolvedSceneKeyframe) {
-            throw new Error('Unable to generate a scene keyframe. Please try again.');
-        }
+        });
 
         return {
-            sceneKeyframe: resolvedSceneKeyframe,
+            sceneKeyframe: isBookendKeyframe(resolvedSceneKeyframe) ? resolvedSceneKeyframe.start : resolvedSceneKeyframe,
             shotImages,
         };
     }, [
         sceneKeyframe,
         generatedShotImages,
         timeline.shots,
-        timeline.shotEnhancers,
-        directorsVision,
-        scene.summary,
-        mediaActions,
-        onApiLog,
-        onApiStateChange,
-        setGeneratedShotImages,
-        onSceneKeyframeGenerated,
-        scene.id,
     ]);
     
     useEffect(() => {
@@ -467,6 +392,17 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         return `This scene occurs in: ${actContext.trim()}`;
     }, [scenes, storyBible]);
 
+
+    const handleUpdateSummaryClick = async () => {
+        setIsSummaryUpdating(true);
+        try {
+            await onUpdateSceneSummary(scene.id);
+        } catch (error) {
+            console.error("Failed to update summary:", error);
+        } finally {
+            setIsSummaryUpdating(false);
+        }
+    };
 
     const updateTimeline = (newTimeline: Partial<TimelineData>) => {
         setTimeline(prev => ({ ...prev, ...newTimeline }));
@@ -586,6 +522,21 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     };
     
     const handleGenerateShotImage = async (shotId: string) => {
+        // Validate image generation capability before proceeding
+        const { validateImageGenerationCapability, formatValidationError } = await import('../utils/generationValidation');
+        const validation = validateImageGenerationCapability(
+            localGenSettings,
+            localGenSettings?.llmProviderUrl ? true : false,
+            true // Gemini access assumed if we reached this point
+        );
+
+        if (!validation.valid) {
+            const errorMsg = formatValidationError(validation, 'image');
+            alert(errorMsg);
+            console.error('Shot image generation blocked:', errorMsg);
+            return;
+        }
+
         const shot = timeline.shots.find(s => s.id === shotId);
         if (!shot) return;
 
@@ -609,8 +560,172 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     };
 
     const handleGenerateLocally = async () => {
-        const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary, generatedShotImages);
-        onUpdateScene({ ...scene, generatedPayload: payloads });
+        if (!scene) return;
+
+        // Helper to update status
+        const updateStatus = (update: Partial<LocalGenerationStatus>) => {
+            setLocalGenStatus(prev => ({
+                ...prev,
+                [scene.id]: {
+                    ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
+                    ...update
+                }
+            }));
+        };
+
+        // Reset status
+        updateStatus({ status: 'running', progress: 0, message: 'Initializing generation...' });
+
+        const keyframeMode = localGenSettings?.keyframeMode ?? 'single';
+        console.log('[Local Generation] Mode:', keyframeMode, 'Settings:', JSON.stringify(localGenSettings));
+
+        try {
+            const keyframeData = generatedImages[scene.id];
+            
+            // Check if using bookend mode
+            if (keyframeMode === 'bookend') {
+                // Bookend mode: require bookend keyframes
+                if (!isBookendKeyframe(keyframeData)) {
+                    throw new Error('Bookend keyframes required for sequential generation. Please generate bookend keyframes first or switch to Single Keyframe mode in Settings.');
+                }
+
+                const videoPath = await generateVideoFromBookendsSequential(
+                    localGenSettings,
+                    scene,
+                    timeline,
+                    keyframeData,
+                    onApiLog,
+                    updateStatus
+                );
+
+                if (videoPath) {
+                    updateStatus({ 
+                        status: 'complete', 
+                        progress: 100, 
+                        message: 'Video generation complete!',
+                        final_output: {
+                            type: 'video',
+                            data: videoPath,
+                            filename: 'bookend_sequence.mp4'
+                        }
+                    });
+                }
+            } else {
+                // Single keyframe mode: use standard video generation flow
+                if (!keyframeData) {
+                    throw new Error('Scene keyframe required for video generation. Please generate a keyframe image first.');
+                }
+
+                // Resolve keyframe (handle both single and bookend formats gracefully)
+                const resolvedKeyframe = isSingleKeyframe(keyframeData) ? keyframeData : keyframeData.start;
+                
+                // Validate workflow before generation
+                try {
+                    validateWorkflowAndMappings(localGenSettings, 'wan-i2v');
+                } catch (validationError) {
+                    const errorMsg = validationError instanceof Error ? validationError.message : 'Workflow validation failed';
+                    throw new Error(`Workflow validation failed: ${errorMsg}. Please check ComfyUI settings.`);
+                }
+
+                const totalShots = timeline.shots.length;
+                if (totalShots === 0) {
+                    throw new Error('No shots available to generate.');
+                }
+
+                const shotIndexMap = timeline.shots.reduce<Record<string, number>>((acc, shot, index) => {
+                    acc[shot.id] = index;
+                    return acc;
+                }, {});
+
+                // Build keyframe mapping for each shot (all use scene keyframe in single mode)
+                const keyframeImages: Record<string, string> = {};
+                timeline.shots.forEach(shot => {
+                    keyframeImages[shot.id] = resolvedKeyframe;
+                });
+
+                // Generate scene transition context
+                const currentSceneIndex = scenes.findIndex(s => s.id === scene.id);
+                const previousScene: Scene | null = currentSceneIndex > 0 ? (scenes[currentSceneIndex - 1] ?? null) : null;
+                const transitionContext = generateSceneTransitionContext(scene, previousScene, storyBible);
+
+                const results = await generateTimelineVideos(
+                    localGenSettings,
+                    timeline,
+                    directorsVision,
+                    scene.summary,
+                    keyframeImages,
+                    (shotId, statusUpdate) => {
+                        const shotIndex = shotIndexMap[shotId] ?? 0;
+                        const total = totalShots || 1;
+                        const baseProgress = (shotIndex / total) * 100;
+                        const incremental = (statusUpdate.progress ?? 0) / total;
+                        const aggregatedProgress = Math.min(100, baseProgress + incremental);
+
+                        updateStatus({
+                            status: statusUpdate.status ?? 'running',
+                            message: `Shot ${shotIndex + 1}/${totalShots}: ${statusUpdate.message || 'Processing...'}`,
+                            progress: Math.round(aggregatedProgress)
+                        });
+                    },
+                    { transitionContext }
+                );
+
+                const lastShotId = timeline.shots[totalShots - 1]?.id;
+                const finalResult = lastShotId ? results[lastShotId] : undefined;
+                const finalOutput = finalResult && finalResult.videoPath ? {
+                    type: 'video' as const,
+                    data: finalResult.videoPath,
+                    filename: finalResult.filename
+                } : undefined;
+
+                updateStatus({
+                    status: 'complete',
+                    message: `Generated ${totalShots} ${totalShots === 1 ? 'shot' : 'shots'} successfully.`,
+                    progress: 100,
+                    final_output: finalOutput
+                });
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error during local generation.';
+            console.error('[Local Generation Error]', message, error);
+            updateStatus({ status: 'error', message, progress: 0 });
+        }
+    };
+    
+    const handleGenerateVideoWithAI = async () => {
+        // CRITICAL: Comprehensive validation before video generation
+        const { validateVideoGenerationCapability, formatValidationError } = await import('../utils/generationValidation');
+        
+        const hasKeyframes = !!generatedImages[scene.id];
+        const hasWorkflow = localGenSettings?.workflowProfiles?.['wan-i2v']?.workflowJson ? true : false;
+        
+        // Get stored validation state to check if configuration is up-to-date
+        const storedValidation = localStorage.getItem('gemDirect_validationState');
+        const validationSnapshot = storedValidation ? JSON.parse(storedValidation) : null;
+        
+        const validation = validateVideoGenerationCapability(
+            localGenSettings,
+            validationSnapshot?.llmValid || false,
+            validationSnapshot?.comfyUIValid || false,
+            hasWorkflow,
+            hasKeyframes
+        );
+
+        if (!validation.valid) {
+            const errorMsg = formatValidationError(validation, 'video');
+            
+            // Show user-friendly alert with all blockers and fixes
+            const alertMessage = `Video Generation Blocked\n\n${errorMsg}\n\nPlease configure settings before attempting video generation.`;
+            alert(alertMessage);
+            
+            // Also log to console for debugging
+            console.error('Video generation blocked:', {
+                reason: validation.reason,
+                blockers: validation.blockers,
+                recommendations: validation.recommendations
+            });
+            return;
+        }
 
         const totalShots = timeline.shots.length;
         const shotIndexMap = timeline.shots.reduce<Record<string, number>>((acc, shot, index) => {
@@ -668,6 +783,12 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             }
         });
 
+        // Generate scene transition context for narrative coherence
+        // Find the previous scene in the array to create transition context
+        const currentSceneIndex = scenes.findIndex(s => s.id === scene.id);
+        const previousScene: Scene | null = currentSceneIndex > 0 ? (scenes[currentSceneIndex - 1] ?? null) : null;
+        const transitionContext = generateSceneTransitionContext(scene, previousScene, storyBible);
+
         try {
             const results = await generateTimelineVideos(
                 localGenSettings,
@@ -687,7 +808,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         message: `Shot ${shotIndex + 1}/${totalShots}: ${statusUpdate.message || 'Processing...'}`,
                         progress: Math.round(aggregatedProgress)
                     });
-                }
+                },
+                { transitionContext }
             );
 
             const lastShotId = timeline.shots[totalShots - 1]?.id;
@@ -700,30 +822,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
             updateStatus({
                 status: 'complete',
-                message: `Generated ${totalShots} ${totalShots === 1 ? 'shot' : 'shots'} locally.`,
+                message: `Generated ${totalShots} ${totalShots === 1 ? 'shot' : 'shots'} successfully.`,
                 progress: 100,
                 final_output: finalOutput
             });
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Unknown error during local generation.';
+            const message = error instanceof Error ? error.message : 'Unknown error during video generation.';
             updateStatus({ status: 'error', message, progress: 0 });
         }
-    };
-    
-    const handleUpdateSummaryClick = async () => {
-        setIsSummaryUpdating(true);
-        await onUpdateSceneSummary(scene.id);
-        setIsSummaryUpdating(false);
-    };
-
-    const handleGenerateVideoWithAI = async () => {
-        if (!storyBible) {
-            alert('Please complete the story bible first.');
-            return;
-        }
-        // Generate using the story logline as prompt
-        // TODO: Phase 3 - Refine this to run scene-specific renders instead of whole-story re-generation
-        await generateStoryToVideo(storyBible.logline, 'cinematic');
     };
 
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
@@ -764,7 +870,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setDragOverIndex(null);
     };
     
-    const isLocalGenConfigured = localGenSettings.comfyUIUrl && localGenSettings.workflowJson;
+    // Check if local generation is configured (using new workflowProfiles structure)
+    const isLocalGenConfigured = localGenSettings.comfyUIUrl && 
+        localGenSettings.workflowProfiles?.['wan-i2v']?.workflowJson &&
+        Object.values(localGenSettings.workflowProfiles?.['wan-i2v']?.mapping || {}).includes('keyframe_image');
 
     const renderSaveStatus = () => {
         switch (saveStatus) {
@@ -783,13 +892,56 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             <header className="bg-gray-800/30 p-4 rounded-lg border border-gray-700/50 flex flex-col sm:flex-row gap-6">
                 {sceneKeyframe && (
                     <div className="sm:w-1/3 flex-shrink-0">
-                        <img src={`data:image/jpeg;base64,${sceneKeyframe}`} alt={`Keyframe for ${scene.title}`} className="rounded-md aspect-video object-cover" />
-                        <button
-                            onClick={() => setLinkModalState({ isOpen: true, imageData: sceneKeyframe, sceneId: scene.id })}
-                            className="mt-2 w-full px-3 py-1 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700 transition-colors"
-                        >
-                            Add keyframe to Visual Bible
-                        </button>
+                        {isBookendKeyframe(sceneKeyframe) ? (
+                            <div className="flex gap-1">
+                                <div className="relative flex-1">
+                                    <img src={`data:image/jpeg;base64,${sceneKeyframe.start}`} alt={`Start Keyframe for ${scene.title}`} className="rounded-md aspect-square object-cover" />
+                                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs text-center py-1 rounded-b-md">Start</div>
+                                </div>
+                                <div className="relative flex-1">
+                                    <img src={`data:image/jpeg;base64,${sceneKeyframe.end}`} alt={`End Keyframe for ${scene.title}`} className="rounded-md aspect-square object-cover" />
+                                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs text-center py-1 rounded-b-md">End</div>
+                                </div>
+                            </div>
+                        ) : (
+                            <img src={`data:image/jpeg;base64,${sceneKeyframe}`} alt={`Keyframe for ${scene.title}`} className="rounded-md aspect-square object-cover" />
+                        )}
+                        <div className="mt-2 flex gap-2">
+                            <button
+                                onClick={() => setLinkModalState({ 
+                                    isOpen: true, 
+                                    imageData: isBookendKeyframe(sceneKeyframe) ? sceneKeyframe.start : sceneKeyframe, 
+                                    sceneId: scene.id 
+                                })}
+                                className="flex-1 px-3 py-1 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700 transition-colors"
+                            >
+                                Add to Visual Bible
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        onApiStateChange('loading', 'Regenerating keyframe...');
+                                        const newImage = await mediaActions.generateKeyframeForScene(
+                                            directorsVision,
+                                            scene.summary,
+                                            scene.id,
+                                            onApiLog,
+                                            onApiStateChange
+                                        );
+                                        onSceneKeyframeGenerated?.(scene.id, newImage);
+                                        onApiStateChange('success', 'Keyframe regenerated!');
+                                    } catch (error) {
+                                        const message = error instanceof Error ? error.message : 'Failed to regenerate keyframe';
+                                        onApiStateChange('error', message);
+                                    }
+                                }}
+                                className="flex-1 px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors flex items-center justify-center gap-1"
+                                title="Regenerate this scene's keyframe"
+                            >
+                                <RefreshCwIcon className="w-3 h-3" />
+                                Regenerate
+                            </button>
+                        </div>
                     </div>
                 )}
                 <div className="flex-grow">
@@ -828,6 +980,85 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     )}
                 </div>
             </header>
+
+            {/* Image Generation Status Banner */}
+            <div className={`rounded-lg p-4 border ${sceneKeyframe ? 'bg-green-900/20 border-green-500/30' : 'bg-amber-900/20 border-amber-500/30'}`}>
+                <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0">
+                        {sceneKeyframe ? (
+                            <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        ) : (
+                            <svg className="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        )}
+                    </div>
+                    <div className="flex-1">
+                        <h4 className={`text-sm font-semibold mb-1 ${sceneKeyframe ? 'text-green-300' : 'text-amber-300'}`}>
+                            Scene Keyframe: {sceneKeyframe ? 'Generated' : 'Not Generated (Optional)'}
+                        </h4>
+                        <p className="text-xs text-gray-400">
+                            {sceneKeyframe ? (
+                                'Scene keyframe is ready. You can generate videos for this scene.'
+                            ) : (
+                                'Keyframes are only needed for local ComfyUI generation. You can still "Export Prompts" without them.'
+                            )}
+                        </p>
+                        {!sceneKeyframe && (
+                            <button
+                                data-testid="generate-keyframes"
+                                onClick={async () => {
+                                    try {
+                                        const isBookend = localGenSettings.keyframeMode === 'bookend';
+                                        const label = isBookend ? 'Generating bookend keyframes...' : 'Generating keyframe...';
+                                        onApiStateChange('loading', label);
+                                        
+                                        let newData: KeyframeData;
+                                        
+                                        if (isBookend) {
+                                            newData = await generateSceneBookendsLocally(
+                                                localGenSettings,
+                                                scene,
+                                                JSON.stringify(storyBible),
+                                                directorsVision,
+                                                timeline.negativePrompt,
+                                                onApiLog,
+                                                onApiStateChange
+                                            );
+                                        } else {
+                                            newData = await mediaActions.generateKeyframeForScene(
+                                                directorsVision,
+                                                scene.summary,
+                                                scene.id,
+                                                onApiLog,
+                                                onApiStateChange
+                                            );
+                                        }
+                                        
+                                        onSceneKeyframeGenerated?.(scene.id, newData);
+                                        onApiStateChange('success', isBookend ? 'Bookend keyframes generated!' : 'Keyframe generated!');
+                                    } catch (error) {
+                                        const message = error instanceof Error ? error.message : 'Failed to generate keyframe';
+                                        onApiStateChange('error', message);
+                                    }
+                                }}
+                                className="mt-3 px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-md hover:bg-amber-700 transition-colors flex items-center gap-2"
+                            >
+                                <ImageIcon className="w-4 h-4" />
+                                {localGenSettings.keyframeMode === 'bookend' ? 'Generate Bookend Keyframes' : 'Generate Keyframe'}
+                            </button>
+                        )}
+                        {sceneKeyframe && timeline.shots.length > 0 && (
+                            <p className="text-xs text-gray-500 mt-1">
+                                {timeline.shots.filter(s => generatedShotImages[s.id]).length} of {timeline.shots.length} shots have specific images.
+                                {' '}Shots without images will use the scene keyframe.
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </div>
 
             {/* Latest Render Section - TODO: Implement ScenePlayer component */}
             {sceneArtifactMetadata?.Video ? (
@@ -1112,7 +1343,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         </button>
                         <Tooltip text={!isLocalGenConfigured ? "Please configure ComfyUI server and sync workflow in Settings." : "Generate video using your local ComfyUI server"}>
                             <button
-                                data-testid="btn-generate-locally"
+                                data-testid="generate-videos"
                                 onClick={handleGenerateLocally}
                                 disabled={!isLocalGenConfigured}
                                 className="px-6 py-3 bg-amber-600 text-white font-semibold rounded-full shadow-lg hover:bg-amber-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
@@ -1122,6 +1353,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         </Tooltip>
                         <Tooltip text={isGenerating ? "Generation in progress..." : "Generate video using AI pipeline"}>
                             <button
+                                data-testid="btn-generate-video"
                                 onClick={handleGenerateVideoWithAI}
                                 disabled={isGenerating}
                                 className="px-6 py-3 bg-purple-600 text-white font-semibold rounded-full shadow-lg hover:bg-purple-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
@@ -1134,8 +1366,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         {renderSaveStatus()}
                     </div>
                 </div>
-                 <GuideCard title="Next Step: Local Generation">
-                    <p>Once your timeline is complete and saved, it's time to bring it to life! Use the <strong>Export Prompts</strong> or <strong>Generate Locally</strong> buttons. This will create the necessary data to feed into an external video generation model (like a local ComfyUI instance) to create your cinematic scene.</p>
+                 <GuideCard title="Next Steps: Export or Generate">
+                    <p>Your timeline is ready! <strong>Export Prompts</strong> works immediately (no setup required) - it creates JSON/text prompts for any video generator. Or configure ComfyUI in Settings to use <strong>Generate Locally</strong> with keyframes.</p>
                 </GuideCard>
             </div>
 

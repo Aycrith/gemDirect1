@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Keyframe Update Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #2a2a2a;
+            border-radius: 8px;
+        }
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        .warning { color: #fbbf24; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .image-box {
+            border: 2px solid #444;
+            border-radius: 4px;
+            padding: 10px;
+            background: #333;
+        }
+        .image-box.has-image {
+            border-color: #4ade80;
+        }
+        .image-box img {
+            width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Batch Keyframe Generation - State Update Test</h1>
+    
+    <div class="test-section">
+        <h2>Test Configuration</h2>
+        <p>This test simulates the React state updates that occur during batch keyframe generation.</p>
+        <p>Expected behavior: All 5 images should be stored and displayed.</p>
+        <p>Reported issue: Only first and last images update in UI.</p>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Controls</h2>
+        <button onclick="runTest()">Run Batch Update Test</button>
+        <button onclick="clearState()">Clear State</button>
+        <button onclick="checkIndexedDB()">Check IndexedDB</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Results</h2>
+        <div id="results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Visual Verification</h2>
+        <div id="images" class="image-grid"></div>
+    </div>
+
+    <script>
+        // Simulate React state with a simple object
+        let generatedImages = {};
+        const scenes = [
+            { id: 'scene-1', title: 'Scene 1' },
+            { id: 'scene-2', title: 'Scene 2' },
+            { id: 'scene-3', title: 'Scene 3' },
+            { id: 'scene-4', title: 'Scene 4' },
+            { id: 'scene-5', title: 'Scene 5' }
+        ];
+
+        // Simulate database save (like usePersistentState does)
+        function saveData(key, value) {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('cinematic-story-db', 1);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                    const db = request.result;
+                    const tx = db.transaction('misc', 'readwrite');
+                    const store = tx.objectStore('misc');
+                    const putRequest = store.put(value, key);
+                    putRequest.onsuccess = () => resolve();
+                    putRequest.onerror = () => reject(putRequest.error);
+                };
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('misc')) {
+                        db.createObjectStore('misc');
+                    }
+                };
+            });
+        }
+
+        // Simulate getData (like usePersistentState does on init)
+        function getData(key) {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('cinematic-story-db', 1);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                    const db = request.result;
+                    const tx = db.transaction('misc', 'readonly');
+                    const store = tx.objectStore('misc');
+                    const getRequest = store.get(key);
+                    getRequest.onsuccess = () => resolve(getRequest.result);
+                    getRequest.onerror = () => reject(getRequest.error);
+                };
+            });
+        }
+
+        // Simulate setState behavior (what GenerateSceneImagesButton does)
+        function setState(updater) {
+            const prevState = generatedImages;
+            generatedImages = updater(prevState);
+            console.log(`[setState] Updated state. Keys: ${Object.keys(generatedImages).join(', ')}`);
+            
+            // Simulate usePersistentState saving to IndexedDB
+            saveData('test-generatedImages', generatedImages).catch(err => {
+                console.error('[setState] Failed to save:', err);
+            });
+            
+            // Trigger re-render
+            renderImages();
+        }
+
+        // Generate mock image data
+        function generateMockImage(sceneId, index) {
+            // Create a tiny 1x1 colored PNG as base64
+            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff'];
+            return `data:image/svg+xml;base64,${btoa(`<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="${colors[index]}"/><text x="50" y="50" text-anchor="middle" fill="white" font-size="20">${index + 1}</text></svg>`)}`;
+        }
+
+        // Simulate batch generation (what GenerateSceneImagesButton does)
+        async function runTest() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<p class="warning">⏳ Starting batch generation test...</p>';
+            
+            generatedImages = {}; // Reset
+            renderImages();
+
+            for (let i = 0; i < scenes.length; i++) {
+                const scene = scenes[i];
+                
+                results.innerHTML += `<p>🎬 Generating image ${i + 1}/5 for ${scene.title}...</p>`;
+                
+                // Simulate async generation delay
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                const mockImage = generateMockImage(scene.id, i);
+                
+                // THIS IS THE CRITICAL PART: Same pattern as GenerateSceneImagesButton
+                setState(prev => {
+                    const newState = { ...prev, [scene.id]: mockImage };
+                    console.log(`[Test] Scene ${i + 1} added. State now has ${Object.keys(newState).length} images`);
+                    return newState;
+                });
+                
+                results.innerHTML += `<p class="success">✅ Image ${i + 1}/5 generated and state updated</p>`;
+                
+                // Small delay between generations (like the real code)
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            
+            // Final verification
+            setTimeout(async () => {
+                const stateCount = Object.keys(generatedImages).length;
+                const dbData = await getData('test-generatedImages');
+                const dbCount = dbData ? Object.keys(dbData).length : 0;
+                
+                results.innerHTML += `<br><h3>Final Verification:</h3>`;
+                results.innerHTML += `<p class="${stateCount === 5 ? 'success' : 'error'}">State has ${stateCount}/5 images</p>`;
+                results.innerHTML += `<p class="${dbCount === 5 ? 'success' : 'error'}">IndexedDB has ${dbCount}/5 images</p>`;
+                
+                if (stateCount === 5 && dbCount === 5) {
+                    results.innerHTML += `<p class="success"><strong>✅ TEST PASSED: All 5 images stored correctly!</strong></p>`;
+                } else {
+                    results.innerHTML += `<p class="error"><strong>❌ TEST FAILED: Images missing!</strong></p>`;
+                }
+            }, 500);
+        }
+
+        // Render images (simulates React component render)
+        function renderImages() {
+            const container = document.getElementById('images');
+            container.innerHTML = '';
+            
+            scenes.forEach((scene, index) => {
+                const box = document.createElement('div');
+                box.className = 'image-box';
+                
+                const image = generatedImages[scene.id];
+                if (image) {
+                    box.classList.add('has-image');
+                    box.innerHTML = `
+                        <strong>${scene.title}</strong><br>
+                        <img src="${image}" alt="${scene.title}">
+                        <small class="success">✓ Image present</small>
+                    `;
+                } else {
+                    box.innerHTML = `
+                        <strong>${scene.title}</strong><br>
+                        <div style="width:100px; height:100px; background:#555; display:flex; align-items:center; justify-content:center; border-radius:4px;">
+                            No Image
+                        </div>
+                        <small class="error">✗ Missing</small>
+                    `;
+                }
+                
+                container.appendChild(box);
+            });
+        }
+
+        function clearState() {
+            generatedImages = {};
+            renderImages();
+            document.getElementById('results').innerHTML = '<p>State cleared.</p>';
+        }
+
+        async function checkIndexedDB() {
+            const data = await getData('test-generatedImages');
+            const results = document.getElementById('results');
+            
+            if (data) {
+                const count = Object.keys(data).length;
+                results.innerHTML = `<p class="success">IndexedDB contains ${count} images</p>`;
+                results.innerHTML += `<p>Keys: ${Object.keys(data).join(', ')}</p>`;
+            } else {
+                results.innerHTML = `<p class="error">No data in IndexedDB</p>`;
+            }
+        }
+
+        // Initial render
+        renderImages();
+    </script>
+</body>
+</html>

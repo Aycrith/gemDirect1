@@ -7,7 +7,9 @@ describe('WAN guardrails', () => {
     const settings = createValidTestSettings();
     const shot = { id: 's1', description: 'A moment' } as any;
     const prompt = buildShotPrompt(shot, undefined, '', settings);
-    expect(prompt).toContain('Single cinematic frame');
+    // Updated to match current SINGLE_FRAME_PROMPT format (2025-11-24)
+    // Check for key phrases from SINGLE_FRAME_PROMPT constant
+    expect(prompt).toContain('EXACTLY ONE UNIFIED CINEMATIC SCENE');
     const negative = extendNegativePrompt('blurry');
     expect(negative).toContain(NEGATIVE_GUIDANCE);
   });

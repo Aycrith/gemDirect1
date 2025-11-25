@@ -52,7 +52,7 @@ const LocalGenerationStatus: React.FC<Props> = ({ status, onClear }) => {
                                 {status.final_output.type === 'image' ? (
                                     <img src={status.final_output.data} alt={status.final_output.filename} className="w-full aspect-video object-contain" />
                                 ) : (
-                                    <video src={status.final_output.data} className="w-full aspect-video" controls autoPlay loop muted />
+                                    <video data-testid="video-player" src={status.final_output.data} className="w-full aspect-video" controls autoPlay loop muted />
                                 )}
                             </div>
                         </div>

@@ -63,9 +63,9 @@ test.describe('Full Lifecycle: Onboarding → Story → Video → Coherence → 
     const wanT2iReadiness = settingsModal.getByTestId('wan-readiness-wan-t2i');
     const wanI2vReadiness = settingsModal.getByTestId('wan-readiness-wan-i2v');
     
-    // Profiles should exist (even if not ready)
-    await expect(settingsModal.getByText(/wan-t2i/i)).toBeVisible();
-    await expect(settingsModal.getByText(/wan-i2v/i)).toBeVisible();
+    // Profiles should exist (even if not ready) - use first() to handle multiple matches
+    await expect(settingsModal.getByText(/wan-t2i/i).first()).toBeVisible();
+    await expect(settingsModal.getByText(/wan-i2v/i).first()).toBeVisible();
 
     // Close settings
     await settingsModal.getByRole('button', { name: /close/i }).click();

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react';
-import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationStatus, SceneContinuityData } from './types';
+import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationStatus, SceneContinuityData, SceneImageGenerationStatus, KeyframeData } from './types';
 import { useProjectData, usePersistentState, useSceneGenerationWatcher } from './utils/hooks';
 import { ApiStatusProvider, useApiStatus } from './contexts/ApiStatusContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
@@ -25,15 +25,20 @@ const ArtifactViewer = lazy(() => import('./components/ArtifactViewer'));
 // P1 Optimization (2025-11-20): Additional lazy loading for conditional components
 const PipelineGenerator = lazy(() => import('./components/PipelineGenerator')); // Only used in Quick Generate mode
 
-// Eager imports for critical path components
-import StoryIdeaForm from './components/StoryIdeaForm';
-import StoryBibleEditor from './components/StoryBibleEditor';
-import DirectorsVisionForm from './components/DirectorsVisionForm';
+// P2 Optimization (2025-11-22): Lazy load workflow-stage-specific components
+// These are only rendered when user reaches specific workflow stages, saving ~80KB initial bundle
+const StoryIdeaForm = lazy(() => import('./components/StoryIdeaForm')); // Stage: 'idea'
+const StoryBibleEditor = lazy(() => import('./components/StoryBibleEditor')); // Stage: 'bible'
+const DirectorsVisionForm = lazy(() => import('./components/DirectorsVisionForm')); // Stage: 'vision'
+const ConfirmationModal = lazy(() => import('./components/ConfirmationModal')); // Conditional: new project confirmation
+
+// Eager imports for critical path components (always visible)
 import SceneNavigator from './components/SceneNavigator';
 import GenerateSceneImagesButton from './components/GenerateSceneImagesButton';
 import WorkflowTracker from './components/WorkflowTracker';
 import Toast from './components/Toast';
 import ApiStatusIndicator from './components/ApiStatusIndicator';
+import ErrorBoundary from './components/ErrorBoundary';
 import BarChartIcon from './components/icons/BarChartIcon';
 import SettingsIcon from './components/icons/SettingsIcon';
 import SparklesIcon from './components/icons/SparklesIcon';
@@ -42,7 +47,6 @@ import UploadCloudIcon from './components/icons/UploadCloudIcon';
 import BookOpenIcon from './components/icons/BookOpenIcon';
 import ProgressBar from './components/ProgressBar';
 import ComfyUICallbackProvider from './components/ComfyUICallbackProvider.clean';
-import ConfirmationModal from './components/ConfirmationModal';
 import { clearProjectData } from './utils/database';
 
 // Loading fallback component
@@ -64,7 +68,7 @@ const AppContent: React.FC = () => {
         scenesToReview, setScenesToReview, applySuggestions
     } = useProjectData(setGenerationProgress);
 
-    const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
+    const [activeSceneId, setActiveSceneId] = usePersistentState<string | null>('activeSceneId', null);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [isUsageDashboardOpen, setIsUsageDashboardOpen] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -79,7 +83,8 @@ const AppContent: React.FC = () => {
     const { sceneStatuses, updateSceneStatus } = useSceneGenerationWatcher(scenes);
 
     const { settings: localGenSettings, setSettings: setLocalGenSettings } = useLocalGenerationSettings();
-    const [generatedImages, setGeneratedImages] = usePersistentState<Record<string, string>>('generatedImages', {});
+    const [generatedImages, setGeneratedImages] = usePersistentState<Record<string, KeyframeData>>('generatedImages', {});
+    const [sceneImageStatuses, setSceneImageStatuses] = usePersistentState<Record<string, SceneImageGenerationStatus>>('sceneImageStatuses', {});
     const [generatedShotImages, setGeneratedShotImages] = usePersistentState<Record<string, string>>('generatedShotImages', {});
     const [continuityData, setContinuityData] = usePersistentState<Record<string, SceneContinuityData>>('continuityData', {});
     const [localGenStatus, setLocalGenStatus] = usePersistentState<Record<string, LocalGenerationStatus>>('localGenStatus', {});
@@ -115,6 +120,16 @@ const AppContent: React.FC = () => {
     const removeToast = useCallback((id: number) => {
         setToasts(prev => prev.filter(t => t.id !== id));
     }, []);
+
+    const updateSceneImageStatus = useCallback((sceneId: string, update: Partial<SceneImageGenerationStatus>) => {
+        setSceneImageStatuses(prev => ({
+            ...prev,
+            [sceneId]: {
+                ...(prev[sceneId] || { status: 'idle' as const }),
+                ...update
+            }
+        }));
+    }, [setSceneImageStatuses]);
 
     const handleNewProjectRequest = useCallback(() => {
         setIsNewProjectConfirmOpen(true);
@@ -184,8 +199,10 @@ const AppContent: React.FC = () => {
         }
     };
 
-    const handleSceneKeyframeGenerated = useCallback((sceneId: string, base64Image: string) => {
-        setGeneratedImages(prev => ({ ...prev, [sceneId]: base64Image }));
+    const handleSceneKeyframeGenerated = useCallback((sceneId: string, data: KeyframeData) => {
+        const length = typeof data === 'string' ? data.length : (data.start.length + data.end.length);
+        console.log(`✅ [Image Sync - handleSceneKeyframeGenerated] Scene ${sceneId}: image updated, length: ${length}`);
+        setGeneratedImages(prev => ({ ...prev, [sceneId]: data }));
     }, [setGeneratedImages]);
     
     const handleDeleteScene = (sceneId: string) => {
@@ -311,6 +328,15 @@ const AppContent: React.FC = () => {
         }
     };
 
+    // Auto-select first scene if we have scenes but no active scene
+    // This handles the race condition where scenes load before activeSceneId from IndexedDB
+    useEffect(() => {
+        if (scenes.length > 0 && !activeSceneId && workflowStage === 'director' && scenes[0]) {
+            console.log('[App] Auto-selecting first scene:', scenes[0].id);
+            setActiveSceneId(scenes[0].id);
+        }
+    }, [scenes, activeSceneId, workflowStage, setActiveSceneId]);
+
     const activeScene = scenes.find(s => s.id === activeSceneId);
 
     const renderCurrentStage = () => {
@@ -326,13 +352,45 @@ const AppContent: React.FC = () => {
                                 Transform your ideas into fully-realized cinematic stories, from high-level plot to shot-by-shot details, all with the power of AI.
                             </p>
                         </div>
-                        <StoryIdeaForm onSubmit={(idea, genre) => handleGenerateStoryBible(idea, genre || 'sci-fi', addToast)} isLoading={isProjectLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />
+                        <Suspense fallback={<LoadingFallback message="Loading story form..." />}>
+                            <StoryIdeaForm onSubmit={(idea, genre) => handleGenerateStoryBible(idea, genre || 'sci-fi', addToast)} isLoading={isProjectLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />
+                        </Suspense>
                     </>
                 )
             case 'bible':
-                return storyBible && <StoryBibleEditor storyBible={storyBible} onUpdate={setStoryBible} onGenerateScenes={() => setWorkflowStage('vision')} isLoading={isProjectLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
+                return storyBible && (
+                    <Suspense fallback={<LoadingFallback message="Loading story bible editor..." />}>
+                        <StoryBibleEditor storyBible={storyBible} onUpdate={setStoryBible} onGenerateScenes={() => setWorkflowStage('vision')} isLoading={isProjectLoading} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />
+                    </Suspense>
+                );
             case 'vision':
-                return storyBible && <DirectorsVisionForm onSubmit={(vision) => handleGenerateScenes(vision, addToast, setGeneratedImages, updateSceneStatus)} isLoading={isProjectLoading} storyBible={storyBible} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />;
+                return storyBible && (
+                    <ErrorBoundary
+                        FallbackComponent={({ error, resetError }) => (
+                            <div className="p-4 bg-red-900/20 border border-red-500 rounded-md">
+                                <h3 className="text-red-400 font-semibold mb-2">Scene Generation Error</h3>
+                                <p className="text-sm text-gray-300 mb-3">{error.message}</p>
+                                <button
+                                    onClick={() => {
+                                        resetError();
+                                        setWorkflowStage('vision');
+                                    }}
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium transition-colors"
+                                >
+                                    Return to Director's Vision
+                                </button>
+                            </div>
+                        )}
+                        onError={(error, errorInfo) => {
+                            console.error('[Scene Generation Error Boundary]', error);
+                            console.error('[Component Stack]', errorInfo.componentStack);
+                        }}
+                    >
+                        <Suspense fallback={<LoadingFallback message="Loading director's vision form..." />}>
+                            <DirectorsVisionForm onSubmit={(vision) => handleGenerateScenes(vision, addToast, setGeneratedImages, updateSceneStatus)} isLoading={isProjectLoading} storyBible={storyBible} onApiStateChange={updateApiStatus} onApiLog={logApiCall} />
+                        </Suspense>
+                    </ErrorBoundary>
+                );
             case 'director':
                 return (
                     <div className="space-y-6">
@@ -344,10 +402,12 @@ const AppContent: React.FC = () => {
                             onApiLog={logApiCall}
                             onApiStateChange={updateApiStatus}
                             setGenerationProgress={setGenerationProgress}
+                            updateSceneImageStatus={updateSceneImageStatus}
+                            sceneImageStatuses={sceneImageStatuses}
                         />
                         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                             <div className="lg:col-span-1">
-                                <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} onDeleteScene={handleDeleteScene} scenesToReview={scenesToReview} sceneStatuses={sceneStatuses} generatedImages={generatedImages} />
+                                <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} onDeleteScene={handleDeleteScene} scenesToReview={scenesToReview} sceneStatuses={sceneStatuses} generatedImages={generatedImages} sceneImageStatuses={sceneImageStatuses} />
                             </div>
                             <div className="lg:col-span-3">
                                 {activeScene ? (
@@ -408,7 +468,7 @@ const AppContent: React.FC = () => {
     };
     
     return (
-        <div className="min-h-screen bg-gray-900 text-gray-200 font-sans">
+        <div className="min-h-screen bg-gray-900 text-gray-200 font-sans" data-testid="app-container">
             <header className="p-4 flex justify-between items-center sticky top-0 bg-gray-900/80 backdrop-blur-md z-30 border-b border-amber-500/20">
                 <div className="flex items-center gap-3">
                     <SparklesIcon className="w-7 h-7 text-amber-400" />
@@ -461,7 +521,7 @@ const AppContent: React.FC = () => {
                                 <BookOpenIcon className="w-6 h-6 text-gray-400" />
                             </button>
                         )}
-                        <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" aria-label="Open settings">
+                        <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" aria-label="Open settings" data-testid="settings-button">
                             <SettingsIcon className="w-6 h-6 text-gray-400" />
                         </button>
                     </div>
@@ -544,20 +604,22 @@ const AppContent: React.FC = () => {
             <Suspense fallback={null}>
                 <UsageDashboard isOpen={isUsageDashboardOpen} onClose={() => setIsUsageDashboardOpen(false)} />
             </Suspense>
-            <Suspense fallback={null}>
-                <LocalGenerationSettingsModal 
-                isOpen={isSettingsModalOpen}
-                onClose={() => setIsSettingsModalOpen(false)}
-                settings={localGenSettings}
-                onSave={(newSettings) => {
-                    console.log('[App] onSave received newSettings:', JSON.stringify(newSettings, null, 2));
-                    console.log('[App] Calling setLocalGenSettings...');
-                    setLocalGenSettings(newSettings);
-                    console.log('[App] setLocalGenSettings called');
-                    addToast('Settings saved!', 'success');
-                }}
-                addToast={addToast}
-            />
+            <Suspense fallback={<div data-testid="modal-loading" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 text-white">Loading Settings...</div>}>
+                {isSettingsModalOpen && (
+                    <LocalGenerationSettingsModal 
+                        isOpen={isSettingsModalOpen}
+                        onClose={() => setIsSettingsModalOpen(false)}
+                        settings={localGenSettings}
+                        onSave={(newSettings) => {
+                            console.log('[App] onSave received newSettings:', JSON.stringify(newSettings, null, 2));
+                            console.log('[App] Calling setLocalGenSettings...');
+                            setLocalGenSettings(newSettings);
+                            console.log('[App] setLocalGenSettings called');
+                            addToast('Settings saved!', 'success');
+                        }}
+                        addToast={addToast}
+                    />
+                )}
             </Suspense>
             {continuityModal && (
                 <Suspense fallback={null}>
@@ -615,15 +677,19 @@ const AppContent: React.FC = () => {
                     />
                 </Suspense>
             )}
-            <ConfirmationModal
-                isOpen={isNewProjectConfirmOpen}
-                onClose={() => setIsNewProjectConfirmOpen(false)}
-                onConfirm={handleNewProject}
-                title="Start New Project?"
-                message="This will clear all current project data, including your story bible, scenes, and generated content. This action cannot be undone."
-                confirmText="Start New Project"
-                cancelText="Cancel"
-            />
+            {isNewProjectConfirmOpen && (
+                <Suspense fallback={null}>
+                    <ConfirmationModal
+                        isOpen={isNewProjectConfirmOpen}
+                        onClose={() => setIsNewProjectConfirmOpen(false)}
+                        onConfirm={handleNewProject}
+                        title="Start New Project?"
+                        message="This will clear all current project data, including your story bible, scenes, and generated content. This action cannot be undone."
+                        confirmText="Start New Project"
+                        cancelText="Cancel"
+                    />
+                </Suspense>
+            )}
         </div>
     );
 };
