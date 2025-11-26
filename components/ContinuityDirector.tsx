@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion, KeyframeData } from '../types';
+import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion, KeyframeData, LocalGenerationStatus } from '../types';
 import ContinuityCard from './ContinuityCard';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import GuideCard from './GuideCard';
@@ -23,6 +23,8 @@ interface ContinuityDirectorProps {
   onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
   onExtendTimeline: (sceneId: string, lastFrame: string) => void;
   onRerunScene?: (sceneId: string) => void;
+  /** Optional: Local generation status for all scenes (for displaying generated videos) */
+  localGenStatus?: Record<string, LocalGenerationStatus>;
 }
 
 const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
@@ -40,6 +42,7 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
   onUpdateSceneSummary,
   onExtendTimeline,
   onRerunScene,
+  localGenStatus,
 }) => {
   const sceneRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
   const { visualBible } = useVisualBible();
@@ -158,6 +161,7 @@ CONTEXT FROM ADJACENT SCENES:
               allScenes={scenes}
               onRerunScene={onRerunScene}
               characterContinuityIssues={characterContinuityIssues.filter(issue => issue.scenes.includes(scene.id))}
+              localGenStatus={localGenStatus?.[scene.id]}
             />
           </div>
         ))}

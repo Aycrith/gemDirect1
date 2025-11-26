@@ -21,6 +21,7 @@ import Tooltip from './Tooltip';
 import SaveIcon from './icons/SaveIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import { useInteractiveSpotlight, useArtifactMetadata, type SceneTelemetryMetadata, useVisualBible } from '../utils/hooks';
+import { isValidVideoDataUrl, getVideoSourceWithFallback } from '../utils/videoValidation';
 import GuidedAction from './GuidedAction';
 import GuideCard from './GuideCard';
 import CompassIcon from './icons/CompassIcon';
@@ -614,6 +615,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     throw new Error('Bookend keyframes required for sequential generation. Please generate bookend keyframes first or switch to Single Keyframe mode in Settings.');
                 }
 
+                console.log('[PIPELINE:BOOKEND] Starting bookend video generation with keyframes:', {
+                    hasStart: !!keyframeData.start,
+                    hasEnd: !!keyframeData.end,
+                    startPrefix: keyframeData.start?.slice(0, 50),
+                    endPrefix: keyframeData.end?.slice(0, 50)
+                });
+
                 const videoPath = await generateVideoFromBookendsSequential(
                     localGenSettings,
                     scene,
@@ -622,6 +630,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     onApiLog,
                     updateStatus
                 );
+
+                console.log('[PIPELINE:BOOKEND] Video generation returned:', {
+                    hasVideoPath: !!videoPath,
+                    videoPathType: typeof videoPath,
+                    videoPathLength: typeof videoPath === 'string' ? videoPath.length : 0,
+                    videoPathPrefix: typeof videoPath === 'string' ? videoPath.slice(0, 80) : 'N/A'
+                });
 
                 // Validate that videoPath is actually a data URL, not a filename
                 const isValidDataUrl = typeof videoPath === 'string' && 
@@ -633,6 +648,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 }
 
                 if (videoPath && isValidDataUrl) {
+                    console.log('[PIPELINE:BOOKEND] ✅ Setting complete status with valid video data');
                     updateStatus({ 
                         status: 'complete', 
                         progress: 100, 
@@ -644,6 +660,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         }
                     });
                 } else {
+                    console.error('[PIPELINE:BOOKEND] ❌ Setting error status - invalid video data');
                     updateStatus({
                         status: 'error',
                         progress: 100,
@@ -1137,19 +1154,55 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 </div>
             </div>
 
-            {/* Latest Render Section - TODO: Implement ScenePlayer component */}
-            {sceneArtifactMetadata?.Video ? (
-                <div className="bg-gray-800/30 border border-indigo-500/30 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-indigo-400 mb-3">Latest Render</h3>
-                    <p className="text-gray-500">Scene player not yet implemented</p>
-                </div>
-            ) : (
-                <div className="bg-gray-800/30 border border-gray-700/50 rounded-lg p-4 text-center">
-                    <h3 className="text-lg font-semibold text-gray-400 mb-2">Latest Render</h3>
-                    <p className="text-gray-500">No video render available yet for this scene.</p>
-                    <p className="text-sm text-gray-600 mt-1">Generate locally or use the AI pipeline to create a video.</p>
-                </div>
-            )}
+            {/* Latest Render Section - Displays video from local generation or artifact metadata */}
+            {(() => {
+                // Use shared utility for consistent video source handling
+                // Priority: local generation (most recent) > artifact metadata (E2E pipeline)
+                const localStatus = localGenStatus[scene.id];
+                const videoSource = getVideoSourceWithFallback(localStatus, sceneArtifactMetadata?.Video);
+                
+                if (videoSource?.isDataUrl) {
+                    // Display video from local generation (data URL)
+                    return (
+                        <div className="bg-gray-800/30 border border-green-500/30 rounded-lg p-4">
+                            <h3 className="text-lg font-semibold text-green-400 mb-3">Latest Render</h3>
+                            <div className="max-w-2xl mx-auto bg-black rounded-lg overflow-hidden shadow-lg border border-gray-600">
+                                <video 
+                                    data-testid="latest-render-video"
+                                    src={videoSource.source} 
+                                    className="w-full aspect-video" 
+                                    controls 
+                                    autoPlay 
+                                    loop 
+                                    muted
+                                />
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2 text-center">
+                                {videoSource.filename || 'Generated video'}
+                                <span className="ml-2 text-green-400/70">(Local)</span>
+                            </p>
+                        </div>
+                    );
+                } else if (videoSource) {
+                    // Display info for artifact-based video (E2E pipeline - file path, not playable in browser)
+                    return (
+                        <div className="bg-gray-800/30 border border-indigo-500/30 rounded-lg p-4">
+                            <h3 className="text-lg font-semibold text-indigo-400 mb-3">Latest Render</h3>
+                            <p className="text-gray-400 text-sm">Video available: {videoSource.filename}</p>
+                            <p className="text-gray-500 text-xs mt-1">Generated via E2E pipeline. Run locally to view in browser.</p>
+                        </div>
+                    );
+                } else {
+                    // No video available
+                    return (
+                        <div className="bg-gray-800/30 border border-gray-700/50 rounded-lg p-4 text-center">
+                            <h3 className="text-lg font-semibold text-gray-400 mb-2">Latest Render</h3>
+                            <p className="text-gray-500">No video render available yet for this scene.</p>
+                            <p className="text-sm text-gray-600 mt-1">Generate locally or use the AI pipeline to create a video.</p>
+                        </div>
+                    );
+                }
+            })()}
 
             {latestSceneSnapshot && (
                 <div className="bg-gray-800/30 border border-emerald-500/30 rounded-lg p-4 text-xs text-gray-300 space-y-3">

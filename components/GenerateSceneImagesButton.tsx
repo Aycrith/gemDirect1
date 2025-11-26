@@ -2,6 +2,9 @@ import React, { useState, useCallback } from 'react';
 import { Scene, SceneImageGenerationStatus, KeyframeData } from '../types';
 import ImageIcon from './icons/ImageIcon';
 import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
+import { useLocalGenerationSettings } from '../contexts/LocalGenerationSettingsContext';
+import { useQualityGate } from '../hooks/useQualityGate';
+import { isFeatureEnabled } from '../utils/featureFlags';
 import type { ApiLogCallback, ApiStateChangeCallback } from '../services/planExpansionService';
 
 interface GenerateSceneImagesButtonProps {
@@ -14,6 +17,7 @@ interface GenerateSceneImagesButtonProps {
     setGenerationProgress: React.Dispatch<React.SetStateAction<{ current: number; total: number; task: string }>>;
     updateSceneImageStatus?: (sceneId: string, update: Partial<SceneImageGenerationStatus>) => void;
     sceneImageStatuses?: Record<string, SceneImageGenerationStatus>;
+    addToast?: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
     className?: string;
 }
 
@@ -27,15 +31,40 @@ const GenerateSceneImagesButton: React.FC<GenerateSceneImagesButtonProps> = ({
     setGenerationProgress,
     updateSceneImageStatus,
     sceneImageStatuses,
+    addToast,
     className = ''
 }) => {
     const [isGenerating, setIsGenerating] = useState(false);
     const mediaActions = useMediaGenerationActions();
+    const { settings } = useLocalGenerationSettings();
+    const { checkQuality, gateEnabled } = useQualityGate(settings);
 
     const scenesNeedingImages = scenes.filter(s => !generatedImages[s.id]);
 
     const handleGenerateImages = useCallback(async () => {
         if (scenesNeedingImages.length === 0) return;
+
+        // Quality Gate Check (if enabled)
+        if (gateEnabled) {
+            console.log('🔍 [Quality Gate] Checking prompt quality before generation...');
+            
+            // Check the combined prompt quality (directorsVision + scene summaries)
+            const combinedPrompt = `${directorsVision}\n\n${scenesNeedingImages.map(s => s.summary).join('\n\n')}`;
+            const qualityResult = await checkQuality(combinedPrompt, {
+                addToast,
+                context: 'Scene Generation',
+                blockOnLowQuality: true,
+                minQualityScore: 0.5, // Lower threshold for batch generation
+            });
+
+            if (!qualityResult.allowed) {
+                console.warn(`❌ [Quality Gate] Generation blocked. Score: ${Math.round(qualityResult.qualityScore.overall * 100)}%`);
+                onApiStateChange('error', `Generation blocked: Quality score too low (${Math.round(qualityResult.qualityScore.overall * 100)}%)`);
+                return;
+            }
+
+            console.log(`✅ [Quality Gate] Passed. Score: ${Math.round(qualityResult.qualityScore.overall * 100)}%`);
+        }
 
         setIsGenerating(true);
         setGenerationProgress({ current: 0, total: scenesNeedingImages.length, task: 'Generating Scene Keyframes...' });
@@ -163,7 +192,7 @@ const GenerateSceneImagesButton: React.FC<GenerateSceneImagesButtonProps> = ({
             setIsGenerating(false);
             setGenerationProgress({ current: 0, total: 0, task: '' });
         }
-    }, [scenesNeedingImages, directorsVision, generatedImages, onImagesGenerated, onApiLog, onApiStateChange, setGenerationProgress, mediaActions, updateSceneImageStatus]);
+    }, [scenesNeedingImages, directorsVision, generatedImages, onImagesGenerated, onApiLog, onApiStateChange, setGenerationProgress, mediaActions, updateSceneImageStatus, gateEnabled, checkQuality, addToast]);
 
     if (scenes.length === 0) return null;
 
@@ -187,6 +216,12 @@ const GenerateSceneImagesButton: React.FC<GenerateSceneImagesButtonProps> = ({
                             </>
                         )}
                     </p>
+                    {gateEnabled && (
+                        <div className="mt-2 text-xs text-purple-400 flex items-center gap-1">
+                            <span>🔒</span>
+                            <span>Quality Gate enabled - prompts will be validated before generation</span>
+                        </div>
+                    )}
                 </div>
                 <button
                     onClick={handleGenerateImages}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LocalGenerationStatus as LocalGenerationStatusType } from '../types';
+import { isValidMediaDataUrl } from '../utils/videoValidation';
 import ServerIcon from './icons/ServerIcon';
 
 interface Props {
@@ -16,12 +17,6 @@ const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
         ></div>
     </div>
 );
-
-/** Check if a string is a valid data URL for media */
-const isValidMediaDataUrl = (data: string | undefined): boolean => {
-    if (!data || typeof data !== 'string') return false;
-    return data.startsWith('data:video/') || data.startsWith('data:image/');
-};
 
 const LocalGenerationStatus: React.FC<Props> = ({ status, onClear }) => {
     const [videoError, setVideoError] = useState<string | null>(null);

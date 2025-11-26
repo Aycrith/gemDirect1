@@ -8,6 +8,16 @@ import {
     type ValidationResult,
     type SystemValidation 
 } from '../utils/settingsValidation';
+import {
+    FeatureFlags,
+    FEATURE_FLAG_META,
+    DEFAULT_FEATURE_FLAGS,
+    mergeFeatureFlags,
+    getFlagsByCategory,
+    checkFlagDependencies,
+    validateFlagCombination,
+    type FeatureFlagMeta,
+} from '../utils/featureFlags';
 
 interface LocalGenerationSettingsModalProps {
     isOpen: boolean;
@@ -47,7 +57,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
     onSave,
     addToast = () => {}
 }) => {
-    const [activeTab, setActiveTab] = useState<'llm' | 'video' | 'comfyui' | 'advanced'>('llm');
+    const [activeTab, setActiveTab] = useState<'llm' | 'video' | 'comfyui' | 'advanced' | 'features'>('llm');
     // Ensure videoProvider has a default value to prevent validation issues
     const [formData, setFormData] = useState<LocalGenerationSettings>({
         ...settings,
@@ -609,6 +619,16 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                         }`}
                     >
                         🔧 Advanced
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('features')}
+                        className={`px-4 py-3 text-sm font-medium transition-colors ${
+                            activeTab === 'features' 
+                                ? 'text-amber-400 border-b-2 border-amber-400' 
+                                : 'text-gray-400 hover:text-gray-200'
+                        }`}
+                    >
+                        🧪 Features
                     </button>
                 </div>
 
@@ -1370,6 +1390,270 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'features' && (
+                        <div className="space-y-6">
+                            <div className="bg-purple-900/20 border border-purple-700/30 rounded-lg p-4 mb-4">
+                                <h4 className="text-sm font-medium text-purple-300 mb-2">🧪 Feature Flags</h4>
+                                <p className="text-xs text-gray-400">
+                                    Enable experimental features to enhance video generation quality. 
+                                    Features are grouped by category. Some features may have dependencies on others.
+                                </p>
+                            </div>
+
+                            {/* Flag validation warnings */}
+                            {(() => {
+                                const validation = validateFlagCombination(formData.featureFlags);
+                                if (validation.warnings.length > 0) {
+                                    return (
+                                        <div className="bg-amber-900/20 border border-amber-700/50 rounded-lg p-4">
+                                            <h4 className="text-sm font-medium text-amber-300 mb-2">⚠️ Configuration Warnings</h4>
+                                            <ul className="text-xs text-amber-200 space-y-1">
+                                                {validation.warnings.map((warning, i) => (
+                                                    <li key={i}>• {warning}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })()}
+
+                            {/* Quality Category */}
+                            <div className="space-y-3">
+                                <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                                    <span className="w-6 h-6 flex items-center justify-center bg-green-900/50 text-green-400 rounded text-xs">Q</span>
+                                    Quality Enhancement
+                                </h4>
+                                <div className="space-y-2 pl-8">
+                                    {getFlagsByCategory('quality').map(meta => {
+                                        const currentFlags = mergeFeatureFlags(formData.featureFlags);
+                                        const isEnabled = currentFlags[meta.id];
+                                        const deps = checkFlagDependencies(formData.featureFlags, meta.id);
+                                        
+                                        return (
+                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                                                isEnabled 
+                                                    ? 'bg-green-900/20 border-green-700/50' 
+                                                    : 'bg-gray-800/50 border-gray-700 hover:border-gray-600'
+                                            }`}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isEnabled}
+                                                    onChange={(e) => {
+                                                        const newFlags = {
+                                                            ...mergeFeatureFlags(formData.featureFlags),
+                                                            [meta.id]: e.target.checked
+                                                        };
+                                                        handleInputChange('featureFlags', newFlags);
+                                                    }}
+                                                    className="mt-1 w-4 h-4 text-green-500 bg-gray-700 border-gray-600 rounded focus:ring-green-400"
+                                                />
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="font-medium text-gray-200">{meta.label}</span>
+                                                        <span className={`px-2 py-0.5 text-xs rounded ${
+                                                            meta.stability === 'stable' 
+                                                                ? 'bg-green-900/50 text-green-300 border border-green-700'
+                                                                : meta.stability === 'beta'
+                                                                ? 'bg-blue-900/50 text-blue-300 border border-blue-700'
+                                                                : 'bg-purple-900/50 text-purple-300 border border-purple-700'
+                                                        }`}>
+                                                            {meta.stability.toUpperCase()}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-gray-400">{meta.description}</p>
+                                                    {!deps.satisfied && (
+                                                        <p className="text-xs text-amber-400 mt-1">
+                                                            ⚠️ Requires: {deps.missingDeps.map(d => FEATURE_FLAG_META[d].label).join(', ')}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Workflow Category */}
+                            <div className="space-y-3">
+                                <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                                    <span className="w-6 h-6 flex items-center justify-center bg-blue-900/50 text-blue-400 rounded text-xs">W</span>
+                                    Workflow
+                                </h4>
+                                <div className="space-y-2 pl-8">
+                                    {getFlagsByCategory('workflow').map(meta => {
+                                        const currentFlags = mergeFeatureFlags(formData.featureFlags);
+                                        const isEnabled = currentFlags[meta.id];
+                                        const deps = checkFlagDependencies(formData.featureFlags, meta.id);
+                                        
+                                        return (
+                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                                                isEnabled 
+                                                    ? 'bg-blue-900/20 border-blue-700/50' 
+                                                    : 'bg-gray-800/50 border-gray-700 hover:border-gray-600'
+                                            }`}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isEnabled}
+                                                    onChange={(e) => {
+                                                        const newFlags = {
+                                                            ...mergeFeatureFlags(formData.featureFlags),
+                                                            [meta.id]: e.target.checked
+                                                        };
+                                                        handleInputChange('featureFlags', newFlags);
+                                                    }}
+                                                    className="mt-1 w-4 h-4 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-blue-400"
+                                                />
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="font-medium text-gray-200">{meta.label}</span>
+                                                        <span className={`px-2 py-0.5 text-xs rounded ${
+                                                            meta.stability === 'stable' 
+                                                                ? 'bg-green-900/50 text-green-300 border border-green-700'
+                                                                : meta.stability === 'beta'
+                                                                ? 'bg-blue-900/50 text-blue-300 border border-blue-700'
+                                                                : 'bg-purple-900/50 text-purple-300 border border-purple-700'
+                                                        }`}>
+                                                            {meta.stability.toUpperCase()}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-gray-400">{meta.description}</p>
+                                                    {!deps.satisfied && (
+                                                        <p className="text-xs text-amber-400 mt-1">
+                                                            ⚠️ Requires: {deps.missingDeps.map(d => FEATURE_FLAG_META[d].label).join(', ')}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Continuity Category */}
+                            <div className="space-y-3">
+                                <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                                    <span className="w-6 h-6 flex items-center justify-center bg-amber-900/50 text-amber-400 rounded text-xs">C</span>
+                                    Continuity
+                                </h4>
+                                <div className="space-y-2 pl-8">
+                                    {getFlagsByCategory('continuity').map(meta => {
+                                        const currentFlags = mergeFeatureFlags(formData.featureFlags);
+                                        const isEnabled = currentFlags[meta.id];
+                                        const deps = checkFlagDependencies(formData.featureFlags, meta.id);
+                                        
+                                        return (
+                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                                                isEnabled 
+                                                    ? 'bg-amber-900/20 border-amber-700/50' 
+                                                    : 'bg-gray-800/50 border-gray-700 hover:border-gray-600'
+                                            }`}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isEnabled}
+                                                    onChange={(e) => {
+                                                        const newFlags = {
+                                                            ...mergeFeatureFlags(formData.featureFlags),
+                                                            [meta.id]: e.target.checked
+                                                        };
+                                                        handleInputChange('featureFlags', newFlags);
+                                                    }}
+                                                    className="mt-1 w-4 h-4 text-amber-500 bg-gray-700 border-gray-600 rounded focus:ring-amber-400"
+                                                />
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="font-medium text-gray-200">{meta.label}</span>
+                                                        <span className={`px-2 py-0.5 text-xs rounded ${
+                                                            meta.stability === 'stable' 
+                                                                ? 'bg-green-900/50 text-green-300 border border-green-700'
+                                                                : meta.stability === 'beta'
+                                                                ? 'bg-blue-900/50 text-blue-300 border border-blue-700'
+                                                                : 'bg-purple-900/50 text-purple-300 border border-purple-700'
+                                                        }`}>
+                                                            {meta.stability.toUpperCase()}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-gray-400">{meta.description}</p>
+                                                    {!deps.satisfied && (
+                                                        <p className="text-xs text-amber-400 mt-1">
+                                                            ⚠️ Requires: {deps.missingDeps.map(d => FEATURE_FLAG_META[d].label).join(', ')}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Experimental Category */}
+                            <div className="space-y-3">
+                                <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                                    <span className="w-6 h-6 flex items-center justify-center bg-purple-900/50 text-purple-400 rounded text-xs">E</span>
+                                    Experimental
+                                </h4>
+                                <div className="space-y-2 pl-8">
+                                    {getFlagsByCategory('experimental').map(meta => {
+                                        const currentFlags = mergeFeatureFlags(formData.featureFlags);
+                                        const isEnabled = currentFlags[meta.id];
+                                        const deps = checkFlagDependencies(formData.featureFlags, meta.id);
+                                        
+                                        return (
+                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                                                isEnabled 
+                                                    ? 'bg-purple-900/20 border-purple-700/50' 
+                                                    : 'bg-gray-800/50 border-gray-700 hover:border-gray-600'
+                                            }`}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isEnabled}
+                                                    onChange={(e) => {
+                                                        const newFlags = {
+                                                            ...mergeFeatureFlags(formData.featureFlags),
+                                                            [meta.id]: e.target.checked
+                                                        };
+                                                        handleInputChange('featureFlags', newFlags);
+                                                    }}
+                                                    className="mt-1 w-4 h-4 text-purple-500 bg-gray-700 border-gray-600 rounded focus:ring-purple-400"
+                                                />
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="font-medium text-gray-200">{meta.label}</span>
+                                                        <span className={`px-2 py-0.5 text-xs rounded ${
+                                                            meta.stability === 'stable' 
+                                                                ? 'bg-green-900/50 text-green-300 border border-green-700'
+                                                                : meta.stability === 'beta'
+                                                                ? 'bg-blue-900/50 text-blue-300 border border-blue-700'
+                                                                : 'bg-purple-900/50 text-purple-300 border border-purple-700'
+                                                        }`}>
+                                                            {meta.stability.toUpperCase()}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-gray-400">{meta.description}</p>
+                                                    {!deps.satisfied && (
+                                                        <p className="text-xs text-amber-400 mt-1">
+                                                            ⚠️ Requires: {deps.missingDeps.map(d => FEATURE_FLAG_META[d].label).join(', ')}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Reset to defaults button */}
+                            <div className="pt-4 border-t border-gray-700">
+                                <button
+                                    onClick={() => handleInputChange('featureFlags', { ...DEFAULT_FEATURE_FLAGS })}
+                                    className="text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                                >
+                                    Reset all features to defaults
+                                </button>
                             </div>
                         </div>
                     )}

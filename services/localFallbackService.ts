@@ -1,4 +1,6 @@
-import { StoryBible, Scene, TimelineData, CreativeEnhancers, BatchShotTask, BatchShotResult, DetailedShotResult, Shot, WorkflowMapping, CoDirectorResult, ContinuityResult, HeroArc } from '../types';
+import { StoryBible, StoryBibleV2, CharacterProfile, PlotScene, Scene, TimelineData, CreativeEnhancers, BatchShotTask, BatchShotResult, DetailedShotResult, Shot, WorkflowMapping, CoDirectorResult, ContinuityResult, HeroArc } from '../types';
+import { estimateTokens } from './promptRegistry';
+import { validateStoryBibleHard, buildRegenerationFeedback } from './storyBibleValidator';
 
 const TITLE_LENGTH_LIMIT = 48;
 const BODY_LENGTH_LIMIT = 140;
@@ -156,28 +158,262 @@ const buildFallbackHeroArcs = (): HeroArc[] =>
         importance: 6,
     }));
 
-export const generateStoryBible = async (idea: string, genre: string = 'sci-fi'): Promise<StoryBible> => {
+/**
+ * Builds structured character profiles for V2 Story Bible.
+ * Creates 3 profiles: protagonist, antagonist, and supporting character.
+ */
+const buildCharacterProfiles = (idea: string): CharacterProfile[] => {
+    const protagonist = extractProtagonist(idea);
+    const keywords = pickKeywords(idea);
+    const antagonist = keywords[1] || 'The Opposition';
+    const supporter = keywords[2] || 'The Guide';
+    
+    return [
+        {
+            id: 'char-1',
+            name: protagonist,
+            age: '35',
+            appearance: {
+                height: 'average height',
+                build: 'determined posture',
+                hair: 'practical hairstyle',
+                eyes: 'observant eyes',
+            },
+            personality: ['driven', 'resourceful', 'complex'],
+            backstory: `The central figure of the narrative, shaped by the events that led to: ${truncate(idea, 120)}`,
+            motivations: ['resolve the central conflict', 'protect what matters'],
+            relationships: [],
+            visualDescriptor: `${protagonist}, determined individual with practical appearance and observant eyes`,
+            role: 'protagonist',
+        },
+        {
+            id: 'char-2',
+            name: antagonist,
+            age: 'indeterminate',
+            appearance: {
+                build: 'imposing presence',
+                eyes: 'calculating gaze',
+            },
+            personality: ['formidable', 'driven', 'complex motivations'],
+            backstory: `A force of opposition that embodies the story's central tension.`,
+            motivations: ['achieve their own goals', 'challenge the protagonist'],
+            relationships: [{
+                characterId: 'char-1',
+                characterName: protagonist,
+                relationshipType: 'enemy',
+                description: 'Primary adversarial relationship',
+            }],
+            visualDescriptor: `${antagonist}, imposing figure with calculating presence`,
+            role: 'antagonist',
+        },
+        {
+            id: 'char-3',
+            name: supporter,
+            age: 'experienced',
+            appearance: {
+                build: 'composed demeanor',
+                eyes: 'knowing expression',
+            },
+            personality: ['wise', 'supportive', 'mysterious'],
+            backstory: `An ally who provides crucial support during the protagonist's journey.`,
+            motivations: ['guide the protagonist', 'share wisdom'],
+            relationships: [{
+                characterId: 'char-1',
+                characterName: protagonist,
+                relationshipType: 'ally',
+                description: 'Mentor and guide relationship',
+            }],
+            visualDescriptor: `${supporter}, composed individual with knowing expression`,
+            role: 'supporting',
+        },
+    ];
+};
+
+/**
+ * Builds structured plot scenes for V2 Story Bible.
+ * Creates 6-9 scenes across three acts.
+ */
+const buildPlotScenes = (idea: string, protagonist: string): PlotScene[] => {
+    return [
+        // Act I
+        {
+            actNumber: 1,
+            sceneNumber: 1,
+            summary: `${protagonist} is introduced in their ordinary world, establishing the status quo.`,
+            visualCues: ['establishing shot', 'normal routine', 'environmental detail'],
+            characterArcs: [`${protagonist}'s ordinary life`],
+            pacing: 'slow',
+            location: 'Familiar environment',
+            timeOfDay: 'day',
+            emotionalTone: 'contemplative',
+        },
+        {
+            actNumber: 1,
+            sceneNumber: 2,
+            summary: `An inciting incident disrupts ${protagonist}'s world, sparked by: ${truncate(idea, 80)}`,
+            visualCues: ['disruption', 'tension building', 'new element introduced'],
+            characterArcs: [`${protagonist} faces new challenge`],
+            pacing: 'medium',
+            emotionalTone: 'unsettling',
+        },
+        {
+            actNumber: 1,
+            sceneNumber: 3,
+            summary: `${protagonist} makes a decisive choice that commits them to the journey ahead.`,
+            visualCues: ['threshold moment', 'departure', 'point of no return'],
+            characterArcs: [`${protagonist} commits to change`],
+            pacing: 'medium',
+            emotionalTone: 'determined',
+        },
+        // Act II
+        {
+            actNumber: 2,
+            sceneNumber: 1,
+            summary: `${protagonist} navigates new challenges, meeting allies and facing tests.`,
+            visualCues: ['new environment', 'obstacles', 'alliance forming'],
+            characterArcs: [`${protagonist} adapts and grows`],
+            pacing: 'medium',
+            emotionalTone: 'building tension',
+        },
+        {
+            actNumber: 2,
+            sceneNumber: 2,
+            summary: `A midpoint revelation changes everything ${protagonist} thought they knew.`,
+            visualCues: ['revelation moment', 'reframed stakes', 'turning point'],
+            characterArcs: [`${protagonist}'s understanding deepens`],
+            pacing: 'fast',
+            emotionalTone: 'shocking',
+        },
+        {
+            actNumber: 2,
+            sceneNumber: 3,
+            summary: `${protagonist} faces their darkest moment, seemingly all is lost.`,
+            visualCues: ['dark imagery', 'isolation', 'lowest point'],
+            characterArcs: [`${protagonist} confronts inner demons`],
+            pacing: 'slow',
+            emotionalTone: 'despair',
+        },
+        // Act III
+        {
+            actNumber: 3,
+            sceneNumber: 1,
+            summary: `${protagonist} rises with new resolve, ready to face the final challenge.`,
+            visualCues: ['rebirth imagery', 'renewed determination', 'preparation'],
+            characterArcs: [`${protagonist} transforms`],
+            pacing: 'medium',
+            emotionalTone: 'hopeful',
+        },
+        {
+            actNumber: 3,
+            sceneNumber: 2,
+            summary: `The climactic confrontation tests everything ${protagonist} has learned.`,
+            visualCues: ['climax setting', 'confrontation', 'stakes at highest'],
+            characterArcs: [`${protagonist} applies growth`],
+            pacing: 'fast',
+            emotionalTone: 'intense',
+        },
+        {
+            actNumber: 3,
+            sceneNumber: 3,
+            summary: `Resolution brings ${protagonist} to a new equilibrium, transformed by the journey.`,
+            visualCues: ['resolution imagery', 'new normal', 'echoes of opening'],
+            characterArcs: [`${protagonist}'s transformation complete`],
+            pacing: 'slow',
+            emotionalTone: 'cathartic',
+        },
+    ];
+};
+
+/**
+ * Generates a Story Bible V2 from a user's idea.
+ * This is the primary local LLM generation function.
+ * 
+ * @param idea - User's story idea
+ * @param genre - Genre for template selection (default: 'sci-fi')
+ * @returns StoryBibleV2 with structured characters and plot scenes
+ */
+export const generateStoryBible = async (idea: string, genre: string = 'sci-fi'): Promise<StoryBibleV2> => {
     const trimmedIdea = idea.trim();
     const protagonist = extractProtagonist(trimmedIdea);
     const antagonist = pickKeywords(trimmedIdea)[1] || 'A formidable opposition';
     const logline = trimmedIdea.endsWith('.') ? trimmedIdea : `${trimmedIdea}.`;
 
-    const characters = `- ${protagonist}: driven to navigate the escalating conflict.\n- ${antagonist}: stands in the protagonist's path, embodying the story's pressure.`;
-    const setting = `Set amid ${detectSetting(trimmedIdea)}, where everyday details feel heightened and cinematic.`;
+    // Build structured character profiles
+    const characterProfiles = buildCharacterProfiles(trimmedIdea);
+    
+    // Build markdown characters for backward compatibility
+    const characters = characterProfiles.map(p => {
+        const roleLabel = p.role === 'protagonist' ? '(Protagonist)' : 
+                          p.role === 'antagonist' ? '(Antagonist)' : '';
+        return `**${p.name}** ${roleLabel}: ${p.backstory} Driven by ${p.motivations.join(' and ')}.`;
+    }).join('\n\n');
+    
+    const setting = `Set amid ${detectSetting(trimmedIdea)}, where everyday details feel heightened and cinematic. The atmosphere pulses with the tension of the central conflict, reflecting the emotional journey of the characters.`;
 
+    // Build structured plot scenes
+    const plotScenes = buildPlotScenes(trimmedIdea, protagonist);
+    
+    // Build markdown plot outline for backward compatibility
     const acts = [
-        `Act I\n- Introduce ${protagonist} and the central pressure sparked by: ${truncate(trimmedIdea, 120)}\n- End Act I with an inciting incident that forces a decisive choice.`,
-        `Act II\n- Escalate complications as allies and rivals test ${protagonist}.\n- Midpoint twist reframes the core stakes, revealing hidden costs.\n- Darkest moment pushes the hero toward transformation.`,
-        `Act III\n- Execute a bold plan that reflects the protagonist's growth.\n- Conclude with a resonant image tying back to the opening promise.`
+        `**Act I**\n- Introduce ${protagonist} and the central pressure sparked by: ${truncate(trimmedIdea, 120)}\n- End Act I with an inciting incident that forces a decisive choice.`,
+        `**Act II**\n- Escalate complications as allies and rivals test ${protagonist}.\n- Midpoint twist reframes the core stakes, revealing hidden costs.\n- Darkest moment pushes the hero toward transformation.`,
+        `**Act III**\n- Execute a bold plan that reflects the protagonist's growth.\n- Conclude with a resonant image tying back to the opening promise.`
     ].join('\n\n');
 
-    return {
+    // Calculate token metadata
+    const loglineTokens = estimateTokens(logline);
+    const charactersTokens = estimateTokens(characters);
+    const settingTokens = estimateTokens(setting);
+    const plotOutlineTokens = estimateTokens(acts);
+
+    const storyBibleV2: StoryBibleV2 = {
+        version: '2.0',
         logline,
         characters,
         setting,
         plotOutline: acts,
-        heroArcs: buildFallbackHeroArcs()
+        heroArcs: buildFallbackHeroArcs(),
+        characterProfiles,
+        plotScenes,
+        tokenMetadata: {
+            loglineTokens,
+            charactersTokens,
+            settingTokens,
+            plotOutlineTokens,
+            totalTokens: loglineTokens + charactersTokens + settingTokens + plotOutlineTokens,
+            lastUpdated: Date.now(),
+        },
+        genre,
+        themes: detectThemes(trimmedIdea),
     };
+
+    // Validate the generated Story Bible
+    const validation = validateStoryBibleHard(storyBibleV2);
+    if (!validation.valid) {
+        console.warn('[localFallbackService] Generated Story Bible has validation issues:', validation.issues);
+        // Continue anyway - local fallback prioritizes availability over perfection
+    }
+
+    return storyBibleV2;
+};
+
+/**
+ * Detects themes from the story idea
+ */
+const detectThemes = (idea: string): string[] => {
+    const lower = idea.toLowerCase();
+    const themes: string[] = [];
+    
+    if (/love|heart|romance|relationship/i.test(lower)) themes.push('love');
+    if (/power|control|domination|rule/i.test(lower)) themes.push('power');
+    if (/freedom|escape|liberty|free\b/i.test(lower)) themes.push('freedom');
+    if (/identity|self|who am i|discover/i.test(lower)) themes.push('identity');
+    if (/revenge|vengeance|retribution/i.test(lower)) themes.push('revenge');
+    if (/redemption|forgive|second chance/i.test(lower)) themes.push('redemption');
+    if (/survival|survive|endure/i.test(lower)) themes.push('survival');
+    if (/justice|right|wrong|moral/i.test(lower)) themes.push('justice');
+    
+    return themes.length > 0 ? themes : ['transformation', 'conflict'];
 };
 
 export const generateSceneList = async (plotOutline: string, directorsVision: string): Promise<Array<{ title: string; summary: string; temporalContext: { startMoment: string; endMoment: string } }>> => {

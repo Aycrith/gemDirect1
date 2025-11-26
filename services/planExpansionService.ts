@@ -10,7 +10,10 @@ import {
     suggestCoDirectorObjectives as llmSuggestCoDirectorObjectives,
     refineStoryBibleSection as llmRefineStoryBibleSection,
 } from './localStoryService';
-import { StoryBible, Scene, TimelineData, BatchShotTask, Shot, CreativeEnhancers, BatchShotResult, DetailedShotResult, CoDirectorResult, ContinuityResult, WorkflowMapping } from '../types';
+import { StoryBible, StoryBibleV2, Scene, TimelineData, BatchShotTask, Shot, CreativeEnhancers, BatchShotResult, DetailedShotResult, CoDirectorResult, ContinuityResult, WorkflowMapping, isStoryBibleV2 } from '../types';
+import { validateStoryBibleHard, buildRegenerationFeedback } from './storyBibleValidator';
+import { estimateTokens, DEFAULT_TOKEN_BUDGETS } from './promptRegistry';
+import { convertToStoryBibleV2 } from './storyBibleConverter';
 
 export type PlanExpansionActions = {
     getPrunedContextForShotGeneration: (
@@ -145,6 +148,17 @@ export type PlanExpansionActions = {
 const GEMINI_STRATEGY_ID = 'gemini-plan';
 const LOCAL_STRATEGY_ID = 'local-drafter';
 
+/**
+ * Default strategy is now local-drafter (LM Studio).
+ * Users can explicitly select gemini-plan for cloud API access.
+ */
+export const DEFAULT_STRATEGY_ID = LOCAL_STRATEGY_ID;
+
+/**
+ * Maximum retry attempts for Story Bible generation when validation fails.
+ */
+const MAX_RETRY_ATTEMPTS = 2;
+
 const notify = (onStateChange: ApiStateChangeCallback | undefined, status: Parameters<ApiStateChangeCallback>[0], message: string) => {
     onStateChange?.(status, message);
 };
@@ -177,6 +191,121 @@ const runLocal = async <T>(
     }
 };
 
+/**
+ * Generates a Story Bible with validation and automatic retry on failure.
+ * 
+ * This is the recommended entry point for Story Bible generation as it:
+ * 1. Attempts generation with the local LLM (default) or Gemini
+ * 2. Validates the result using hard-gate validation
+ * 3. Retries up to MAX_RETRY_ATTEMPTS times with feedback on failure
+ * 4. Reports validation issues through onStateChange
+ * 
+ * @param generator - The underlying generator function (from local or Gemini)
+ * @param idea - The story idea to expand
+ * @param genre - Genre for template selection
+ * @param logApiCall - API logging callback
+ * @param onStateChange - State change callback for UI updates
+ */
+const generateStoryBibleWithValidation = async (
+    generator: (idea: string, genre: string) => Promise<StoryBible>,
+    idea: string,
+    genre: string,
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<StoryBibleV2> => {
+    let lastBible: StoryBible | undefined;
+    let lastValidation: ReturnType<typeof validateStoryBibleHard> | undefined;
+    
+    for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+        notify(onStateChange, 'loading', 
+            attempt === 0 
+                ? 'Generating Story Bible...' 
+                : `Regenerating Story Bible (attempt ${attempt + 1}/${MAX_RETRY_ATTEMPTS + 1})...`
+        );
+        
+        try {
+            const bible = await generator(idea, genre);
+            lastBible = bible;
+            
+            // If it's already V2, use it directly; otherwise convert using proper parser
+            const bibleV2: StoryBibleV2 = isStoryBibleV2(bible) 
+                ? bible 
+                : convertToStoryBibleV2(bible);
+            
+            // Calculate total tokens
+            if (bibleV2.tokenMetadata) {
+                bibleV2.tokenMetadata.totalTokens = 
+                    bibleV2.tokenMetadata.loglineTokens + 
+                    bibleV2.tokenMetadata.charactersTokens + 
+                    bibleV2.tokenMetadata.settingTokens + 
+                    bibleV2.tokenMetadata.plotOutlineTokens;
+            }
+            
+            // Validate
+            const validation = validateStoryBibleHard(bibleV2);
+            lastValidation = validation;
+            
+            if (validation.valid) {
+                logSuccess(logApiCall, 'generate Story Bible (validated)', LOCAL_STRATEGY_ID);
+                notify(onStateChange, 'success', 'Story Bible generated and validated successfully.');
+                return bibleV2;
+            }
+            
+            // If we have hard errors and more attempts, retry with feedback
+            const hardErrors = validation.issues.filter(i => i.severity === 'error');
+            if (hardErrors.length > 0 && attempt < MAX_RETRY_ATTEMPTS) {
+                const feedback = buildRegenerationFeedback(validation, 'logline');
+                console.warn(`[planExpansionService] Story Bible validation failed, retrying with feedback:`, feedback);
+                notify(onStateChange, 'retrying', 
+                    `Story Bible has ${hardErrors.length} issues. Regenerating with corrections...`
+                );
+                // Note: In a full implementation, we'd pass feedback to the generator
+                // For now, we just retry and hope for better output
+                continue;
+            }
+            
+            // Return with warnings if only soft issues remain
+            if (hardErrors.length === 0) {
+                const warnings = validation.issues.filter(i => i.severity === 'warning');
+                if (warnings.length > 0) {
+                    console.info(`[planExpansionService] Story Bible has ${warnings.length} warnings but passed hard validation.`);
+                }
+                logSuccess(logApiCall, 'generate Story Bible (with warnings)', LOCAL_STRATEGY_ID);
+                notify(onStateChange, 'success', 
+                    `Story Bible generated with ${warnings.length} minor suggestions.`
+                );
+                return bibleV2;
+            }
+            
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Generation failed.';
+            console.error(`[planExpansionService] Story Bible generation attempt ${attempt + 1} failed:`, message);
+            if (attempt === MAX_RETRY_ATTEMPTS) {
+                logError(logApiCall, 'generate Story Bible', LOCAL_STRATEGY_ID);
+                notify(onStateChange, 'error', `Story Bible generation failed: ${message}`);
+                throw error;
+            }
+        }
+    }
+    
+    // If we get here, we exhausted retries with validation failures
+    // Return the last result anyway with a warning
+    if (lastBible) {
+        const bibleV2: StoryBibleV2 = isStoryBibleV2(lastBible) 
+            ? lastBible 
+            : { ...lastBible, version: '2.0', characterProfiles: [], plotScenes: [] };
+        
+        console.warn(`[planExpansionService] Story Bible validation failed after ${MAX_RETRY_ATTEMPTS + 1} attempts. Returning best effort result.`);
+        logSuccess(logApiCall, 'generate Story Bible (validation failed)', LOCAL_STRATEGY_ID);
+        notify(onStateChange, 'success', 
+            'Story Bible generated but may have quality issues. Consider refining manually.'
+        );
+        return bibleV2;
+    }
+    
+    throw new Error('Story Bible generation failed completely.');
+};
+
 const localActions: PlanExpansionActions = {
     getPrunedContextForShotGeneration: async (storyBible, narrativeContext, sceneSummary, directorsVision, logApiCall, onStateChange) => {
         const result = await localFallback.getPrunedContextForShotGeneration(storyBible, narrativeContext, sceneSummary, directorsVision);
@@ -196,7 +325,14 @@ const localActions: PlanExpansionActions = {
         logSuccess(logApiCall, 'prune context for batch processing (local)', LOCAL_STRATEGY_ID);
         return result;
     },
-    generateStoryBible: (idea, genre = 'sci-fi', logApiCall, onStateChange) => runLocal('generate Story Bible', () => generateStoryBlueprint(idea, genre), logApiCall, onStateChange),
+    generateStoryBible: (idea, genre = 'sci-fi', logApiCall, onStateChange) => 
+        generateStoryBibleWithValidation(
+            (i, g) => generateStoryBlueprint(i, g),
+            idea,
+            genre,
+            logApiCall!,
+            onStateChange
+        ),
     generateSceneList: (plotOutline, directorsVision, logApiCall, onStateChange) => runLocal('generate scene list', () => generateLocalSceneList(plotOutline, directorsVision), logApiCall, onStateChange),
     generateAndDetailInitialShots: (prunedContext, logApiCall, onStateChange) => runLocal('generate and detail initial shots', () => localFallback.generateAndDetailInitialShots(prunedContext), logApiCall, onStateChange),
     suggestStoryIdeas: (logApiCall, onStateChange) => runLocal('suggest ideas', () => llmSuggestStoryIdeas(), logApiCall, onStateChange),

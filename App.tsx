@@ -9,6 +9,7 @@ import { PlanExpansionStrategyProvider, usePlanExpansionActions } from './contex
 import { MediaGenerationProviderProvider } from './contexts/MediaGenerationProviderContext';
 import { LocalGenerationSettingsProvider, useLocalGenerationSettings } from './contexts/LocalGenerationSettingsContext';
 import { PipelineProvider } from './contexts/PipelineContext';
+import { LocalGenerationProvider } from './contexts/LocalGenerationContext';
 import { createMediaGenerationActions, LOCAL_COMFY_ID } from './services/mediaGenerationService';
 
 // P0 Optimization: Code splitting for heavy components
@@ -38,6 +39,7 @@ import GenerateSceneImagesButton from './components/GenerateSceneImagesButton';
 import WorkflowTracker from './components/WorkflowTracker';
 import Toast from './components/Toast';
 import ApiStatusIndicator from './components/ApiStatusIndicator';
+import ProviderHealthIndicator from './components/ProviderHealthIndicator';
 import ErrorBoundary from './components/ErrorBoundary';
 import ContextBar from './components/ContextBar';
 import BarChartIcon from './components/icons/BarChartIcon';
@@ -464,6 +466,7 @@ const AppContent: React.FC = () => {
                             onUpdateSceneSummary={handleUpdateSceneSummary}
                             onExtendTimeline={handleExtendTimeline}
                             onRerunScene={handleRerunScene}
+                            localGenStatus={localGenStatus}
                         />
                     </Suspense>
                 );
@@ -480,6 +483,9 @@ const AppContent: React.FC = () => {
                     <h1 className="text-xl font-bold text-white">Cinematic Story Generator</h1>
                 </div>
                 <div className="flex items-center gap-4">
+                    {/* Provider Health Indicator - only shown when providerHealthPolling is enabled */}
+                    <ProviderHealthIndicator addToast={addToast} compact={true} />
+                    
                     <div className="flex bg-gray-800 rounded-lg p-1">
                         <button
                             data-testid="mode-quick"
@@ -729,11 +735,13 @@ const App: React.FC = () => (
                 <PlanExpansionStrategyProvider>
                     <LocalGenerationSettingsProvider>
                         <MediaGenerationProviderProvider>
-                            <TemplateContextProvider>
-                                <ComfyUICallbackProvider>
-                                    <AppContent />
-                                </ComfyUICallbackProvider>
-                            </TemplateContextProvider>
+                            <LocalGenerationProvider>
+                                <TemplateContextProvider>
+                                    <ComfyUICallbackProvider>
+                                        <AppContent />
+                                    </ComfyUICallbackProvider>
+                                </TemplateContextProvider>
+                            </LocalGenerationProvider>
                         </MediaGenerationProviderProvider>
                     </LocalGenerationSettingsProvider>
                 </PlanExpansionStrategyProvider>

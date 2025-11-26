@@ -6,6 +6,8 @@ import { useUsage } from '../contexts/UsageContext';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 import { validateSceneProgression, type SceneProgressionError } from '../services/sceneProgressionValidator';
 import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
+import { convertToStoryBibleV2, needsUpgrade } from '../services/storyBibleConverter';
+import { syncCharacterDescriptors } from '../services/promptPipeline';
 
 const persistentStateDebugEnabled = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_DEBUG_PERSISTENT_STATE ?? 'false') === 'true';
 const debugPersistentState = (...args: unknown[]) => {
@@ -239,7 +241,18 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                 const vision = await db.getData('directorsVision');
                 const sceneList = await db.getAllScenes();
                 
-                if (bible) setStoryBible(bible);
+                if (bible) {
+                    // Auto-migrate V1 Story Bible to V2 format
+                    if (needsUpgrade(bible)) {
+                        console.info('[useProjectData] Auto-upgrading Story Bible from V1 to V2 format');
+                        const upgradedBible = convertToStoryBibleV2(bible);
+                        setStoryBible(upgradedBible);
+                        // Persist the upgraded bible
+                        db.saveStoryBible(upgradedBible);
+                    } else {
+                        setStoryBible(bible);
+                    }
+                }
                 if (vision) setDirectorsVision(vision);
                 if (sceneList.length > 0) setScenes(sceneList);
             } catch (error) {
@@ -1403,12 +1416,52 @@ export function useRecommendations(options?: {
 /**
  * Hook for managing Visual Bible data (characters, style boards, canonical keyframes).
  * Uses persistent state to store the visual bible across sessions.
+ * 
+ * @param storyBible - Optional Story Bible for character descriptor synchronization
  */
-export function useVisualBible() {
+export function useVisualBible(storyBible?: StoryBible | null) {
   const [visualBible, setVisualBibleState] = usePersistentState<VisualBible>('visualBible', {
     characters: [],
     styleBoards: [],
   });
+  
+  // Sync character descriptors when storyBible or visualBible changes
+  useEffect(() => {
+    if (!storyBible || !visualBible.characters.length) {
+      return;
+    }
+    
+    const syncResult = syncCharacterDescriptors(storyBible, visualBible.characters);
+    
+    if (syncResult.synchronized.length > 0) {
+      console.info('[useVisualBible] Synced character descriptors:', syncResult.synchronized);
+      
+      // Update visual bible characters with synced descriptors
+      const updatedCharacters = visualBible.characters.map(char => {
+        const descriptor = syncResult.descriptors.get(char.id);
+        if (descriptor && char.visualTraits !== descriptor) {
+          return { ...char, visualTraits: descriptor };
+        }
+        return char;
+      });
+      
+      // Only update if there were actual changes
+      const hasChanges = updatedCharacters.some(
+        (char, i) => char.visualTraits !== visualBible.characters[i].visualTraits
+      );
+      
+      if (hasChanges) {
+        setVisualBibleState({
+          ...visualBible,
+          characters: updatedCharacters,
+        });
+      }
+    }
+    
+    if (syncResult.missing.length > 0) {
+      console.warn('[useVisualBible] Missing character descriptors:', syncResult.missing);
+    }
+  }, [storyBible, visualBible.characters.length]); // Only trigger on character count change to avoid loops
 
   // TODO: Update the service context whenever visualBible changes - visualBibleContext not yet implemented
   // React.useEffect(() => {
@@ -1473,4 +1526,108 @@ export function useLastE2EQAResult(): {
   }, [refresh]);
 
   return { result, loading, error, refresh };
+}
+
+// ============================================================================
+// Story Bible Validation Hook
+// ============================================================================
+
+import { validateStoryBibleHard, buildRegenerationFeedback, type StoryBibleValidationResult, type ValidationIssue } from '../services/storyBibleValidator';
+import { isStoryBibleV2, StoryBibleV2 } from '../types';
+
+/**
+ * Hook result for Story Bible validation state
+ */
+export interface StoryBibleValidationState {
+  /** Whether validation has been performed */
+  validated: boolean;
+  /** Whether the Story Bible passes hard validation */
+  valid: boolean;
+  /** All validation issues */
+  issues: ValidationIssue[];
+  /** Error-level issues only */
+  errors: ValidationIssue[];
+  /** Warning-level issues only */
+  warnings: ValidationIssue[];
+  /** Human-readable feedback for regeneration */
+  feedback: string;
+  /** Whether the Story Bible is V2 format */
+  isV2: boolean;
+  /** Recalculate validation */
+  revalidate: () => void;
+}
+
+/**
+ * Hook to validate a Story Bible and track validation state.
+ * 
+ * This hook integrates the storyBibleValidator to provide:
+ * - Real-time validation status
+ * - Error/warning separation
+ * - Regeneration feedback
+ * 
+ * @param storyBible - The Story Bible to validate (can be null)
+ * @returns Validation state including issues, feedback, and revalidate function
+ */
+export function useStoryBibleValidation(storyBible: StoryBible | StoryBibleV2 | null): StoryBibleValidationState {
+  const [validationResult, setValidationResult] = useState<StoryBibleValidationResult | null>(null);
+
+  const revalidate = useCallback(() => {
+    if (!storyBible) {
+      setValidationResult(null);
+      return;
+    }
+
+    // Convert to V2 for validation if needed
+    const bibleV2: StoryBibleV2 = isStoryBibleV2(storyBible)
+      ? storyBible
+      : {
+          ...storyBible,
+          version: '2.0',
+          characterProfiles: [],
+          plotScenes: [],
+        };
+
+    const result = validateStoryBibleHard(bibleV2);
+    setValidationResult(result);
+  }, [storyBible]);
+
+  // Auto-validate when story bible changes
+  useEffect(() => {
+    revalidate();
+  }, [revalidate]);
+
+  // Compute derived state
+  const issues = validationResult?.issues ?? [];
+  const errors = issues.filter(i => i.severity === 'error');
+  const warnings = issues.filter(i => i.severity === 'warning');
+  
+  // Build feedback for each section that has issues
+  const buildFeedbackForIssues = (): string => {
+    if (!validationResult || issues.length === 0) return '';
+    
+    const sections = new Set(issues.map(i => i.section.split('.')[0]));
+    const feedbackParts: string[] = [];
+    
+    for (const section of sections) {
+      const sectionFeedback = buildRegenerationFeedback(validationResult, section as keyof StoryBible);
+      if (sectionFeedback) {
+        feedbackParts.push(sectionFeedback);
+      }
+    }
+    
+    return feedbackParts.join('\n\n');
+  };
+  
+  const feedback = buildFeedbackForIssues();
+
+  return {
+    validated: validationResult !== null,
+    valid: validationResult?.valid ?? false,
+    issues,
+    errors,
+    warnings,
+    feedback,
+    isV2: storyBible ? isStoryBibleV2(storyBible) : false,
+    revalidate,
+  };
 }

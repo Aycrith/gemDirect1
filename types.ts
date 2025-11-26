@@ -84,6 +84,151 @@ export interface StoryBible {
     heroArcs?: HeroArc[];
 }
 
+// ============================================================================
+// Story Bible V2 - Structured Character Profiles & Plot Scenes
+// ============================================================================
+
+/**
+ * Character appearance details for visual consistency
+ */
+export interface CharacterAppearance {
+    /** Height description (e.g., "tall", "5'8\"", "average") */
+    height?: string;
+    /** Body type (e.g., "athletic", "slim", "stocky") */
+    build?: string;
+    /** Hair description (color, length, style) */
+    hair?: string;
+    /** Eye color and notable features */
+    eyes?: string;
+    /** Age range or specific age */
+    age?: string;
+    /** Unique identifying features (scars, tattoos, etc.) */
+    distinguishingFeatures?: string[];
+    /** Default or signature outfit */
+    typicalAttire?: string;
+}
+
+/**
+ * Character relationship for story coherence
+ */
+export interface CharacterRelationship {
+    /** ID of related character */
+    characterId: string;
+    /** Name of related character (for display) */
+    characterName: string;
+    /** Nature of relationship */
+    relationshipType: 'ally' | 'enemy' | 'family' | 'romantic' | 'mentor' | 'rival' | 'neutral';
+    /** Brief description of the relationship */
+    description?: string;
+}
+
+/**
+ * Structured character profile for Story Bible V2.
+ * Designed for downstream VAE/ControlNet integration.
+ */
+export interface CharacterProfile {
+    /** Unique identifier */
+    id: string;
+    /** Character's full name */
+    name: string;
+    /** Character's age (number or description) */
+    age?: string | number;
+    /** Visual appearance details for image generation */
+    appearance: CharacterAppearance;
+    /** Core personality traits (3-5 adjectives) */
+    personality: string[];
+    /** Background and history (concise, max 80 words) */
+    backstory: string;
+    /** Primary motivations driving the character */
+    motivations: string[];
+    /** Relationships with other characters */
+    relationships: CharacterRelationship[];
+    /** Compact visual descriptor for prompt injection (max 50 words) */
+    visualDescriptor: string;
+    /** Role in the story */
+    role: 'protagonist' | 'antagonist' | 'supporting' | 'background';
+    /** Link to VisualBibleCharacter for consistency workflow */
+    visualBibleCharacterId?: string;
+}
+
+/**
+ * Plot scene structure for organized story beats
+ */
+export interface PlotScene {
+    /** Act number (1, 2, or 3) */
+    actNumber: 1 | 2 | 3;
+    /** Scene number within the act */
+    sceneNumber: number;
+    /** Brief scene summary (max 50 words) */
+    summary: string;
+    /** Visual cues for image/video generation */
+    visualCues: string[];
+    /** Character arcs advanced in this scene */
+    characterArcs: string[];
+    /** Pacing indicator for editing rhythm */
+    pacing: 'slow' | 'medium' | 'fast';
+    /** Key location for the scene */
+    location?: string;
+    /** Time of day or temporal context */
+    timeOfDay?: string;
+    /** Emotional tone of the scene */
+    emotionalTone?: string;
+}
+
+/**
+ * Token metadata for budget tracking
+ */
+export interface StoryBibleTokenMetadata {
+    loglineTokens: number;
+    charactersTokens: number;
+    settingTokens: number;
+    plotOutlineTokens: number;
+    totalTokens: number;
+    /** Timestamp of last token count */
+    lastUpdated: number;
+}
+
+/**
+ * Story Bible V2 with structured characters and plot scenes.
+ * Extends StoryBible for backward compatibility.
+ */
+export interface StoryBibleV2 extends StoryBible {
+    /** Schema version for migration support */
+    version: '2.0';
+    /** Structured character profiles (replaces markdown characters) */
+    characterProfiles: CharacterProfile[];
+    /** Structured plot scenes with visual cues */
+    plotScenes: PlotScene[];
+    /** Token usage metadata for budget enforcement */
+    tokenMetadata?: StoryBibleTokenMetadata;
+    /** Genre classification for template selection */
+    genre?: string;
+    /** Themes for thematic consistency */
+    themes?: string[];
+}
+
+/**
+ * Type guard to check if a StoryBible is V2 format
+ */
+export function isStoryBibleV2(bible: StoryBible): bible is StoryBibleV2 {
+    return 'version' in bible && (bible as StoryBibleV2).version === '2.0';
+}
+
+/**
+ * Type guard to check if a character profile has complete appearance data
+ */
+export function hasCompleteAppearance(profile: CharacterProfile): boolean {
+    const { appearance } = profile;
+    return !!(
+        appearance.hair &&
+        appearance.eyes &&
+        (appearance.height || appearance.build) &&
+        profile.visualDescriptor
+    );
+}
+
+// ============================================================================
+
 export interface HeroArc {
     id: string;
     name: string;
@@ -179,6 +324,11 @@ export interface SceneContinuityData {
   frames?: string[];
   continuityScore?: SceneContinuityScore;
   isAccepted?: boolean;  // Scene marked as final after passing coherence gate
+  
+  // Intelligent feedback loop fields (optional for backward compatibility)
+  autoGenerateSuggestions?: boolean;  // Auto-generate suggestions when score drops
+  lastSuggestionTimestamp?: number;   // Prevent duplicate suggestion generation
+  regenerationAttempts?: number;      // Track retry count for quality issues
 }
 
 export interface SceneContinuityScore {
@@ -243,6 +393,11 @@ export interface WorkflowProfileMetadata {
   warnings?: string[];
 }
 
+/**
+ * Workflow profile category for pipeline organization
+ */
+export type WorkflowCategory = 'keyframe' | 'video' | 'upscaler' | 'character' | 'scene-builder';
+
 export interface WorkflowProfile {
   id: string;
   label: string;
@@ -251,6 +406,11 @@ export interface WorkflowProfile {
   sourcePath?: string;
   syncedAt?: number;
   metadata?: WorkflowProfileMetadata;
+  
+  // Extended fields for pipeline organization (optional for backward compatibility)
+  category?: WorkflowCategory;
+  chainPosition?: number;  // Order in processing pipeline (1, 2, 3...)
+  inputProfiles?: string[];  // Profile IDs this depends on
 }
 
 export interface ComfyUIStatusQueueSummary {
@@ -335,6 +495,19 @@ export interface LocalGenerationSettings {
     llmTimeoutMs?: number;
     llmRequestFormat?: string;
     llmSeed?: number;
+    
+    // Feature Flags (optional for backward compatibility)
+    featureFlags?: import('./utils/featureFlags').FeatureFlags;
+    
+    // Provider Health Configuration
+    healthCheckIntervalMs?: number;  // Default: 30000 (30s), min: 5000 (5s)
+    
+    // Prompt Configuration
+    promptVersion?: string;  // Template version for prompt construction
+    
+    // Quality Enhancement
+    upscalerWorkflowProfile?: string;  // Profile ID for video upscaling (optional)
+    characterWorkflowProfile?: string; // Profile ID for character consistency (optional)
 }
 
 export interface LocalGenerationAsset {
@@ -370,6 +543,16 @@ export interface VisualBibleCharacter {
   role?: 'protagonist' | 'antagonist' | 'supporting' | 'background';
   visualTraits?: string[];      // e.g., ["short hair", "red jacket"]
   identityTags?: string[];      // e.g., ["Courier-001", "Mirror-Self"]
+  
+  // Character consistency fields (optional for backward compatibility)
+  embeddingRef?: string;        // Path to LoRA/embedding file for CCC workflow
+  ipAdapterWeight?: number;     // IP-Adapter strength (0-1) for identity preservation
+  faceEncodingRef?: string;     // Face identity vector reference
+  appearanceCount?: number;     // Number of scenes character appears in
+  lastSeenSceneId?: string;     // Last scene where character appeared
+  
+  // Story Bible V2 linkage (optional for backward compatibility)
+  storyBibleCharacterId?: string; // Links to CharacterProfile.id for guardrail sync
 }
 
 export interface VisualBibleStyleBoard {

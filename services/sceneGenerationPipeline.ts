@@ -4,14 +4,22 @@ import {
     CreativeEnhancers,
     LocalGenerationSettings,
     LocalGenerationStatus,
+    StoryBible,
+    StoryBibleV2,
+    Scene,
+    isStoryBibleV2,
 } from '../types';
 import {
-    buildShotPrompt,
     DEFAULT_NEGATIVE_PROMPT,
     generateTimelineVideos,
     stripDataUrlPrefix,
     VideoGenerationDependencies,
 } from './comfyUIService';
+import { 
+    buildComfyUIPrompt, 
+    type ComfyUIPrompt,
+} from './promptPipeline';
+import { convertToStoryBibleV2 } from './storyBibleConverter';
 import type { MediaGenerationActions, ApiLogCallback, ApiStateChangeCallback } from './mediaGenerationService';
 
 export interface SceneShotPlan {
@@ -20,32 +28,67 @@ export interface SceneShotPlan {
     negativePrompt: string;
     enhancers?: Partial<Omit<CreativeEnhancers, 'transitions'>>;
     order: number;
+    /** Token-validated prompt from promptPipeline (if storyBible provided) */
+    validatedPrompt?: ComfyUIPrompt;
 }
 
 export interface SceneShotPlanningResult {
     shots: SceneShotPlan[];
     combinedPrompt: string;
     timelineJson: string;
+    /** Validation warnings from prompt pipeline */
+    promptWarnings: string[];
 }
 
+/**
+ * Creates a shot plan using the prompt pipeline for token validation.
+ * Story Bible is required for proper character descriptor injection and token enforcement.
+ */
 export const createSceneShotPlan = (
     timeline: TimelineData,
     directorsVision: string,
     sceneSummary: string,
     settings: LocalGenerationSettings,
+    /** Story Bible for prompt pipeline token validation (required) */
+    storyBible: StoryBible | StoryBibleV2,
+    /** Scene for structured prompt generation (required) */
+    scene: Scene,
 ): SceneShotPlanningResult => {
     if (!timeline || !Array.isArray(timeline.shots) || timeline.shots.length === 0) {
         throw new Error('Timeline must include at least one shot before running the generation pipeline.');
     }
 
+    // Ensure we have V2 for character profile access
+    const bibleV2 = isStoryBibleV2(storyBible) ? storyBible : convertToStoryBibleV2(storyBible);
+
+    const promptWarnings: string[] = [];
+
     const shots: SceneShotPlan[] = timeline.shots.map((shot, index) => {
         const enhancers = timeline.shotEnhancers[shot.id];
+        
+        // Always use prompt pipeline with token validation
+        const validatedPrompt = buildComfyUIPrompt(
+            bibleV2,
+            scene,
+            shot,
+            directorsVision,
+            [timeline.negativePrompt || DEFAULT_NEGATIVE_PROMPT],
+            500, // Max tokens per shot
+            enhancers
+        );
+        
+        // Collect warnings
+        if (validatedPrompt.warnings.length > 0) {
+            promptWarnings.push(...validatedPrompt.warnings.map(w => `Shot ${index + 1}: ${w}`));
+        }
+        
         return {
             shot,
             order: index,
-            prompt: buildShotPrompt(shot, enhancers, directorsVision, settings),
-            negativePrompt: timeline.negativePrompt || DEFAULT_NEGATIVE_PROMPT,
+            prompt: validatedPrompt.positive,
+            negativePrompt: validatedPrompt.negative,
             enhancers,
+            validatedPrompt,
         };
     });
 
@@ -68,6 +111,7 @@ export const createSceneShotPlan = (
         shots,
         combinedPrompt,
         timelineJson,
+        promptWarnings,
     };
 };
 
@@ -128,6 +172,10 @@ export interface ScenePipelineOptions {
         videoDependencies?: VideoGenerationDependencies;
     };
     onShotProgress?: (shotId: string, update: Partial<LocalGenerationStatus>) => void;
+    /** Story Bible for prompt pipeline token validation (required) */
+    storyBible: StoryBible | StoryBibleV2;
+    /** Scene for structured prompt generation (required) */
+    scene: Scene;
 }
 
 export const runSceneGenerationPipeline = async (
@@ -137,8 +185,22 @@ export const runSceneGenerationPipeline = async (
     keyframes: Record<string, string>;
     videoResults: Record<string, { videoPath: string; duration: number; filename: string }>;
     keyframeErrors: Array<{ shotId: string; error: string }>;
+    promptWarnings: string[];
 }> => {
-    const plan = createSceneShotPlan(options.timeline, options.directorsVision, options.sceneSummary, options.settings);
+    const plan = createSceneShotPlan(
+        options.timeline, 
+        options.directorsVision, 
+        options.sceneSummary, 
+        options.settings,
+        options.storyBible,
+        options.scene
+    );
+    
+    // Log any prompt warnings
+    if (plan.promptWarnings.length > 0) {
+        console.warn('[SceneGenerationPipeline] Prompt warnings:', plan.promptWarnings);
+    }
+    
     const existingKeyframes = options.existingKeyframes ?? {};
 
     const missingPlans = plan.shots.filter((shotPlan) => !existingKeyframes[shotPlan.shot.id]);
@@ -180,5 +242,6 @@ export const runSceneGenerationPipeline = async (
         keyframes: mergedKeyframes,
         videoResults,
         keyframeErrors: synthesisErrors,
+        promptWarnings: plan.promptWarnings,
     };
 };

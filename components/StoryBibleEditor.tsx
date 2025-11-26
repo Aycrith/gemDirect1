@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { StoryBible } from '../types';
 import { marked } from 'marked';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
@@ -13,9 +13,10 @@ import SparklesIcon from './icons/SparklesIcon';
 import SaveIcon from './icons/SaveIcon';
 import ClapperboardIcon from './icons/ClapperboardIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
-import { useInteractiveSpotlight } from '../utils/hooks';
+import { useInteractiveSpotlight, useStoryBibleValidation } from '../utils/hooks';
 import GuideCard from './GuideCard';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
+import { estimateTokens, DEFAULT_TOKEN_BUDGETS } from '../services/promptRegistry';
 
 interface StoryBibleEditorProps {
     storyBible: StoryBible;
@@ -34,6 +35,79 @@ const TabButton: React.FC<{ active: boolean; onClick: () => void; children: Reac
         {children}
     </button>
 );
+
+/**
+ * Token budget meter component showing usage for a Story Bible section
+ */
+const TokenMeter: React.FC<{ 
+    label: string; 
+    value: string; 
+    budget: number;
+    showWarning?: boolean;
+}> = ({ label, value, budget, showWarning = true }) => {
+    const tokens = estimateTokens(value);
+    const percentage = Math.min((tokens / budget) * 100, 100);
+    const isOver = tokens > budget;
+    const isWarning = tokens > budget * 0.8 && !isOver;
+    
+    const getBarColor = () => {
+        if (isOver) return 'bg-red-500';
+        if (isWarning) return 'bg-yellow-500';
+        return 'bg-green-500';
+    };
+    
+    const getTextColor = () => {
+        if (isOver) return 'text-red-400';
+        if (isWarning) return 'text-yellow-400';
+        return 'text-gray-400';
+    };
+    
+    return (
+        <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-500 w-16">{label}</span>
+            <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                <div 
+                    className={`h-full transition-all duration-300 ${getBarColor()}`}
+                    style={{ width: `${percentage}%` }}
+                />
+            </div>
+            <span className={`w-20 text-right ${getTextColor()}`}>
+                {tokens} / {budget}
+                {isOver && showWarning && <span className="ml-1">⚠️</span>}
+            </span>
+        </div>
+    );
+};
+
+/**
+ * Validation status badge showing Story Bible validation state
+ */
+const ValidationBadge: React.FC<{ 
+    valid: boolean; 
+    errorCount: number; 
+    warningCount: number;
+    isV2: boolean;
+}> = ({ valid, errorCount, warningCount, isV2 }) => {
+    if (valid) {
+        return (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-900/30 border border-green-700/50 rounded-full">
+                <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                <span className="text-xs text-green-400 font-medium">Valid</span>
+                {isV2 && <span className="text-xs text-green-600 ml-1">(V2)</span>}
+            </div>
+        );
+    }
+    
+    return (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-red-900/30 border border-red-700/50 rounded-full">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+            <span className="text-xs text-red-400 font-medium">
+                {errorCount} error{errorCount !== 1 ? 's' : ''}
+                {warningCount > 0 && `, ${warningCount} warning${warningCount !== 1 ? 's' : ''}`}
+            </span>
+        </div>
+    );
+};
 
 
 const EditableField: React.FC<{ label: string; description: string; value: string; onChange: (value: string) => void; rows?: number }> = ({ label, description, value, onChange, rows = 3 }) => {
@@ -75,7 +149,16 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
     const [isEnhancing, setIsEnhancing] = useState({ logline: false, setting: false });
     const [suggestions, setSuggestions] = useState({ logline: [] as string[], setting: [] as string[] });
     const [isSuggesting, setIsSuggesting] = useState({ logline: false, setting: false });
+    const [showValidationDetails, setShowValidationDetails] = useState(false);
     const planActions = usePlanExpansionActions();
+    
+    // Story Bible validation hook - provides real-time validation feedback
+    const validation = useStoryBibleValidation(editableBible);
+    
+    // Sync editable bible when prop changes (e.g., after save)
+    useEffect(() => {
+        setEditableBible(storyBible);
+    }, [storyBible]);
 
     const handleFieldChange = (field: keyof StoryBible, value: string) => {
         setEditableBible(prev => ({ ...prev, [field]: value }));
@@ -246,6 +329,16 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                 <BookOpenIcon className="w-12 h-12 mx-auto text-amber-400 mb-4" />
                 <h2 className="text-3xl font-bold text-gray-100">Your Story Bible</h2>
                 <p className="text-gray-400 mt-2">This is the narrative foundation of your project. Refine it here before generating scenes.</p>
+                
+                {/* Validation Status Badge */}
+                <div className="flex justify-center mt-4">
+                    <ValidationBadge 
+                        valid={validation.valid} 
+                        errorCount={validation.errors.length}
+                        warningCount={validation.warnings.length}
+                        isV2={validation.isV2}
+                    />
+                </div>
             </div>
 
             <GuideCard title="What is a Story Bible?">
@@ -255,6 +348,58 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                     Use the <strong className="text-amber-300">Refine with AI</strong> feature to enhance the AI's initial draft.
                 </p>
             </GuideCard>
+            
+            {/* Token Budget Overview */}
+            <div className="glass-card p-4 rounded-xl">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-gray-300">Token Budgets</h3>
+                    <button 
+                        onClick={() => setShowValidationDetails(!showValidationDetails)}
+                        className="text-xs text-amber-400 hover:text-amber-300"
+                    >
+                        {showValidationDetails ? 'Hide Details' : 'Show Details'}
+                    </button>
+                </div>
+                <div className="space-y-2">
+                    <TokenMeter label="Logline" value={editableBible.logline} budget={DEFAULT_TOKEN_BUDGETS.logline} />
+                    <TokenMeter label="Characters" value={editableBible.characters} budget={DEFAULT_TOKEN_BUDGETS.characterProfile * 5} />
+                    <TokenMeter label="Setting" value={editableBible.setting} budget={DEFAULT_TOKEN_BUDGETS.setting} />
+                    <TokenMeter label="Plot" value={editableBible.plotOutline} budget={DEFAULT_TOKEN_BUDGETS.plotOutline} />
+                </div>
+                
+                {/* Validation Details Expandable */}
+                {showValidationDetails && validation.issues.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-gray-700/50">
+                        <h4 className="text-sm font-medium text-gray-400 mb-2">Validation Issues</h4>
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {validation.errors.map((issue, idx) => (
+                                <div key={`err-${idx}`} className="flex items-start gap-2 text-xs bg-red-900/20 p-2 rounded border border-red-800/30">
+                                    <span className="text-red-400">❌</span>
+                                    <div>
+                                        <span className="text-red-300">[{issue.section}]</span>
+                                        <span className="text-gray-300 ml-2">{issue.message}</span>
+                                        {issue.suggestion && (
+                                            <p className="text-gray-400 mt-1 italic">💡 {issue.suggestion}</p>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            {validation.warnings.map((issue, idx) => (
+                                <div key={`warn-${idx}`} className="flex items-start gap-2 text-xs bg-yellow-900/20 p-2 rounded border border-yellow-800/30">
+                                    <span className="text-yellow-400">⚠️</span>
+                                    <div>
+                                        <span className="text-yellow-300">[{issue.section}]</span>
+                                        <span className="text-gray-300 ml-2">{issue.message}</span>
+                                        {issue.suggestion && (
+                                            <p className="text-gray-400 mt-1 italic">💡 {issue.suggestion}</p>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
 
             <div ref={spotlightRef} className="glass-card p-8 rounded-xl space-y-6 interactive-spotlight">
                 <div>
@@ -442,7 +587,8 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                         </button>
                         <button
                             onClick={onGenerateScenes}
-                            disabled={isLoading || hasChanges}
+                            disabled={isLoading || hasChanges || !validation.valid}
+                            title={!validation.valid ? 'Fix validation errors before generating scenes' : hasChanges ? 'Save changes first' : ''}
                             className="inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-amber-700 hover:to-orange-700 focus:outline-none focus:ring-4 focus:ring-amber-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
                         >
                             <ClapperboardIcon className="mr-2 h-5 w-5" />
@@ -451,6 +597,11 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                     </div>
                 </div>
                  {hasChanges && <p className="text-center text-yellow-400 text-sm mt-2">You have unsaved changes. Please save before proceeding.</p>}
+                 {!validation.valid && !hasChanges && (
+                    <p className="text-center text-red-400 text-sm mt-2">
+                        Please fix {validation.errors.length} validation error{validation.errors.length !== 1 ? 's' : ''} before generating scenes.
+                    </p>
+                 )}
             </div>
         </div>
     );

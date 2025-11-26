@@ -72,3 +72,9 @@ test-run*.json
 # Python virtual environments (FastVideo)
 fastvideo-env/
 fastvideo-env-wsl/
+
+# Large model files
+*.safetensors
+
+# Large model files
+*.safetensors

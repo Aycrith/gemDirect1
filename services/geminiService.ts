@@ -1,8 +1,10 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CoDirectorResult, Shot, StoryBible, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion, DetailedShotResult, WorkflowMapping } from "../types";
+import { CoDirectorResult, Shot, StoryBible, StoryBibleV2, CharacterProfile, CharacterAppearance, PlotScene, StoryBibleTokenMetadata, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion, DetailedShotResult, WorkflowMapping, isStoryBibleV2 } from "../types";
 import { ApiStatus } from "../contexts/ApiStatusContext";
 import { loadTemplate } from "./templateLoader";
 import { generateCorrelationId, logCorrelation, networkTap } from "../utils/correlation";
+import { estimateTokens } from "./promptRegistry";
+import { convertToStoryBibleV2 } from "./storyBibleConverter";
 
 // P2.6 Optimization (2025-11-20): Defer Gemini SDK initialization until first API call
 // Instead of creating GoogleGenAI instance at module load, use lazy initialization
@@ -300,7 +302,7 @@ export const getPrunedContextForBatchProcessing = async (
 
 // --- Core Story Generation ---
 
-export const generateStoryBible = async (idea: string, genre: string = 'sci-fi', logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBible> => {
+export const generateStoryBible = async (idea: string, genre: string = 'sci-fi', logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBibleV2> => {
     const context = 'generate Story Bible';
     
     // Load and apply template enhancement
@@ -320,8 +322,14 @@ ${template.content}`;
     
     const prompt = `You are a master storyteller and screenwriter with a deep understanding of multiple narrative structures. Your task is to analyze a user's idea and generate a "Story Bible" using the most fitting narrative framework.
 
+    **CRITICAL TOKEN BUDGET RULES (HARD LIMITS):**
+    1. **Logline**: 50-100 words MAX (single compelling sentence)
+    2. **Characters**: 3-5 character profiles, 80 words each MAX
+    3. **Setting**: 200-300 words MAX
+    4. **Plot Outline**: 8-12 scenes per act MAX
+    
     **CRITICAL RULES FOR SECTION UNIQUENESS:**
-    1. **Logline**: Extract ONLY the core concept, protagonist goal, and conflict. Max 140 characters. DO NOT repeat the full story idea verbatim.
+    1. **Logline**: Extract ONLY the core concept, protagonist goal, and conflict. Max 100 words. DO NOT repeat the full story idea verbatim.
     2. **Characters**: Focus ONLY on roles, motivations, and relationships. DO NOT include plot events or setting descriptions.
     3. **Setting**: Describe ONLY the world, time period, and atmosphere. DO NOT mention character names or plot points.
     4. **Plot Outline**: Structure the narrative beats. DO NOT rehash the logline or character descriptions.
@@ -342,35 +350,122 @@ ${template.content}`;
     2.  Select the **single most appropriate framework** from the list above that best serves the idea.
     3.  **If none of the frameworks fit well** (e.g., for experimental concepts, character studies, or very short stories), create a logical, **custom plot structure** with a clear beginning, middle, and end. Do not force a framework where it doesn't belong.
     4.  Generate a JSON object with DISTINCT, NON-REPETITIVE sections:
-        a. **logline**: A single, concise sentence capturing the story's essence (protagonist, goal, conflict). The story's essence in ONE compelling sentence.
-        b. **characters**: A markdown-formatted list of 2-3 key players with DISTINCT roles and motivations. Do NOT repeat plot events.
-        c. **setting**: A paragraph describing the world's visual/atmospheric identity. Do NOT mention character names.
-        d. **plotOutline**: A markdown-formatted plot outline with NEW story beats NOT in logline. **CRITICAL FOR SYSTEM COMPATIBILITY: You MUST structure the output into three acts (Act I, Act II, Act III).** Within this structure, integrate the key beats of your chosen framework. For example:
-            - If using **The Hero's Journey**: Act I might contain 'The Ordinary World' and 'Call to Adventure'. Act II could cover 'Tests, Allies, Enemies' up to 'The Ordeal'.
-            - If using **Kishōtenketsu**: Act I could be 'Ki (Introduction)' and 'Shō (Development)'. Act II could be 'Ten (Twist)'. Act III could be 'Ketsu (Conclusion)'.
-            - If using a **custom structure**, organize its beats logically across the three acts.
+        a. **logline**: A single, concise sentence capturing the story's essence (protagonist, goal, conflict). 50-100 words MAX.
+        b. **characters**: Markdown summary of key characters for backward compatibility.
+        c. **characterProfiles**: Array of 3-5 structured character profiles with:
+           - id: Unique identifier (e.g., "char-1")
+           - name: Full character name
+           - age: Character's age
+           - appearance: Object with height, build, hair, eyes, distinguishingFeatures array, typicalAttire
+           - personality: Array of 3-5 trait adjectives
+           - backstory: Brief background (max 80 words)
+           - motivations: Array of 2-3 primary goals
+           - role: One of "protagonist", "antagonist", "supporting", or "background"
+           - visualDescriptor: Compact visual description for AI image generation (max 50 words)
+        d. **setting**: A paragraph describing the world's visual/atmospheric identity (200-300 words). Do NOT mention character names.
+        e. **plotOutline**: Markdown-formatted three-act structure for backward compatibility.
+        f. **plotScenes**: Array of 8-12 structured scene objects per act with:
+           - actNumber: 1, 2, or 3
+           - sceneNumber: Sequential number within act
+           - summary: Brief scene description (max 50 words)
+           - visualCues: Array of 2-4 key visual elements for image generation
+           - characterArcs: Which character arcs advance in this scene
+           - pacing: "slow", "medium", or "fast"
+           - location: Primary location
+           - timeOfDay: Time context
+           - emotionalTone: Dominant emotion
     
-    **Example of GOOD section differentiation:**
-    Logline: "A retired detective is forced back for one last case that exposes his darkest secret."
-    Characters: **Detective Marlowe**: Haunted by a past mistake, seeks redemption through justice. **The Architect**: A cunning mastermind who knows Marlowe's secret.
-    Setting: "Rain-soaked neo-noir metropolis, 2049. Neon lights reflect off puddles..."
-    Plot: Act I - The reluctant return... [NEW story beats NOT in logline]
+    **Example of GOOD Character Profile:**
+    {
+      "id": "char-1",
+      "name": "Detective Marcus Holt",
+      "age": "45",
+      "appearance": {
+        "height": "6'1\"",
+        "build": "lean and weathered",
+        "hair": "salt-and-pepper, cropped short",
+        "eyes": "steel gray, tired but sharp",
+        "distinguishingFeatures": ["old scar across left cheek", "perpetual stubble"],
+        "typicalAttire": "worn leather jacket over rumpled shirt"
+      },
+      "personality": ["cynical", "determined", "secretly compassionate"],
+      "backstory": "Former homicide detective who left the force after a case went wrong. Lives alone in a downtown apartment, haunted by past failures.",
+      "motivations": ["redemption for past mistakes", "protecting the innocent"],
+      "role": "protagonist",
+      "visualDescriptor": "Weathered 45yo detective, gray eyes, salt-pepper hair, leather jacket, stubbled face with cheek scar, urban noir aesthetic"
+    }
     
-    **Example of BAD repetition (AVOID THIS):**
-    Logline: "A retired detective is forced back for one last case..."
-    Characters: "The detective is forced back for a case..." ❌ REPETITION
+    **Example of GOOD Plot Scene:**
+    {
+      "actNumber": 1,
+      "sceneNumber": 2,
+      "summary": "Marcus receives an anonymous letter at his apartment, containing a photo from his old case",
+      "visualCues": ["dimly lit apartment", "scattered newspapers", "mysterious envelope", "faded photograph"],
+      "characterArcs": ["Marcus forced to confront past"],
+      "pacing": "slow",
+      "location": "Marcus's downtown apartment",
+      "timeOfDay": "late evening",
+      "emotionalTone": "unsettling"
+    }
     
-    This approach ensures narrative depth while maintaining the required format. Do not explicitly state which framework you used in the output.`;
+    This approach ensures narrative depth while maintaining the required format for downstream video generation.`;
 
+    // V2 Response Schema with structured character profiles and plot scenes
     const responseSchema = {
         type: Type.OBJECT,
         properties: {
             logline: { type: Type.STRING },
             characters: { type: Type.STRING },
+            characterProfiles: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        id: { type: Type.STRING },
+                        name: { type: Type.STRING },
+                        age: { type: Type.STRING },
+                        appearance: {
+                            type: Type.OBJECT,
+                            properties: {
+                                height: { type: Type.STRING },
+                                build: { type: Type.STRING },
+                                hair: { type: Type.STRING },
+                                eyes: { type: Type.STRING },
+                                distinguishingFeatures: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                typicalAttire: { type: Type.STRING },
+                            },
+                        },
+                        personality: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        backstory: { type: Type.STRING },
+                        motivations: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        role: { type: Type.STRING },
+                        visualDescriptor: { type: Type.STRING },
+                    },
+                    required: ['id', 'name', 'role', 'visualDescriptor'],
+                },
+            },
             setting: { type: Type.STRING },
             plotOutline: { type: Type.STRING },
+            plotScenes: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        actNumber: { type: Type.NUMBER },
+                        sceneNumber: { type: Type.NUMBER },
+                        summary: { type: Type.STRING },
+                        visualCues: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        characterArcs: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        pacing: { type: Type.STRING },
+                        location: { type: Type.STRING },
+                        timeOfDay: { type: Type.STRING },
+                        emotionalTone: { type: Type.STRING },
+                    },
+                    required: ['actNumber', 'sceneNumber', 'summary', 'visualCues', 'pacing'],
+                },
+            },
         },
-        required: ['logline', 'characters', 'setting', 'plotOutline'],
+        required: ['logline', 'characters', 'setting', 'plotOutline', 'characterProfiles', 'plotScenes'],
     };
     
     const apiCall = async () => {
@@ -383,8 +478,68 @@ ${template.content}`;
         if (!text) {
             throw new Error("The model returned an empty response for Story Bible.");
         }
-        const result = JSON.parse(text.trim()) as StoryBible;
+        const parsed = JSON.parse(text.trim());
         const tokens = response.usageMetadata?.totalTokenCount || 0;
+        
+        // If Gemini returned V1 format (missing structured data), convert it
+        if (!parsed.characterProfiles || parsed.characterProfiles.length === 0 ||
+            !parsed.plotScenes || parsed.plotScenes.length === 0) {
+            console.info('[generateStoryBible] Gemini returned incomplete V2 data, converting from markdown');
+            const v2 = convertToStoryBibleV2(parsed as StoryBible);
+            v2.genre = genre;
+            return { result: v2, tokens };
+        }
+        
+        // Build full V2 result with token metadata
+        const result: StoryBibleV2 = {
+            logline: parsed.logline,
+            characters: parsed.characters,
+            setting: parsed.setting,
+            plotOutline: parsed.plotOutline,
+            version: '2.0',
+            characterProfiles: (parsed.characterProfiles || []).map((p: Partial<CharacterProfile>, i: number) => ({
+                id: p.id || `char-${i + 1}`,
+                name: p.name || 'Unknown',
+                age: p.age,
+                appearance: p.appearance || {},
+                personality: p.personality || [],
+                backstory: p.backstory || '',
+                motivations: p.motivations || [],
+                relationships: [],
+                role: (p.role as CharacterProfile['role']) || 'supporting',
+                visualDescriptor: p.visualDescriptor || p.name || 'Unknown character',
+            })),
+            plotScenes: (parsed.plotScenes || []).map((s: Partial<PlotScene>, i: number) => ({
+                actNumber: (s.actNumber || 1) as 1 | 2 | 3,
+                sceneNumber: s.sceneNumber || i + 1,
+                summary: s.summary || '',
+                visualCues: s.visualCues || [],
+                characterArcs: s.characterArcs || [],
+                pacing: (s.pacing as PlotScene['pacing']) || 'medium',
+                location: s.location,
+                timeOfDay: s.timeOfDay,
+                emotionalTone: s.emotionalTone,
+            })),
+            tokenMetadata: {
+                loglineTokens: estimateTokens(parsed.logline || ''),
+                charactersTokens: estimateTokens(parsed.characters || ''),
+                settingTokens: estimateTokens(parsed.setting || ''),
+                plotOutlineTokens: estimateTokens(parsed.plotOutline || ''),
+                totalTokens: 0,
+                lastUpdated: Date.now(),
+            },
+            genre,
+        };
+        
+        // Calculate total tokens
+        if (result.tokenMetadata) {
+            result.tokenMetadata.totalTokens = 
+                result.tokenMetadata.loglineTokens + 
+                result.tokenMetadata.charactersTokens + 
+                result.tokenMetadata.settingTokens + 
+                result.tokenMetadata.plotOutlineTokens;
+        }
+        
         return { result, tokens };
     };
 

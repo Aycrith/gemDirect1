@@ -1,6 +1,7 @@
 import React from 'react';
-import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion, KeyframeData } from '../types';
+import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion, KeyframeData, LocalGenerationStatus } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
+import { extractVideoFromLocalStatus } from '../utils/videoValidation';
 
 import FileUpload from './FileUpload';
 import VideoPlayer from './VideoPlayer';
@@ -37,6 +38,8 @@ interface ContinuityCardProps {
   allScenes: Scene[];
   onRerunScene?: (sceneId: string) => void;
   characterContinuityIssues?: CharacterContinuityIssue[];
+  /** Optional: Local generation status for this scene (for displaying generated videos) */
+  localGenStatus?: LocalGenerationStatus;
 }
 
 const ScoreCircle: React.FC<{ score: number; label: string }> = ({ score, label }) => {
@@ -90,10 +93,16 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   allSceneIds,
   allScenes,
   onRerunScene,
-  characterContinuityIssues = []
+  characterContinuityIssues = [],
+  localGenStatus
 }) => {
     const { analyzeVideoFrames, getPrunedContextForContinuity, scoreContinuity } = usePlanExpansionActions();
     const { visualBible } = useVisualBible();
+
+    // Extract generated video from local generation status (if available)
+    const generatedVideoUrl = React.useMemo(() => {
+      return extractVideoFromLocalStatus(localGenStatus);
+    }, [localGenStatus]);
 
     // Compute continuity score
     const continuityScore = React.useMemo(() => {
@@ -208,7 +217,18 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                         )}
                     </div>
                 )}
-                {data.videoSrc ? (
+                {/* Display generated video from local generation OR uploaded video */}
+                {generatedVideoUrl ? (
+                    <div className="space-y-4">
+                        <div className="relative">
+                            <div className="absolute top-2 left-2 z-10 px-2 py-1 text-xs font-medium bg-green-600/90 text-white rounded-md shadow-lg">
+                                ✓ Generated
+                            </div>
+                            <VideoPlayer src={generatedVideoUrl} />
+                        </div>
+                        <p className="text-xs text-gray-400 text-center">Video generated from keyframes via ComfyUI</p>
+                    </div>
+                ) : data.videoSrc ? (
                     <div className="space-y-4">
                         <VideoPlayer src={data.videoSrc} />
                          <button onClick={handleReset} className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-yellow-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
@@ -344,7 +364,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
 
                         {/* Coherence Gate: Mark as Final */}
                         {(() => {
-                            const coherenceCheck = checkCoherenceGate(data);
+                            const coherenceCheck = checkCoherenceGate(data, { sceneId: scene.id });
                             return (
                                 <div className="mt-6 pt-6 border-t border-gray-700" data-testid="coherence-gate">
                                     <div className={`p-4 rounded-lg border ${
@@ -373,6 +393,35 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                                                 )}
                                             </div>
                                         </div>
+                                        
+                                        {/* Auto-generated suggestions when score is below threshold */}
+                                        {coherenceCheck.suggestions && coherenceCheck.suggestions.length > 0 && (
+                                            <div className="mb-4 p-3 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+                                                <h6 className="text-sm font-semibold text-blue-300 mb-2 flex items-center gap-2">
+                                                    <SparklesIcon className="w-4 h-4" />
+                                                    Auto-Generated Suggestions
+                                                </h6>
+                                                <div className="space-y-2">
+                                                    {coherenceCheck.suggestions.map((suggestion, idx) => (
+                                                        <div key={`auto-${idx}`} className="flex items-center justify-between gap-2 p-2 bg-gray-900/50 rounded">
+                                                            <div className="flex-1">
+                                                                <p className="text-sm text-gray-300">{suggestion.description}</p>
+                                                                {suggestion.reason && (
+                                                                    <p className="text-xs text-gray-500 mt-0.5">{suggestion.reason}</p>
+                                                                )}
+                                                            </div>
+                                                            <button 
+                                                                onClick={() => onApplySuggestion(suggestion, scene.id)}
+                                                                className="px-2 py-1 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                                                            >
+                                                                Apply
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        
                                         <button
                                             onClick={() => {
                                                 if (coherenceCheck.passed) {

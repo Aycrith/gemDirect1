@@ -5,6 +5,15 @@ import { generateCorrelationId, logCorrelation, networkTap } from '../utils/corr
 import { validatePromptGuardrails } from './promptValidator';
 import { SceneTransitionContext, formatTransitionContextForPrompt } from './sceneTransitionService';
 import { ApiLogCallback } from './geminiService';
+import {
+    ValidationResult,
+    validationSuccess,
+    validationFailure,
+    createValidationError,
+    createValidationWarning,
+    ValidationErrorCodes,
+} from '../types/validation';
+import { estimateTokens, truncateToTokenLimit, DEFAULT_TOKEN_BUDGETS } from './promptRegistry';
 // TODO: Visual Bible integration not yet implemented
 // import { getPromptConfigForModel, applyPromptTemplate, type PromptTarget, getDefaultNegativePromptForModel } from './promptTemplates';
 import { getVisualContextForShot, getCharacterContextForShot, getVisualContextForScene, getCharacterContextForScene } from './visualBiblePromptHelpers';
@@ -44,6 +53,28 @@ export interface WorkflowGenerationMetadata {
     hasTextMapping: boolean;
     hasKeyframeMapping: boolean;
     mapping: WorkflowMapping;
+}
+
+/**
+ * Result from queueComfyUIPrompt containing all generation context
+ */
+export interface ComfyUIPromptResult {
+    /** Prompt ID returned by ComfyUI server */
+    prompt_id: string;
+    /** Any additional properties from ComfyUI response */
+    [key: string]: unknown;
+    /** System resources message from pre-flight check */
+    systemResources?: string;
+    /** The workflow profile ID used for generation */
+    workflowProfileId: string;
+    /** Path to workflow file */
+    workflowPath: string;
+    /** Client ID used for WebSocket tracking */
+    clientId: string;
+    /** Queue snapshot at time of submission */
+    queueSnapshot?: { queue_running: number; queue_pending: number };
+    /** Workflow metadata including mappings and warnings */
+    workflowMeta: WorkflowGenerationMetadata;
 }
 
 const DEFAULT_FETCH_TIMEOUT_MS = 12000;
@@ -435,6 +466,172 @@ export const validateWorkflowAndMappings = (
     }
 };
 
+/**
+ * Validated version of validateWorkflowAndMappings that returns ValidationResult.
+ * 
+ * Unlike the throwing version, this returns a structured result with errors,
+ * warnings, and suggestions for fixing issues. Use this for UI validation
+ * where you want to display all errors at once rather than stopping at the first.
+ * 
+ * @param settings Local generation settings
+ * @param profileId Active workflow profile id ('wan-t2i' or 'wan-i2v')
+ * @returns ValidationResult with success status, errors, and suggestions
+ */
+export const validateWorkflowAndMappingsResult = (
+    settings: LocalGenerationSettings,
+    profileId: string = 'wan-i2v',
+): ValidationResult<{ profileId: string; hasTextMapping: boolean; hasKeyframeMapping: boolean }> => {
+    // Resolve workflow from profiles if root workflowJson is empty
+    let workflowJson = settings.workflowJson;
+    let mapping = settings.mapping ?? {};
+    
+    if (!workflowJson && settings.workflowProfiles?.[profileId]) {
+        const profile = settings.workflowProfiles[profileId];
+        workflowJson = profile.workflowJson;
+        mapping = profile.mapping ?? {};
+    }
+    
+    if (!workflowJson) {
+        return validationFailure([
+            createValidationError(
+                ValidationErrorCodes.WORKFLOW_MISSING_JSON,
+                'No workflow has been synced from the server',
+                { fix: 'Sync a workflow from ComfyUI in Settings > Workflow Profiles' }
+            )
+        ]);
+    }
+
+    let workflowApi: Record<string, any>;
+    try {
+        workflowApi = JSON.parse(workflowJson);
+    } catch {
+        return validationFailure([
+            createValidationError(
+                ValidationErrorCodes.WORKFLOW_INVALID_JSON,
+                'The synced workflow is not valid JSON',
+                { fix: 'Re-sync the workflow from ComfyUI' }
+            )
+        ]);
+    }
+
+    const promptPayloadTemplate = workflowApi.prompt || workflowApi;
+    if (typeof promptPayloadTemplate !== 'object' || promptPayloadTemplate === null) {
+        return validationFailure([
+            createValidationError(
+                ValidationErrorCodes.WORKFLOW_INVALID_JSON,
+                'Synced workflow has an invalid structure',
+                { fix: 'Re-sync the workflow from ComfyUI' }
+            )
+        ]);
+    }
+
+    const workflowNodes = Object.values(promptPayloadTemplate ?? {}) as Array<Record<string, any>>;
+    const errors: ReturnType<typeof createValidationError>[] = [];
+    const warnings: ReturnType<typeof createValidationWarning>[] = [];
+    const mappedDataTypes = new Set(Object.values(mapping));
+
+    // Check for required node types
+    const hasClipTextEncode = workflowNodes.some(
+        (node) => node?.class_type === 'CLIPTextEncode' && node.inputs?.text !== undefined,
+    );
+    const hasLoadImage = workflowNodes.some(
+        (node) => node?.class_type === 'LoadImage' && node.inputs?.image !== undefined,
+    );
+
+    // Check text mapping
+    const hasTextMapping = mappedDataTypes.has('human_readable_prompt') || mappedDataTypes.has('full_timeline_json');
+    const hasKeyframeMapping = mappedDataTypes.has('keyframe_image');
+
+    // Core errors
+    if (!hasClipTextEncode) {
+        errors.push(createValidationError(
+            ValidationErrorCodes.WORKFLOW_MISSING_CLIP_MAPPING,
+            'Workflow requires at least one CLIPTextEncode node with a text input',
+            { fix: 'Add a CLIPTextEncode node to your workflow or use a different workflow' }
+        ));
+    }
+    
+    if (profileId === 'wan-i2v' && !hasLoadImage) {
+        errors.push(createValidationError(
+            ValidationErrorCodes.WORKFLOW_MISSING_KEYFRAME_MAPPING,
+            'Video workflow requires a LoadImage node for keyframe conditioning',
+            { fix: 'Add a LoadImage node to your workflow for keyframe input' }
+        ));
+    }
+
+    // Mapping errors
+    if (!hasTextMapping) {
+        errors.push(createValidationError(
+            ValidationErrorCodes.WORKFLOW_MISSING_CLIP_MAPPING,
+            'No text prompt mapping configured',
+            { 
+                field: 'mapping',
+                fix: 'Map Human-Readable Prompt or Full Timeline JSON to a CLIPTextEncode text input' 
+            }
+        ));
+    }
+    
+    if (profileId === 'wan-i2v' && !hasKeyframeMapping) {
+        errors.push(createValidationError(
+            ValidationErrorCodes.WORKFLOW_MISSING_KEYFRAME_MAPPING,
+            'No keyframe image mapping configured for video profile',
+            { 
+                field: 'mapping',
+                fix: 'Map Keyframe Image to a LoadImage image input' 
+            }
+        ));
+    }
+
+    // Check individual mapping consistency
+    for (const [key, dataType] of Object.entries(mapping)) {
+        if (dataType === 'none') continue;
+
+        const [nodeId, inputName] = key.split(':');
+        const node = promptPayloadTemplate[nodeId];
+        const nodeTitle = node?._meta?.title || `Node ${nodeId}`;
+
+        if (!node) {
+            errors.push(createValidationError(
+                ValidationErrorCodes.WORKFLOW_NODE_NOT_FOUND,
+                `Mapped node '${nodeTitle}' no longer exists in workflow`,
+                { field: key, fix: 'Re-sync workflow and update mappings' }
+            ));
+            continue;
+        }
+        
+        if (!node.inputs || typeof node.inputs[inputName] === 'undefined') {
+            errors.push(createValidationError(
+                ValidationErrorCodes.WORKFLOW_NODE_NOT_FOUND,
+                `Mapped input '${inputName}' not found on node '${nodeTitle}'`,
+                { field: key, fix: 'Check workflow structure and update mappings' }
+            ));
+            continue;
+        }
+
+        // Type-specific warnings (not blocking)
+        if (dataType === 'keyframe_image' && node.class_type !== 'LoadImage') {
+            warnings.push(createValidationWarning(
+                'MAPPING_TYPE_MISMATCH',
+                `Keyframe Image mapped to '${nodeTitle}' which is not a LoadImage node`,
+                { field: key, suggestion: 'Map Keyframe Image to a LoadImage node' }
+            ));
+        }
+    }
+
+    if (errors.length > 0) {
+        return validationFailure(errors, {
+            warnings: warnings.length > 0 ? warnings : undefined,
+            message: `Workflow validation failed with ${errors.length} error(s)`,
+            context: profileId,
+        });
+    }
+
+    return validationSuccess(
+        { profileId, hasTextMapping, hasKeyframeMapping },
+        'Workflow validation passed'
+    );
+};
+
 
 const ensureWorkflowMappingDefaults = (workflowNodes: Record<string, any>, existingMapping: WorkflowMapping): WorkflowMapping => {
     if (!workflowNodes || typeof workflowNodes !== 'object') {
@@ -537,6 +734,40 @@ export const queueComfyUIPrompt = async (
     profileId: string = DEFAULT_WORKFLOW_PROFILE_ID,
     profileOverride?: WorkflowProfile
 ): Promise<any> => {
+    // ========================================================================
+    // Token Validation Gate
+    // ========================================================================
+    const MAX_PROMPT_CHARS = 2500;
+    const WARN_THRESHOLD = 0.8;
+    
+    const textTokens = estimateTokens(payloads.text);
+    const textLength = payloads.text.length;
+    
+    // Hard-fail if prompt exceeds absolute limit after potential truncation
+    if (textLength > MAX_PROMPT_CHARS) {
+        console.error(`[queueComfyUIPrompt] Prompt too long: ${textLength} chars (max ${MAX_PROMPT_CHARS})`);
+        
+        // Attempt truncation
+        const truncated = truncateToTokenLimit(payloads.text, Math.floor(MAX_PROMPT_CHARS / 4));
+        if (truncated.text.length > MAX_PROMPT_CHARS) {
+            throw new Error(`Prompt exceeds maximum length (${textLength} chars > ${MAX_PROMPT_CHARS}). Please shorten your prompt or scene description.`);
+        }
+        
+        console.warn(`[queueComfyUIPrompt] Truncated prompt from ${textLength} to ${truncated.text.length} chars`);
+        payloads = {
+            ...payloads,
+            text: truncated.text,
+        };
+    }
+    
+    // Soft warning at 80% capacity
+    if (textLength > MAX_PROMPT_CHARS * WARN_THRESHOLD) {
+        console.warn(`[queueComfyUIPrompt] Prompt approaching limit: ${textLength}/${MAX_PROMPT_CHARS} chars (${Math.round((textLength / MAX_PROMPT_CHARS) * 100)}%)`);
+    }
+    
+    // Log token estimate for debugging
+    console.log(`[queueComfyUIPrompt] Prompt tokens: ~${textTokens} (${textLength} chars)`);
+    
     // Lightweight in-browser diagnostic recorder so E2E tests can read a deterministic
     // list of events describing attempted uploads/prompts. We avoid writing large
     // binary blobs and only record summaries/snippets to keep payloads small.
@@ -801,6 +1032,134 @@ export const queueComfyUIPrompt = async (
             throw new Error(`Failed to connect to ComfyUI at '${runtimeSettings.comfyUIUrl}'. Please check if the server is running and accessible.`);
         }
         throw new Error(`Failed to process ComfyUI workflow. Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+};
+
+/**
+ * Validated version of queueComfyUIPrompt that returns ValidationResult instead of throwing.
+ * 
+ * This function wraps queueComfyUIPrompt with proper error handling and returns a unified
+ * ValidationResult<ComfyUIPromptResult> that includes:
+ * - success: true with data on successful queue
+ * - success: false with errors and suggestions on failure
+ * 
+ * @param settings The local generation settings
+ * @param payloads The generated prompts (json, text, structured, negativePrompt)
+ * @param base64Image The keyframe image (required for wan-i2v)
+ * @param profileId The workflow profile ID (default: wan-i2v)
+ * @param profileOverride Optional explicit workflow profile
+ * @returns ValidationResult with prompt result or detailed errors
+ * 
+ * @example
+ * const result = await queueComfyUIPromptValidated(settings, payloads, image);
+ * if (!result.success) {
+ *   console.error('Failed to queue:', result.errors);
+ *   if (result.suggestions?.length) {
+ *     console.log('Suggestions:', result.suggestions);
+ *   }
+ *   return;
+ * }
+ * // Use result.data.prompt_id for tracking
+ */
+export const queueComfyUIPromptValidated = async (
+    settings: LocalGenerationSettings,
+    payloads: { json: string; text: string; structured: any[]; negativePrompt: string },
+    base64Image: string,
+    profileId: string = DEFAULT_WORKFLOW_PROFILE_ID,
+    profileOverride?: WorkflowProfile
+): Promise<ValidationResult<ComfyUIPromptResult>> => {
+    // Pre-validation checks that can be caught before the main function
+    if (!settings.comfyUIUrl) {
+        return validationFailure([
+            createValidationError(
+                ValidationErrorCodes.PROVIDER_CONNECTION_FAILED,
+                'ComfyUI URL is not configured',
+                { fix: 'Configure ComfyUI URL in Settings > Local Generation' }
+            )
+        ]);
+    }
+
+    // For video workflows, require keyframe image
+    if (profileId === 'wan-i2v' && !base64Image) {
+        return validationFailure([
+            createValidationError(
+                ValidationErrorCodes.WORKFLOW_MISSING_KEYFRAME_MAPPING,
+                'Keyframe image is required for video generation (wan-i2v profile)',
+                { fix: 'Generate a keyframe image for the scene before generating video' }
+            )
+        ]);
+    }
+
+    try {
+        const result = await queueComfyUIPrompt(
+            settings,
+            payloads,
+            base64Image,
+            profileId,
+            profileOverride
+        );
+
+        // Convert warnings from metadata to validation warnings
+        const warnings = (result.workflowMeta?.warnings || []).map((w: string, i: number) =>
+            createValidationWarning(`WORKFLOW_WARN_${i}`, w)
+        );
+
+        return validationSuccess(result as ComfyUIPromptResult, 'Prompt queued successfully');
+        
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        
+        // Categorize error and provide suggestions
+        let errorCode = ValidationErrorCodes.PROVIDER_CONNECTION_FAILED;
+        let suggestions: Array<{ id: string; type: 'fix'; description: string; action: string; autoApplicable: boolean }> = [];
+        
+        if (message.includes('not valid JSON') || message.includes('re-sync')) {
+            errorCode = ValidationErrorCodes.WORKFLOW_INVALID_JSON;
+            suggestions.push({
+                id: 'sync_workflow',
+                type: 'fix',
+                description: 'Re-sync the workflow from ComfyUI',
+                action: 'open_settings',
+                autoApplicable: false,
+            });
+        } else if (message.includes('timeout') || message.includes('timed out')) {
+            errorCode = ValidationErrorCodes.PROVIDER_TIMEOUT;
+            suggestions.push({
+                id: 'check_server',
+                type: 'fix',
+                description: 'Check if ComfyUI server is running and responsive',
+                action: 'check_connection',
+                autoApplicable: true,
+            });
+        } else if (message.includes('CLIP') || message.includes('mapping')) {
+            errorCode = ValidationErrorCodes.WORKFLOW_MISSING_CLIP_MAPPING;
+            suggestions.push({
+                id: 'configure_mapping',
+                type: 'fix',
+                description: 'Configure workflow mappings in Settings > Workflow Profiles',
+                action: 'open_settings',
+                autoApplicable: false,
+            });
+        } else if (message.includes('connect') || message.includes('fetch')) {
+            errorCode = ValidationErrorCodes.PROVIDER_CONNECTION_FAILED;
+            suggestions.push({
+                id: 'verify_url',
+                type: 'fix',
+                description: 'Verify ComfyUI URL and ensure server is accessible',
+                action: 'check_connection',
+                autoApplicable: true,
+            });
+        }
+        
+        return validationFailure([
+            createValidationError(errorCode, message, {
+                context: `Profile: ${profileId}`,
+            })
+        ], {
+            suggestions,
+            message,
+            context: 'queueComfyUIPrompt',
+        });
     }
 };
 
@@ -2404,8 +2763,8 @@ export async function generateVideoFromBookendsSequential(
     console.log(`[Sequential Bookend] Phase 3: Splicing videos with crossfade`);
     onStateChange({ 
         phase: 'splicing',
-        status: 'processing', 
-        progress: 0,
+        status: 'running',  // Use 'running' instead of 'processing' to match LocalGenerationStatus type
+        progress: 80,
         message: 'Splicing videos with crossfade transition...' 
     });
     
@@ -2456,12 +2815,139 @@ export async function generateVideoFromBookendsSequential(
     
     // If browser mock, return the data URL of the first video so it can be displayed
     if (typeof window !== 'undefined') {
-        return startOutput.data;
+        // CRITICAL: Log what we're returning for debugging video display issues
+        const returnValue = startOutput.data;
+        console.log(`[Sequential Bookend] 🎬 Returning video data URL (browser mode)`, {
+            hasData: !!returnValue,
+            dataType: typeof returnValue,
+            isDataUrl: typeof returnValue === 'string' && returnValue.startsWith('data:'),
+            dataPrefix: typeof returnValue === 'string' ? returnValue.slice(0, 60) : 'N/A'
+        });
+        return returnValue;
     }
 
     return spliceResult.outputPath!;
 }
 
+// ============================================================================
+// Prompt Length Validation
+// ============================================================================
 
+/**
+ * Result of prompt length validation
+ */
+export interface PromptLengthValidation {
+    /** Whether the prompt is within budget */
+    valid: boolean;
+    /** Estimated token count */
+    tokens: number;
+    /** Maximum allowed tokens */
+    maxTokens: number;
+    /** Whether truncation was applied */
+    truncated: boolean;
+    /** Final prompt (may be truncated) */
+    prompt: string;
+    /** Validation messages */
+    messages: string[];
+}
+
+/**
+ * Validates and optionally truncates a prompt to fit within token budget.
+ * 
+ * @param prompt - The prompt to validate
+ * @param maxTokens - Maximum tokens allowed (default: 500 for ComfyUI shots)
+ * @param autoTruncate - Whether to automatically truncate oversized prompts
+ * @returns Validation result with optional truncated prompt
+ */
+export const validatePromptLength = (
+    prompt: string,
+    maxTokens: number = DEFAULT_TOKEN_BUDGETS.comfyuiShot,
+    autoTruncate: boolean = true
+): PromptLengthValidation => {
+    const tokens = estimateTokens(prompt);
+    const messages: string[] = [];
+    let valid = tokens <= maxTokens;
+    let truncated = false;
+    let finalPrompt = prompt;
+
+    if (!valid) {
+        messages.push(`Prompt exceeds token budget: ${tokens}/${maxTokens} tokens`);
+        
+        if (autoTruncate) {
+            const result = truncateToTokenLimit(prompt, maxTokens);
+            finalPrompt = result.text;
+            truncated = result.truncated;
+            valid = true; // Now valid after truncation
+            messages.push(`Prompt truncated from ${result.originalTokens} to ${result.finalTokens} tokens`);
+        }
+    }
+
+    return {
+        valid,
+        tokens: truncated ? estimateTokens(finalPrompt) : tokens,
+        maxTokens,
+        truncated,
+        prompt: finalPrompt,
+        messages,
+    };
+};
+
+/**
+ * Builds a shot prompt with automatic token budget enforcement.
+ * This is a wrapper around buildShotPrompt that ensures prompts stay within limits.
+ * 
+ * @param shot - The shot to build prompt for
+ * @param enhancers - Creative enhancers for the shot
+ * @param directorsVision - Director's visual styling guidance
+ * @param settings - Local generation settings
+ * @param sceneId - Optional scene ID for Visual Bible context
+ * @param shotId - Optional shot ID for Visual Bible context
+ * @param target - Target type for prompt generation
+ * @param transitionContext - Optional scene transition context
+ * @param maxTokens - Maximum tokens allowed (default: 500)
+ * @returns Object with prompt and validation info
+ */
+export const buildShotPromptWithValidation = (
+    shot: Shot,
+    enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>> | undefined,
+    directorsVision: string,
+    settings: LocalGenerationSettings,
+    sceneId?: string,
+    shotId?: string,
+    target: PromptTarget = 'shotImage',
+    transitionContext?: SceneTransitionContext | null,
+    maxTokens: number = DEFAULT_TOKEN_BUDGETS.comfyuiShot
+): { prompt: string; validation: PromptLengthValidation } => {
+    // Build the base prompt
+    const rawPrompt = buildShotPrompt(
+        shot,
+        enhancers,
+        directorsVision,
+        settings,
+        sceneId,
+        shotId,
+        target,
+        transitionContext
+    );
+
+    // Validate and truncate if needed
+    const validation = validatePromptLength(rawPrompt, maxTokens, true);
+
+    return {
+        prompt: validation.prompt,
+        validation,
+    };
+};
+
+/**
+ * Gets token budget information for display in UI.
+ */
+export const getTokenBudgetInfo = () => ({
+    comfyuiShot: DEFAULT_TOKEN_BUDGETS.comfyuiShot,
+    plotScene: DEFAULT_TOKEN_BUDGETS.plotScene,
+    logline: DEFAULT_TOKEN_BUDGETS.logline,
+    setting: DEFAULT_TOKEN_BUDGETS.setting,
+    characterProfile: DEFAULT_TOKEN_BUDGETS.characterProfile,
+});
 
 
