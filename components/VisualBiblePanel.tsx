@@ -1,5 +1,7 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import { useVisualBible, VisualBibleSyncToast } from '../utils/hooks';
+import { getFeatureFlag } from '../utils/featureFlags';
+import { RECOMMENDED_WEIGHTS } from '../services/ipAdapterService';
 import type { StoryBible, VisualBible, VisualBibleCharacter } from '../types';
 
 interface VisualBiblePanelProps {
@@ -89,50 +91,153 @@ const CharacterListItem: React.FC<{
     syncStatus: 'storyBible' | 'userEdit' | 'unlinked';
     onEdit: (char: VisualBibleCharacter) => void;
     onMarkUserEdit: (charId: string) => void;
-}> = ({ character, syncStatus, onEdit, onMarkUserEdit }) => (
-    <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 hover:border-gray-600 transition-colors">
-        <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-                <span className="font-medium text-white">{character.name}</span>
-                <SyncStatusBadge status={syncStatus} />
+    onUpdateCharacter: (char: VisualBibleCharacter) => void;
+    showIPAdapterControls: boolean;
+}> = ({ character, syncStatus, onEdit, onMarkUserEdit, onUpdateCharacter, showIPAdapterControls }) => {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isUploadingImage, setIsUploadingImage] = useState(false);
+    
+    const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        
+        setIsUploadingImage(true);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const base64 = event.target?.result as string;
+            onUpdateCharacter({
+                ...character,
+                imageRefs: [base64, ...(character.imageRefs || []).slice(0, 2)], // Keep max 3 refs
+                descriptorSource: 'userEdit',
+            });
+            setIsUploadingImage(false);
+        };
+        reader.onerror = () => setIsUploadingImage(false);
+        reader.readAsDataURL(file);
+    }, [character, onUpdateCharacter]);
+    
+    const handleWeightChange = useCallback((weight: number) => {
+        onUpdateCharacter({
+            ...character,
+            ipAdapterWeight: weight,
+            descriptorSource: 'userEdit',
+        });
+    }, [character, onUpdateCharacter]);
+    
+    const hasReferenceImage = character.imageRefs && character.imageRefs.length > 0;
+    
+    return (
+        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3 hover:border-gray-600 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                    <span className="font-medium text-white">{character.name}</span>
+                    <SyncStatusBadge status={syncStatus} />
+                </div>
+                {character.role && (
+                    <span className="text-xs text-gray-500 capitalize">{character.role}</span>
+                )}
             </div>
-            {character.role && (
-                <span className="text-xs text-gray-500 capitalize">{character.role}</span>
+            
+            {/* Reference Image Section - Only show if characterConsistency is enabled */}
+            {showIPAdapterControls && (
+                <div className="mb-3 p-2 bg-gray-900/50 rounded border border-gray-700/50">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-gray-400">Reference Image</span>
+                        {hasReferenceImage && (
+                            <span className="text-xs text-green-400">✓ Ready</span>
+                        )}
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                        {hasReferenceImage ? (
+                            <div className="relative group">
+                                <img 
+                                    src={character.imageRefs![0]} 
+                                    alt={`${character.name} reference`}
+                                    className="w-12 h-12 rounded object-cover border border-gray-600"
+                                />
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs text-white rounded transition-opacity"
+                                >
+                                    Replace
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploadingImage}
+                                className="w-12 h-12 rounded border-2 border-dashed border-gray-600 hover:border-gray-500 flex items-center justify-center text-gray-500 hover:text-gray-400 transition-colors"
+                            >
+                                {isUploadingImage ? (
+                                    <span className="animate-spin">⏳</span>
+                                ) : (
+                                    <span>+</span>
+                                )}
+                            </button>
+                        )}
+                        
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageUpload}
+                            className="hidden"
+                        />
+                        
+                        {/* IP-Adapter Weight Slider */}
+                        <div className="flex-1">
+                            <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
+                                <span>Strength</span>
+                                <span>{((character.ipAdapterWeight ?? RECOMMENDED_WEIGHTS.medium) * 100).toFixed(0)}%</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={(character.ipAdapterWeight ?? RECOMMENDED_WEIGHTS.medium) * 100}
+                                onChange={(e) => handleWeightChange(Number(e.target.value) / 100)}
+                                className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                title="IP-Adapter strength (0-100%)"
+                            />
+                        </div>
+                    </div>
+                </div>
             )}
-        </div>
         
-        {character.visualTraits && character.visualTraits.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-2">
-                {character.visualTraits.map((trait, i) => (
-                    <span 
-                        key={i}
-                        className="px-2 py-0.5 text-xs bg-gray-700 text-gray-300 rounded"
-                    >
-                        {trait}
-                    </span>
-                ))}
-            </div>
-        )}
-        
-        <div className="flex gap-2 mt-2">
-            <button
-                onClick={() => onEdit(character)}
-                className="text-xs text-gray-400 hover:text-white transition-colors"
-            >
-                Edit
-            </button>
-            {syncStatus === 'storyBible' && (
+            {character.visualTraits && character.visualTraits.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                    {character.visualTraits.map((trait, i) => (
+                        <span 
+                            key={i}
+                            className="px-2 py-0.5 text-xs bg-gray-700 text-gray-300 rounded"
+                        >
+                            {trait}
+                        </span>
+                    ))}
+                </div>
+            )}
+            
+            <div className="flex gap-2 mt-2">
                 <button
-                    onClick={() => onMarkUserEdit(character.id)}
-                    className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
-                    title="Mark as custom to protect from auto-sync"
+                    onClick={() => onEdit(character)}
+                    className="text-xs text-gray-400 hover:text-white transition-colors"
                 >
-                    Mark as Custom
+                    Edit
                 </button>
-            )}
+                {syncStatus === 'storyBible' && (
+                    <button
+                        onClick={() => onMarkUserEdit(character.id)}
+                        className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
+                        title="Mark as custom to protect from auto-sync"
+                    >
+                        Mark as Custom
+                    </button>
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 const VisualBiblePanel: React.FC<VisualBiblePanelProps> = ({ 
     isOpen = false, 
@@ -151,6 +256,9 @@ const VisualBiblePanel: React.FC<VisualBiblePanelProps> = ({
     
     const [showResyncConfirm, setShowResyncConfirm] = useState(false);
     
+    // Check if IP-Adapter controls should be shown
+    const showIPAdapterControls = getFeatureFlag(undefined, 'characterConsistency') === true;
+    
     const handleMarkUserEdit = useCallback((characterId: string) => {
         setVisualBible((prev: VisualBible) => ({
             ...prev,
@@ -158,6 +266,15 @@ const VisualBiblePanel: React.FC<VisualBiblePanelProps> = ({
                 char.id === characterId
                     ? { ...char, descriptorSource: 'userEdit' as const }
                     : char
+            ),
+        }));
+    }, [setVisualBible]);
+    
+    const handleUpdateCharacter = useCallback((updatedCharacter: VisualBibleCharacter) => {
+        setVisualBible((prev: VisualBible) => ({
+            ...prev,
+            characters: prev.characters.map(char =>
+                char.id === updatedCharacter.id ? updatedCharacter : char
             ),
         }));
     }, [setVisualBible]);
@@ -233,6 +350,8 @@ const VisualBiblePanel: React.FC<VisualBiblePanelProps> = ({
                                 syncStatus={getCharacterSyncStatus(char.id)}
                                 onEdit={handleEditCharacter}
                                 onMarkUserEdit={handleMarkUserEdit}
+                                onUpdateCharacter={handleUpdateCharacter}
+                                showIPAdapterControls={showIPAdapterControls}
                             />
                         ))}
                     </div>

@@ -279,10 +279,10 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
     characterConsistency: {
         id: 'characterConsistency',
         label: 'Character Consistency',
-        description: 'Use CCC workflow to maintain character identity across scenes',
+        description: 'Use IP-Adapter workflow to maintain character identity across scenes via Visual Bible reference images',
         category: 'continuity',
-        stability: 'experimental',
-        comingSoon: true, // Phase 7: Needs CCC workflow integration
+        stability: 'beta',
+        // IP-Adapter integration implemented in services/ipAdapterService.ts
     },
     shotLevelContinuity: {
         id: 'shotLevelContinuity',
