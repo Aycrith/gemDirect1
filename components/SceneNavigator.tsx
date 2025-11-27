@@ -1,10 +1,13 @@
 import React, { useEffect, useRef } from 'react';
-import { Scene, SceneStatus, SceneImageGenerationStatus, isBookendKeyframe, type KeyframeData } from '../types';
+import { Scene, SceneStatus, SceneImageGenerationStatus, isBookendKeyframe, type KeyframeData, type LocalGenerationSettings } from '../types';
 import ClapperboardIcon from './icons/ClapperboardIcon';
 import FilmIcon from './icons/FilmIcon';
 import AlertTriangleIcon from './icons/AlertTriangleIcon';
 import SceneStatusIndicator from './SceneStatusIndicator';
 import { useVisualBible } from '../utils/hooks';
+// Phase 1C: Unified scene store integration
+import { useUnifiedSceneStoreEnabled } from '../hooks/useSceneStore';
+import { useSceneStateStore } from '../services/sceneStateStore';
 // TODO: import { getSceneVisualBibleContext } from '../services/continuityVisualContext'; // Not yet implemented
 
 interface SceneNavigatorProps {
@@ -16,35 +19,57 @@ interface SceneNavigatorProps {
     sceneStatuses?: Record<string, SceneStatus>;
     generatedImages?: Record<string, KeyframeData>;
     sceneImageStatuses?: Record<string, SceneImageGenerationStatus>;
+    localGenSettings?: LocalGenerationSettings | null;
 }
 
-const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, onSelectScene, onDeleteScene, scenesToReview, sceneStatuses = {}, generatedImages = {}, sceneImageStatuses = {} }) => {
+const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, onSelectScene, onDeleteScene, scenesToReview, sceneStatuses = {}, generatedImages = {}, sceneImageStatuses = {}, localGenSettings }) => {
     const { visualBible } = useVisualBible();
     const renderCountRef = useRef(0);
     const prevImagesRef = useRef<Record<string, KeyframeData>>({});
     
+    const isStoreEnabled = useUnifiedSceneStoreEnabled(localGenSettings);
+    const storeScenes = useSceneStateStore(state => state.scenes);
+    const storeSelectedSceneId = useSceneStateStore(state => state.selectedSceneId);
+    const storeGeneratedImages = useSceneStateStore(state => state.generatedImages);
+    const storeSceneImageStatuses = useSceneStateStore(state => state.sceneImageStatuses);
+    
+    // Use store data when enabled, otherwise use existing props (prop drilling)
+    // Phase 1C: These variables now route through the unified store when flag is enabled
+    const effectiveScenes = isStoreEnabled ? storeScenes : scenes;
+    const effectiveActiveSceneId = isStoreEnabled ? storeSelectedSceneId : activeSceneId;
+    const effectiveGeneratedImages = isStoreEnabled ? storeGeneratedImages : generatedImages;
+    const effectiveSceneImageStatuses = isStoreEnabled ? storeSceneImageStatuses : sceneImageStatuses;
+    
+    // Log store usage during development for debugging
+    useEffect(() => {
+        if (isStoreEnabled && process.env.NODE_ENV === 'development') {
+            console.debug('[SceneNavigator] Using unified Zustand store for scene data');
+        }
+    }, [isStoreEnabled]);
+    
     // DEBUG: Track re-renders and image updates (development only)
+    // Uses effectiveGeneratedImages to track the store-backed or prop-based images depending on flag
     useEffect(() => {
         if (!import.meta.env.DEV) return;
         
         renderCountRef.current++;
-        const imageCount = Object.keys(generatedImages).length;
-        const imageIds = Object.keys(generatedImages).sort().join(', ');
+        const imageCount = Object.keys(effectiveGeneratedImages).length;
+        const imageIds = Object.keys(effectiveGeneratedImages).sort().join(', ');
         const prevCount = Object.keys(prevImagesRef.current).length;
         
         if (imageCount !== prevCount) {
-            console.log(`🔄 [SceneNavigator] Re-render #${renderCountRef.current}: Images changed from ${prevCount} to ${imageCount}`);
+            console.log(`🔄 [SceneNavigator] Re-render #${renderCountRef.current}: Images changed from ${prevCount} to ${imageCount}${isStoreEnabled ? ' (via unified store)' : ' (via props)'}`);
             console.log(`   Current image IDs: [${imageIds}]`);
             
             // Log which images were added
-            const newIds = Object.keys(generatedImages).filter(id => !prevImagesRef.current[id]);
+            const newIds = Object.keys(effectiveGeneratedImages).filter(id => !prevImagesRef.current[id]);
             if (newIds.length > 0) {
                 console.log(`   ➕ New images added: [${newIds.join(', ')}]`);
             }
         }
         
-        prevImagesRef.current = generatedImages;
-    }, [generatedImages]);
+        prevImagesRef.current = effectiveGeneratedImages;
+    }, [effectiveGeneratedImages, isStoreEnabled]);
     return (
         <div className="bg-gray-800/50 border border-gray-700/80 rounded-lg p-4 sticky top-24">
             <div className="flex items-center justify-between mb-4">
@@ -53,12 +78,12 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                     Scenes
                 </h3>
                 <span className="text-xs text-gray-400 bg-gray-700/50 px-2 py-1 rounded">
-                    {scenes.length} total
+                    {effectiveScenes.length} total
                 </span>
             </div>
-            {scenes.length > 0 ? (
+            {effectiveScenes.length > 0 ? (
                 <ul className="space-y-2 max-h-[75vh] overflow-y-auto pr-2 -mr-2 custom-scrollbar">
-                    {scenes.map((scene, index) => {
+                    {effectiveScenes.map((scene, index) => {
                         const needsReview = scenesToReview.has(scene.id);
                         const status = sceneStatuses[scene.id];
                         // TODO: Implement getSceneVisualBibleContext
@@ -76,11 +101,11 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                                 <button
                                     onClick={() => onSelectScene(scene.id)}
                                     className={`scene-nav-item relative w-full text-left p-3 rounded-md transition-all duration-200 text-sm ring-1 flex items-start gap-3 min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 ${
-                                            activeSceneId === scene.id 
+                                            effectiveActiveSceneId === scene.id 
                                                 ? 'bg-amber-600 text-white font-semibold shadow-lg shadow-amber-500/20 ring-transparent' 
                                                 : `bg-gray-700/50 hover:bg-gray-700/80 text-gray-300 ${needsReview ? 'ring-yellow-500/80 hover:ring-yellow-500' : 'ring-transparent hover:ring-amber-500/50'}`
                                         }`}
-                                    aria-current={activeSceneId === scene.id ? 'true' : undefined}
+                                    aria-current={effectiveActiveSceneId === scene.id ? 'true' : undefined}
                                     >
                                         {needsReview && (
                                         <div className="absolute top-2 right-2" title="This scene is flagged for review based on changes elsewhere.">
@@ -89,7 +114,7 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                                     )}
                                     <div className="relative">
                                         {(() => {
-                                            const keyframeData = generatedImages[scene.id];
+                                            const keyframeData = effectiveGeneratedImages[scene.id];
                                             
                                             if (!keyframeData) {
                                                 return (
@@ -136,9 +161,9 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                                                 />
                                             );
                                         })()}
-                                        {sceneImageStatuses[scene.id] && (
+                                        {effectiveSceneImageStatuses[scene.id] && (
                                             <div className="absolute -top-1 -right-1">
-                                                {sceneImageStatuses[scene.id].status === 'generating' && (
+                                                {effectiveSceneImageStatuses[scene.id].status === 'generating' && (
                                                     <span className="inline-flex items-center justify-center w-5 h-5 bg-blue-600 text-white text-[10px] rounded-full border border-gray-800">
                                                         <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -146,10 +171,10 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                                                         </svg>
                                                     </span>
                                                 )}
-                                                {sceneImageStatuses[scene.id].status === 'complete' && (
+                                                {effectiveSceneImageStatuses[scene.id].status === 'complete' && (
                                                     <span className="inline-flex items-center justify-center w-5 h-5 bg-green-600 text-white text-[10px] rounded-full border border-gray-800">✓</span>
                                                 )}
-                                                {sceneImageStatuses[scene.id].status === 'error' && (
+                                                {effectiveSceneImageStatuses[scene.id].status === 'error' && (
                                                     <span className="inline-flex items-center justify-center w-5 h-5 bg-red-600 text-white text-[10px] rounded-full border border-gray-800">✗</span>
                                                 )}
                                             </div>
@@ -177,7 +202,7 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                                         )}
                                     </div>
                                 </button>
-                                {onDeleteScene && scenes.length > 1 && (
+                                {onDeleteScene && effectiveScenes.length > 1 && (
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();

@@ -10,7 +10,23 @@ import { MediaGenerationProviderProvider } from './contexts/MediaGenerationProvi
 import { LocalGenerationSettingsProvider, useLocalGenerationSettings } from './contexts/LocalGenerationSettingsContext';
 import { PipelineProvider } from './contexts/PipelineContext';
 import { LocalGenerationProvider } from './contexts/LocalGenerationContext';
+import { GenerationMetricsProvider } from './contexts/GenerationMetricsContext';
 import { createMediaGenerationActions, LOCAL_COMFY_ID } from './services/mediaGenerationService';
+
+// Phase 1 State Management: Unified scene store with feature flag support
+import { useSceneStateStore, useSceneStoreHydrated } from './services/sceneStateStore';
+import { getFeatureFlag } from './utils/featureFlags';
+import { 
+    validateStoreConsistency, 
+    createOldStoreSnapshot, 
+    createNewStoreSnapshot 
+} from './utils/storeConsistencyValidator';
+
+// Phase 6: Global ComfyUI WebSocket manager
+import { comfyEventManager } from './services/comfyUIEventManager';
+
+// Phase 2.2: Continuity prerequisites validation
+import { validateContinuityPrerequisites, getPrerequisiteSummary } from './services/continuityPrerequisites';
 
 // P0 Optimization: Code splitting for heavy components
 // Target: Reduce initial bundle, improve -1.5s cold start
@@ -100,6 +116,174 @@ const AppContent: React.FC = () => {
     const { logApiCall } = useUsage();
     const planActions = usePlanExpansionActions();
 
+    // ========================================================================
+    // Phase 1 State Management: Unified Scene Store
+    // ========================================================================
+    
+    // Check if unified store feature flag is enabled
+    const useUnifiedStore = getFeatureFlag(localGenSettings?.featureFlags, 'useUnifiedSceneStore');
+    const storeHydrated = useSceneStoreHydrated();
+    
+    // Get store actions for syncing (only used when flag is enabled)
+    const storeSetScenes = useSceneStateStore((state) => state.setScenes);
+    const storeSetGeneratedImages = useSceneStateStore((state) => state.setGeneratedImage);
+    const storeSetShotImage = useSceneStateStore((state) => state.setShotImage);
+    const storeSetSelectedSceneId = useSceneStateStore((state) => state.setSelectedSceneId);
+    
+    // Sync legacy state to new store when flag is enabled (for parallel operation)
+    // This keeps both stores in sync during the migration period
+    useEffect(() => {
+        if (!useUnifiedStore || !storeHydrated) return;
+        
+        // Sync scenes from legacy to new store
+        if (scenes.length > 0) {
+            console.log('[App] Syncing scenes to unified store:', scenes.length);
+            storeSetScenes(scenes);
+        }
+    }, [useUnifiedStore, storeHydrated, scenes, storeSetScenes]);
+    
+    // Sync selected scene ID
+    useEffect(() => {
+        if (!useUnifiedStore || !storeHydrated) return;
+        
+        if (activeSceneId !== null) {
+            console.log('[App] Syncing selected scene to unified store:', activeSceneId);
+            storeSetSelectedSceneId(activeSceneId);
+        }
+    }, [useUnifiedStore, storeHydrated, activeSceneId, storeSetSelectedSceneId]);
+    
+    // Sync generated images to store (Phase 1C: ensures store has keyframe data)
+    useEffect(() => {
+        if (!useUnifiedStore || !storeHydrated) return;
+        
+        // Sync each generated image to the store
+        Object.entries(generatedImages).forEach(([sceneId, imageData]) => {
+            console.log('[App] Syncing generated image to unified store:', sceneId);
+            storeSetGeneratedImages(sceneId, imageData);
+        });
+    }, [useUnifiedStore, storeHydrated, generatedImages, storeSetGeneratedImages]);
+    
+    // Sync generated shot images to store (Phase 1C: ensures store has shot keyframes)
+    useEffect(() => {
+        if (!useUnifiedStore || !storeHydrated) return;
+        
+        Object.entries(generatedShotImages).forEach(([shotId, imageData]) => {
+            storeSetShotImage(shotId, imageData);
+        });
+    }, [useUnifiedStore, storeHydrated, generatedShotImages, storeSetShotImage]);
+    
+    // Log store status on mount (for debugging)
+    useEffect(() => {
+        console.log('[App] Unified scene store status:', {
+            enabled: useUnifiedStore,
+            hydrated: storeHydrated,
+        });
+    }, [useUnifiedStore, storeHydrated]);
+    
+    // ========================================================================
+    // Phase 1B: Parallel Store Consistency Validation
+    // ========================================================================
+    
+    // Get new store state for comparison
+    const newStoreScenes = useSceneStateStore((state) => state.scenes);
+    const newStoreSelectedSceneId = useSceneStateStore((state) => state.selectedSceneId);
+    const newStoreGeneratedImages = useSceneStateStore((state) => state.generatedImages);
+    const newStoreGeneratedShotImages = useSceneStateStore((state) => state.generatedShotImages);
+    const newStoreSceneImageStatuses = useSceneStateStore((state) => state.sceneImageStatuses);
+    
+    // Check if parallel validation should run
+    const runParallelValidation = getFeatureFlag(localGenSettings?.featureFlags, 'sceneStoreParallelValidation');
+    
+    // Run consistency validation when both stores are active and validation is enabled
+    useEffect(() => {
+        // Only run when both stores are in use and validation is enabled
+        if (!useUnifiedStore || !storeHydrated || !runParallelValidation) {
+            return;
+        }
+        
+        // Don't validate if there's no data to compare
+        if (scenes.length === 0 && newStoreScenes.length === 0) {
+            return;
+        }
+        
+        // Create snapshots of both stores
+        const oldSnapshot = createOldStoreSnapshot({
+            scenes,
+            activeSceneId,
+            generatedImages,
+            generatedShotImages,
+            sceneImageStatuses,
+        });
+        
+        const newSnapshot = createNewStoreSnapshot({
+            scenes: newStoreScenes,
+            selectedSceneId: newStoreSelectedSceneId,
+            generatedImages: newStoreGeneratedImages,
+            generatedShotImages: newStoreGeneratedShotImages,
+            sceneImageStatuses: newStoreSceneImageStatuses,
+        });
+        
+        // Run validation
+        const result = validateStoreConsistency(oldSnapshot, newSnapshot, {
+            logToConsole: true,
+            trackMetrics: true,
+        });
+        
+        // Alert on critical inconsistencies (data loss scenarios)
+        if (result.criticalCount > 0) {
+            console.error('[App] CRITICAL: Store consistency violation detected!', {
+                criticalCount: result.criticalCount,
+                differences: result.differences.filter(d => d.severity === 'critical'),
+            });
+            // Could add a toast here if desired
+        }
+        
+    }, [
+        useUnifiedStore, 
+        storeHydrated, 
+        runParallelValidation,
+        // Old store values
+        scenes, 
+        activeSceneId, 
+        generatedImages, 
+        generatedShotImages, 
+        sceneImageStatuses,
+        // New store values
+        newStoreScenes,
+        newStoreSelectedSceneId,
+        newStoreGeneratedImages,
+        newStoreGeneratedShotImages,
+        newStoreSceneImageStatuses,
+    ]);
+
+    // ========================================================================
+    // Phase 6: ComfyUI Global WebSocket Manager
+    // ========================================================================
+    
+    // Initialize global ComfyUI WebSocket connection when settings are available
+    // This provides persistent progress tracking that survives navigation
+    useEffect(() => {
+        if (!localGenSettings?.comfyUIUrl || !localGenSettings?.comfyUIClientId) {
+            // Disconnect if ComfyUI is not configured
+            comfyEventManager.disconnect();
+            return;
+        }
+        
+        // Connect with current settings
+        console.log('[App] Initializing ComfyUI global WebSocket manager');
+        comfyEventManager.connect(localGenSettings);
+        
+        // Set up status listener for debugging
+        const unsubscribe = comfyEventManager.onStatusChange((status, error) => {
+            console.log(`[App] ComfyUI WebSocket status: ${status}${error ? ` (${error})` : ''}`);
+        });
+        
+        // Cleanup on unmount or settings change
+        return () => {
+            unsubscribe();
+        };
+    }, [localGenSettings?.comfyUIUrl, localGenSettings?.comfyUIClientId]);
+
     // Effect for the interactive background gradient
     useEffect(() => {
         const handleMouseMove = (event: MouseEvent) => {
@@ -165,9 +349,14 @@ const AppContent: React.FC = () => {
             addToast('Please complete previous steps first.', 'info');
             return;
         }
-        if (stage === 'continuity' && scenes.length === 0) {
-            addToast('Please generate scenes before moving to continuity review.', 'info');
-            return;
+        if (stage === 'continuity') {
+            // Phase 2.2: Full prerequisite validation for Continuity Review
+            const prerequisites = validateContinuityPrerequisites(scenes, generatedImages);
+            if (!prerequisites.canProceed) {
+                const summary = getPrerequisiteSummary(prerequisites);
+                addToast(summary, 'info');
+                return;
+            }
         }
         setWorkflowStage(stage);
     };
@@ -413,7 +602,7 @@ const AppContent: React.FC = () => {
                         />
                         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
                             <div className="lg:col-span-1">
-                                <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} onDeleteScene={handleDeleteScene} scenesToReview={scenesToReview} sceneStatuses={sceneStatuses} generatedImages={generatedImages} sceneImageStatuses={sceneImageStatuses} />
+                                <SceneNavigator scenes={scenes} activeSceneId={activeSceneId} onSelectScene={setActiveSceneId} onDeleteScene={handleDeleteScene} scenesToReview={scenesToReview} sceneStatuses={sceneStatuses} generatedImages={generatedImages} sceneImageStatuses={sceneImageStatuses} localGenSettings={localGenSettings} />
                             </div>
                             <div className="lg:col-span-3">
                                 {activeScene ? (
@@ -441,6 +630,7 @@ const AppContent: React.FC = () => {
                                             isRefined={refinedSceneIds.has(activeScene.id)}
                                             onUpdateSceneSummary={handleUpdateSceneSummary}
                                             uiRefreshEnabled={uiRefreshEnabled}
+                                            addToast={addToast}
                                         />
                                     </Suspense>
                                 ) : <p>Select a scene</p>}
@@ -467,6 +657,8 @@ const AppContent: React.FC = () => {
                             onExtendTimeline={handleExtendTimeline}
                             onRerunScene={handleRerunScene}
                             localGenStatus={localGenStatus}
+                            onNavigateToDirector={() => setWorkflowStage('director')}
+                            localGenSettings={localGenSettings}
                         />
                     </Suspense>
                 );
@@ -708,6 +900,7 @@ const AppContent: React.FC = () => {
                     <VisualBiblePanel
                         isOpen={isVisualBibleOpen}
                         onClose={() => setIsVisualBibleOpen(false)}
+                        storyBible={storyBible}
                     />
                 </Suspense>
             )}
@@ -736,11 +929,13 @@ const App: React.FC = () => (
                     <LocalGenerationSettingsProvider>
                         <MediaGenerationProviderProvider>
                             <LocalGenerationProvider>
-                                <TemplateContextProvider>
-                                    <ComfyUICallbackProvider>
-                                        <AppContent />
-                                    </ComfyUICallbackProvider>
-                                </TemplateContextProvider>
+                                <GenerationMetricsProvider>
+                                    <TemplateContextProvider>
+                                        <ComfyUICallbackProvider>
+                                            <AppContent />
+                                        </ComfyUICallbackProvider>
+                                    </TemplateContextProvider>
+                                </GenerationMetricsProvider>
                             </LocalGenerationProvider>
                         </MediaGenerationProviderProvider>
                     </LocalGenerationSettingsProvider>

@@ -33,6 +33,11 @@ import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderCo
 import { useTemplateContext } from '../contexts/TemplateContext';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
+// Phase 1C: Unified scene store integration
+import { useUnifiedSceneStoreEnabled } from '../hooks/useSceneStore';
+import { useSceneStateStore } from '../services/sceneStateStore';
+// Phase 6: Global WebSocket event manager for ComfyUI progress
+import { comfyEventManager, type ComfyEvent } from '../services/comfyUIEventManager';
 
 // TODO: import { usePipeline } from '../contexts/PipelineContext'; // Not yet implemented
 
@@ -137,6 +142,7 @@ interface TimelineEditorProps {
     isRefined: boolean;
     onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;
     uiRefreshEnabled?: boolean;
+    addToast?: (message: string, type: 'success' | 'error' | 'warning' | 'info') => void;
 }
 
 const TimelineItem: React.FC<{
@@ -255,7 +261,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     setLocalGenStatus,
     isRefined,
     onUpdateSceneSummary,
-    uiRefreshEnabled = false
+    uiRefreshEnabled = false,
+    addToast
 }) => {
     const [timeline, setTimeline] = useState<TimelineData>(scene.timeline);
     const [coDirectorResult, setCoDirectorResult] = useState<any | null>(null);
@@ -269,6 +276,25 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [isGeneratingInitialShots, setIsGeneratingInitialShots] = useState(false);
     const [isTemplateGuidanceOpen, setIsTemplateGuidanceOpen] = useState(false);
     const [linkModalState, setLinkModalState] = useState<{ isOpen: boolean; imageData: string; sceneId?: string; shotId?: string } | null>(null);
+    
+    // Phase 1C: Zustand store integration with feature flag
+    // When enabled, prefer reading from the new store for consistency
+    // The store returns undefined when flag is disabled (falls back to existing props)
+    const sceneStore = useSceneStateStore.getState;
+    const isStoreEnabled = useUnifiedSceneStoreEnabled(localGenSettings);
+    
+    // Use store data when enabled, otherwise use existing props (prop drilling)
+    // Phase 1C: These variables now route through the unified store when flag is enabled
+    const effectiveScenes = isStoreEnabled ? sceneStore().scenes : scenes;
+    const effectiveGeneratedImages = isStoreEnabled ? sceneStore().generatedImages : generatedImages;
+    const effectiveGeneratedShotImages = isStoreEnabled ? sceneStore().generatedShotImages : generatedShotImages;
+    
+    // Log store usage during development for debugging
+    useEffect(() => {
+        if (isStoreEnabled && process.env.NODE_ENV === 'development') {
+            console.debug('[TimelineEditor] Using unified Zustand store for scene data');
+        }
+    }, [isStoreEnabled]);
     
     // TODO: Implement usePipeline hook
     const generateStoryToVideo = async () => { console.log('generateStoryToVideo not implemented'); };
@@ -330,13 +356,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-    const sceneKeyframe = generatedImages[scene.id];
+    const sceneKeyframe = effectiveGeneratedImages[scene.id];
     const planActions = usePlanExpansionActions();
     const mediaActions = useMediaGenerationActions();
 
     const ensureSceneAssets = useCallback(async () => {
         const resolvedSceneKeyframe = sceneKeyframe;
-        const shotImages: Record<string, string> = { ...generatedShotImages };
+        const shotImages: Record<string, string> = { ...effectiveGeneratedShotImages };
 
         // Check if scene keyframe exists
         if (!resolvedSceneKeyframe) {
@@ -361,7 +387,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         };
     }, [
         sceneKeyframe,
-        generatedShotImages,
+        effectiveGeneratedShotImages,
         timeline.shots,
     ]);
     
@@ -402,18 +428,85 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current) };
     }, [timeline, scene, onUpdateScene, hasChanges, saveStatus]);
 
+    // ========================================================================
+    // Phase 6: Global ComfyUI Event Subscription
+    // ========================================================================
+    // Subscribe to global ComfyUI events for this scene's generation jobs
+    // This provides real-time progress updates that survive navigation
+    useEffect(() => {
+        // Only subscribe if there's an active generation job for this scene
+        const currentStatus = localGenStatus[scene.id];
+        if (!currentStatus || currentStatus.status === 'complete' || currentStatus.status === 'error') {
+            return;
+        }
+
+        // Subscribe to global events to catch progress updates
+        const unsubscribe = comfyEventManager.subscribeAll((event: ComfyEvent) => {
+            // Only process progress events
+            if (event.type !== 'progress' && event.type !== 'executing') {
+                return;
+            }
+
+            // Check if this event relates to our scene's current job
+            // The promptId from ComfyUI is stored when we queue a job
+            const promptId = event.promptId;
+            if (!promptId) return;
+
+            const currentPromptId = localGenStatus[scene.id]?.promptId;
+            if (!currentPromptId || promptId !== currentPromptId) {
+                return;
+            }
+
+            // Update local status with progress from WebSocket
+            if (event.type === 'progress' && event.data.value !== undefined && event.data.max !== undefined) {
+                const progressPercent = Math.round((event.data.value / event.data.max) * 100);
+                setLocalGenStatus(prev => {
+                    const existing = prev[scene.id];
+                    if (!existing || existing.status !== 'running') return prev;
+                    return {
+                        ...prev,
+                        [scene.id]: {
+                            ...existing,
+                            progress: progressPercent,
+                            message: `Processing node ${event.data.node || 'unknown'}...`,
+                        }
+                    };
+                });
+            } else if (event.type === 'executing' && event.data.node) {
+                setLocalGenStatus(prev => {
+                    const existing = prev[scene.id];
+                    if (!existing || existing.status !== 'running') return prev;
+                    return {
+                        ...prev,
+                        [scene.id]: {
+                            ...existing,
+                            message: `Executing node: ${event.data.node}`,
+                        }
+                    };
+                });
+            }
+        });
+
+        console.log('[TimelineEditor] Subscribed to ComfyUI events for scene:', scene.id);
+
+        return () => {
+            unsubscribe();
+            console.log('[TimelineEditor] Unsubscribed from ComfyUI events for scene:', scene.id);
+        };
+    }, [scene.id, localGenStatus, setLocalGenStatus]);
+
     const getNarrativeContext = useCallback((sceneId: string): string => {
-        const sceneIndex = scenes.findIndex(s => s.id === sceneId);
+        const sceneIndex = effectiveScenes.findIndex(s => s.id === sceneId);
         if (sceneIndex === -1) return "No context found.";
         
         const actBreakdown = storyBible.plotOutline.split(/act [iI]+/);
         let actContext = "General Plot";
-        if (sceneIndex / scenes.length > 0.66 && actBreakdown[3]) actContext = "Act III: " + actBreakdown[3];
-        else if (sceneIndex / scenes.length > 0.33 && actBreakdown[2]) actContext = "Act II: " + actBreakdown[2];
+        if (sceneIndex / effectiveScenes.length > 0.66 && actBreakdown[3]) actContext = "Act III: " + actBreakdown[3];
+        else if (sceneIndex / effectiveScenes.length > 0.33 && actBreakdown[2]) actContext = "Act II: " + actBreakdown[2];
         else if (actBreakdown[1]) actContext = "Act I: " + actBreakdown[1];
 
         return `This scene occurs in: ${actContext.trim()}`;
-    }, [scenes, storyBible]);
+    }, [effectiveScenes, storyBible]);
 
 
     const handleUpdateSummaryClick = async () => {
@@ -510,38 +603,76 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     };
     
     const handleBatchProcess = async (actions: Array<'REFINE_DESCRIPTION' | 'SUGGEST_ENHANCERS'>) => {
+        const actionType = actions.includes('REFINE_DESCRIPTION') ? 'description' : 'enhancers';
+        
+        console.log('[TimelineEditor] handleBatchProcess starting', {
+            actions,
+            shotCount: timeline.shots.length,
+            hasNarrativeContext: !!scene?.id,
+            hasDirectorsVision: !!directorsVision
+        });
+        
         const tasks: BatchShotTask[] = timeline.shots.map(shot => ({
             shot_id: shot.id,
             description: shot.description,
             actions: actions,
         }));
 
-        if (tasks.length === 0) return;
+        if (tasks.length === 0) {
+            console.warn('[TimelineEditor] No shots to process');
+            addToast?.('No shots available to process. Add some shots first.', 'warning');
+            return;
+        }
 
-        setIsBatchProcessing(actions.includes('REFINE_DESCRIPTION') ? 'description' : 'enhancers');
+        setIsBatchProcessing(actionType);
         try {
             const narrativeContext = getNarrativeContext(scene.id);
+            console.log('[TimelineEditor] Getting pruned context for batch processing');
+            
             const prunedContext = await planActions.getPrunedContextForBatchProcessing(narrativeContext, directorsVision, onApiLog, onApiStateChange);
+            
+            console.log('[TimelineEditor] Calling batchProcessShotEnhancements with', tasks.length, 'tasks');
             const results = await planActions.batchProcessShotEnhancements(tasks, prunedContext, onApiLog, onApiStateChange);
+            
+            console.log('[TimelineEditor] batchProcessShotEnhancements results:', {
+                resultCount: results?.length || 0,
+                hasRefinedDescriptions: results?.some(r => !!r.refined_description),
+                hasSuggestedEnhancers: results?.some(r => !!r.suggested_enhancers)
+            });
+
+            if (!results || results.length === 0) {
+                console.warn('[TimelineEditor] Empty results from batch processing');
+                addToast?.('No enhancements were generated. Try adding more context to your scene.', 'warning');
+                return;
+            }
 
             const newShots = [...timeline.shots];
             const newEnhancers: ShotEnhancers = JSON.parse(JSON.stringify(timeline.shotEnhancers));
-
+            
+            let updatedCount = 0;
             results.forEach(result => {
                 const shotIndex = newShots.findIndex(s => s.id === result.shot_id);
                 if (shotIndex !== -1) {
                     if (result.refined_description) {
                         newShots[shotIndex] = { ...newShots[shotIndex], description: result.refined_description };
+                        updatedCount++;
                     }
                     if (result.suggested_enhancers) {
                         newEnhancers[result.shot_id] = { ...newEnhancers[result.shot_id], ...result.suggested_enhancers };
+                        updatedCount++;
                     }
                 }
             });
+            
             updateTimeline({ shots: newShots, shotEnhancers: newEnhancers });
+            console.log('[TimelineEditor] Batch processing complete. Updated', updatedCount, 'items');
+            addToast?.(`Successfully processed ${results.length} shot(s).`, 'success');
 
         } catch (error) {
-            console.error("Batch processing failed: ", error);
+            const err = error as Error;
+            console.error('[TimelineEditor] Batch processing failed:', err);
+            console.error('[TimelineEditor] Error stack:', err.stack);
+            addToast?.(`Batch processing failed: ${err.message}`, 'error');
         } finally {
             setIsBatchProcessing(false);
         }
@@ -579,7 +710,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     };
 
     const handleExportPrompts = () => {
-        const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary, generatedShotImages);
+        const payloads = generateVideoRequestPayloads(timeline, directorsVision, scene.summary, effectiveGeneratedShotImages);
         onUpdateScene({ ...scene, generatedPayload: payloads });
         setPromptsToExport(payloads);
         setIsPromptModalOpen(true);
@@ -606,7 +737,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         console.log('[Local Generation] Mode:', keyframeMode, 'Settings:', JSON.stringify(localGenSettings));
 
         try {
-            const keyframeData = generatedImages[scene.id];
+            const keyframeData = effectiveGeneratedImages[scene.id];
             
             // Check if using bookend mode
             if (keyframeMode === 'bookend') {
@@ -703,8 +834,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 });
 
                 // Generate scene transition context
-                const currentSceneIndex = scenes.findIndex(s => s.id === scene.id);
-                const previousScene: Scene | null = currentSceneIndex > 0 ? (scenes[currentSceneIndex - 1] ?? null) : null;
+                const currentSceneIndex = effectiveScenes.findIndex(s => s.id === scene.id);
+                const previousScene: Scene | null = currentSceneIndex > 0 ? (effectiveScenes[currentSceneIndex - 1] ?? null) : null;
                 const transitionContext = generateSceneTransitionContext(scene, previousScene, storyBible);
 
                 const results = await generateTimelineVideos(
@@ -766,7 +897,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         // CRITICAL: Comprehensive validation before video generation
         const { validateVideoGenerationCapability, formatValidationError } = await import('../utils/generationValidation');
         
-        const hasKeyframes = !!generatedImages[scene.id];
+        const hasKeyframes = !!effectiveGeneratedImages[scene.id];
         const hasWorkflow = localGenSettings?.workflowProfiles?.['wan-i2v']?.workflowJson ? true : false;
         
         // Get stored validation state to check if configuration is up-to-date
@@ -819,7 +950,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         }
 
         // CRITICAL: Retrieve scene keyframe before generation
-        const sceneKeyframe = generatedImages[scene.id];
+        const sceneKeyframe = effectiveGeneratedImages[scene.id];
         if (!sceneKeyframe) {
             updateStatus({ status: 'error', message: 'Scene keyframe is required. Please generate a keyframe image first.', progress: 0 });
             return;
@@ -855,8 +986,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
         // Generate scene transition context for narrative coherence
         // Find the previous scene in the array to create transition context
-        const currentSceneIndex = scenes.findIndex(s => s.id === scene.id);
-        const previousScene: Scene | null = currentSceneIndex > 0 ? (scenes[currentSceneIndex - 1] ?? null) : null;
+        const currentSceneIndex = effectiveScenes.findIndex(s => s.id === scene.id);
+        const previousScene: Scene | null = currentSceneIndex > 0 ? (effectiveScenes[currentSceneIndex - 1] ?? null) : null;
         const transitionContext = generateSceneTransitionContext(scene, previousScene, storyBible);
 
         try {
@@ -1146,7 +1277,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         )}
                         {sceneKeyframe && timeline.shots.length > 0 && (
                             <p className="text-xs text-gray-500 mt-1">
-                                {timeline.shots.filter(s => generatedShotImages[s.id]).length} of {timeline.shots.length} shots have specific images.
+                                {timeline.shots.filter(s => effectiveGeneratedShotImages[s.id]).length} of {timeline.shots.length} shots have specific images.
                                 {' '}Shots without images will use the scene keyframe.
                             </p>
                         )}
@@ -1346,7 +1477,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 shot={shot}
                                 index={index}
                                 enhancers={timeline.shotEnhancers[shot.id] || {}}
-                                imageUrl={generatedShotImages[shot.id]}
+                                imageUrl={effectiveGeneratedShotImages[shot.id]}
                                 isGeneratingImage={isGeneratingShotImage[shot.id] || false}
                                 onDescriptionChange={(shotId, desc) => updateTimeline({ shots: timeline.shots.map(s => s.id === shotId ? { ...s, description: desc } : s) })}
                                 onEnhancersChange={(shotId, enh) => updateTimeline({ shotEnhancers: { ...timeline.shotEnhancers, [shotId]: enh } })}
@@ -1466,6 +1597,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         directorsVision={directorsVision}
                         onApiLog={onApiLog}
                         onApiStateChange={onApiStateChange}
+                        addToast={addToast}
                     />
                 </>
             )}
@@ -1487,26 +1619,19 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 disabled={!isLocalGenConfigured}
                                 className="px-6 py-3 bg-amber-600 text-white font-semibold rounded-full shadow-lg hover:bg-amber-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
                             >
-                               Generate Locally
+                               Generate Video
                             </button>
                         </Tooltip>
-                        <Tooltip text={isGenerating ? "Generation in progress..." : "Generate video using AI pipeline"}>
-                            <button
-                                data-testid="btn-generate-video"
-                                onClick={handleGenerateVideoWithAI}
-                                disabled={isGenerating}
-                                className="px-6 py-3 bg-purple-600 text-white font-semibold rounded-full shadow-lg hover:bg-purple-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
-                            >
-                               {isGenerating ? 'Generating...' : 'Generate Video'}
-                            </button>
-                        </Tooltip>
+                        {/* Phase 2.3: "Generate Video" button removed - was redundant with "Generate Locally" 
+                            and caused user confusion. "Generate Locally" renamed to "Generate Video" for clarity.
+                            If cloud video generation is needed in future, implement as separate feature with RFC. */}
                     </div>
                      <div className="px-4 py-2 text-sm font-semibold rounded-full bg-gray-800/60 border border-gray-700 w-40 text-center">
                         {renderSaveStatus()}
                     </div>
                 </div>
                  <GuideCard title="Next Steps: Export or Generate">
-                    <p>Your timeline is ready! <strong>Export Prompts</strong> works immediately (no setup required) - it creates JSON/text prompts for any video generator. Or configure ComfyUI in Settings to use <strong>Generate Locally</strong> with keyframes.</p>
+                    <p>Your timeline is ready! <strong>Export Prompts</strong> works immediately (no setup required) - it creates JSON/text prompts for any video generator. Or configure ComfyUI in Settings to use <strong>Generate Video</strong> with keyframes.</p>
                 </GuideCard>
             </div>
 

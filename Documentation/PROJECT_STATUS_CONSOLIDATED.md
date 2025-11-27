@@ -1,12 +1,16 @@
 # Project Status - Consolidated (Single Source of Truth)
 
-**Last Updated**: November 25, 2025 (Single Keyframe Mode Fix Session)  
-**Version**: 1.0.0-rc1  
-**Status**: ✅ Production-Ready
+**Last Updated**: November 27, 2025 (Comprehensive Audit & Feature Flags Session)  
+**Version**: 1.0.0-rc2  
+**Status**: ✅ Production-Ready (85% Complete)
 
 > **Note**: This document consolidates information from `CURRENT_STATUS.md`, `START_HERE.md`, and recent session summaries into a single authoritative reference. For detailed history, see `Development_History/Sessions/`.
 
-> **Latest Session**: Single Keyframe Mode Fix Session (2025-11-25) - **✅ CRITICAL BUG FIXED** - Fixed `handleGenerateLocally()` in TimelineEditor.tsx to respect `keyframeMode` setting. Users in Single Keyframe mode can now generate videos (was incorrectly requiring bookend keyframes). Generated 3 video shots successfully via browser UI. Performance validated: React mount 1094ms (threshold 1000ms). All tests passing: 284/284 unit, 117/117 E2E, 7/7 performance.
+> **Latest Session**: Comprehensive Audit & Feature Flags Session (2025-11-27) - **✅ BUG FIXED + AUDIT COMPLETE** - Fixed `coherenceGate.ts` flag bug (`coherenceAutoSuggestions` → `autoSuggestions`). Marked 10 orphaned feature flags as "Coming Soon" with UI indicators. Archived 80+ root documents to `docs/archived/root-docs-2025-11/`. Root now has only 4 essential files. Phases 1-6 confirmed 100% complete. Phase 7 at ~20%. All 1,251 unit tests passing.
+
+> **Previous Session**: Phase 1C Migration + Gap Analysis (2025-11-27) - **✅ STATE MIGRATION COMPLETE** - Migrated SceneNavigator, TimelineEditor, ContinuityDirector to unified Zustand store. Added `effective*` pattern for feature-flagged store access. All 1,251 unit tests, 7/7 E2E data persistence tests passing.
+
+> **Previous Session**: Single Keyframe Mode Fix Session (2025-11-25) - **✅ CRITICAL BUG FIXED** - Fixed `handleGenerateLocally()` in TimelineEditor.tsx to respect `keyframeMode` setting. Users in Single Keyframe mode can now generate videos (was incorrectly requiring bookend keyframes). Generated 3 video shots successfully via browser UI. Performance validated: React mount 1094ms (threshold 1000ms). All tests passing: 284/284 unit, 117/117 E2E, 7/7 performance.
 
 > **Previous Session**: Video Validation Fix Session (2025-11-25) - **✅ CRITICAL BUG FIXED** - Fixed `validateWorkflowAndMappings()` profile resolution bug that blocked video generation. Video generation now works end-to-end: Shot 1/3 completed (ComfyUI_00016_.mp4), Shot 2-3 in progress. Created comprehensive next agent execution plan. IndexedDB persistence issue discovered (P1 for next session).
 
@@ -57,15 +61,17 @@
 | **Bookend Workflow** | ✅ **IMPLEMENTED** | 11/11 tests passing, ready for manual validation (30 min) |
 | **Keyframe Quality** | ✅ **Production-Ready** | CFG 5.5 + Enhanced Prompts v4: 100% success (zero failures) |
 | **Batch Operations** | ✅ **Polling Fallback Deployed** | WebSocket + REST API dual-path completion detection |
-| **Testing** | ✅ **100% Pass Rate** | Unit 276/276, E2E 117/117 (51 skipped) |
+| **Testing** | ✅ **100% Pass Rate** | Unit 1,251/1,251, E2E 117/117 (51 skipped) |
 | **Performance** | ✅ Exceeds Targets | FCP=188ms (target <900ms = 79% better) |
-| **Documentation** | ✅ Consolidated | Root cleaned, single source of truth |
+| **Documentation** | ✅ Consolidated | Root cleaned (4 files), 177 files archived |
 | **Build** | ✅ Zero Errors | TypeScript strict mode |
 | **LLM Optimization** | ✅ **IMPLEMENTED** | 80-93% token reduction, 49/49 tests passing |
+| **Feature Flags** | ✅ **23 Defined** | 13 implemented, 10 "Coming Soon" (Phase 7) |
+| **State Management** | ✅ **Unified** | Zustand store with IndexedDB persistence |
 
 ---
 
-## 🎯 Key Metrics (Updated 2025-11-25)
+## 🎯 Key Metrics (Updated 2025-11-27)
 
 ### Performance Metrics
 - **First Contentful Paint (FCP)**: 188ms ✅ (target <900ms, 79% better)
@@ -78,10 +84,11 @@
 - **E2E Tests**: 117/168 passing (100% of runnable tests) ✅
   - 51 properly skipped (manual, real-service, feature-gaps)
   - Fixed bookend-sequential.spec.ts (modal timing + confirmation dialog)
-- **Unit Tests**: 284/284 passing (100%) ✅
+- **Unit Tests**: 1,251/1,251 passing (100%) ✅
   - sceneTransitionService: 15/15 tests
   - videoValidationService: 18/18 tests
-  - validateWorkflowAndMappings: 8 new profile resolution tests
+  - featureFlags: comprehensive coverage
+  - coherenceGate: 8/8 tests
   - All TypeScript errors resolved
 - **Performance Tests**: 7/7 passing (100%) ✅
   - React mount: 1094ms (threshold: 1000ms, 9% over - acceptable)
@@ -91,11 +98,25 @@
 - **Validation Tests**: 11/11 passing (bookend workflow PowerShell script)
 - **Test Failures**: 0 (all critical tests passing) ✅
 - **Skipped Tests**: 51 (properly categorized - manual, real-service, feature-gaps)
-- **TypeScript Errors**: Pre-existing in utility files (non-blocking)
-- **Test Execution**: ~1-2 minutes (standard run)
+- **TypeScript Errors**: 0 ✅
+- **Test Execution**: ~14 seconds (1,251 tests)
 - **Code Coverage**: High (>85%)
-- **Root Directory**: Cleaned (35+ docs archived to `docs/archived/root-docs-2025-11/`)
-- **Latest Improvement**: E2E Validation Complete (2025-11-24) - All tests passing, root cleanup complete
+- **Root Directory**: Cleaned (4 essential files, 177 docs archived to `docs/archived/root-docs-2025-11/`)
+- **Latest Improvement**: Comprehensive Audit (2025-11-27) - All phases verified, feature flags audited
+
+### Feature Flag Status (2025-11-27) ✅
+| Category | Implemented | Coming Soon | Total |
+|----------|-------------|-------------|-------|
+| Quality | 4 | 4 | 8 |
+| Workflow | 5 | 1 | 6 |
+| Continuity | 1 | 5 | 6 |
+| Experimental | 3 | 0 | 3 |
+| **Total** | **13** | **10** | **23** |
+
+**Coming Soon flags** (Phase 7 dependencies):
+- `bookendKeyframes`, `videoUpscaling`, `characterConsistency`
+- `shotLevelContinuity`, `narrativeStateTracking`, `characterAppearanceTracking`
+- `enhancedNegativePrompts`, `subjectFirstPrompts`, `promptWeighting`, `promptABTesting`
 
 ### FLUX T2I Migration (2025-11-24) ✅
 - **Problem**: Lumina/NetaYume model produced comic-style multi-panel outputs incompatible with bookend workflow

@@ -1,5 +1,6 @@
 
-import { TimelineData, Shot, CreativeEnhancers } from '../types';
+import { TimelineData, Shot, CreativeEnhancers, Scene, StoryBible } from '../types';
+import { assemblePromptForProvider, buildSceneKeyframePrompt, buildComfyUIPrompt, type AssembledPrompt } from './promptPipeline';
 
 const generateHumanReadablePromptForShot = (
     shot: Shot, 
@@ -200,4 +201,134 @@ ${baseContext}`;
       negativePrompt
     }
   };
+}
+
+// ============================================================================
+// Pipeline-Integrated Payload Generators (Phase 3)
+// ============================================================================
+
+/**
+ * Payload format expected by queueComfyUIPrompt and related functions.
+ */
+export interface ComfyUIPayloads {
+    json: string;
+    text: string;
+    structured: any[];
+    negativePrompt: string;
+}
+
+/**
+ * Generates keyframe payloads using the prompt pipeline.
+ * 
+ * This function uses `buildSceneKeyframePrompt` to create a prompt optimized
+ * for keyframe generation, then formats it for ComfyUI consumption.
+ * 
+ * @param scene - The scene to generate a keyframe for
+ * @param storyBible - Story bible with character profiles
+ * @param directorsVision - Director's visual styling notes
+ * @param negativePrompts - Negative prompts to include
+ * @returns Payloads formatted for queueComfyUIPrompt
+ */
+export function generateKeyframePayloads(
+    scene: Scene,
+    storyBible: StoryBible,
+    directorsVision: string,
+    negativePrompts: string[] = []
+): ComfyUIPayloads {
+    // Use the prompt pipeline to build the keyframe prompt
+    const assembled = buildSceneKeyframePrompt(scene, storyBible, directorsVision, negativePrompts);
+    
+    // Format for ComfyUI consumption
+    const jsonPayload = {
+        prompt: assembled.separateFormat.positive,
+        negative: assembled.separateFormat.negative,
+        metadata: {
+            type: 'scene_keyframe',
+            sceneId: scene.id,
+            sceneTitle: scene.title || 'Untitled Scene',
+            timestamp: new Date().toISOString(),
+            pipelineVersion: '2.0',
+        }
+    };
+    
+    return {
+        json: JSON.stringify(jsonPayload, null, 2),
+        text: assembled.separateFormat.positive,
+        structured: [{
+            type: 'keyframe',
+            sceneId: scene.id,
+            prompt: assembled.separateFormat.positive,
+            negative: assembled.separateFormat.negative,
+        }],
+        negativePrompt: assembled.separateFormat.negative,
+    };
+}
+
+/**
+ * Generates payloads for a single shot using the prompt pipeline.
+ * 
+ * @param shot - The shot to generate
+ * @param scene - The scene containing the shot
+ * @param storyBible - Story bible with character profiles
+ * @param directorsVision - Director's visual styling notes
+ * @param enhancers - Shot-specific enhancers
+ * @param negativePrompts - Negative prompts to include
+ * @returns Payloads formatted for queueComfyUIPrompt
+ */
+export function generateShotPayloads(
+    shot: Shot,
+    scene: Scene,
+    storyBible: StoryBible,
+    directorsVision: string,
+    enhancers?: Partial<Omit<CreativeEnhancers, 'transitions'>>,
+    negativePrompts: string[] = []
+): ComfyUIPayloads {
+    const timelineEnhancers = scene.timeline?.shotEnhancers ?? {};
+    const shotEnhancerMap = enhancers
+        ? { ...timelineEnhancers, [shot.id]: enhancers }
+        : timelineEnhancers;
+
+    const comfyPrompt = buildComfyUIPrompt(
+        storyBible,
+        scene,
+        shot,
+        directorsVision,
+        negativePrompts,
+        undefined,
+        shotEnhancerMap
+    );
+
+    const jsonPayload = {
+        prompt: comfyPrompt.positive,
+        negative: comfyPrompt.negative,
+        metadata: {
+            type: 'shot',
+            shotId: shot.id,
+            sceneId: scene.id,
+            timestamp: new Date().toISOString(),
+            pipelineVersion: '2.0',
+        }
+    };
+    
+    return {
+        json: JSON.stringify(jsonPayload, null, 2),
+        text: comfyPrompt.positive,
+        structured: [{
+            type: 'shot',
+            shotId: shot.id,
+            prompt: comfyPrompt.positive,
+            negative: comfyPrompt.negative,
+        }],
+        negativePrompt: comfyPrompt.negative,
+    };
+}
+
+/**
+ * Utility to extract assembled prompt from existing payloads.
+ * Useful for debugging and logging.
+ */
+export function getAssembledPromptFromPayloads(
+    payloads: ComfyUIPayloads
+): AssembledPrompt {
+    return assemblePromptForProvider(payloads.text, [], { provider: 'comfyui' });
 }

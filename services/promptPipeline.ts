@@ -20,6 +20,7 @@ import {
     ShotEnhancers,
     CharacterProfile,
     VisualBibleCharacter,
+    VisualBible,
     isStoryBibleV2,
 } from '../types';
 import { 
@@ -28,6 +29,29 @@ import {
     DEFAULT_TOKEN_BUDGETS,
     type CharacterPromptConfig,
 } from './promptRegistry';
+import {
+    getFeatureFlagValue,
+    loadFeatureFlags,
+    type FeatureFlags,
+} from '../utils/featureFlags';
+import {
+    getNegativePreset,
+    getQualityConfig,
+    type ProviderId,
+    type QualityPrefixVariant,
+} from './promptConstants';
+import { applyWeight, WEIGHTING_PRESETS, isWeightingSupported, getWeightingPreset, DEFAULT_WEIGHTING_PRESET, type WeightingPresetName } from './promptWeighting';
+import {
+    validateTokenBudget as validateTokenBudgetGuard,
+    type TokenValidationResult,
+} from '../utils/pipelineContext';
+import {
+    guardTokenBudget,
+    heuristicTokenEstimate,
+    getTokenProviderFromId,
+    type TokenCountApi,
+    type ApiLogCallback,
+} from './tokenValidator';
 
 /**
  * Prompt components used to build the final ComfyUI prompt
@@ -66,6 +90,34 @@ export interface ComfyUIPrompt {
 }
 
 /**
+ * Assembled prompt ready for provider-specific consumption.
+ * Supports both inline (Gemini) and separate (ComfyUI) formats.
+ */
+export interface AssembledPrompt {
+    /** Combined format: "${positive}\n\nNEGATIVE PROMPT:\n${negative}" */
+    inlineFormat: string;
+    /** Separate positive/negative for ComfyUI workflows */
+    separateFormat: {
+        positive: string;
+        negative: string;
+    };
+    /** Merged and deduplicated negative prompt */
+    mergedNegative: string;
+    /** Token counts for budget tracking */
+    tokens: {
+        positive: number;
+        negative: number;
+        total: number;
+    };
+    /** Token budget validation result (if guard enabled) */
+    tokenValidation?: TokenValidationResult;
+    /** Token budget warning (if validateTokens was enabled and budget exceeded) */
+    tokenWarning?: string;
+    /** Assembly warnings (non-blocking) */
+    warnings: string[];
+}
+
+/**
  * Character descriptor synchronization result
  */
 export interface SyncResult {
@@ -75,6 +127,8 @@ export interface SyncResult {
     synchronized: string[];
     /** Characters missing descriptors */
     missing: string[];
+    /** Characters skipped due to user edits (descriptorSource='userEdit') */
+    skippedUserEdits: string[];
 }
 
 /**
@@ -281,6 +335,335 @@ function getCharacterDescriptorsForShot(
 }
 
 /**
+ * Extract top character descriptors for a scene summary.
+ * Prioritizes protagonist/supporting roles and limits to two entries.
+ */
+function getCharacterDescriptorsForScene(
+    scene: Scene,
+    storyBible: StoryBible,
+    perCharacterBudget: number
+): string[] {
+    if (!isStoryBibleV2(storyBible)) {
+        return [];
+    }
+
+    const bible = storyBible as StoryBibleV2;
+    const sceneText = (scene.summary || '').toLowerCase();
+
+    const relevant = (bible.characterProfiles || [])
+        .filter(profile => profile.visualDescriptor && sceneText.includes(profile.name.toLowerCase()))
+        .sort((a, b) => {
+            const order = { protagonist: 0, supporting: 1, antagonist: 2, background: 3 } as const;
+            const aOrder = order[a.role as keyof typeof order] ?? 3;
+            const bOrder = order[b.role as keyof typeof order] ?? 3;
+            return aOrder - bOrder;
+        })
+        .slice(0, 2)
+        .map(profile =>
+            truncateToTokenLimit(profile.visualDescriptor!, perCharacterBudget).text
+        )
+        .filter(Boolean);
+
+    return relevant;
+}
+
+const optionsQualityVariant = (
+    flags: Partial<FeatureFlags> | FeatureFlags
+): QualityPrefixVariant => getFeatureFlagValue(flags, 'qualityPrefixVariant');
+
+/**
+ * Deduplicates negative prompts using case-insensitive, first-wins strategy.
+ * Preserves original casing of first occurrence.
+ */
+function deduplicateNegatives(negatives: string[]): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    
+    for (const neg of negatives) {
+        const normalized = neg.toLowerCase().trim();
+        if (normalized && !seen.has(normalized)) {
+            seen.add(normalized);
+            result.push(neg.trim()); // Preserve original casing
+        }
+    }
+    
+    return result;
+}
+
+/**
+ * Assembles prompts into provider-specific formats.
+ * 
+ * For Gemini: Returns inline format with positive and negative combined
+ * For ComfyUI: Returns separate format with distinct positive/negative fields
+ * 
+ * @param positive - The positive prompt text
+ * @param negatives - Array of negative prompt terms
+ * @param options - Assembly options (provider, style, validation)
+ */
+export function assemblePromptForProvider(
+    positive: string,
+    negatives: string[],
+    options: {
+        provider: 'gemini' | 'comfyui';
+        styleDirectives?: string;
+        validateTokens?: boolean;
+        maxTokens?: number;
+    } = { provider: 'comfyui' }
+): AssembledPrompt {
+    // Deduplicate negatives (case-insensitive, first-wins)
+    const dedupedNegatives = deduplicateNegatives(negatives);
+    const negativeText = dedupedNegatives.join(', ');
+    
+    // Append style directives to positive if provided
+    const finalPositive = options.styleDirectives
+        ? `${positive}, ${options.styleDirectives}`
+        : positive;
+    
+    // Build inline format (for Gemini/text-based models)
+    const inlineFormat = negativeText
+        ? `${finalPositive}\n\nNEGATIVE PROMPT:\n${negativeText}`
+        : finalPositive;
+    
+    // Build separate format (for ComfyUI/structured workflows)
+    const separateFormat = {
+        positive: finalPositive,
+        negative: negativeText,
+    };
+    
+    // Token counting - use authoritative heuristicTokenEstimate from tokenValidator
+    // Maps provider to correct ratio: comfyui → clip (3.5), gemini → gemini (4.0)
+    const tokenProvider = getTokenProviderFromId(options.provider);
+    const positiveTokens = heuristicTokenEstimate(finalPositive, tokenProvider);
+    const negativeTokens = heuristicTokenEstimate(negativeText, tokenProvider);
+    const totalTokens = positiveTokens + negativeTokens;
+    
+    // Token validation if requested
+    let tokenWarning: string | undefined;
+    const warnings: string[] = [];
+    
+    if (options.validateTokens && options.maxTokens) {
+        if (positiveTokens > options.maxTokens) {
+            tokenWarning = `Prompt may exceed token budget: ~${positiveTokens} tokens (max: ${options.maxTokens})`;
+            warnings.push(tokenWarning);
+        }
+    }
+    
+    return {
+        inlineFormat,
+        separateFormat,
+        mergedNegative: negativeText,
+        tokens: {
+            positive: positiveTokens,
+            negative: negativeTokens,
+            total: totalTokens,
+        },
+        tokenWarning,
+        warnings,
+    };
+}
+
+/**
+ * Builds a scene keyframe prompt optimized for image generation.
+ * 
+ * This prompt is designed for generating keyframe images that establish
+ * the visual foundation for a scene, including:
+ * - Primary scene setting and mood
+ * - Key character appearances (top 2 by prominence)
+ * - Director's style directives
+ * 
+ * Token budget: sceneKeyframe (600 tokens)
+ * 
+ * When `subjectFirstPrompts` is enabled, routes to buildSceneKeyframePromptV2.
+ */
+export function buildSceneKeyframePrompt(
+    scene: Scene,
+    storyBible: StoryBible,
+    directorsVision: string,
+    negativePrompts: string[] = [],
+    options: {
+        flags?: Partial<FeatureFlags>;
+        provider?: ProviderId;
+        qualityVariant?: QualityPrefixVariant;
+        technicalTags?: string[];
+    } = {}
+): AssembledPrompt {
+    const mergedFlags = options.flags
+        ? loadFeatureFlags(options.flags)
+        : loadFeatureFlags();
+
+    if (getFeatureFlagValue(mergedFlags, 'subjectFirstPrompts') === true) {
+        return buildSceneKeyframePromptV2(
+            scene,
+            storyBible,
+            directorsVision,
+            negativePrompts,
+            { ...options, flags: mergedFlags }
+        );
+    }
+
+    return buildSceneKeyframePromptLegacy(
+        scene,
+        storyBible,
+        directorsVision,
+        negativePrompts,
+        mergedFlags,
+        options.provider
+    );
+}
+
+/**
+ * Legacy keyframe prompt builder (pre subject-first).
+ */
+function buildSceneKeyframePromptLegacy(
+    scene: Scene,
+    storyBible: StoryBible,
+    directorsVision: string,
+    negativePrompts: string[],
+    flags: FeatureFlags,
+    provider: ProviderId = 'comfyui'
+): AssembledPrompt {
+    const qualityVariant = optionsQualityVariant(flags);
+    const qualityConfig = getQualityConfig(qualityVariant);
+    const useEnhancedNegatives = getFeatureFlagValue(flags, 'enhancedNegativePrompts') === true;
+    const baseNegatives = useEnhancedNegatives ? getNegativePreset(provider, true) : [];
+    const variantNegatives = qualityVariant !== 'legacy' ? qualityConfig.negativePrefix : [];
+    const mergedNegatives = [...baseNegatives, ...variantNegatives, ...negativePrompts];
+    const parts: string[] = [];
+    
+    // 1. Scene setting and summary (primary focus)
+    if (scene.summary) {
+        const summaryResult = truncateToTokenLimit(
+            scene.summary,
+            Math.floor(DEFAULT_TOKEN_BUDGETS.sceneKeyframe * 0.4) // 40% for scene context
+        );
+        parts.push(summaryResult.text);
+    }
+    
+    // 2. Extract top characters for this scene
+    const characterDescriptors = getCharacterDescriptorsForScene(
+        scene,
+        storyBible,
+        Math.floor(DEFAULT_TOKEN_BUDGETS.sceneKeyframe * 0.15)
+    );
+    parts.push(...characterDescriptors);
+    
+    // 3. Style directives from director's vision
+    const styleResult = truncateToTokenLimit(
+        directorsVision,
+        Math.floor(DEFAULT_TOKEN_BUDGETS.sceneKeyframe * 0.25) // 25% for style
+    );
+    if (styleResult.text) {
+        parts.push(styleResult.text);
+    }
+
+    // Optional quality tokens when variant is optimized
+    const qualityTokens = qualityVariant !== 'legacy'
+        ? [...qualityConfig.positivePrefix, ...qualityConfig.qualitySuffix].join(', ')
+        : '';
+    
+    // Combine positive prompt
+    const positivePrompt = parts
+        .concat(qualityTokens ? [qualityTokens] : [])
+        .filter(Boolean)
+        .join(', ');
+    
+    // Assemble with provider formatting
+    return assemblePromptForProvider(positivePrompt, mergedNegatives, {
+        provider,
+        validateTokens: true,
+        maxTokens: DEFAULT_TOKEN_BUDGETS.sceneKeyframe,
+    });
+}
+
+/**
+ * Subject-first keyframe prompt builder (Phase 0+).
+ * Ordering: scene summary → characters → style → technical → quality suffix.
+ * 
+ * @param weightingPreset - Weighting preset to use (default: 'balanced')
+ */
+export function buildSceneKeyframePromptV2(
+    scene: Scene,
+    storyBible: StoryBible,
+    directorsVision: string,
+    negativePrompts: string[] = [],
+    options: {
+        flags?: Partial<FeatureFlags>;
+        provider?: ProviderId;
+        qualityVariant?: QualityPrefixVariant;
+        technicalTags?: string[];
+        /** Weighting preset: 'balanced' (default), 'subjectEmphasis', or 'styleEmphasis' */
+        weightingPreset?: WeightingPresetName;
+    } = {}
+): AssembledPrompt {
+    const mergedFlags = options.flags
+        ? loadFeatureFlags(options.flags)
+        : loadFeatureFlags();
+    const provider = options.provider ?? 'comfyui';
+    const qualityVariant = options.qualityVariant ?? optionsQualityVariant(mergedFlags);
+    const qualityConfig = getQualityConfig(qualityVariant);
+    const useEnhancedNegatives = getFeatureFlagValue(mergedFlags, 'enhancedNegativePrompts') === true;
+    const useWeighting =
+        getFeatureFlagValue(mergedFlags, 'promptWeighting') === true &&
+        isWeightingSupported(provider);
+    
+    // Get weighting preset (defaults to 'balanced' if not specified)
+    const presetName = options.weightingPreset ?? DEFAULT_WEIGHTING_PRESET;
+    const preset = getWeightingPreset(presetName);
+
+    const perCharacterBudget = Math.floor(DEFAULT_TOKEN_BUDGETS.sceneKeyframe * 0.15);
+    const summaryBudget = Math.floor(DEFAULT_TOKEN_BUDGETS.sceneKeyframe * 0.35);
+    const styleBudget = Math.floor(DEFAULT_TOKEN_BUDGETS.sceneKeyframe * 0.2);
+
+    const summaryResult = truncateToTokenLimit(scene.summary || '', summaryBudget);
+    const summarySegment = useWeighting
+        ? applyWeight(summaryResult.text, preset.summary)
+        : summaryResult.text;
+
+    const characterDescriptors = getCharacterDescriptorsForScene(
+        scene,
+        storyBible,
+        perCharacterBudget
+    );
+    const styledCharacters = useWeighting
+        ? characterDescriptors.map(desc => applyWeight(desc, preset.characters))
+        : characterDescriptors;
+
+    const styleResult = truncateToTokenLimit(directorsVision, styleBudget);
+    const styleSegment = useWeighting
+        ? applyWeight(styleResult.text, preset.style)
+        : styleResult.text;
+
+    const technicalDirectives =
+        (options.technicalTags && options.technicalTags.length > 0)
+            ? options.technicalTags
+            : qualityConfig.technicalDirectives;
+    const technicalSegment = useWeighting
+        ? technicalDirectives.map(tag => applyWeight(tag, preset.technical)).join(', ')
+        : technicalDirectives.join(', ');
+
+    const qualityTokens = qualityVariant !== 'legacy'
+        ? [...qualityConfig.positivePrefix, ...qualityConfig.qualitySuffix].join(', ')
+        : '';
+
+    const positiveSegments = [
+        summarySegment,
+        ...styledCharacters,
+        styleSegment,
+        technicalSegment,
+        qualityTokens,
+    ].filter(Boolean);
+
+    const baseNegatives = useEnhancedNegatives ? getNegativePreset(provider, true) : [];
+    const variantNegatives = qualityVariant !== 'legacy' ? qualityConfig.negativePrefix : [];
+    const mergedNegatives = [...baseNegatives, ...variantNegatives, ...negativePrompts];
+
+    return assemblePromptForProvider(positiveSegments.join(', '), mergedNegatives, {
+        provider,
+        validateTokens: true,
+        maxTokens: DEFAULT_TOKEN_BUDGETS.sceneKeyframe,
+    });
+}
+/**
  * Synchronizes character descriptors between Story Bible and Visual Bible.
  * 
  * This ensures that VisualBibleCharacter entries are linked to their
@@ -299,12 +682,12 @@ export function syncCharacterDescriptors(
     
     if (!isStoryBibleV2(storyBible)) {
         // For V1 bibles, we can't sync structured character data
-        return { descriptors, synchronized, missing };
+        return { descriptors, synchronized, missing, skippedUserEdits: [] };
     }
     
     const bible = storyBible as StoryBibleV2;
     if (!bible.characterProfiles?.length) {
-        return { descriptors, synchronized, missing };
+        return { descriptors, synchronized, missing, skippedUserEdits: [] };
     }
     
     // Build lookup map for story bible characters
@@ -314,8 +697,16 @@ export function syncCharacterDescriptors(
         profileMap.set(profile.name.toLowerCase(), profile);
     }
     
+    const skippedUserEdits: string[] = [];
+    
     // Sync each visual character
     for (const visual of visualCharacters) {
+        // Skip characters with user-edited descriptors (protected from auto-sync)
+        if (visual.descriptorSource === 'userEdit') {
+            skippedUserEdits.push(visual.name);
+            continue;
+        }
+        
         let matched = false;
         
         // Try to match by storyBibleCharacterId first
@@ -343,7 +734,7 @@ export function syncCharacterDescriptors(
         }
     }
     
-    return { descriptors, synchronized, missing };
+    return { descriptors, synchronized, missing, skippedUserEdits };
 }
 
 /**
@@ -497,4 +888,150 @@ export default {
     validatePromptChain,
     buildCharacterPromptConfig,
     getPromptStatistics,
+    assemblePromptForProvider,
+    buildSceneKeyframePrompt,
+    buildSceneKeyframePromptV2,
+    buildSceneKeyframePromptWithGuard,
+    buildComfyUIPromptWithGuard,
 };
+
+// ============================================================================
+// Async Prompt Builders with Token Guard Integration
+// ============================================================================
+
+/**
+ * Options for token-guarded prompt building.
+ */
+export interface TokenGuardOptions {
+    /** Feature flags (uses promptTokenGuard mode) */
+    flags: Partial<FeatureFlags>;
+    /** Optional token counting API */
+    tokenApi?: TokenCountApi;
+    /** Optional logging callback */
+    logApiCall?: ApiLogCallback;
+}
+
+/**
+ * Result from token-guarded prompt builder.
+ */
+export interface GuardedPromptResult {
+    /** The assembled prompt */
+    prompt: AssembledPrompt;
+    /** Whether generation is allowed (based on flag mode) */
+    allowed: boolean;
+    /** Token count (actual or estimated) */
+    tokens: number;
+    /** Token budget that was checked */
+    budget: number;
+    /** Source of token count */
+    source: 'api' | 'heuristic';
+    /** Warning message if over budget but allowed */
+    warning?: string;
+}
+
+/**
+ * Builds a scene keyframe prompt with token guard enforcement.
+ * 
+ * This async version uses the token validator to check the prompt against
+ * the budget, respecting the promptTokenGuard feature flag:
+ * - 'off': Always returns allowed=true
+ * - 'warn': Returns allowed=true with warning if over budget
+ * - 'block': Returns allowed=false if over budget
+ * 
+ * @param scene - The scene to generate a keyframe for
+ * @param storyBible - Story bible with character profiles
+ * @param directorsVision - Director's visual styling notes
+ * @param negativePrompts - Negative prompts to include
+ * @param options - Token guard options (flags, api, logger)
+ */
+export async function buildSceneKeyframePromptWithGuard(
+    scene: Scene,
+    storyBible: StoryBible,
+    directorsVision: string,
+    negativePrompts: string[] = [],
+    options: TokenGuardOptions
+): Promise<GuardedPromptResult> {
+    // Build the base prompt
+    const prompt = buildSceneKeyframePrompt(scene, storyBible, directorsVision, negativePrompts);
+    
+    // Check against token guard
+    const guardResult = await guardTokenBudget(
+        prompt.separateFormat.positive,
+        DEFAULT_TOKEN_BUDGETS.sceneKeyframe,
+        options.flags,
+        options.tokenApi,
+        options.logApiCall
+    );
+    
+    return {
+        prompt,
+        allowed: guardResult.allowed,
+        tokens: guardResult.tokens,
+        budget: guardResult.budget,
+        source: guardResult.source,
+        warning: guardResult.warning,
+    };
+}
+
+/**
+ * Builds a ComfyUI prompt with token guard enforcement.
+ * 
+ * This async version uses the token validator to check the prompt against
+ * the budget, respecting the promptTokenGuard feature flag.
+ * 
+ * @param storyBible - The story bible containing narrative context
+ * @param scene - The current scene being processed
+ * @param shot - The specific shot to generate prompt for
+ * @param directorsVision - Director's visual styling guidance
+ * @param negativePrompts - List of elements to avoid
+ * @param options - Token guard options (flags, api, logger)
+ * @param maxTokens - Maximum tokens for the positive prompt
+ * @param shotEnhancers - Optional shot-specific enhancers
+ */
+export async function buildComfyUIPromptWithGuard(
+    storyBible: StoryBible,
+    scene: Scene,
+    shot: Shot,
+    directorsVision: string,
+    negativePrompts: string[] = [],
+    options: TokenGuardOptions,
+    maxTokens: number = DEFAULT_TOKEN_BUDGETS.comfyuiShot,
+    shotEnhancers?: ShotEnhancers
+): Promise<GuardedPromptResult & { comfyPrompt: ComfyUIPrompt }> {
+    // Build the base prompt
+    const comfyPrompt = buildComfyUIPrompt(
+        storyBible,
+        scene,
+        shot,
+        directorsVision,
+        negativePrompts,
+        maxTokens,
+        shotEnhancers
+    );
+    
+    // Also build assembled format for consistency
+    const assembledPrompt = assemblePromptForProvider(
+        comfyPrompt.positive,
+        comfyPrompt.negative,
+        { provider: 'comfyui' }
+    );
+    
+    // Check against token guard
+    const guardResult = await guardTokenBudget(
+        comfyPrompt.positive,
+        maxTokens,
+        options.flags,
+        options.tokenApi,
+        options.logApiCall
+    );
+    
+    return {
+        prompt: assembledPrompt,
+        comfyPrompt,
+        allowed: guardResult.allowed,
+        tokens: guardResult.tokens,
+        budget: guardResult.budget,
+        source: guardResult.source,
+        warning: guardResult.warning,
+    };
+}

@@ -31,6 +31,8 @@ export interface PromptTokenBudget {
     comfyuiShot: number;
     /** Plot outline total: max 800 tokens (~3200 chars) */
     plotOutline: number;
+    /** Scene keyframe positive prompt: max 600 tokens (~2400 chars) */
+    sceneKeyframe: number;
 }
 
 /**
@@ -43,6 +45,7 @@ export const DEFAULT_TOKEN_BUDGETS: PromptTokenBudget = {
     plotScene: 200,
     comfyuiShot: 500,
     plotOutline: 800,
+    sceneKeyframe: 600,
 };
 
 /**

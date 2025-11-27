@@ -66,6 +66,38 @@ export interface FeatureFlags {
     promptABTesting: boolean;
 
     /**
+     * Show Bayesian A/B testing analytics panel
+     * Displays probability comparisons between prompt variants
+     * Can be disabled near release to simplify UI
+     * @default false
+     */
+    showBayesianAnalytics: boolean;
+
+    /**
+     * Enable expanded, provider-specific negative prompt sets
+     * @default false
+     */
+    enhancedNegativePrompts: boolean;
+
+    /**
+     * Use subject-first ordering when assembling prompts
+     * @default false
+     */
+    subjectFirstPrompts: boolean;
+
+    /**
+     * Enable weighting syntax for providers that support it
+     * @default false
+     */
+    promptWeighting: boolean;
+
+    /**
+     * Quality prefix preset to use when assembling prompts
+     * @default 'legacy'
+     */
+    qualityPrefixVariant: 'legacy' | 'optimized';
+
+    /**
      * Enable provider health polling
      * Periodically checks ComfyUI health and auto-fallback
      * @default false
@@ -85,6 +117,95 @@ export interface FeatureFlags {
      * @default false
      */
     characterAppearanceTracking: boolean;
+
+    // ============================================================================
+    // Pipeline Integration Flags (Phase 0 - Prompt Engineering Framework)
+    // ============================================================================
+
+    /**
+     * Use V2 context assembly in scene list generation
+     * @default false
+     * @stability beta
+     * @expires 2026-02-28
+     */
+    sceneListContextV2: boolean;
+
+    /**
+     * Use plotScene.actNumber for act mapping instead of heuristic
+     * @default false
+     * @stability beta
+     * @expires 2026-02-28
+     */
+    actContextV2: boolean;
+
+    /**
+     * Use buildSceneKeyframePrompt assembler for keyframe generation
+     * @default false
+     * @stability beta
+     * @expires 2026-02-28
+     */
+    keyframePromptPipeline: boolean;
+
+    /**
+     * Use assembler for video generation paths
+     * @default false
+     * @stability beta
+     * @expires 2026-02-28
+     */
+    videoPromptPipeline: boolean;
+
+    /**
+     * Auto-sync Visual Bible descriptors on Story Bible save
+     * @default false
+     * @stability beta
+     * @expires 2026-02-28
+     */
+    bibleV2SaveSync: boolean;
+
+    /**
+     * Scene summary validation enforcement mode
+     * - 'off': No validation
+     * - 'warn': Log warnings but don't block
+     * - 'block': Block generation on validation failure
+     * @default 'off'
+     * @stability beta
+     * @expires 2026-02-28
+     */
+    sceneListValidationMode: 'off' | 'warn' | 'block';
+
+    /**
+     * Token budget enforcement mode
+     * - 'off': No enforcement
+     * - 'warn': Log warnings but don't block
+     * - 'block': Block generation on budget overflow
+     * @default 'off'
+     * @stability beta
+     * @expires 2026-02-28
+     */
+    promptTokenGuard: 'off' | 'warn' | 'block';
+
+    // ============================================================================
+    // State Management Migration Flags (Phase 1 - State Overhaul)
+    // ============================================================================
+
+    /**
+     * Use unified Zustand scene state store instead of scattered usePersistentState hooks.
+     * When enabled, scene data flows through the centralized store with IndexedDB persistence.
+     * @default false
+     * @stability experimental
+     * @expires 2026-03-31
+     */
+    useUnifiedSceneStore: boolean;
+
+    /**
+     * Run parallel store validation during migration period.
+     * Compares old usePersistentState state with new Zustand store for consistency.
+     * Only active when useUnifiedSceneStore is true.
+     * @default false
+     * @stability experimental
+     * @expires 2026-03-31
+     */
+    sceneStoreParallelValidation: boolean;
 }
 
 /**
@@ -99,9 +220,25 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
     autoSuggestions: false,
     narrativeStateTracking: false,
     promptABTesting: false,
+    showBayesianAnalytics: true,  // Enable Bayesian analytics panel (toggle off near release)
+    enhancedNegativePrompts: false,
+    subjectFirstPrompts: false,
+    promptWeighting: false,
+    qualityPrefixVariant: 'legacy',
     providerHealthPolling: false,
-    promptQualityGate: false,
+    promptQualityGate: true,     // Enable prompt quality gating (Phase 1 Prompt Optimization)
     characterAppearanceTracking: false,
+    // Pipeline Integration Flags (enabled for validation)
+    sceneListContextV2: false,
+    actContextV2: false,
+    keyframePromptPipeline: true,  // Enable new keyframe pipeline
+    videoPromptPipeline: true,     // Enable video prompt pipeline (Phase 1 Prompt Optimization)
+    bibleV2SaveSync: true,         // Enable Visual Bible sync
+    sceneListValidationMode: 'warn', // Log validation warnings
+    promptTokenGuard: 'warn',      // Log token budget warnings
+    // State Management Migration Flags (Phase 1C activation)
+    useUnifiedSceneStore: true,    // Enable unified Zustand store (Phase 1C)
+    sceneStoreParallelValidation: true, // Enable parallel store validation
 };
 
 /**
@@ -114,6 +251,8 @@ export interface FeatureFlagMeta {
     category: 'quality' | 'workflow' | 'continuity' | 'experimental';
     stability: 'stable' | 'beta' | 'experimental';
     dependencies?: (keyof FeatureFlags)[];
+    /** If true, flag is defined but implementation is not yet complete (Phase 7) */
+    comingSoon?: boolean;
 }
 
 /**
@@ -126,6 +265,7 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Generate start and end keyframes for each scene to improve temporal consistency',
         category: 'workflow',
         stability: 'beta',
+        comingSoon: true, // Phase 7: Needs dual keyframe generation
     },
     videoUpscaling: {
         id: 'videoUpscaling',
@@ -134,6 +274,7 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         category: 'quality',
         stability: 'experimental',
         dependencies: ['characterConsistency'], // May conflict if not sequenced properly
+        comingSoon: true, // Phase 7: Needs upscaler workflow integration
     },
     characterConsistency: {
         id: 'characterConsistency',
@@ -141,6 +282,7 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Use CCC workflow to maintain character identity across scenes',
         category: 'continuity',
         stability: 'experimental',
+        comingSoon: true, // Phase 7: Needs CCC workflow integration
     },
     shotLevelContinuity: {
         id: 'shotLevelContinuity',
@@ -148,6 +290,7 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Propagate visual continuity cues between shots, not just scenes',
         category: 'continuity',
         stability: 'beta',
+        comingSoon: true, // Phase 7: Needs shot-level continuity system
     },
     autoSuggestions: {
         id: 'autoSuggestions',
@@ -162,6 +305,7 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Track active characters, locations, and arc position across generations',
         category: 'continuity',
         stability: 'beta',
+        comingSoon: true, // Phase 7: Needs narrative state machine
     },
     promptABTesting: {
         id: 'promptABTesting',
@@ -169,6 +313,46 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Compare different prompt template versions for quality optimization',
         category: 'experimental',
         stability: 'experimental',
+        comingSoon: true, // Phase 7: Needs A/B testing framework integration
+    },
+    showBayesianAnalytics: {
+        id: 'showBayesianAnalytics',
+        label: 'Bayesian Analytics Panel',
+        description: 'Show Bayesian A/B testing analytics with probability comparisons',
+        category: 'experimental',
+        stability: 'beta',
+        dependencies: ['promptABTesting'],
+    },
+    enhancedNegativePrompts: {
+        id: 'enhancedNegativePrompts',
+        label: 'Enhanced Negative Prompts',
+        description: 'Use expanded provider-specific negative prompts (quality, anatomy, composition)',
+        category: 'quality',
+        stability: 'beta',
+        comingSoon: true, // Needs prompt assembly enhancement
+    },
+    subjectFirstPrompts: {
+        id: 'subjectFirstPrompts',
+        label: 'Subject-First Prompts',
+        description: 'Order prompts as subject → characters → style → technical details',
+        category: 'quality',
+        stability: 'beta',
+        comingSoon: true, // Needs prompt ordering logic
+    },
+    promptWeighting: {
+        id: 'promptWeighting',
+        label: 'Prompt Weighting',
+        description: 'Enable weighting syntax (e.g., (subject:1.2)) for supported providers',
+        category: 'experimental',
+        stability: 'experimental',
+        comingSoon: true, // Needs weighting syntax support
+    },
+    qualityPrefixVariant: {
+        id: 'qualityPrefixVariant',
+        label: 'Quality Prefix Variant',
+        description: 'Select legacy vs optimized quality prefixes when assembling prompts',
+        category: 'quality',
+        stability: 'beta',
     },
     providerHealthPolling: {
         id: 'providerHealthPolling',
@@ -190,17 +374,122 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Warn when characters are absent from storyline for extended periods',
         category: 'continuity',
         stability: 'beta',
+        comingSoon: true, // Needs character tracking system
+    },
+    // Pipeline Integration Flags
+    sceneListContextV2: {
+        id: 'sceneListContextV2',
+        label: 'Scene List Context V2',
+        description: 'Use V2 context assembly in scene list generation for improved accuracy',
+        category: 'workflow',
+        stability: 'beta',
+    },
+    actContextV2: {
+        id: 'actContextV2',
+        label: 'Act Context V2',
+        description: 'Use plotScene.actNumber for act mapping instead of position heuristic',
+        category: 'workflow',
+        stability: 'beta',
+    },
+    keyframePromptPipeline: {
+        id: 'keyframePromptPipeline',
+        label: 'Keyframe Prompt Pipeline',
+        description: 'Use unified prompt assembler for keyframe generation with token budgeting',
+        category: 'workflow',
+        stability: 'beta',
+    },
+    videoPromptPipeline: {
+        id: 'videoPromptPipeline',
+        label: 'Video Prompt Pipeline',
+        description: 'Use unified prompt assembler for video generation paths',
+        category: 'workflow',
+        stability: 'beta',
+    },
+    bibleV2SaveSync: {
+        id: 'bibleV2SaveSync',
+        label: 'Bible V2 Save Sync',
+        description: 'Auto-sync Visual Bible descriptors when Story Bible is saved',
+        category: 'continuity',
+        stability: 'beta',
+    },
+    sceneListValidationMode: {
+        id: 'sceneListValidationMode',
+        label: 'Scene List Validation',
+        description: 'Validate scene summaries for structural issues (off/warn/block)',
+        category: 'quality',
+        stability: 'beta',
+    },
+    promptTokenGuard: {
+        id: 'promptTokenGuard',
+        label: 'Prompt Token Guard',
+        description: 'Enforce token budgets on prompts (off/warn/block)',
+        category: 'quality',
+        stability: 'beta',
+    },
+    // State Management Migration Flags
+    useUnifiedSceneStore: {
+        id: 'useUnifiedSceneStore',
+        label: 'Unified Scene Store',
+        description: 'Use centralized Zustand store for scene state management with IndexedDB persistence',
+        category: 'workflow',
+        stability: 'experimental',
+    },
+    sceneStoreParallelValidation: {
+        id: 'sceneStoreParallelValidation',
+        label: 'Scene Store Parallel Validation',
+        description: 'Run consistency checks between old and new state stores during migration',
+        category: 'experimental',
+        stability: 'experimental',
+        dependencies: ['useUnifiedSceneStore'],
     },
 };
 
 /**
  * Get feature flag value with fallback to default
+ * @deprecated Use getFeatureFlagValue for type-safe access to union-type flags
  */
 export function getFeatureFlag(
     flags: Partial<FeatureFlags> | undefined,
     flag: keyof FeatureFlags
 ): boolean {
-    return flags?.[flag] ?? DEFAULT_FEATURE_FLAGS[flag];
+    const value = flags?.[flag] ?? DEFAULT_FEATURE_FLAGS[flag];
+    return typeof value === 'boolean' ? value : false;
+}
+
+/**
+ * Get feature flag value with proper typing for union-type flags.
+ * This is the preferred method for accessing flags that may have
+ * non-boolean values (e.g., 'off' | 'warn' | 'block').
+ * 
+ * @param flags - Partial feature flags object
+ * @param key - The flag key to retrieve
+ * @returns The flag value with proper type
+ */
+export function getFeatureFlagValue<K extends keyof FeatureFlags>(
+    flags: Partial<FeatureFlags> | undefined,
+    key: K
+): FeatureFlags[K] {
+    return (flags?.[key] ?? DEFAULT_FEATURE_FLAGS[key]) as FeatureFlags[K];
+}
+
+/**
+ * Load and validate feature flags from a partial source.
+ * Ensures all flags have valid values and logs validation warnings.
+ * 
+ * @param source - Partial feature flags to merge with defaults
+ * @returns Complete feature flags object
+ */
+export function loadFeatureFlags(
+    source?: Partial<FeatureFlags>
+): FeatureFlags {
+    const flags = mergeFeatureFlags(source);
+    const { warnings } = validateFlagCombination(flags);
+    
+    if (warnings.length > 0) {
+        console.warn('[FeatureFlags] Validation warnings:', warnings);
+    }
+    
+    return flags;
 }
 
 /**

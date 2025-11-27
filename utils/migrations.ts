@@ -123,6 +123,29 @@ const migrations: Migration[] = [
                 }
             }
             
+            // Add descriptorSource to Visual Bible characters for provenance tracking
+            if (migrated.visualBible?.characters && Array.isArray(migrated.visualBible.characters)) {
+                for (const character of migrated.visualBible.characters) {
+                    if (!character.descriptorSource) {
+                        // Conservative default: assume all existing descriptors came from Story Bible
+                        // This prevents auto-sync from overwriting until user explicitly edits
+                        character.descriptorSource = 'storyBible';
+                    }
+                }
+            }
+            
+            // Add new pipeline flags to existing featureFlags
+            if (migrated.localGenSettings?.featureFlags) {
+                const flags = migrated.localGenSettings.featureFlags;
+                if (typeof flags.sceneListContextV2 === 'undefined') flags.sceneListContextV2 = false;
+                if (typeof flags.actContextV2 === 'undefined') flags.actContextV2 = false;
+                if (typeof flags.keyframePromptPipeline === 'undefined') flags.keyframePromptPipeline = false;
+                if (typeof flags.videoPromptPipeline === 'undefined') flags.videoPromptPipeline = false;
+                if (typeof flags.bibleV2SaveSync === 'undefined') flags.bibleV2SaveSync = false;
+                if (typeof flags.sceneListValidationMode === 'undefined') flags.sceneListValidationMode = 'off';
+                if (typeof flags.promptTokenGuard === 'undefined') flags.promptTokenGuard = 'off';
+            }
+            
             return migrated;
         },
         down: (state: any) => {
@@ -162,6 +185,25 @@ const migrations: Migration[] = [
                 for (const scene of migrated.scenes) {
                     delete scene.keyframeMode;
                 }
+            }
+            
+            // Remove descriptorSource from Visual Bible characters
+            if (migrated.visualBible?.characters && Array.isArray(migrated.visualBible.characters)) {
+                for (const character of migrated.visualBible.characters) {
+                    delete character.descriptorSource;
+                }
+            }
+            
+            // Remove new pipeline flags
+            if (migrated.localGenSettings?.featureFlags) {
+                const flags = migrated.localGenSettings.featureFlags;
+                delete flags.sceneListContextV2;
+                delete flags.actContextV2;
+                delete flags.keyframePromptPipeline;
+                delete flags.videoPromptPipeline;
+                delete flags.bibleV2SaveSync;
+                delete flags.sceneListValidationMode;
+                delete flags.promptTokenGuard;
             }
             
             return migrated;

@@ -1431,30 +1431,101 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                 <div className="space-y-2 pl-8">
                                     {getFlagsByCategory('quality').map(meta => {
                                         const currentFlags = mergeFeatureFlags(formData.featureFlags);
-                                        const isEnabled = currentFlags[meta.id];
+                                        const currentValue = currentFlags[meta.id];
                                         const deps = checkFlagDependencies(formData.featureFlags, meta.id);
                                         
+                                        // Special handling for non-boolean flags
+                                        const isDropdownFlag = ['qualityPrefixVariant', 'sceneListValidationMode', 'promptTokenGuard'].includes(meta.id);
+                                        
+                                        if (isDropdownFlag) {
+                                            // Render dropdown for multi-value flags
+                                            return (
+                                                <div key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
+                                                    currentValue !== 'off' && currentValue !== 'legacy'
+                                                        ? 'bg-green-900/20 border-green-700/50' 
+                                                        : 'bg-gray-800/50 border-gray-700'
+                                                }`}>
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="font-medium text-gray-200">{meta.label}</span>
+                                                            <span className={`px-2 py-0.5 text-xs rounded ${
+                                                                meta.stability === 'stable' 
+                                                                    ? 'bg-green-900/50 text-green-300 border border-green-700'
+                                                                    : meta.stability === 'beta'
+                                                                    ? 'bg-blue-900/50 text-blue-300 border border-blue-700'
+                                                                    : 'bg-purple-900/50 text-purple-300 border border-purple-700'
+                                                            }`}>
+                                                                {meta.stability.toUpperCase()}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-gray-400 mb-2">{meta.description}</p>
+                                                        <select
+                                                            value={currentValue as string}
+                                                            onChange={(e) => {
+                                                                const newFlags = {
+                                                                    ...mergeFeatureFlags(formData.featureFlags),
+                                                                    [meta.id]: e.target.value
+                                                                };
+                                                                handleInputChange('featureFlags', newFlags);
+                                                            }}
+                                                            className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200 focus:ring-green-400 focus:border-green-400"
+                                                        >
+                                                            {meta.id === 'qualityPrefixVariant' ? (
+                                                                <>
+                                                                    <option value="legacy">Legacy (original prompts)</option>
+                                                                    <option value="optimized">Optimized (enhanced quality)</option>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <option value="off">Off (disabled)</option>
+                                                                    <option value="warn">Warn (log warnings)</option>
+                                                                    <option value="block">Block (prevent generation)</option>
+                                                                </>
+                                                            )}
+                                                        </select>
+                                                        {!deps.satisfied && (
+                                                            <p className="text-xs text-amber-400 mt-1">
+                                                                ⚠️ Requires: {deps.missingDeps.map(d => FEATURE_FLAG_META[d].label).join(', ')}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+                                        
+                                        // Standard boolean checkbox
+                                        const isEnabled = currentValue === true;
+                                        const isComingSoon = meta.comingSoon === true;
                                         return (
-                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-                                                isEnabled 
+                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${isComingSoon ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'} ${
+                                                isEnabled && !isComingSoon
                                                     ? 'bg-green-900/20 border-green-700/50' 
+                                                    : isComingSoon
+                                                    ? 'bg-gray-800/30 border-gray-600/50'
                                                     : 'bg-gray-800/50 border-gray-700 hover:border-gray-600'
                                             }`}>
                                                 <input
                                                     type="checkbox"
                                                     checked={isEnabled}
+                                                    disabled={isComingSoon}
                                                     onChange={(e) => {
+                                                        if (isComingSoon) return;
                                                         const newFlags = {
                                                             ...mergeFeatureFlags(formData.featureFlags),
                                                             [meta.id]: e.target.checked
                                                         };
                                                         handleInputChange('featureFlags', newFlags);
                                                     }}
-                                                    className="mt-1 w-4 h-4 text-green-500 bg-gray-700 border-gray-600 rounded focus:ring-green-400"
+                                                    className={`mt-1 w-4 h-4 bg-gray-700 border-gray-600 rounded focus:ring-green-400 ${isComingSoon ? 'opacity-50' : 'text-green-500'}`}
                                                 />
                                                 <div className="flex-1">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="font-medium text-gray-200">{meta.label}</span>
+                                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                        <span className={`font-medium ${isComingSoon ? 'text-gray-400' : 'text-gray-200'}`}>{meta.label}</span>
+                                                        {isComingSoon && (
+                                                            <span className="px-2 py-0.5 text-xs rounded bg-orange-900/50 text-orange-300 border border-orange-700">
+                                                                COMING SOON
+                                                            </span>
+                                                        )}
                                                         <span className={`px-2 py-0.5 text-xs rounded ${
                                                             meta.stability === 'stable' 
                                                                 ? 'bg-green-900/50 text-green-300 border border-green-700'
@@ -1466,7 +1537,12 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                         </span>
                                                     </div>
                                                     <p className="text-xs text-gray-400">{meta.description}</p>
-                                                    {!deps.satisfied && (
+                                                    {isComingSoon && (
+                                                        <p className="text-xs text-orange-400 mt-1">
+                                                            🚧 Implementation pending Phase 7
+                                                        </p>
+                                                    )}
+                                                    {!deps.satisfied && !isComingSoon && (
                                                         <p className="text-xs text-amber-400 mt-1">
                                                             ⚠️ Requires: {deps.missingDeps.map(d => FEATURE_FLAG_META[d].label).join(', ')}
                                                         </p>
@@ -1489,28 +1565,38 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                         const currentFlags = mergeFeatureFlags(formData.featureFlags);
                                         const isEnabled = currentFlags[meta.id];
                                         const deps = checkFlagDependencies(formData.featureFlags, meta.id);
+                                        const isComingSoon = meta.comingSoon === true;
                                         
                                         return (
-                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-                                                isEnabled 
+                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${isComingSoon ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'} ${
+                                                isEnabled && !isComingSoon
                                                     ? 'bg-blue-900/20 border-blue-700/50' 
+                                                    : isComingSoon
+                                                    ? 'bg-gray-800/30 border-gray-600/50'
                                                     : 'bg-gray-800/50 border-gray-700 hover:border-gray-600'
                                             }`}>
                                                 <input
                                                     type="checkbox"
                                                     checked={isEnabled}
+                                                    disabled={isComingSoon}
                                                     onChange={(e) => {
+                                                        if (isComingSoon) return;
                                                         const newFlags = {
                                                             ...mergeFeatureFlags(formData.featureFlags),
                                                             [meta.id]: e.target.checked
                                                         };
                                                         handleInputChange('featureFlags', newFlags);
                                                     }}
-                                                    className="mt-1 w-4 h-4 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-blue-400"
+                                                    className={`mt-1 w-4 h-4 bg-gray-700 border-gray-600 rounded focus:ring-blue-400 ${isComingSoon ? 'opacity-50' : 'text-blue-500'}`}
                                                 />
                                                 <div className="flex-1">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="font-medium text-gray-200">{meta.label}</span>
+                                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                        <span className={`font-medium ${isComingSoon ? 'text-gray-400' : 'text-gray-200'}`}>{meta.label}</span>
+                                                        {isComingSoon && (
+                                                            <span className="px-2 py-0.5 text-xs rounded bg-orange-900/50 text-orange-300 border border-orange-700">
+                                                                COMING SOON
+                                                            </span>
+                                                        )}
                                                         <span className={`px-2 py-0.5 text-xs rounded ${
                                                             meta.stability === 'stable' 
                                                                 ? 'bg-green-900/50 text-green-300 border border-green-700'
@@ -1522,7 +1608,12 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                         </span>
                                                     </div>
                                                     <p className="text-xs text-gray-400">{meta.description}</p>
-                                                    {!deps.satisfied && (
+                                                    {isComingSoon && (
+                                                        <p className="text-xs text-orange-400 mt-1">
+                                                            🚧 Implementation pending Phase 7
+                                                        </p>
+                                                    )}
+                                                    {!deps.satisfied && !isComingSoon && (
                                                         <p className="text-xs text-amber-400 mt-1">
                                                             ⚠️ Requires: {deps.missingDeps.map(d => FEATURE_FLAG_META[d].label).join(', ')}
                                                         </p>
@@ -1545,28 +1636,38 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                         const currentFlags = mergeFeatureFlags(formData.featureFlags);
                                         const isEnabled = currentFlags[meta.id];
                                         const deps = checkFlagDependencies(formData.featureFlags, meta.id);
+                                        const isComingSoon = meta.comingSoon === true;
                                         
                                         return (
-                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-                                                isEnabled 
+                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${isComingSoon ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'} ${
+                                                isEnabled && !isComingSoon
                                                     ? 'bg-amber-900/20 border-amber-700/50' 
+                                                    : isComingSoon
+                                                    ? 'bg-gray-800/30 border-gray-600/50'
                                                     : 'bg-gray-800/50 border-gray-700 hover:border-gray-600'
                                             }`}>
                                                 <input
                                                     type="checkbox"
                                                     checked={isEnabled}
+                                                    disabled={isComingSoon}
                                                     onChange={(e) => {
+                                                        if (isComingSoon) return;
                                                         const newFlags = {
                                                             ...mergeFeatureFlags(formData.featureFlags),
                                                             [meta.id]: e.target.checked
                                                         };
                                                         handleInputChange('featureFlags', newFlags);
                                                     }}
-                                                    className="mt-1 w-4 h-4 text-amber-500 bg-gray-700 border-gray-600 rounded focus:ring-amber-400"
+                                                    className={`mt-1 w-4 h-4 bg-gray-700 border-gray-600 rounded focus:ring-amber-400 ${isComingSoon ? 'opacity-50' : 'text-amber-500'}`}
                                                 />
                                                 <div className="flex-1">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="font-medium text-gray-200">{meta.label}</span>
+                                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                        <span className={`font-medium ${isComingSoon ? 'text-gray-400' : 'text-gray-200'}`}>{meta.label}</span>
+                                                        {isComingSoon && (
+                                                            <span className="px-2 py-0.5 text-xs rounded bg-orange-900/50 text-orange-300 border border-orange-700">
+                                                                COMING SOON
+                                                            </span>
+                                                        )}
                                                         <span className={`px-2 py-0.5 text-xs rounded ${
                                                             meta.stability === 'stable' 
                                                                 ? 'bg-green-900/50 text-green-300 border border-green-700'
@@ -1578,7 +1679,12 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                         </span>
                                                     </div>
                                                     <p className="text-xs text-gray-400">{meta.description}</p>
-                                                    {!deps.satisfied && (
+                                                    {isComingSoon && (
+                                                        <p className="text-xs text-orange-400 mt-1">
+                                                            🚧 Implementation pending Phase 7
+                                                        </p>
+                                                    )}
+                                                    {!deps.satisfied && !isComingSoon && (
                                                         <p className="text-xs text-amber-400 mt-1">
                                                             ⚠️ Requires: {deps.missingDeps.map(d => FEATURE_FLAG_META[d].label).join(', ')}
                                                         </p>
@@ -1601,28 +1707,38 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                         const currentFlags = mergeFeatureFlags(formData.featureFlags);
                                         const isEnabled = currentFlags[meta.id];
                                         const deps = checkFlagDependencies(formData.featureFlags, meta.id);
+                                        const isComingSoon = meta.comingSoon === true;
                                         
                                         return (
-                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-                                                isEnabled 
+                                            <label key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${isComingSoon ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'} ${
+                                                isEnabled && !isComingSoon
                                                     ? 'bg-purple-900/20 border-purple-700/50' 
+                                                    : isComingSoon
+                                                    ? 'bg-gray-800/30 border-gray-600/50'
                                                     : 'bg-gray-800/50 border-gray-700 hover:border-gray-600'
                                             }`}>
                                                 <input
                                                     type="checkbox"
                                                     checked={isEnabled}
+                                                    disabled={isComingSoon}
                                                     onChange={(e) => {
+                                                        if (isComingSoon) return;
                                                         const newFlags = {
                                                             ...mergeFeatureFlags(formData.featureFlags),
                                                             [meta.id]: e.target.checked
                                                         };
                                                         handleInputChange('featureFlags', newFlags);
                                                     }}
-                                                    className="mt-1 w-4 h-4 text-purple-500 bg-gray-700 border-gray-600 rounded focus:ring-purple-400"
+                                                    className={`mt-1 w-4 h-4 bg-gray-700 border-gray-600 rounded focus:ring-purple-400 ${isComingSoon ? 'opacity-50' : 'text-purple-500'}`}
                                                 />
                                                 <div className="flex-1">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="font-medium text-gray-200">{meta.label}</span>
+                                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                        <span className={`font-medium ${isComingSoon ? 'text-gray-400' : 'text-gray-200'}`}>{meta.label}</span>
+                                                        {isComingSoon && (
+                                                            <span className="px-2 py-0.5 text-xs rounded bg-orange-900/50 text-orange-300 border border-orange-700">
+                                                                COMING SOON
+                                                            </span>
+                                                        )}
                                                         <span className={`px-2 py-0.5 text-xs rounded ${
                                                             meta.stability === 'stable' 
                                                                 ? 'bg-green-900/50 text-green-300 border border-green-700'
@@ -1634,7 +1750,12 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                         </span>
                                                     </div>
                                                     <p className="text-xs text-gray-400">{meta.description}</p>
-                                                    {!deps.satisfied && (
+                                                    {isComingSoon && (
+                                                        <p className="text-xs text-orange-400 mt-1">
+                                                            🚧 Implementation pending Phase 7
+                                                        </p>
+                                                    )}
+                                                    {!deps.satisfied && !isComingSoon && (
                                                         <p className="text-xs text-amber-400 mt-1">
                                                             ⚠️ Requires: {deps.missingDeps.map(d => FEATURE_FLAG_META[d].label).join(', ')}
                                                         </p>

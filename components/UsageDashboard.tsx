@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useUsage, RATE_LIMITS } from '../contexts/UsageContext';
+import { useGenerationMetricsOptional } from '../contexts/GenerationMetricsContext';
+import { useLocalGenerationSettings } from '../contexts/LocalGenerationSettingsContext';
+import { getFeatureFlag } from '../utils/featureFlags';
 import { ApiCallLog } from '../types';
 import BarChartIcon from './icons/BarChartIcon';
 import TrashIcon from './icons/TrashIcon';
+import BayesianAnalyticsPanel from './BayesianAnalyticsPanel';
 
 const RateLimitMeter: React.FC<{ model: keyof typeof RATE_LIMITS; logs: ApiCallLog[] }> = ({ model, logs }) => {
     const [rpm, setRpm] = useState(0);
@@ -43,6 +47,13 @@ const RateLimitMeter: React.FC<{ model: keyof typeof RATE_LIMITS; logs: ApiCallL
 const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const { usage, clearUsage } = useUsage();
   const { logs, totalRequests, totalTokens, estimatedCost } = usage;
+  
+  // Optional metrics context (may not be available if provider missing)
+  const metricsContext = useGenerationMetricsOptional();
+  const { localGenSettings } = useLocalGenerationSettings();
+  
+  // Feature flag for Bayesian analytics
+  const showBayesianAnalytics = getFeatureFlag(localGenSettings?.featureFlags, 'showBayesianAnalytics');
 
   if (!isOpen) return null;
 
@@ -92,6 +103,16 @@ const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                         <RateLimitMeter model="gemini-2.5-flash-image" logs={logs} />
                      </div>
                 </div>
+
+                {/* Bayesian A/B Testing Analytics - Feature Flag Controlled */}
+                {showBayesianAnalytics && metricsContext && (
+                    <div className="mb-6">
+                        <BayesianAnalyticsPanel 
+                            metrics={metricsContext.metrics}
+                            defaultCollapsed={true}
+                        />
+                    </div>
+                )}
 
                 {/* API Call Log */}
                 <div>

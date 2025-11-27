@@ -53,6 +53,8 @@ export interface WorkflowGenerationMetadata {
     hasTextMapping: boolean;
     hasKeyframeMapping: boolean;
     mapping: WorkflowMapping;
+    promptVariantId?: string;
+    promptVariantLabel?: string;
 }
 
 /**
@@ -825,6 +827,8 @@ export const queueComfyUIPrompt = async (
         hasTextMapping: hasText,
         hasKeyframeMapping: hasKeyframe,
         mapping: profile.mapping,
+        promptVariantId: settings.promptVariantId,
+        promptVariantLabel: settings.promptVariantLabel,
     };
     console.log(`[${profileId}] Workflow path: ${workflowPath} | Canonical workflow: ${referencesCanonical ? 'detected' : 'not detected'}`);
     if (highlightEntries.length > 0) {
@@ -1175,9 +1179,13 @@ export const trackPromptExecution = (
     promptId: string,
     onProgress: (statusUpdate: Partial<LocalGenerationStatus>) => void
 ) => {
+    const dispatchProgress = (update: Partial<LocalGenerationStatus>) => {
+        onProgress({ promptId, ...update });
+    };
+
     const { comfyUIUrl, comfyUIClientId } = settings;
     if (!comfyUIUrl || !comfyUIClientId) {
-        onProgress({ status: 'error', message: 'ComfyUI URL or Client ID is not configured.' });
+        dispatchProgress({ status: 'error', message: 'ComfyUI URL or Client ID is not configured.' });
         return;
     }
 
@@ -1217,7 +1225,7 @@ export const trackPromptExecution = (
         switch (msg.type) {
             case 'status':
                 if (msg.data.queue_remaining !== undefined) {
-                    onProgress({ 
+                    dispatchProgress({ 
                         status: 'queued', 
                         message: `In queue... Position: ${msg.data.queue_remaining}`,
                         queue_position: msg.data.queue_remaining
@@ -1227,7 +1235,7 @@ export const trackPromptExecution = (
             
             case 'execution_start':
                 if (msg.data.prompt_id === promptId) {
-                    onProgress({ status: 'running', message: 'Execution started.' });
+                    dispatchProgress({ status: 'running', message: 'Execution started.' });
                 }
                 break;
                 
@@ -1243,7 +1251,7 @@ export const trackPromptExecution = (
                         }
                      } catch(e) {/* ignore */}
 
-                    onProgress({
+                    dispatchProgress({
                         status: 'running',
                         message: `Executing: ${nodeTitle}`,
                         node_title: nodeTitle,
@@ -1254,7 +1262,7 @@ export const trackPromptExecution = (
             case 'progress':
                  if (msg.data.prompt_id === promptId) {
                     const progress = (msg.data.value / msg.data.max) * 100;
-                    onProgress({
+                    dispatchProgress({
                         status: 'running',
                         progress: Math.round(progress),
                     });
@@ -1265,7 +1273,7 @@ export const trackPromptExecution = (
                 if (msg.data.prompt_id === promptId) {
                     const errorDetails = msg.data;
                     const errorMessage = `Execution error on node ${errorDetails.node_id}: ${errorDetails.exception_message}`;
-                    onProgress({ status: 'error', message: errorMessage });
+                    dispatchProgress({ status: 'error', message: errorMessage });
                     ws.close();
                 }
                 break;
@@ -1304,14 +1312,14 @@ export const trackPromptExecution = (
                     const hasDeclaredEntries = assetSources.some(s => Array.isArray(s.entries) && s.entries.length > 0);
                     if (!hasDeclaredEntries) {
                         console.log(`[trackPromptExecution] ⚠️ No output entries for promptId=${promptId.slice(0,8)}...`);
-                        onProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
+                        dispatchProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
                         ws.close();
                         return;
                     }
 
                     try {
                         console.log(`[trackPromptExecution] 📥 Fetching assets for promptId=${promptId.slice(0,8)}...`);
-                        onProgress({ message: 'Fetching final output...', progress: 100 });
+                        dispatchProgress({ message: 'Fetching final output...', progress: 100 });
                         const downloadedAssets: LocalGenerationAsset[] = [];
 
                         for (const source of assetSources) {
@@ -1339,7 +1347,7 @@ export const trackPromptExecution = (
                             
                             if (!isValidDataUrl) {
                                 console.error(`[trackPromptExecution] ❌ Invalid data URL for promptId=${promptId.slice(0,8)}... Type: ${typeof primaryData}, Preview: ${typeof primaryData === 'string' ? primaryData.slice(0, 100) : 'N/A'}`);
-                                onProgress({ 
+                                dispatchProgress({ 
                                     status: 'error', 
                                     message: `Asset data invalid: expected data URL, received ${typeof primaryData === 'string' ? primaryData.slice(0, 50) : typeof primaryData}` 
                                 });
@@ -1364,7 +1372,7 @@ export const trackPromptExecution = (
                             console.log(`[trackPromptExecution] ✅ Downloaded ${downloadedAssets.length} assets for promptId=${promptId.slice(0,8)}..., sending complete status`);
                             // CRITICAL: Send completion signal SYNCHRONOUSLY before closing WebSocket
                             // This ensures the promise resolver receives the data
-                            onProgress({
+                            dispatchProgress({
                                 status: 'complete',
                                 message: 'Generation complete!',
                                 final_output: finalOutput,
@@ -1374,12 +1382,12 @@ export const trackPromptExecution = (
                             await new Promise(resolve => setTimeout(resolve, 50));
                         } else {
                             console.log(`[trackPromptExecution] ⚠️ No assets downloaded for promptId=${promptId.slice(0,8)}...`);
-                            onProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
+                            dispatchProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
                         }
                     } catch (error) {
                         const message = error instanceof Error ? error.message : "Failed to fetch final output.";
                         console.error(`[trackPromptExecution] ❌ Asset fetch error for promptId=${promptId.slice(0,8)}...:`, error);
-                        onProgress({ status: 'error', message });
+                        dispatchProgress({ status: 'error', message });
                     } finally {
                         // Ensure WebSocket closes after all processing with explicit logging
                         try {
@@ -1399,7 +1407,7 @@ export const trackPromptExecution = (
 
     ws.onerror = (error) => {
         console.error('ComfyUI WebSocket error:', error);
-        onProgress({ status: 'error', message: `WebSocket connection error. Check if ComfyUI is running at ${comfyUIUrl}.` });
+        dispatchProgress({ status: 'error', message: `WebSocket connection error. Check if ComfyUI is running at ${comfyUIUrl}.` });
     };
 
     ws.onclose = () => {
@@ -1537,7 +1545,7 @@ export const generateVideoFromShot = async (
         }
 
         const promptId = promptResponse.prompt_id;
-        reportProgress({ status: 'queued', message: `Queued with ID: ${promptId}` });
+        reportProgress({ status: 'queued', message: `Queued with ID: ${promptId}`, promptId });
 
         // Step 4: Track execution via WebSocket
         // NOTE: Updated to handle PNG frame sequence output from simplified SVD workflow
@@ -2949,5 +2957,3 @@ export const getTokenBudgetInfo = () => ({
     setting: DEFAULT_TOKEN_BUDGETS.setting,
     characterProfile: DEFAULT_TOKEN_BUDGETS.characterProfile,
 });
-
-

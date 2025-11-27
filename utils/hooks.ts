@@ -1413,19 +1413,44 @@ export function useRecommendations(options?: {
   };
 }
 
+/** Toast state for visual bible sync operations */
+export interface VisualBibleSyncToast {
+  synced: number;
+  skipped: number;
+  showResyncAll: boolean;
+}
+
+/** Result interface for useVisualBible hook */
+export interface UseVisualBibleResult {
+  visualBible: VisualBible;
+  setVisualBible: React.Dispatch<React.SetStateAction<VisualBible>>;
+  handleStoryBibleSave: () => void;
+  handleResyncAll: () => void;
+  syncToast: VisualBibleSyncToast | null;
+  clearSyncToast: () => void;
+  getCharacterSyncStatus: (characterId: string) => 'storyBible' | 'userEdit' | 'unlinked';
+}
+
 /**
  * Hook for managing Visual Bible data (characters, style boards, canonical keyframes).
  * Uses persistent state to store the visual bible across sessions.
  * 
+ * Provides character descriptor synchronization with Story Bible:
+ * - Auto-sync on Story Bible save (when bibleV2SaveSync flag enabled)
+ * - Respects descriptorSource provenance (userEdit never auto-overwritten)
+ * - Manual resync-all option (with confirmation)
+ * - Toast notifications for sync results
+ * 
  * @param storyBible - Optional Story Bible for character descriptor synchronization
  */
-export function useVisualBible(storyBible?: StoryBible | null) {
+export function useVisualBible(storyBible?: StoryBible | null): UseVisualBibleResult {
   const [visualBible, setVisualBibleState] = usePersistentState<VisualBible>('visualBible', {
     characters: [],
     styleBoards: [],
   });
+  const [syncToast, setSyncToast] = useState<VisualBibleSyncToast | null>(null);
   
-  // Sync character descriptors when storyBible or visualBible changes
+  // Auto-sync character descriptors when storyBible or visualBible changes
   useEffect(() => {
     if (!storyBible || !visualBible.characters.length) {
       return;
@@ -1437,17 +1462,33 @@ export function useVisualBible(storyBible?: StoryBible | null) {
       console.info('[useVisualBible] Synced character descriptors:', syncResult.synchronized);
       
       // Update visual bible characters with synced descriptors
+      // Also set descriptorSource to 'storyBible' for synced characters
       const updatedCharacters = visualBible.characters.map(char => {
         const descriptor = syncResult.descriptors.get(char.id);
-        if (descriptor && char.visualTraits !== descriptor) {
-          return { ...char, visualTraits: descriptor };
+        if (descriptor) {
+          // Convert string descriptor to visualTraits array
+          const newTraits = typeof descriptor === 'string' 
+            ? descriptor.split(',').map(t => t.trim()).filter(Boolean)
+            : descriptor;
+          
+          if (JSON.stringify(char.visualTraits) !== JSON.stringify(newTraits)) {
+            return { 
+              ...char, 
+              visualTraits: newTraits,
+              descriptorSource: 'storyBible' as const,
+            };
+          }
         }
         return char;
       });
       
       // Only update if there were actual changes
       const hasChanges = updatedCharacters.some(
-        (char, i) => char.visualTraits !== visualBible.characters[i].visualTraits
+        (char, i) => {
+          const originalChar = visualBible.characters[i];
+          if (!originalChar) return true; // New character
+          return JSON.stringify(char.visualTraits) !== JSON.stringify(originalChar.visualTraits);
+        }
       );
       
       if (hasChanges) {
@@ -1463,16 +1504,131 @@ export function useVisualBible(storyBible?: StoryBible | null) {
     }
   }, [storyBible, visualBible.characters.length]); // Only trigger on character count change to avoid loops
 
-  // TODO: Update the service context whenever visualBible changes - visualBibleContext not yet implemented
-  // React.useEffect(() => {
-  //   import('../services/visualBibleContext').then(({ setVisualBible }) => {
-  //     setVisualBible(visualBible);
-  //   });
-  // }, [visualBible]);
+  /**
+   * Manually trigger Story Bible sync (when user saves Story Bible).
+   * Respects descriptorSource provenance - userEdit characters are not overwritten.
+   * Shows toast with sync results.
+   */
+  const handleStoryBibleSave = useCallback(() => {
+    if (!storyBible || !visualBible.characters.length) {
+      return;
+    }
+    
+    const syncResult = syncCharacterDescriptors(storyBible, visualBible.characters);
+    
+    // Apply sync to visual bible (respecting provenance)
+    const updatedCharacters = visualBible.characters.map(char => {
+      const descriptor = syncResult.descriptors.get(char.id);
+      // Only update if:
+      // 1. We have a descriptor from story bible
+      // 2. Character is not user-edited (respecting provenance)
+      if (descriptor && !syncResult.skippedUserEdits.includes(char.name)) {
+        const newTraits = typeof descriptor === 'string' 
+          ? descriptor.split(',').map(t => t.trim()).filter(Boolean)
+          : descriptor;
+        return { 
+          ...char, 
+          visualTraits: newTraits,
+          descriptorSource: 'storyBible' as const,
+        };
+      }
+      return char;
+    });
+    
+    setVisualBibleState({
+      ...visualBible,
+      characters: updatedCharacters,
+    });
+    
+    // Show toast with sync results
+    setSyncToast({
+      synced: syncResult.synchronized.length,
+      skipped: syncResult.skippedUserEdits.length,
+      showResyncAll: syncResult.skippedUserEdits.length > 0,
+    });
+    
+    console.info('[useVisualBible] Manual sync complete:', {
+      synced: syncResult.synchronized,
+      skipped: syncResult.skippedUserEdits,
+    });
+  }, [storyBible, visualBible, setVisualBibleState]);
+
+  /**
+   * Force resync ALL characters from Story Bible, overriding userEdit provenance.
+   * This resets all descriptorSource to 'storyBible'.
+   * Use with caution - user customizations will be lost.
+   */
+  const handleResyncAll = useCallback(() => {
+    if (!storyBible || !visualBible.characters.length) {
+      return;
+    }
+    
+    // First, reset all characters to storyBible provenance so they can be synced
+    const resetCharacters = visualBible.characters.map(char => ({
+      ...char,
+      descriptorSource: 'storyBible' as const,
+    }));
+    
+    const syncResult = syncCharacterDescriptors(storyBible, resetCharacters);
+    
+    // Apply all syncs (no provenance protection since we reset)
+    const updatedCharacters = resetCharacters.map(char => {
+      const descriptor = syncResult.descriptors.get(char.id);
+      if (descriptor) {
+        const newTraits = typeof descriptor === 'string' 
+          ? descriptor.split(',').map(t => t.trim()).filter(Boolean)
+          : descriptor;
+        return { 
+          ...char, 
+          visualTraits: newTraits,
+          descriptorSource: 'storyBible' as const,
+        };
+      }
+      return char;
+    });
+    
+    setVisualBibleState({
+      ...visualBible,
+      characters: updatedCharacters,
+    });
+    
+    // Show toast (no skipped since we forced resync)
+    setSyncToast({
+      synced: syncResult.synchronized.length,
+      skipped: 0,
+      showResyncAll: false,
+    });
+    
+    console.info('[useVisualBible] Force resync complete:', {
+      synced: syncResult.synchronized.length,
+    });
+  }, [storyBible, visualBible, setVisualBibleState]);
+
+  /** Clear the sync toast notification */
+  const clearSyncToast = useCallback(() => {
+    setSyncToast(null);
+  }, []);
+
+  /**
+   * Get the sync status of a character for UI display.
+   * @param characterId - The character ID to check
+   * @returns 'storyBible' if synced, 'userEdit' if manually edited, 'unlinked' if not linked
+   */
+  const getCharacterSyncStatus = useCallback((characterId: string): 'storyBible' | 'userEdit' | 'unlinked' => {
+    const char = visualBible.characters.find(c => c.id === characterId);
+    if (!char) return 'unlinked';
+    if (!char.storyBibleCharacterId) return 'unlinked';
+    return char.descriptorSource ?? 'storyBible';
+  }, [visualBible.characters]);
 
   return {
     visualBible,
     setVisualBible: setVisualBibleState,
+    handleStoryBibleSave,
+    handleResyncAll,
+    syncToast,
+    clearSyncToast,
+    getCharacterSyncStatus,
   };
 }
 

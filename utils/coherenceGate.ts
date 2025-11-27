@@ -131,7 +131,7 @@ export function checkCoherenceGate(
   
   // Determine if we should auto-generate suggestions
   const shouldAutoGenerate = continuityData.autoGenerateSuggestions || 
-    isFeatureEnabled(options?.featureFlags, 'coherenceAutoSuggestions');
+    isFeatureEnabled(options?.featureFlags, 'autoSuggestions');
   
   // Generate suggestions if score is below threshold and feature is enabled
   let suggestions: Suggestion[] | undefined;

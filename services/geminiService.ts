@@ -5,6 +5,7 @@ import { loadTemplate } from "./templateLoader";
 import { generateCorrelationId, logCorrelation, networkTap } from "../utils/correlation";
 import { estimateTokens } from "./promptRegistry";
 import { convertToStoryBibleV2 } from "./storyBibleConverter";
+import { loadFeatureFlags, isFeatureEnabled, type FeatureFlags } from "../utils/featureFlags";
 
 // P2.6 Optimization (2025-11-20): Defer Gemini SDK initialization until first API call
 // Instead of creating GoogleGenAI instance at module load, use lazy initialization
@@ -21,6 +22,15 @@ const proModel = 'gemini-2.5-pro';
 const imageModel = 'gemini-2.5-flash-image';
 
 const commonError = "An error occurred. Please check the console for details. If the error persists, the model may be overloaded.";
+
+// Lazy-load prompt pipeline helpers to avoid circular imports when shared constants are reused.
+let promptPipelineModule: typeof import('./promptPipeline') | null = null;
+const loadPromptPipeline = async () => {
+    if (!promptPipelineModule) {
+        promptPipelineModule = await import('./promptPipeline');
+    }
+    return promptPipelineModule;
+};
 
 // Define a callback type for state changes
 export type ApiStateChangeCallback = (status: ApiStatus, message: string) => void;
@@ -1167,6 +1177,144 @@ Generate a single, cinematic, high-quality keyframe image that encapsulates the 
 **NEGATIVE PROMPT:**
 text, watermarks, logos, blurry, ugly, tiling, poorly drawn hands, poorly drawn faces, out of frame, extra limbs, disfigured, deformed, body out of frame, bad anatomy, signature, username, error, jpeg artifacts, low resolution, censorship, amateur, boring, static, centered composition.
 `;
+
+    const apiCall = async () => {
+        const response = await getAI().models.generateContent({
+            model: imageModel,
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                responseModalities: [Modality.IMAGE],
+            },
+        });
+        
+        const candidate = response.candidates?.[0];
+        if (candidate?.content?.parts) {
+            for (const part of candidate.content.parts) {
+                if (part.inlineData) {
+                    const base64ImageBytes: string = part.inlineData.data;
+                    const tokens = response.usageMetadata?.totalTokenCount || 0;
+                    return { result: base64ImageBytes, tokens };
+                }
+            }
+        }
+
+        if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+            throw new Error(`Image generation failed with reason: ${candidate.finishReason}. This could be due to safety filters or an invalid prompt.`);
+        }
+        
+        throw new Error("The model did not return an image for the scene keyframe.");
+    };
+
+    return withRetry(apiCall, context, imageModel, logApiCall, onStateChange);
+};
+
+/**
+ * Default negative prompts for Gemini image generation.
+ * Used when no custom negatives are provided.
+ */
+export const DEFAULT_GEMINI_NEGATIVES = [
+    'text', 'watermarks', 'logos', 'blurry', 'ugly', 'tiling',
+    'poorly drawn hands', 'poorly drawn faces', 'out of frame',
+    'extra limbs', 'disfigured', 'deformed', 'body out of frame',
+    'bad anatomy', 'signature', 'username', 'error', 'jpeg artifacts',
+    'low resolution', 'censorship', 'amateur', 'boring', 'static',
+    'centered composition'
+];
+
+/**
+ * Options for pipeline-integrated keyframe generation.
+ */
+export interface KeyframePipelineOptions {
+    /** Story bible with character profiles (required for pipeline path) */
+    storyBible?: StoryBible;
+    /** Custom negative prompts (defaults to DEFAULT_GEMINI_NEGATIVES) */
+    negatives?: string[];
+    /** Feature flags (auto-loaded if not provided) */
+    flags?: Partial<FeatureFlags>;
+}
+
+/**
+ * Generates a keyframe image for a scene with optional pipeline integration.
+ * 
+ * When `keyframePromptPipeline` feature flag is enabled and storyBible is provided,
+ * uses the prompt pipeline for structured prompt assembly including:
+ * - Character descriptor extraction from Story Bible V2
+ * - Token budget management
+ * - Negative prompt deduplication
+ * 
+ * Falls back to legacy inline prompt when flag is off or storyBible not provided.
+ * 
+ * @param scene - The scene to generate a keyframe for
+ * @param directorsVision - Director's visual styling notes
+ * @param logApiCall - API logging callback
+ * @param onStateChange - Optional state change callback
+ * @param options - Optional pipeline options (storyBible, negatives, flags)
+ * @returns Base64-encoded image data
+ */
+export const generateKeyframeForSceneV2 = async (
+    scene: Scene,
+    directorsVision: string,
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback,
+    options?: KeyframePipelineOptions
+): Promise<string> => {
+    const context = 'generate scene keyframe (v2)';
+    const flags = options?.flags || loadFeatureFlags();
+    
+    // Check if we should use the pipeline path
+    const usePipeline = isFeatureEnabled(flags, 'keyframePromptPipeline') && options?.storyBible;
+    
+    let prompt: string;
+    
+    if (usePipeline) {
+        const { buildSceneKeyframePrompt, assemblePromptForProvider } = await loadPromptPipeline();
+        // Pipeline path: Use buildSceneKeyframePrompt for structured assembly
+        const negatives = options?.negatives || DEFAULT_GEMINI_NEGATIVES;
+        const assembled = buildSceneKeyframePrompt(
+            scene,
+            options!.storyBible!,
+            directorsVision,
+            negatives,
+            { flags, provider: 'gemini' }
+        );
+        
+        // Use inline format for Gemini (includes NEGATIVE PROMPT section)
+        prompt = `masterpiece, 8k, photorealistic, cinematic lighting, 16:9 aspect ratio.
+
+Generate a single, cinematic, high-quality keyframe image that encapsulates the essence of an entire scene. This image must be a powerful, evocative representation of the scene's most crucial moment or overall mood.
+
+${assembled.inlineFormat}`;
+        
+        logApiCall({
+            model: imageModel,
+            operation: 'keyframe_generation',
+            status: 'started',
+            details: { usePipeline: true, sceneId: scene.id, hasStoryBible: true },
+        });
+    } else {
+        // Legacy path: Inline prompt construction
+        const sceneSummary = scene.summary || 'A dramatic scene';
+        prompt = `masterpiece, 8k, photorealistic, cinematic lighting, 16:9 aspect ratio.
+
+Generate a single, cinematic, high-quality keyframe image that encapsulates the essence of an entire scene. This image must be a powerful, evocative representation of the scene's most crucial moment or overall mood, strictly adhering to the specified Director's Vision.
+
+**Director's Vision (Cinematic Style Bible):**
+"${directorsVision}"
+
+**Scene to Visualize:**
+"${sceneSummary}"
+
+**NEGATIVE PROMPT:**
+${DEFAULT_GEMINI_NEGATIVES.join(', ')}.
+`;
+        
+        logApiCall({
+            model: imageModel,
+            operation: 'keyframe_generation',
+            status: 'started',
+            details: { usePipeline: false, sceneId: scene.id },
+        });
+    }
 
     const apiCall = async () => {
         const response = await getAI().models.generateContent({

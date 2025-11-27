@@ -504,6 +504,8 @@ export interface LocalGenerationSettings {
     
     // Prompt Configuration
     promptVersion?: string;  // Template version for prompt construction
+    promptVariantId?: string; // Selected prompt variant for A/B tests
+    promptVariantLabel?: string; // Human-friendly variant label for telemetry
     
     // Quality Enhancement
     upscalerWorkflowProfile?: string;  // Profile ID for video upscaling (optional)
@@ -523,12 +525,102 @@ export interface LocalGenerationOutput extends LocalGenerationAsset {
 }
 
 export interface LocalGenerationStatus {
-    status: 'idle' | 'queued' | 'running' | 'complete' | 'error';
-    message: string;
-    progress: number; // 0-100
-    queue_position?: number;
-    node_title?: string;
-    final_output?: LocalGenerationOutput;
+      status: 'idle' | 'queued' | 'running' | 'complete' | 'error';
+      message: string;
+      progress: number; // 0-100
+      promptId?: string;
+      queue_position?: number;
+      node_title?: string;
+      final_output?: LocalGenerationOutput;
+  }
+
+// ============================================================================
+// Generation Job Tracking (Phase 1 - State Management Overhaul)
+// ============================================================================
+
+/**
+ * Generation job type for tracking different generation operations
+ */
+export type GenerationJobType = 'keyframe' | 'video' | 'shot-image' | 'batch';
+
+/**
+ * Generation job status for tracking progress
+ */
+export type GenerationJobStatus = 'pending' | 'queued' | 'in-progress' | 'completed' | 'failed' | 'cancelled';
+
+/**
+ * Tracks a single generation job for state persistence.
+ * Used by the unified scene state store to maintain generation
+ * tracking across navigation and page refreshes.
+ */
+export interface GenerationJob {
+    /** Unique job identifier */
+    id: string;
+    
+    /** Type of generation operation */
+    type: GenerationJobType;
+    
+    /** Scene this job belongs to */
+    sceneId: string;
+    
+    /** Shot ID if this is a shot-specific job */
+    shotId?: string;
+    
+    /** Current job status */
+    status: GenerationJobStatus;
+    
+    /** Progress percentage (0-100) */
+    progress: number;
+    
+    /** Unix timestamp when job was created */
+    createdAt: number;
+    
+    /** Unix timestamp when job started processing */
+    startedAt?: number;
+    
+    /** Unix timestamp when job completed or failed */
+    completedAt?: number;
+    
+    /** Result data (base64 image, video path, etc.) */
+    result?: string;
+    
+    /** Error message if job failed */
+    error?: string;
+    
+    /** ComfyUI prompt ID for tracking */
+    comfyPromptId?: string;
+    
+    /** Queue position if waiting */
+    queuePosition?: number;
+    
+    /** Current node being processed (for progress display) */
+    currentNode?: string;
+}
+
+/**
+ * Video data structure for generated videos
+ */
+export interface VideoData {
+    /** Video file path or URL */
+    videoPath: string;
+    
+    /** Video duration in seconds */
+    duration: number;
+    
+    /** Original filename */
+    filename: string;
+    
+    /** Extracted frames as base64 (optional) */
+    frames?: string[];
+    
+    /** Generation timestamp */
+    generatedAt: number;
+    
+    /** Scene ID this video belongs to */
+    sceneId: string;
+    
+    /** Shot ID if shot-specific */
+    shotId?: string;
 }
 
 export type SceneGenerationStatus = 'pending' | 'generating' | 'complete' | 'failed';
@@ -553,6 +645,14 @@ export interface VisualBibleCharacter {
   
   // Story Bible V2 linkage (optional for backward compatibility)
   storyBibleCharacterId?: string; // Links to CharacterProfile.id for guardrail sync
+  
+  /**
+   * Provenance tracking for descriptor synchronization.
+   * - 'storyBible': Descriptor was auto-synced from Story Bible
+   * - 'userEdit': User manually edited the descriptor (protected from auto-sync)
+   * @default 'storyBible'
+   */
+  descriptorSource?: 'storyBible' | 'userEdit';
 }
 
 export interface VisualBibleStyleBoard {

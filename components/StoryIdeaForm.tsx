@@ -1,10 +1,23 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import SparklesIcon from './icons/SparklesIcon';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import { useInteractiveSpotlight } from '../utils/hooks';
 import ThematicLoader from './ThematicLoader';
 import GuideCard from './GuideCard';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
+import { 
+    validateStoryIdea, 
+    getValidationStatus, 
+    getStatusColor,
+    type StoryIdeaValidation,
+    type ValidationStatus
+} from '../services/storyIdeaValidator';
+import {
+    buildEnhancementPrompt,
+    parseEnhancementResponse,
+    isEnhancementBetter,
+    DEFAULT_ENHANCEMENT_CONFIG
+} from '../services/storyIdeaEnhancer';
 
 interface StoryIdeaFormProps {
     onSubmit: (idea: string, genre?: string) => void;
@@ -19,13 +32,34 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
     const [isEnhancing, setIsEnhancing] = useState(false);
+    const [showValidation, setShowValidation] = useState(false);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
     const planActions = usePlanExpansionActions();
 
+    // Compute validation result whenever idea changes
+    const validation: StoryIdeaValidation = useMemo(() => {
+        return validateStoryIdea(idea);
+    }, [idea]);
+
+    const validationStatus: ValidationStatus = useMemo(() => {
+        return getValidationStatus(validation);
+    }, [validation]);
+
+    const statusColor = getStatusColor(validationStatus);
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (idea.trim()) {
+        if (idea.trim() && validation.canProceed) {
+            console.log('[StoryIdeaForm] Submitting idea with validation:', {
+                wordCount: validation.wordCount,
+                qualityScore: validation.qualityScore,
+                issueCount: validation.issues.length
+            });
             onSubmit(idea, genre);
+        } else if (!validation.canProceed) {
+            // Show validation panel if trying to submit invalid idea
+            setShowValidation(true);
+            console.log('[StoryIdeaForm] Blocked submission - validation failed:', validation.issues);
         }
     };
     
@@ -46,28 +80,54 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
     const handleEnhance = useCallback(async () => {
         if (!idea.trim()) return;
         setIsEnhancing(true);
+        
+        const originalValidation = validation;
+        
         try {
-            // Create a context-aware prompt for enhancing the story idea
-            const enhancePrompt = `Enhance this story idea to make it more compelling, specific, and cinematic. Add concrete details about the protagonist, conflict, and stakes. Keep it concise (2-3 sentences max).\n\nOriginal idea: ${idea}\n\nReturn only the enhanced version, no preamble.`;
+            // Build a smart enhancement prompt based on validation issues
+            const enhancePrompt = buildEnhancementPrompt(
+                idea,
+                originalValidation,
+                genre,
+                DEFAULT_ENHANCEMENT_CONFIG
+            );
             
-            // At this stage, no Story Bible exists yet, so pass empty string for prunedContext
+            console.log('[StoryIdeaForm] Enhancing idea with issues:', 
+                originalValidation.issues.map(i => i.code));
+            
+            // Use refineStoryBibleSection as our LLM call mechanism
             const enhanced = await planActions.refineStoryBibleSection(
                 'plotOutline',
                 enhancePrompt,
-                '',
+                '',  // No context needed at this stage
                 onApiLog,
                 onApiStateChange
             );
             
-            // Clean up any preamble the LLM might have added
-            const cleaned = enhanced.replace(/^(Enhanced version:|Here's the enhanced version:|Improved idea:)\s*/i, '').trim();
-            setIdea(cleaned || enhanced);
+            // Parse and clean the response
+            const cleaned = parseEnhancementResponse(enhanced, idea);
+            const newValidation = validateStoryIdea(cleaned);
+            
+            // Only apply if enhancement is actually better
+            if (isEnhancementBetter(originalValidation, newValidation)) {
+                console.log('[StoryIdeaForm] Enhancement improved idea:', {
+                    oldScore: originalValidation.qualityScore.toFixed(2),
+                    newScore: newValidation.qualityScore.toFixed(2),
+                    oldIssues: originalValidation.issues.length,
+                    newIssues: newValidation.issues.length
+                });
+                setIdea(cleaned);
+            } else {
+                // Even if not "better" by metrics, still apply if user explicitly clicked enhance
+                console.log('[StoryIdeaForm] Enhancement applied (user requested)');
+                setIdea(cleaned);
+            }
         } catch (e) {
-            console.error(e);
+            console.error('[StoryIdeaForm] Enhancement error:', e);
         } finally {
             setIsEnhancing(false);
         }
-    }, [idea, planActions, onApiLog, onApiStateChange]);
+    }, [idea, genre, validation, planActions, onApiLog, onApiStateChange]);
 
     return (
         <div ref={spotlightRef} className="max-w-3xl mx-auto glass-card p-8 rounded-xl shadow-2xl shadow-black/30 interactive-spotlight" data-testid="StoryIdeaForm">
@@ -100,9 +160,14 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                         data-testid="story-idea-input"
                         aria-label="Story Idea"
                         value={idea}
-                        onChange={(e) => setIdea(e.target.value)}
+                        onChange={(e) => { setIdea(e.target.value); setShowValidation(true); }}
                         rows={4}
-                        className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
+                        className={`w-full bg-gray-800/70 border rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300 ${
+                            validationStatus === 'error' ? 'border-red-500/50' : 
+                            validationStatus === 'warning' ? 'border-amber-500/50' : 
+                            validationStatus === 'valid' ? 'border-green-500/50' : 
+                            'border-gray-700'
+                        }`}
                         placeholder="e.g., A space explorer finds an ancient artifact that could save humanity, but it's guarded by a sentient AI."
                     />
                     {idea.trim() && (
@@ -121,9 +186,67 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                         </button>
                     )}
                 </div>
+                
+                {/* Validation Status Bar */}
+                {idea.trim() && showValidation && (
+                    <div className="mt-2 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                            <span className={statusColor}>
+                                {validationStatus === 'valid' && '✓ Ready'}
+                                {validationStatus === 'warning' && '⚠ Could be improved'}
+                                {validationStatus === 'error' && '✗ Needs attention'}
+                            </span>
+                            <span className="text-gray-500">
+                                {validation.wordCount} words • Quality: {Math.round(validation.qualityScore * 100)}%
+                            </span>
+                        </div>
+                        {validation.issues.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={() => setShowValidation(!showValidation)}
+                                className="text-gray-400 hover:text-gray-300"
+                            >
+                                {showValidation ? 'Hide details' : 'Show details'}
+                            </button>
+                        )}
+                    </div>
+                )}
+                
+                {/* Validation Issues Panel */}
+                {showValidation && validation.issues.length > 0 && (
+                    <div className="mt-3 p-3 bg-gray-800/50 rounded-lg border border-gray-700/50 space-y-2">
+                        {validation.issues.map((issue, idx) => (
+                            <div key={idx} className={`flex items-start gap-2 text-sm ${
+                                issue.severity === 'error' ? 'text-red-400' : 'text-amber-400'
+                            }`}>
+                                <span className="mt-0.5">
+                                    {issue.severity === 'error' ? '✗' : '⚠'}
+                                </span>
+                                <div>
+                                    <p>{issue.message}</p>
+                                    {issue.suggestion && (
+                                        <p className="text-gray-400 text-xs mt-0.5">{issue.suggestion}</p>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        {validation.issues.some(i => i.autoFixable) && (
+                            <button
+                                type="button"
+                                onClick={handleEnhance}
+                                disabled={isEnhancing}
+                                className="mt-2 text-xs text-amber-300 hover:text-amber-200 flex items-center gap-1"
+                            >
+                                <SparklesIcon className="w-3 h-3" />
+                                Auto-fix with AI enhancement
+                            </button>
+                        )}
+                    </div>
+                )}
+                
                 <button
                     type="submit"
-                    disabled={isLoading || !idea.trim()}
+                    disabled={isLoading || !idea.trim() || !validation.canProceed}
                     className="mt-6 w-full sm:w-auto flex items-center justify-center px-8 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-amber-700 hover:to-orange-700 focus:outline-none focus:ring-4 focus:ring-amber-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
                 >
                     {isLoading ? (

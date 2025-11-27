@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { CoDirectorResult, Suggestion, StoryBible, Scene } from '../types';
+import { CoDirectorResult, Suggestion, StoryBible, Scene, ToastMessage } from '../types';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import LightbulbIcon from './icons/LightbulbIcon';
 import SparklesIcon from './icons/SparklesIcon';
@@ -17,6 +17,7 @@ interface CoDirectorProps {
   directorsVision: string;
   onApiLog: ApiLogCallback;
   onApiStateChange: ApiStateChangeCallback;
+  addToast?: (message: string, type: ToastMessage['type']) => void;
 }
 
 const SuggestionModal: React.FC<{
@@ -105,11 +106,13 @@ const CoDirector: React.FC<CoDirectorProps> = ({
     scene, 
     directorsVision,
     onApiLog,
-    onApiStateChange
+    onApiStateChange,
+    addToast
 }) => {
     const [objective, setObjective] = useState('');
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [lastError, setLastError] = useState<string | null>(null);
     const planActions = usePlanExpansionActions();
 
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
@@ -126,9 +129,45 @@ const CoDirector: React.FC<CoDirectorProps> = ({
     }, [objective, onGetSuggestions]);
 
     const handleInspire = useCallback(async () => {
+        console.log('[CoDirector] handleInspire starting', {
+            hasStoryBible: !!storyBible,
+            hasLogline: !!storyBible?.logline,
+            hasScene: !!scene,
+            hasSceneSummary: !!scene?.summary,
+            hasDirectorsVision: !!directorsVision,
+            directorsVisionLength: directorsVision?.length || 0
+        });
+        
         setIsProcessing(true);
         setSuggestions([]);
+        setLastError(null);
+        
+        // Validate required context before calling API
+        if (!storyBible?.logline) {
+            const errorMsg = 'Missing story logline. Please generate a Story Bible first.';
+            console.warn('[CoDirector] Validation failed:', errorMsg);
+            setLastError(errorMsg);
+            addToast?.(errorMsg, 'info');
+            setIsProcessing(false);
+            return;
+        }
+        
+        if (!scene?.summary) {
+            const errorMsg = 'Missing scene summary. Please add a scene description first.';
+            console.warn('[CoDirector] Validation failed:', errorMsg);
+            setLastError(errorMsg);
+            addToast?.(errorMsg, 'info');
+            setIsProcessing(false);
+            return;
+        }
+        
         try {
+            console.log('[CoDirector] Calling suggestCoDirectorObjectives with:', {
+                logline: storyBible.logline.substring(0, 50) + '...',
+                sceneSummary: scene.summary.substring(0, 50) + '...',
+                visionPreview: directorsVision?.substring(0, 50) || '(empty)'
+            });
+            
             const result = await planActions.suggestCoDirectorObjectives(
                 storyBible.logline,
                 scene.summary,
@@ -136,15 +175,33 @@ const CoDirector: React.FC<CoDirectorProps> = ({
                 onApiLog,
                 onApiStateChange
             );
-            if (result) {
+            
+            console.log('[CoDirector] suggestCoDirectorObjectives result:', {
+                hasResult: !!result,
+                resultLength: result?.length || 0,
+                resultPreview: result?.slice(0, 2) || []
+            });
+            
+            if (!result || result.length === 0) {
+                const warnMsg = 'No suggestions generated. The AI may need more context - try adding more detail to your scene or director\'s vision.';
+                console.warn('[CoDirector] Empty result from suggestCoDirectorObjectives');
+                setLastError(warnMsg);
+                addToast?.(warnMsg, 'info');
+            } else {
                 setSuggestions(result);
+                console.log('[CoDirector] Successfully set', result.length, 'suggestions');
             }
         } catch(e) {
-            console.error(e)
+            const error = e as Error;
+            const errorMsg = `AI Co-Director error: ${error.message || 'Unknown error occurred'}`;
+            console.error('[CoDirector] Error in handleInspire:', error);
+            console.error('[CoDirector] Error stack:', error.stack);
+            setLastError(errorMsg);
+            addToast?.(errorMsg, 'error');
         } finally {
             setIsProcessing(false);
         }
-    }, [storyBible, scene, directorsVision, onApiLog, onApiStateChange, planActions]);
+    }, [storyBible, scene, directorsVision, onApiLog, onApiStateChange, planActions, addToast]);
 
     const isAnyActionLoading = isLoading || isProcessing;
 
@@ -208,13 +265,18 @@ const CoDirector: React.FC<CoDirectorProps> = ({
                                 {suggestions.map((s, i) => (
                                     <button 
                                         key={i} 
-                                        onClick={() => { setObjective(s); setSuggestions([]); }} 
+                                        onClick={() => { setObjective(s); setSuggestions([]); setLastError(null); }} 
                                         className="text-left text-sm text-amber-400 hover:text-amber-300 bg-gray-800/50 p-3 rounded-md w-full transition-all duration-300 ease-in-out animate-fade-in-right ring-1 ring-gray-700 hover:ring-amber-500 hover:shadow-lg hover:shadow-amber-500/20 transform hover:-translate-y-1"
                                         style={{ animationDelay: `${i * 100}ms` }}
                                     >
                                         {s}
                                     </button>
                                 ))}
+                            </div>
+                        )}
+                        {lastError && suggestions.length === 0 && (
+                            <div className="mt-3 p-3 bg-red-900/30 border border-red-700/50 rounded-md text-sm text-red-300">
+                                <span className="font-semibold">⚠️ </span>{lastError}
                             </div>
                         )}
                     </div>
