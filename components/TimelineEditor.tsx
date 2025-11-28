@@ -1,8 +1,9 @@
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
-import CoDirector from './CoDirector';
+// P2 Performance: Lazy load CoDirector (only shown when user requests suggestions)
+const CoDirector = lazy(() => import('./CoDirector'));
 import PlusIcon from './icons/PlusIcon';
 import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
@@ -1737,22 +1738,24 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         />
                     )}
                     
-                    <CoDirector
-                        onGetSuggestions={handleGetCoDirectorSuggestions}
-                        isLoading={isCoDirectorLoading}
-                        result={coDirectorResult}
-                        onApplySuggestion={(suggestion) => {
-                            onApplySuggestion(suggestion, scene.id);
-                            setHasChanges(true); // Applying suggestion is a change
-                        }}
-                        onClose={() => setCoDirectorResult(null)}
-                        storyBible={storyBible}
-                        scene={scene}
-                        directorsVision={directorsVision}
-                        onApiLog={onApiLog}
-                        onApiStateChange={onApiStateChange}
-                        addToast={addToast}
-                    />
+                    <Suspense fallback={<div className="p-4 text-center text-gray-500">Loading Co-Director...</div>}>
+                        <CoDirector
+                            onGetSuggestions={handleGetCoDirectorSuggestions}
+                            isLoading={isCoDirectorLoading}
+                            result={coDirectorResult}
+                            onApplySuggestion={(suggestion) => {
+                                onApplySuggestion(suggestion, scene.id);
+                                setHasChanges(true); // Applying suggestion is a change
+                            }}
+                            onClose={() => setCoDirectorResult(null)}
+                            storyBible={storyBible}
+                            scene={scene}
+                            directorsVision={directorsVision}
+                            onApiLog={onApiLog}
+                            onApiStateChange={onApiStateChange}
+                            addToast={addToast}
+                        />
+                    </Suspense>
                 </>
             )}
             
