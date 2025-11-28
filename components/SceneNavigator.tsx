@@ -8,7 +8,7 @@ import { useVisualBible } from '../utils/hooks';
 // Phase 1C: Unified scene store integration
 import { useUnifiedSceneStoreEnabled } from '../hooks/useSceneStore';
 import { useSceneStateStore } from '../services/sceneStateStore';
-// TODO: import { getSceneVisualBibleContext } from '../services/continuityVisualContext'; // Not yet implemented
+import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
 
 interface SceneNavigatorProps {
     scenes: Scene[];
@@ -86,9 +86,8 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                     {effectiveScenes.map((scene, index) => {
                         const needsReview = scenesToReview.has(scene.id);
                         const status = sceneStatuses[scene.id];
-                        // TODO: Implement getSceneVisualBibleContext
-                        const visualBibleInfo = null; // getSceneVisualBibleContext(visualBible, scene.id);
-                        const hasVisualBibleLinks = false; // visualBibleInfo && (visualBibleInfo.styleBoards.length > 0 || visualBibleInfo.tags.length > 0);
+                        const visualBibleInfo = getSceneVisualBibleContext(visualBible, scene.id);
+                        const hasVisualBibleLinks = visualBibleInfo && (visualBibleInfo.styleBoards.length > 0 || visualBibleInfo.tags.length > 0);
                         return (
                             <li 
                                 key={scene.id} 

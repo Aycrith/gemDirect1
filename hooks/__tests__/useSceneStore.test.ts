@@ -51,6 +51,7 @@ const createTestSettings = (useUnifiedSceneStore: boolean): LocalGenerationSetti
         autoSuggestions: false,
         narrativeStateTracking: false,
         promptABTesting: false,
+        showBayesianAnalytics: false,
         providerHealthPolling: false,
         useUnifiedSceneStore,
         sceneStoreParallelValidation: false,

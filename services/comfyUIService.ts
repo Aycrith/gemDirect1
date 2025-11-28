@@ -1,9 +1,10 @@
-import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, Scene, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight } from '../types';
+import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, Scene, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight, StoryBible, VisualBible } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 import { getVisualBible } from './visualBibleContext';
 import { generateCorrelationId, logCorrelation, networkTap } from '../utils/correlation';
 import { validatePromptGuardrails } from './promptValidator';
-import { SceneTransitionContext, formatTransitionContextForPrompt } from './sceneTransitionService';
+import { SceneTransitionContext, ShotTransitionContext, formatTransitionContextForPrompt, formatShotTransitionContextForPrompt, buildShotTransitionContext } from './sceneTransitionService';
+import { isFeatureEnabled, FeatureFlags } from '../utils/featureFlags';
 import { ApiLogCallback } from './geminiService';
 import {
     ValidationResult,
@@ -14,17 +15,25 @@ import {
     ValidationErrorCodes,
 } from '../types/validation';
 import { estimateTokens, truncateToTokenLimit, DEFAULT_TOKEN_BUDGETS } from './promptRegistry';
-// TODO: Visual Bible integration not yet implemented
-// import { getPromptConfigForModel, applyPromptTemplate, type PromptTarget, getDefaultNegativePromptForModel } from './promptTemplates';
+import { getPromptConfigForModel, applyPromptTemplate, getDefaultNegativePromptForModel, type PromptTarget } from './promptTemplates';
 import { getVisualContextForShot, getCharacterContextForShot, getVisualContextForScene, getCharacterContextForScene } from './visualBiblePromptHelpers';
-
-// Stub implementations until Visual Bible services are implemented
-const getPromptConfigForModel = (modelId: string, target: PromptTarget) => ({ template: '{prompt}' });
-const applyPromptTemplate = (prompt: string, vbSegment: string, config: { template: string }) => vbSegment ? `${prompt} ${vbSegment}` : prompt;
-const getDefaultNegativePromptForModel = (modelId: string, target: string) => DEFAULT_NEGATIVE_PROMPT;
-
-// Type for prompt targets (keyframe or video generation)
-type PromptTarget = 'shotImage' | 'sceneKeyframe' | 'sceneVideo';
+// Phase 7: Narrative Coherence - track story elements across generations
+import {
+    NarrativeState,
+    NarrativeStateSummary,
+    createInitialNarrativeState,
+    updateNarrativeStateForScene,
+    updateNarrativeStateForShot,
+    generateNarrativeStateSummary,
+    formatNarrativeStateForPrompt,
+} from './narrativeCoherenceService';
+// Phase 7: IP-Adapter for character consistency
+import { 
+    prepareIPAdapterPayload, 
+    applyUploadedImagesToWorkflow,
+    type IPAdapterPayload,
+} from './ipAdapterService';
+// Phase 7: Video upscaling post-processing (imported when needed)
 
 // Interface for ComfyUI workflow nodes
 interface WorkflowNode {
@@ -729,12 +738,21 @@ const fetchAssetAsDataURL = async (url: string, filename: string, subfolder: str
  * @param base64Image The base64-encoded keyframe image.
  * @returns The server's response after queueing the prompt.
  */
+/**
+ * Optional configuration for queueComfyUIPrompt
+ */
+export interface QueuePromptOptions {
+    /** IP-Adapter payload for character consistency */
+    ipAdapter?: IPAdapterPayload;
+}
+
 export const queueComfyUIPrompt = async (
     settings: LocalGenerationSettings,
     payloads: { json: string; text: string; structured: any[]; negativePrompt: string },
     base64Image: string,
     profileId: string = DEFAULT_WORKFLOW_PROFILE_ID,
-    profileOverride?: WorkflowProfile
+    profileOverride?: WorkflowProfile,
+    options?: QueuePromptOptions
 ): Promise<any> => {
     // ========================================================================
     // Token Validation Gate
@@ -904,6 +922,66 @@ export const queueComfyUIPrompt = async (
                 const uploadResult = await uploadResponse.json();
                 pushDiagnostic({ profileId, action: 'uploadImage:result', uploadResult: { name: uploadResult?.name, status: uploadResponse.status } });
                 uploadedImageFilename = uploadResult.name;
+            }
+        }
+
+        // --- STEP 1.2: IP-ADAPTER CHARACTER CONSISTENCY (if provided) ---
+        let ipAdapterUploadedFilenames: Record<string, string> = {};
+        if (options?.ipAdapter?.isActive && Object.keys(options.ipAdapter.uploadedImages).length > 0) {
+            console.log(`[${profileId}] IP-Adapter: Uploading ${Object.keys(options.ipAdapter.uploadedImages).length} character reference images...`);
+            pushDiagnostic({ profileId, action: 'ipAdapter:uploadStart', referenceCount: Object.keys(options.ipAdapter.uploadedImages).length });
+            
+            for (const [refId, imageRef] of Object.entries(options.ipAdapter.uploadedImages)) {
+                try {
+                    // Handle both base64 and data URL formats
+                    const base64Data = imageRef.startsWith('data:') 
+                        ? imageRef.split(',')[1] 
+                        : imageRef;
+                    
+                    const blob = base64ToBlob(base64Data, 'image/png');
+                    const formData = new FormData();
+                    formData.append('image', blob, `ipadapter_${refId}_${Date.now()}.png`);
+                    formData.append('overwrite', 'true');
+                    
+                    const uploadResponse = await fetchWithTimeout(`${baseUrl}/upload/image`, {
+                        method: 'POST',
+                        body: formData,
+                    }, 45000);
+                    
+                    if (!uploadResponse.ok) {
+                        console.warn(`[${profileId}] IP-Adapter: Failed to upload reference ${refId}, status: ${uploadResponse.status}`);
+                        continue;
+                    }
+                    
+                    const uploadResult = await uploadResponse.json();
+                    ipAdapterUploadedFilenames[refId] = uploadResult.name;
+                    console.log(`[${profileId}] IP-Adapter: Uploaded ${refId} as ${uploadResult.name}`);
+                } catch (uploadError) {
+                    console.warn(`[${profileId}] IP-Adapter: Error uploading reference ${refId}:`, uploadError);
+                }
+            }
+            
+            // Apply uploaded filenames to IP-Adapter workflow nodes
+            if (Object.keys(ipAdapterUploadedFilenames).length > 0 && Object.keys(options.ipAdapter.nodeInjections).length > 0) {
+                console.log(`[${profileId}] IP-Adapter: Applying ${Object.keys(ipAdapterUploadedFilenames).length} uploaded images to workflow...`);
+                
+                // Merge IP-Adapter nodes into the prompt payload
+                const ipAdapterWorkflow = applyUploadedImagesToWorkflow(
+                    options.ipAdapter.nodeInjections,
+                    ipAdapterUploadedFilenames
+                );
+                
+                // Merge IP-Adapter nodes into main workflow
+                for (const [nodeId, node] of Object.entries(ipAdapterWorkflow)) {
+                    promptPayload[nodeId] = node;
+                }
+                
+                pushDiagnostic({ 
+                    profileId, 
+                    action: 'ipAdapter:nodesInjected', 
+                    nodeCount: Object.keys(ipAdapterWorkflow).length,
+                    uploadedCount: Object.keys(ipAdapterUploadedFilenames).length
+                });
             }
         }
 
@@ -1425,6 +1503,18 @@ export interface VideoGenerationOverrides {
     negativePrompt?: string;
     /** Scene transition context for narrative coherence across video segments */
     transitionContext?: SceneTransitionContext;
+    /** Shot-level transition context for fine-grained continuity between shots */
+    shotTransitionContext?: ShotTransitionContext;
+    // Phase 7: Narrative state tracking
+    /** Formatted narrative context for prompt injection */
+    narrativeContext?: string;
+    // Phase 7: IP-Adapter character consistency
+    /** Character reference images for IP-Adapter (characterId -> base64) */
+    characterReferenceImages?: Record<string, string>;
+    /** Visual Bible for IP-Adapter character lookup */
+    visualBible?: VisualBible | null;
+    /** Scene context for IP-Adapter character references */
+    scene?: Scene;
 }
 
 
@@ -1480,7 +1570,7 @@ export const generateVideoFromShot = async (
     try {
         reportProgress({ status: 'running', message: 'Building video generation prompt...' });
         
-        // Step 1: Build human-readable prompt with optional transition context
+        // Step 1: Build human-readable prompt with optional transition context and narrative context
         const humanPrompt = buildShotPrompt(
             shot,
             enhancers,
@@ -1489,7 +1579,9 @@ export const generateVideoFromShot = async (
             undefined,
             shot.id,
             'shotVideo',
-            overrides?.transitionContext
+            overrides?.transitionContext,
+            overrides?.shotTransitionContext,
+            overrides?.narrativeContext
         );
         
         reportProgress({ status: 'running', message: `Prompt: ${humanPrompt.substring(0, 80)}...` });
@@ -1515,11 +1607,47 @@ export const generateVideoFromShot = async (
             throw new Error(`${getSceneContext()} requires a keyframe image for this workflow but none was provided.`);
         }
 
+        // Step 2.5: Prepare IP-Adapter payload for character consistency (if available)
+        let ipAdapterPayload: IPAdapterPayload | undefined;
+        if (overrides?.visualBible && overrides?.scene && overrides?.characterReferenceImages) {
+            try {
+                const workflowProfile = settings.workflowProfiles?.['wan-i2v'];
+                if (workflowProfile?.workflowJson) {
+                    reportProgress({ status: 'running', message: 'Preparing IP-Adapter character references...' });
+                    ipAdapterPayload = await prepareIPAdapterPayload(
+                        overrides.visualBible,
+                        overrides.scene,
+                        shot,
+                        workflowProfile.workflowJson,
+                        { enabled: true }
+                    );
+                    
+                    if (ipAdapterPayload.isActive) {
+                        console.log(`[generateVideoFromShot] IP-Adapter prepared: ${ipAdapterPayload.referenceCount} references`);
+                    }
+                    
+                    if (ipAdapterPayload.warnings.length > 0) {
+                        console.warn(`[generateVideoFromShot] IP-Adapter warnings:`, ipAdapterPayload.warnings);
+                    }
+                }
+            } catch (ipError) {
+                console.warn(`[generateVideoFromShot] Failed to prepare IP-Adapter payload:`, ipError);
+                // Continue without IP-Adapter - don't fail the generation
+            }
+        }
+
         // Step 3: Queue prompt in ComfyUI
         reportProgress({ status: 'running', message: 'Queuing prompt in ComfyUI...' });
         let promptResponse;
         try {
-            promptResponse = await queuePrompt(settings, payloads, keyframeImage || '', 'wan-i2v');
+            promptResponse = await queuePrompt(
+                settings, 
+                payloads, 
+                keyframeImage || '', 
+                'wan-i2v',
+                undefined, // profileOverride
+                ipAdapterPayload ? { ipAdapter: ipAdapterPayload } : undefined
+            );
         } catch (queueError) {
             const message = queueError instanceof Error ? queueError.message : String(queueError);
             const contextMessage = `${getSceneContext()} failed to queue prompt: ${message}`;
@@ -1910,7 +2038,9 @@ export const buildShotPrompt = (
     sceneId?: string,
     shotId?: string,
     target: PromptTarget = 'shotImage',
-    transitionContext?: SceneTransitionContext | null
+    transitionContext?: SceneTransitionContext | null,
+    shotTransitionContext?: ShotTransitionContext | null,
+    narrativeContext?: string | null
 ): string => {
     const heroArcSegmentParts: string[] = [];
     if (shot.arcId) {
@@ -1965,6 +2095,19 @@ export const buildShotPrompt = (
         if (transitionPrompt) {
             basePrompt += ` [${transitionPrompt}]`;
         }
+    }
+
+    // Add shot-level transition context for fine-grained continuity (if provided)
+    if (shotTransitionContext) {
+        const shotTransitionPrompt = formatShotTransitionContextForPrompt(shotTransitionContext);
+        if (shotTransitionPrompt) {
+            basePrompt += ` [${shotTransitionPrompt}]`;
+        }
+    }
+    
+    // Phase 7: Add narrative coherence context for character/arc tracking
+    if (narrativeContext && narrativeContext.trim().length > 0) {
+        basePrompt += ` [NARRATIVE: ${narrativeContext}]`;
     }
 
     // Add directors vision context
@@ -2030,6 +2173,24 @@ export interface TimelineGenerationOptions {
     shotGenerator?: GenerateVideoFromShotFn;
     /** Scene transition context for narrative coherence - applies to all shots in this scene */
     transitionContext?: SceneTransitionContext;
+    /** Feature flags for enabling experimental features */
+    featureFlags?: Partial<FeatureFlags>;
+    /** Scene reference for building shot-level transition contexts */
+    scene?: Scene;
+    /** Scene keyframe reference for shot continuity */
+    sceneKeyframe?: string | null;
+    // Phase 7: Narrative state tracking
+    /** Initial or current narrative state for continuity tracking */
+    narrativeState?: NarrativeState;
+    /** Story bible for narrative context initialization */
+    storyBible?: StoryBible;
+    /** Visual bible for character/location tracking */
+    visualBible?: VisualBible;
+    /** Callback to receive updated narrative state for persistence */
+    onNarrativeStateUpdate?: (state: NarrativeState) => void;
+    // Phase 7: IP-Adapter character consistency
+    /** Character reference images for IP-Adapter injection (characterId -> base64) */
+    characterReferenceImages?: Record<string, string>;
 }
 
 
@@ -2059,11 +2220,86 @@ export const generateTimelineVideos = async (
     const shotExecutor = options?.shotGenerator ?? generateVideoFromShot;
     const shotDependencies = options?.dependencies;
     const transitionContext = options?.transitionContext;
+    const featureFlags = options?.featureFlags;
+    const scene = options?.scene;
+    const sceneKeyframe = options?.sceneKeyframe;
+    
+    // Check if shot-level continuity is enabled
+    const useShotLevelContinuity = isFeatureEnabled(featureFlags, 'shotLevelContinuity') && scene;
+    
+    // Phase 7: Narrative state tracking - track story elements across generations
+    const useNarrativeTracking = isFeatureEnabled(featureFlags, 'narrativeStateTracking') && options?.storyBible;
+    let narrativeState = options?.narrativeState;
+    
+    // Initialize narrative state from story bible if not provided
+    if (useNarrativeTracking && !narrativeState && options?.storyBible) {
+        narrativeState = createInitialNarrativeState(options.storyBible, options.visualBible);
+        console.log('[Timeline Batch] Initialized narrative state tracking:', {
+            characters: Object.keys(narrativeState.characters).length,
+            emotionalPhase: narrativeState.emotionalArc.currentPhase
+        });
+        // Notify caller of initial state for persistence
+        options?.onNarrativeStateUpdate?.(narrativeState);
+    }
+    
+    // Update narrative state for this scene
+    if (useNarrativeTracking && narrativeState && scene) {
+        narrativeState = updateNarrativeStateForScene(narrativeState, scene, options?.visualBible);
+        const summary = generateNarrativeStateSummary(narrativeState, scene.id, options?.visualBible);
+        console.log('[Timeline Batch] Scene narrative context:', {
+            activeCharacters: summary.activeCharacters.length,
+            warnings: summary.warnings.length,
+            emotionalGuidance: summary.emotionalGuidance?.slice(0, 50)
+        });
+        // Notify caller of updated state for persistence
+        options?.onNarrativeStateUpdate?.(narrativeState);
+    }
+    
+    // Phase 7: IP-Adapter character consistency - check if available
+    const useIpAdapter = isFeatureEnabled(featureFlags, 'characterConsistency') && 
+        options?.characterReferenceImages && 
+        Object.keys(options.characterReferenceImages).length > 0;
+    if (useIpAdapter) {
+        console.log('[Timeline Batch] IP-Adapter character consistency enabled:', {
+            referenceCount: Object.keys(options.characterReferenceImages!).length
+        });
+    }
     
     for (let i = 0; i < timeline.shots.length; i++) {
         const shot = timeline.shots[i];
         const enhancers = timeline.shotEnhancers[shot.id];
         const keyframe = keyframeImages[shot.id] || null;
+        
+        // Build shot-level transition context if enabled
+        let shotTransitionContext: ShotTransitionContext | undefined;
+        if (useShotLevelContinuity && scene) {
+            try {
+                shotTransitionContext = buildShotTransitionContext(scene, i, sceneKeyframe);
+                console.log(`[Timeline Batch] Built shot transition context for shot ${i + 1}:`, {
+                    narrativePosition: shotTransitionContext.narrativePosition,
+                    hasPreviousShot: !!shotTransitionContext.previousShotDescription,
+                    continuityElements: shotTransitionContext.visualContinuity.length
+                });
+            } catch (e) {
+                console.warn(`[Timeline Batch] Failed to build shot transition context for shot ${i}:`, e);
+            }
+        }
+        
+        // Phase 7: Build narrative context for prompt injection
+        let narrativePromptContext: string | undefined;
+        if (useNarrativeTracking && narrativeState && scene) {
+            try {
+                const narrativeSummary = generateNarrativeStateSummary(narrativeState, scene.id, options?.visualBible);
+                narrativePromptContext = formatNarrativeStateForPrompt(narrativeSummary);
+                
+                // Update narrative state for this shot (tracks character appearances, etc.)
+                narrativeState = updateNarrativeStateForShot(narrativeState, shot, scene.id, options?.visualBible);
+                // Notify caller of updated state for persistence
+                options?.onNarrativeStateUpdate?.(narrativeState);
+            } catch (e) {
+                console.warn(`[Timeline Batch] Failed to build narrative context for shot ${i}:`, e);
+            }
+        }
 
         try {
             console.log(`[Timeline Batch] Processing shot ${i + 1}/${timeline.shots.length}: ${shot.id}`);
@@ -2086,6 +2322,11 @@ export const generateTimelineVideos = async (
                 {
                     negativePrompt: timeline.negativePrompt,
                     transitionContext: transitionContext,
+                    shotTransitionContext: shotTransitionContext,
+                    narrativeContext: narrativePromptContext,
+                    characterReferenceImages: useIpAdapter ? options?.characterReferenceImages : undefined,
+                    visualBible: useIpAdapter ? options?.visualBible : undefined,
+                    scene: useIpAdapter ? scene : undefined,
                 }
             );
 
@@ -2553,6 +2794,7 @@ export async function generateSceneBookendsLocally(
  * @param scene Scene with bookend keyframes
  * @param timeline Timeline data
  * @param bookends Start and end keyframe images
+ * @param directorsVision Director's vision style guide for video generation
  * @param logApiCall API call logging function
  * @param onStateChange State change callback
  * @returns Video file path or base64
@@ -2562,6 +2804,7 @@ export async function generateVideoFromBookends(
     scene: Scene,
     timeline: TimelineData,
     bookends: { start: string; end: string },
+    directorsVision: string,
     logApiCall: ApiLogCallback,
     onStateChange: (state: any) => void
 ): Promise<string> {
@@ -2572,7 +2815,7 @@ export async function generateVideoFromBookends(
     
     const payloads = generateVideoRequestPayloads(
         timeline,
-        '', // directorsVision not used for video prompts
+        directorsVision,
         scene.summary,
         {} // generatedShotImages
     );
@@ -2621,6 +2864,7 @@ export async function generateVideoFromBookends(
  * @param scene Scene with temporalContext
  * @param timeline Timeline data for shot metadata
  * @param bookends Start and end keyframe images (base64)
+ * @param directorsVision Director's vision style guide for video generation
  * @param logApiCall API call logging function
  * @param onStateChange State change callback with phase tracking
  * @returns Promise<string> - Path to spliced video file
@@ -2630,6 +2874,7 @@ export async function generateVideoFromBookendsSequential(
     scene: Scene,
     timeline: TimelineData,
     bookends: { start: string; end: string },
+    directorsVision: string,
     logApiCall: ApiLogCallback,
     onStateChange: (state: any) => void
 ): Promise<string> {
@@ -2676,7 +2921,7 @@ export async function generateVideoFromBookendsSequential(
     // Generate payloads for video generation
     const payloads = generateVideoRequestPayloads(
         timeline,
-        '', // directorsVision not used for video prompts
+        directorsVision,
         scene.summary,
         {} // generatedShotImages
     );
@@ -2837,6 +3082,400 @@ export async function generateVideoFromBookendsSequential(
     return spliceResult.outputPath!;
 }
 
+/**
+ * Native Bookend Workflow: Generate video using WanFirstLastFrameToVideo or WanFunInpaintToVideo nodes
+ * 
+ * This is the preferred method for bookend video generation as it uses ComfyUI's native
+ * dual-keyframe interpolation without requiring FFmpeg post-processing.
+ * 
+ * Supports two workflow types:
+ * - wan-flf2v: Uses WanFirstLastFrameToVideo for frame interpolation
+ * - wan-fun-inpaint: Uses WanFunInpaintToVideo for smoother motion
+ * 
+ * @param settings ComfyUI configuration
+ * @param scene Scene with temporalContext
+ * @param timeline Timeline data for shot metadata
+ * @param bookends Start and end keyframe images (base64)
+ * @param logApiCall API call logging function
+ * @param onStateChange State change callback with phase tracking
+ * @param profileId Workflow profile ID ('wan-flf2v' or 'wan-fun-inpaint')
+ * @returns Promise<string> - Video data URL or file path
+ */
+export async function generateVideoFromBookendsNative(
+    settings: LocalGenerationSettings,
+    scene: Scene,
+    timeline: TimelineData,
+    bookends: { start: string; end: string },
+    directorsVision: string,
+    logApiCall: ApiLogCallback,
+    onStateChange: (state: any) => void,
+    profileId: 'wan-flf2v' | 'wan-fun-inpaint' = 'wan-flf2v'
+): Promise<string> {
+    console.log(`[Native Bookend] Starting native dual-keyframe generation for scene ${scene.id} using ${profileId}`);
+    
+    // Validate inputs
+    if (!bookends.start || !bookends.end) {
+        throw new Error('Both start and end keyframes are required for native bookend generation');
+    }
+    
+    // Import payload service
+    const { generateVideoRequestPayloads } = await import('./payloadService');
+    
+    // Generate payloads for video generation
+    const payloads = generateVideoRequestPayloads(
+        timeline,
+        directorsVision,
+        scene.summary,
+        {} // generatedShotImages
+    );
+    
+    // Get workflow profile
+    const profile = settings.workflowProfiles?.[profileId];
+    if (!profile) {
+        console.warn(`[Native Bookend] Profile '${profileId}' not found, falling back to sequential generation`);
+        return generateVideoFromBookendsSequential(settings, scene, timeline, bookends, directorsVision, logApiCall, onStateChange);
+    }
+    
+    onStateChange({
+        phase: 'native-bookend-video',
+        status: 'running',
+        progress: 0,
+        message: `Generating native dual-keyframe video using ${profileId}...`
+    });
+    
+    // Queue the dual-keyframe prompt
+    const response = await queueComfyUIPromptDualImage(
+        settings,
+        payloads,
+        { start: bookends.start, end: bookends.end },
+        profileId
+    );
+    
+    if (!response?.prompt_id) {
+        throw new Error('Failed to queue native bookend video generation');
+    }
+    
+    // Wait for completion
+    const output = await waitForComfyCompletion(
+        settings,
+        response.prompt_id,
+        (state) => {
+            onStateChange({
+                phase: 'native-bookend-video',
+                status: 'running',
+                progress: state.progress || 0,
+                message: `Generating dual-keyframe video: ${state.progress || 0}%`
+            });
+        }
+    );
+    
+    if (!output?.data) {
+        throw new Error('Native bookend video generation failed: No output data');
+    }
+    
+    console.log(`[Native Bookend] ✅ Video generation complete using ${profileId}`);
+    return output.data;
+}
+
+/**
+ * Queue a ComfyUI prompt with dual image support (start and end keyframes).
+ * This is specifically designed for WanFirstLastFrameToVideo and WanFunInpaintToVideo workflows.
+ * 
+ * @param settings ComfyUI configuration
+ * @param payloads Text/JSON payloads for prompt injection
+ * @param images Start and end keyframe images (base64)
+ * @param profileId Workflow profile ID with dual image mapping
+ * @returns ComfyUI queue response
+ */
+export const queueComfyUIPromptDualImage = async (
+    settings: LocalGenerationSettings,
+    payloads: { json: string; text: string; structured: any[]; negativePrompt: string },
+    images: { start: string; end: string },
+    profileId: string = 'wan-flf2v'
+): Promise<any> => {
+    console.log(`[${profileId}] Queueing dual-image workflow with start and end keyframes`);
+    
+    const modelId = resolveModelIdFromSettings(settings);
+    const profile = resolveWorkflowProfile(settings, modelId, undefined, profileId);
+    const profileConfig = settings.workflowProfiles?.[profileId];
+    
+    if (!profileConfig) {
+        throw new Error(`Workflow profile '${profileId}' not found. Please configure the profile in Settings.`);
+    }
+    
+    let workflowApi: Record<string, any>;
+    try {
+        // If workflowFile is specified, load from file (in Node.js) or use embedded JSON
+        if (profileConfig.workflowFile) {
+            // For browser, we should have the workflow embedded in workflowJson
+            if (typeof profileConfig.workflowJson === 'string') {
+                workflowApi = JSON.parse(profileConfig.workflowJson);
+            } else if (typeof window === 'undefined') {
+                // Node.js environment - read from file
+                const fs = await import('fs');
+                const path = await import('path');
+                const workflowPath = path.join(process.cwd(), profileConfig.workflowFile);
+                const workflowContent = fs.readFileSync(workflowPath, 'utf-8');
+                workflowApi = JSON.parse(workflowContent);
+            } else {
+                throw new Error(`Workflow file '${profileConfig.workflowFile}' specified but workflowJson not embedded.`);
+            }
+        } else {
+            workflowApi = JSON.parse(profile.workflowJson);
+        }
+    } catch (error) {
+        throw new Error(`Failed to parse workflow for profile '${profileId}': ${error}`);
+    }
+    
+    const promptPayloadTemplate = workflowApi.nodes || workflowApi.prompt || workflowApi;
+    const mapping = profileConfig.mapping || profile.mapping;
+    
+    // Pre-flight checks
+    await checkServerConnection(settings.comfyUIUrl);
+    
+    const promptPayload = JSON.parse(JSON.stringify(promptPayloadTemplate));
+    const baseUrl = getComfyUIBaseUrl(settings.comfyUIUrl);
+    const clientId = settings.comfyUIClientId || `csg_dual_${Date.now()}`;
+    
+    // Upload both images
+    const uploadedImages: { start?: string; end?: string } = {};
+    
+    // Find image mapping keys for start and end
+    const startImageKey = Object.keys(mapping).find(k => mapping[k] === 'start_image');
+    const endImageKey = Object.keys(mapping).find(k => mapping[k] === 'end_image');
+    
+    if (!startImageKey || !endImageKey) {
+        throw new Error(`Profile '${profileId}' is missing start_image or end_image mappings. Required for dual-keyframe workflows.`);
+    }
+    
+    // Upload start image
+    if (images.start) {
+        const [nodeId] = startImageKey.split(':');
+        const node = promptPayload[nodeId];
+        
+        if (node && node.class_type === 'LoadImage') {
+            const blob = base64ToBlob(images.start, 'image/jpeg');
+            const formData = new FormData();
+            const filename = `csg_start_keyframe_${Date.now()}.jpg`;
+            formData.append('image', blob, filename);
+            formData.append('overwrite', 'true');
+            
+            const uploadResponse = await fetchWithTimeout(`${baseUrl}/upload/image`, {
+                method: 'POST',
+                body: formData,
+            }, 45000);
+            
+            if (!uploadResponse.ok) {
+                throw new Error(`Failed to upload start keyframe to ComfyUI. Status: ${uploadResponse.status}`);
+            }
+            
+            const uploadResult = await uploadResponse.json();
+            uploadedImages.start = uploadResult.name;
+            console.log(`[${profileId}] Uploaded start keyframe: ${uploadedImages.start}`);
+        }
+    }
+    
+    // Upload end image
+    if (images.end) {
+        const [nodeId] = endImageKey.split(':');
+        const node = promptPayload[nodeId];
+        
+        if (node && node.class_type === 'LoadImage') {
+            const blob = base64ToBlob(images.end, 'image/jpeg');
+            const formData = new FormData();
+            const filename = `csg_end_keyframe_${Date.now()}.jpg`;
+            formData.append('image', blob, filename);
+            formData.append('overwrite', 'true');
+            
+            const uploadResponse = await fetchWithTimeout(`${baseUrl}/upload/image`, {
+                method: 'POST',
+                body: formData,
+            }, 45000);
+            
+            if (!uploadResponse.ok) {
+                throw new Error(`Failed to upload end keyframe to ComfyUI. Status: ${uploadResponse.status}`);
+            }
+            
+            const uploadResult = await uploadResponse.json();
+            uploadedImages.end = uploadResult.name;
+            console.log(`[${profileId}] Uploaded end keyframe: ${uploadedImages.end}`);
+        }
+    }
+    
+    // Randomize seeds
+    const randomSeed = Math.floor(Math.random() * 1e15);
+    for (const [nodeId, nodeEntry] of Object.entries(promptPayload)) {
+        const node = nodeEntry as WorkflowNode;
+        if (typeof node === 'object' && node !== null && node.class_type === 'KSampler' && node.inputs && 'seed' in node.inputs) {
+            node.inputs.seed = randomSeed;
+        }
+    }
+    
+    // Inject data based on mapping
+    for (const [key, dataType] of Object.entries(mapping)) {
+        if (dataType === 'none') continue;
+        
+        const [nodeId, inputName] = key.split(':');
+        const node = promptPayload[nodeId] as WorkflowNode | undefined;
+        
+        if (node && node.inputs) {
+            let dataToInject: unknown = null;
+            switch (dataType) {
+                case 'human_readable_prompt':
+                    dataToInject = payloads.text;
+                    break;
+                case 'full_timeline_json':
+                    dataToInject = payloads.json;
+                    break;
+                case 'negative_prompt':
+                    dataToInject = payloads.negativePrompt;
+                    break;
+                case 'start_image':
+                    if (uploadedImages.start && node.class_type === 'LoadImage') {
+                        dataToInject = uploadedImages.start;
+                    }
+                    break;
+                case 'end_image':
+                    if (uploadedImages.end && node.class_type === 'LoadImage') {
+                        dataToInject = uploadedImages.end;
+                    }
+                    break;
+            }
+            if (dataToInject !== null) {
+                node.inputs[inputName] = dataToInject;
+            }
+        }
+    }
+    
+    // Queue the prompt
+    const body = JSON.stringify({ prompt: promptPayload, client_id: clientId });
+    const response = await fetchWithTimeout(`${baseUrl}/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+    }, 60000);
+    
+    if (!response.ok) {
+        let errorMessage = `ComfyUI server responded with status: ${response.status}`;
+        try {
+            const errorData = await response.json();
+            errorMessage += ` - ${errorData.error?.message || JSON.stringify(errorData)}`;
+        } catch { /* ignore */ }
+        throw new Error(errorMessage);
+    }
+    
+    const result = await response.json();
+    console.log(`[${profileId}] ✅ Dual-image prompt queued: ${result.prompt_id}`);
+    
+    return result;
+};
+
+/**
+ * Detects if a workflow profile supports native dual-keyframe generation.
+ * Checks for WanFirstLastFrameToVideo or WanFunInpaintToVideo nodes in the workflow.
+ * 
+ * @param settings ComfyUI settings
+ * @param profileId Workflow profile ID to check
+ * @returns True if profile supports native dual-keyframe, false otherwise
+ */
+export function supportsNativeDualKeyframe(
+    settings: LocalGenerationSettings,
+    profileId: string
+): boolean {
+    const profile = settings.workflowProfiles?.[profileId];
+    if (!profile) return false;
+    
+    // Check if mapping has both start_image and end_image
+    const mapping = profile.mapping || {};
+    const hasStartImage = Object.values(mapping).includes('start_image');
+    const hasEndImage = Object.values(mapping).includes('end_image');
+    
+    if (!hasStartImage || !hasEndImage) {
+        return false;
+    }
+    
+    // Try to parse workflow and check for dual-keyframe nodes
+    try {
+        let workflow: Record<string, any>;
+        if (profile.workflowJson) {
+            workflow = JSON.parse(profile.workflowJson);
+        } else {
+            return false;
+        }
+        
+        const nodes = workflow.nodes || workflow.prompt || workflow;
+        const dualKeyframeNodeTypes = [
+            'WanFirstLastFrameToVideo',
+            'WanFunInpaintToVideo'
+        ];
+        
+        for (const [_nodeId, node] of Object.entries(nodes)) {
+            if (typeof node === 'object' && node !== null) {
+                const nodeEntry = node as WorkflowNode;
+                if (dualKeyframeNodeTypes.includes(nodeEntry.class_type || '')) {
+                    return true;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn(`[supportsNativeDualKeyframe] Failed to parse workflow for ${profileId}:`, e);
+    }
+    
+    return false;
+}
+
+/**
+ * Smart bookend video generation that automatically selects the best method:
+ * 1. Native dual-keyframe (preferred) if supported
+ * 2. Sequential FFmpeg splicing (fallback)
+ * 
+ * @param settings ComfyUI configuration
+ * @param scene Scene with temporalContext
+ * @param timeline Timeline data for shot metadata
+ * @param bookends Start and end keyframe images (base64)
+ * @param directorsVision Director's vision style guide for video generation
+ * @param logApiCall API call logging function
+ * @param onStateChange State change callback
+ * @returns Promise<string> - Video data URL or file path
+ */
+export async function generateVideoFromBookendsSmart(
+    settings: LocalGenerationSettings,
+    scene: Scene,
+    timeline: TimelineData,
+    bookends: { start: string; end: string },
+    directorsVision: string,
+    logApiCall: ApiLogCallback,
+    onStateChange: (state: any) => void
+): Promise<string> {
+    // Check for native dual-keyframe support
+    const nativeProfiles = ['wan-flf2v', 'wan-fun-inpaint'];
+    
+    for (const profileId of nativeProfiles) {
+        if (supportsNativeDualKeyframe(settings, profileId)) {
+            console.log(`[Smart Bookend] Using native dual-keyframe workflow: ${profileId}`);
+            try {
+                return await generateVideoFromBookendsNative(
+                    settings,
+                    scene,
+                    timeline,
+                    bookends,
+                    directorsVision,
+                    logApiCall,
+                    onStateChange,
+                    profileId as 'wan-flf2v' | 'wan-fun-inpaint'
+                );
+            } catch (error) {
+                console.warn(`[Smart Bookend] Native generation failed, falling back to sequential:`, error);
+                // Fall through to sequential
+            }
+        }
+    }
+    
+    // Fallback to sequential (FFmpeg) generation
+    console.log(`[Smart Bookend] No native dual-keyframe support, using sequential FFmpeg generation`);
+    return generateVideoFromBookendsSequential(settings, scene, timeline, bookends, directorsVision, logApiCall, onStateChange);
+}
+
 // ============================================================================
 // Prompt Length Validation
 // ============================================================================
@@ -2912,6 +3551,7 @@ export const validatePromptLength = (
  * @param shotId - Optional shot ID for Visual Bible context
  * @param target - Target type for prompt generation
  * @param transitionContext - Optional scene transition context
+ * @param shotTransitionContext - Optional shot-level transition context
  * @param maxTokens - Maximum tokens allowed (default: 500)
  * @returns Object with prompt and validation info
  */
@@ -2924,7 +3564,9 @@ export const buildShotPromptWithValidation = (
     shotId?: string,
     target: PromptTarget = 'shotImage',
     transitionContext?: SceneTransitionContext | null,
-    maxTokens: number = DEFAULT_TOKEN_BUDGETS.comfyuiShot
+    shotTransitionContext?: ShotTransitionContext | null,
+    maxTokens: number = DEFAULT_TOKEN_BUDGETS.comfyuiShot,
+    narrativeContext?: string | null
 ): { prompt: string; validation: PromptLengthValidation } => {
     // Build the base prompt
     const rawPrompt = buildShotPrompt(
@@ -2935,7 +3577,9 @@ export const buildShotPromptWithValidation = (
         sceneId,
         shotId,
         target,
-        transitionContext
+        transitionContext,
+        shotTransitionContext,
+        narrativeContext
     );
 
     // Validate and truncate if needed

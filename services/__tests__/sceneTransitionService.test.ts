@@ -10,7 +10,12 @@ import {
   generateSceneTransitionContext,
   generateAllTransitionContexts,
   formatTransitionContextForPrompt,
+  buildShotTransitionContext,
+  generateAllShotTransitionContexts,
+  formatShotTransitionContextForPrompt,
+  propagateKeyframesToShots,
   type SceneTransitionContext,
+  type ShotTransitionContext,
 } from '../sceneTransitionService';
 import type { Scene, StoryBible } from '../../types';
 
@@ -243,6 +248,205 @@ describe('sceneTransitionService', () => {
       
       // This is expected behavior - different lighting means no continuity element
       expect(hasLightingContinuity).toBe(false);
+    });
+  });
+
+  // ============================================================================
+  // SHOT-LEVEL TRANSITION TESTS (Phase 7: shotLevelContinuity feature)
+  // ============================================================================
+
+  describe('buildShotTransitionContext', () => {
+    it('should build context for first shot with no previous shot', () => {
+      const context = buildShotTransitionContext(mockScene1, 0);
+
+      expect(context.shotId).toBe('shot-1-1');
+      expect(context.sceneId).toBe('scene-1');
+      expect(context.shotIndex).toBe(0);
+      expect(context.previousShotDescription).toBeNull();
+      expect(context.previousShotEnhancers).toBeNull();
+      expect(context.narrativePosition).toBe('opening');
+    });
+
+    it('should include previous shot info for subsequent shots', () => {
+      const context = buildShotTransitionContext(mockScene1, 1);
+
+      expect(context.shotId).toBe('shot-1-2');
+      expect(context.shotIndex).toBe(1);
+      expect(context.previousShotDescription).toBe('Wide shot of hero at work');
+      expect(context.previousShotEnhancers).toEqual({
+        lighting: ['natural daylight'],
+        mood: ['melancholy']
+      });
+    });
+
+    it('should include transition type from previous shot', () => {
+      const context = buildShotTransitionContext(mockScene1, 1);
+      expect(context.transitionType).toBe('cut');
+    });
+
+    it('should include scene keyframe reference when provided', () => {
+      const context = buildShotTransitionContext(mockScene1, 0, 'base64-keyframe-data');
+      expect(context.sceneKeyframeRef).toBe('base64-keyframe-data');
+    });
+
+    it('should throw error for invalid shot index', () => {
+      expect(() => buildShotTransitionContext(mockScene1, 99)).toThrow();
+    });
+  });
+
+  describe('generateAllShotTransitionContexts', () => {
+    it('should generate contexts for all shots in a scene', () => {
+      const batch = generateAllShotTransitionContexts(mockScene1);
+
+      expect(batch.sceneId).toBe('scene-1');
+      expect(batch.contexts).toHaveLength(2);
+      expect(batch.contexts[0]?.shotId).toBe('shot-1-1');
+      expect(batch.contexts[1]?.shotId).toBe('shot-1-2');
+    });
+
+    it('should include generation timestamp', () => {
+      const before = Date.now();
+      const batch = generateAllShotTransitionContexts(mockScene1);
+      const after = Date.now();
+
+      expect(batch.generatedAt).toBeGreaterThanOrEqual(before);
+      expect(batch.generatedAt).toBeLessThanOrEqual(after);
+    });
+
+    it('should determine narrative positions correctly', () => {
+      const batch = generateAllShotTransitionContexts(mockScene1);
+
+      expect(batch.contexts[0]?.narrativePosition).toBe('opening');
+      expect(batch.contexts[1]?.narrativePosition).toBe('closing');
+    });
+
+    it('should handle scene with no timeline gracefully', () => {
+      const emptyScene: Scene = {
+        id: 'empty-scene',
+        title: 'Empty Scene',
+        summary: 'No shots',
+      };
+
+      const batch = generateAllShotTransitionContexts(emptyScene);
+      expect(batch.contexts).toHaveLength(0);
+    });
+  });
+
+  describe('formatShotTransitionContextForPrompt', () => {
+    it('should format opening shot context', () => {
+      const context: ShotTransitionContext = {
+        shotId: 'shot-1',
+        sceneId: 'scene-1',
+        shotIndex: 0,
+        previousShotDescription: null,
+        previousShotEnhancers: null,
+        visualContinuity: [],
+        transitionType: null,
+        sceneKeyframeRef: null,
+        narrativePosition: 'opening',
+      };
+
+      const formatted = formatShotTransitionContextForPrompt(context);
+
+      expect(formatted).toContain('SHOT POSITION: Opening shot');
+      expect(formatted).not.toContain('PREVIOUS SHOT');
+      expect(formatted).not.toContain('TRANSITION FROM PREVIOUS');
+    });
+
+    it('should format subsequent shot context with all elements', () => {
+      const context: ShotTransitionContext = {
+        shotId: 'shot-2',
+        sceneId: 'scene-1',
+        shotIndex: 1,
+        previousShotDescription: 'Hero stands at the window',
+        previousShotEnhancers: { lighting: ['sunset glow'] },
+        visualContinuity: ['Maintain character continuity', 'Match lighting: sunset glow'],
+        transitionType: 'dissolve',
+        sceneKeyframeRef: 'keyframe-ref',
+        narrativePosition: 'middle',
+      };
+
+      const formatted = formatShotTransitionContextForPrompt(context);
+
+      expect(formatted).toContain('SHOT POSITION: Middle sequence');
+      expect(formatted).toContain('PREVIOUS SHOT: "Hero stands at the window');
+      expect(formatted).toContain('TRANSITION FROM PREVIOUS: dissolve');
+      expect(formatted).toContain('SHOT CONTINUITY: Maintain character continuity; Match lighting: sunset glow');
+      expect(formatted).toContain('REFERENCE: Use scene keyframe');
+    });
+
+    it('should format climax shot context', () => {
+      const context: ShotTransitionContext = {
+        shotId: 'shot-climax',
+        sceneId: 'scene-1',
+        shotIndex: 4,
+        previousShotDescription: 'Tension builds',
+        previousShotEnhancers: null,
+        visualContinuity: [],
+        transitionType: 'cut',
+        sceneKeyframeRef: null,
+        narrativePosition: 'climax',
+      };
+
+      const formatted = formatShotTransitionContextForPrompt(context);
+      expect(formatted).toContain('SHOT POSITION: Climax moment');
+    });
+
+    it('should format closing shot context', () => {
+      const context: ShotTransitionContext = {
+        shotId: 'shot-end',
+        sceneId: 'scene-1',
+        shotIndex: 9,
+        previousShotDescription: 'Final action',
+        previousShotEnhancers: null,
+        visualContinuity: [],
+        transitionType: null,
+        sceneKeyframeRef: null,
+        narrativePosition: 'closing',
+      };
+
+      const formatted = formatShotTransitionContextForPrompt(context);
+      expect(formatted).toContain('SHOT POSITION: Closing shot');
+    });
+  });
+
+  describe('propagateKeyframesToShots', () => {
+    it('should assign scene keyframe to all shots when not in bookend mode', () => {
+      const generatedImages = { 'scene-1': 'keyframe-base64-data' };
+      const keyframes = propagateKeyframesToShots(mockScene1, generatedImages);
+
+      expect(keyframes['shot-1-1']).toBe('keyframe-base64-data');
+      expect(keyframes['shot-1-2']).toBe('keyframe-base64-data');
+    });
+
+    it('should assign start keyframe to first shot and end keyframe to last shot in bookend mode', () => {
+      const bookendScene: Scene = {
+        ...mockScene1,
+        keyframeMode: 'bookend',
+        keyframeStart: 'start-keyframe-data',
+        keyframeEnd: 'end-keyframe-data',
+      };
+      const generatedImages = { 'scene-1': 'main-keyframe' };
+      const keyframes = propagateKeyframesToShots(bookendScene, generatedImages);
+
+      expect(keyframes['shot-1-1']).toBe('start-keyframe-data');
+      expect(keyframes['shot-1-2']).toBe('end-keyframe-data');
+    });
+
+    it('should return empty map when no keyframes available', () => {
+      const keyframes = propagateKeyframesToShots(mockScene1, {});
+      expect(Object.keys(keyframes)).toHaveLength(0);
+    });
+
+    it('should handle scene with no shots', () => {
+      const emptyScene: Scene = {
+        id: 'empty',
+        title: 'Empty',
+        summary: 'No shots',
+        timeline: { shots: [], shotEnhancers: {}, transitions: [], negativePrompt: '' },
+      };
+      const keyframes = propagateKeyframesToShots(emptyScene, { 'empty': 'keyframe' });
+      expect(Object.keys(keyframes)).toHaveLength(0);
     });
   });
 });

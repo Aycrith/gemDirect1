@@ -5,7 +5,7 @@ import ContinuityCard from './ContinuityCard';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import GuideCard from './GuideCard';
 import AlertTriangleIcon from './icons/AlertTriangleIcon';
-// TODO: import E2EQACard from './E2EQACard'; // Not yet implemented
+import E2EQACard from './E2EQACard';
 import { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import { useVisualBible } from '../utils/hooks';
 import { validateContinuityPrerequisites, getPrerequisiteSummary } from '../services/continuityPrerequisites';
@@ -166,7 +166,7 @@ CONTEXT FROM ADJACENT SCENES:
         </h2>
         <p className="mt-4 text-lg text-gray-400 max-w-3xl mx-auto">
           Upload your generated videos for each scene. The AI will analyze them, score them against your creative intent, and provide feedback to refine your story.
-          {/* TODO: Phase 4 - Future phases will auto-link latest renders from the canonical pipeline instead of requiring manual upload, and integrate Visual Bible continuity scoring. */}
+          {/* NOTE: Future enhancement - Auto-link latest renders from the canonical pipeline instead of requiring manual upload, and integrate Visual Bible continuity scoring. See Phase 4 roadmap. */}
         </p>
       </header>
 
@@ -209,7 +209,11 @@ CONTEXT FROM ADJACENT SCENES:
         </div>
       )}
 
-      {/* TODO: E2EQACard not yet implemented */}
+      <E2EQACard 
+        scenes={effectiveScenes}
+        generatedImages={generatedImages}
+        className="mb-8"
+      />
 
       <GuideCard title="Completing the Creative Loop">
           <p>

@@ -27,8 +27,8 @@ import {
 describe('featureFlags', () => {
     describe('DEFAULT_FEATURE_FLAGS', () => {
         it('should have expected default values for core flags', () => {
-            // Core workflow flags should be off by default
-            expect(DEFAULT_FEATURE_FLAGS.bookendKeyframes).toBe(false);
+            // Core workflow flags - bookendKeyframes now enabled (native dual-keyframe support)
+            expect(DEFAULT_FEATURE_FLAGS.bookendKeyframes).toBe(true);
             expect(DEFAULT_FEATURE_FLAGS.videoUpscaling).toBe(false);
             expect(DEFAULT_FEATURE_FLAGS.characterConsistency).toBe(false);
             
@@ -64,12 +64,14 @@ describe('featureFlags', () => {
 
     describe('getFeatureFlag', () => {
         it('should return default value for undefined flags', () => {
-            expect(getFeatureFlag(undefined, 'bookendKeyframes')).toBe(false);
+            // bookendKeyframes is now true by default (native dual-keyframe support)
+            expect(getFeatureFlag(undefined, 'bookendKeyframes')).toBe(true);
         });
 
         it('should return default value for missing flag in partial object', () => {
             const partialFlags: Partial<FeatureFlags> = { promptQualityGate: true };
-            expect(getFeatureFlag(partialFlags, 'bookendKeyframes')).toBe(false);
+            // bookendKeyframes is now true by default
+            expect(getFeatureFlag(partialFlags, 'bookendKeyframes')).toBe(true);
         });
 
         it('should return user value when flag is explicitly set', () => {
@@ -91,11 +93,13 @@ describe('featureFlags', () => {
         it('should return true only when flag is explicitly enabled', () => {
             const flags: Partial<FeatureFlags> = { providerHealthPolling: true };
             expect(isFeatureEnabled(flags, 'providerHealthPolling')).toBe(true);
-            expect(isFeatureEnabled(flags, 'bookendKeyframes')).toBe(false);
+            // bookendKeyframes is now true by default, so even without setting it, it's enabled
+            expect(isFeatureEnabled(flags, 'bookendKeyframes')).toBe(true);
         });
 
         it('should handle empty object', () => {
-            expect(isFeatureEnabled({}, 'bookendKeyframes')).toBe(false);
+            // bookendKeyframes is now true by default
+            expect(isFeatureEnabled({}, 'bookendKeyframes')).toBe(true);
         });
     });
 
@@ -119,7 +123,7 @@ describe('featureFlags', () => {
             
             expect(merged.promptQualityGate).toBe(true);
             expect(merged.providerHealthPolling).toBe(true);
-            expect(merged.bookendKeyframes).toBe(false); // Default
+            expect(merged.bookendKeyframes).toBe(true); // Now enabled by default
         });
 
         it('should preserve all default flags in merged result', () => {
@@ -169,6 +173,11 @@ describe('featureFlags', () => {
                 providerHealthPolling: true,
                 promptQualityGate: true,
                 characterAppearanceTracking: true,
+                // Quality flags (newly enabled by default)
+                enhancedNegativePrompts: true,
+                subjectFirstPrompts: true,
+                promptWeighting: true,
+                qualityPrefixVariant: 'legacy',
                 // Pipeline flags
                 sceneListContextV2: true,
                 actContextV2: true,
@@ -178,14 +187,14 @@ describe('featureFlags', () => {
                 sceneListValidationMode: 'warn',
                 promptTokenGuard: 'warn',
                 showBayesianAnalytics: true,
+                // State management flags
+                useUnifiedSceneStore: true,
+                sceneStoreParallelValidation: true,
             };
             
             const enabled = getEnabledFlags(allEnabled);
-            // 10 boolean + 5 pipeline boolean + 2 union-type flags in 'warn' mode = 17 total
-            // But union types in 'warn' count as enabled, 'off' does not
-            // +2 for useUnifiedSceneStore and sceneStoreParallelValidation now enabled
-            // +1 for showBayesianAnalytics
-            expect(enabled.length).toBe(18); // All boolean true + 2 union 'warn' + showBayesianAnalytics
+            // Count boolean flags set to true (excludes qualityPrefixVariant string and union-type 'warn' values)
+            expect(enabled.length).toBe(21);
         });
     });
 

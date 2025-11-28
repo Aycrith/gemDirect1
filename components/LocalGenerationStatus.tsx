@@ -2,10 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { LocalGenerationStatus as LocalGenerationStatusType } from '../types';
 import { isValidMediaDataUrl } from '../utils/videoValidation';
 import ServerIcon from './icons/ServerIcon';
+import ArrowUpIcon from './icons/ArrowUpIcon';
 
 interface Props {
     status: LocalGenerationStatusType;
     onClear: () => void;
+    /** Whether video upscaling is available/enabled */
+    upscalingEnabled?: boolean;
+    /** Callback to trigger video upscaling */
+    onUpscale?: (videoData: string) => Promise<void>;
+    /** Whether upscaling is currently in progress */
+    isUpscaling?: boolean;
 }
 
 const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
@@ -18,7 +25,13 @@ const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
     </div>
 );
 
-const LocalGenerationStatus: React.FC<Props> = ({ status, onClear }) => {
+const LocalGenerationStatus: React.FC<Props> = ({ 
+    status, 
+    onClear,
+    upscalingEnabled = false,
+    onUpscale,
+    isUpscaling = false
+}) => {
     const [videoError, setVideoError] = useState<string | null>(null);
     
     // Reset video error when status changes
@@ -106,6 +119,24 @@ const LocalGenerationStatus: React.FC<Props> = ({ status, onClear }) => {
                                     />
                                 )}
                             </div>
+                            {/* Video Upscale Button - shown when video is complete and upscaling is enabled */}
+                            {status.final_output.type === 'video' && hasValidData && upscalingEnabled && onUpscale && (
+                                <div className="mt-3 flex justify-center">
+                                    <button
+                                        onClick={() => onUpscale(status.final_output!.data)}
+                                        disabled={isUpscaling}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors
+                                            ${isUpscaling 
+                                                ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                                                : 'bg-amber-600 hover:bg-amber-700 text-white'
+                                            }`}
+                                        data-testid="upscale-video-button"
+                                    >
+                                        <ArrowUpIcon className={`w-4 h-4 ${isUpscaling ? 'animate-pulse' : ''}`} />
+                                        {isUpscaling ? 'Upscaling...' : 'Upscale Video (2x)'}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

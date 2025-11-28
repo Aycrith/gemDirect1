@@ -360,7 +360,7 @@ export function createReferenceFromCharacter(
  * Validate that required IP-Adapter models are available in ComfyUI
  */
 export async function validateIPAdapterModels(
-    _comfyUIUrl: string, // Reserved for future model validation
+    comfyUIUrl: string,
     references: IPAdapterReference[]
 ): Promise<{ valid: boolean; missing: string[]; warnings: string[] }> {
     const warnings: string[] = [];
@@ -378,28 +378,103 @@ export async function validateIPAdapterModels(
         requiredClipVisions.add(requirements.clipVision);
     }
     
-    // TODO: Implement actual model validation by checking ComfyUI's object_info endpoint
-    // For now, just return warnings about requirements
-    
-    if (requiredModels.size > 0) {
-        warnings.push(
-            `IP-Adapter requires: ${Array.from(requiredModels).join(', ')}. ` +
-            `Ensure these models are installed in ComfyUI's models/ipadapter folder.`
-        );
+    // Validate IP-Adapter models via ComfyUI's object_info endpoint
+    try {
+        const ipadapterModels = await getAvailableIPAdapterModels(comfyUIUrl);
+        const clipVisionModels = await getAvailableClipVisionModels(comfyUIUrl);
+        
+        // Check for missing IP-Adapter models
+        for (const model of requiredModels) {
+            // Match model name pattern (files may have .safetensors or .bin extension)
+            const modelBase = model.replace(/_sd15|_sdxl$/i, '');
+            const found = ipadapterModels.some(m => 
+                m.toLowerCase().includes(modelBase.toLowerCase())
+            );
+            if (!found) {
+                missing.push(model);
+            }
+        }
+        
+        // Check for missing CLIP Vision models
+        for (const clipModel of requiredClipVisions) {
+            const found = clipVisionModels.some(m => 
+                m.toLowerCase().includes(clipModel.replace('.safetensors', '').toLowerCase())
+            );
+            if (!found) {
+                missing.push(clipModel);
+            }
+        }
+        
+        if (missing.length > 0) {
+            warnings.push(
+                `Missing models: ${missing.join(', ')}. ` +
+                `Install in ComfyUI's models/ipadapter and models/clip_vision folders.`
+            );
+        }
+        
+        return {
+            valid: missing.length === 0,
+            missing,
+            warnings,
+        };
+    } catch (error) {
+        // Fallback to warning-only mode if ComfyUI is unreachable
+        console.warn('[IP-Adapter] Could not validate models:', error);
+        
+        if (requiredModels.size > 0) {
+            warnings.push(
+                `IP-Adapter requires: ${Array.from(requiredModels).join(', ')}. ` +
+                `Ensure these models are installed in ComfyUI's models/ipadapter folder.`
+            );
+        }
+        
+        if (requiredClipVisions.size > 0) {
+            warnings.push(
+                `CLIP Vision models required: ${Array.from(requiredClipVisions).join(', ')}. ` +
+                `Install in ComfyUI's models/clip_vision folder.`
+            );
+        }
+        
+        return {
+            valid: true, // Assume valid when we can't check
+            missing: [],
+            warnings,
+        };
     }
-    
-    if (requiredClipVisions.size > 0) {
-        warnings.push(
-            `CLIP Vision models required: ${Array.from(requiredClipVisions).join(', ')}. ` +
-            `Install in ComfyUI's models/clip_vision folder.`
-        );
+}
+
+/**
+ * Get list of available IP-Adapter models from ComfyUI
+ */
+export async function getAvailableIPAdapterModels(comfyUIUrl: string): Promise<string[]> {
+    try {
+        const response = await fetch(`${comfyUIUrl}/object_info/IPAdapterModelLoader`);
+        if (!response.ok) {
+            return [];
+        }
+        
+        const info = await response.json();
+        return info?.IPAdapterModelLoader?.input?.required?.ipadapter_file?.[0] || [];
+    } catch {
+        return [];
     }
-    
-    return {
-        valid: true, // Assume valid until we implement actual checking
-        missing,
-        warnings,
-    };
+}
+
+/**
+ * Get list of available CLIP Vision models from ComfyUI
+ */
+export async function getAvailableClipVisionModels(comfyUIUrl: string): Promise<string[]> {
+    try {
+        const response = await fetch(`${comfyUIUrl}/object_info/CLIPVisionLoader`);
+        if (!response.ok) {
+            return [];
+        }
+        
+        const info = await response.json();
+        return info?.CLIPVisionLoader?.input?.required?.clip_name?.[0] || [];
+    } catch {
+        return [];
+    }
 }
 
 // ============================================================================

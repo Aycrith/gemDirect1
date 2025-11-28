@@ -901,6 +901,7 @@ const AppContent: React.FC = () => {
                         isOpen={isVisualBibleOpen}
                         onClose={() => setIsVisualBibleOpen(false)}
                         storyBible={storyBible}
+                        scenes={scenes}
                     />
                 </Suspense>
             )}

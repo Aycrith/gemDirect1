@@ -1,22 +1,16 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useArtifactMetadata, type ArtifactMetadata, type ArtifactSceneMetadata, type StoryLLMMetadata, useRunHistory } from '../utils/hooks';
+import { useArtifactMetadata, type ArtifactSceneMetadata, type StoryLLMMetadata, useRunHistory } from '../utils/hooks';
 import TelemetryBadges from './TelemetryBadges';
 import QueuePolicyCard from './QueuePolicyCard';
 import FallbackWarningsCard from './FallbackWarningsCard';
 import HistoricalTelemetryCard from './HistoricalTelemetryCard';
 import TelemetryComparisonChart from './TelemetryComparisonChart';
+import ScenePlayer from './ScenePlayer';
 import { RecommendationEngine, type TelemetrySnapshot, type Recommendation } from '../services/recommendationEngine';
 import { getSceneVideoManager } from '../services/videoGenerationService';
 import type { ToastMessage } from '../types';
 
 type ArtifactScene = ArtifactSceneMetadata;
-
-const formatVramValue = (value?: number | string | null): string => {
-    if (value == null) return 'n/a';
-    const numeric = typeof value === 'string' ? Number(value) : value;
-    if (Number.isNaN(numeric)) return 'n/a';
-    return `${Math.round(numeric / 1048576)}MB`;
-};
 
 const formatVramDelta = (value?: number | string | null): string => {
     if (value == null) return 'n/a';
@@ -129,45 +123,30 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
     const { historicalRuns, compareWithHistorical, dbInitialized } = useRunHistory();
     const [showWarningsOnly, setShowWarningsOnly] = useState(false);
     const [comparison, setComparison] = useState<any>(null);
-    const [showFilterPanel, setShowFilterPanel] = useState(false);
-    const [showExportDialog, setShowExportDialog] = useState(false);
-    const [filteredTelemetry, setFilteredTelemetry] = useState<TelemetrySnapshot[]>([]);
     const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
     const [regeneratingScenes, setRegeneratingScenes] = useState<Set<string>>(new Set());
-    
-    // Collapsible sections state
-    const [expandedSections, setExpandedSections] = useState({
-        queueConfig: false,
-        llmArtifacts: false,
-        scenesTable: false,
-        sceneDetails: false,
-        historicalData: false,
-        recommendations: false,
-        vitestLogs: false
-    });
-    
-    const toggleSection = (section: keyof typeof expandedSections) => {
-        setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
-    };
 
-    // Generate recommendations from artifact telemetry
+    // Generate recommendations from artifact telemetry (aggregated from scenes)
     useEffect(() => {
-        if (artifact && artifact.Story.Telemetry) {
+        if (artifact && artifact.Scenes && artifact.Scenes.length > 0) {
+            // Aggregate telemetry from all scenes
+            const successCount = artifact.Scenes.filter(s => s.Success).length;
+            const totalDuration = artifact.Scenes.reduce((sum, s) => sum + (s.DurationSeconds || 0), 0);
+            
             const telemetrySnapshot: TelemetrySnapshot = {
                 storyId: artifact.Story.Id,
-                scenes: (artifact.Story.Scenes || []).length,
-                successRate: artifact.Story.Telemetry.SuccessRate || 0,
-                durationSeconds: (artifact.Story.Telemetry.DurationMs || 0) / 1000,
-                gpuUsageGb: artifact.Story.Telemetry.GPUUsageGB || 0,
-                retries: artifact.Story.Telemetry.Retries || 0,
-                timeouts: artifact.Story.Telemetry.Timeouts || 0,
+                scenes: artifact.Scenes.length,
+                successRate: artifact.Scenes.length > 0 ? successCount / artifact.Scenes.length : 0,
+                durationSeconds: totalDuration,
+                gpuUsageGb: 0, // Not available at scene level
+                retries: artifact.Scenes.reduce((sum, s) => sum + (s.AttemptsRun || 0), 0),
+                timeouts: artifact.Scenes.filter(s => s.Telemetry?.HistoryExitReason === 'timeout').length,
                 timestamp: new Date(artifact.Timestamp),
             };
             
             // Generate recommendations from telemetry
             const recs = RecommendationEngine.analyzeTelemetry([telemetrySnapshot]);
             setRecommendations(recs);
-            setFilteredTelemetry([telemetrySnapshot]);
         }
     }, [artifact]);
 
@@ -245,10 +224,6 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
     const storyLLM = (artifact.Story?.LLM ?? null) as StoryLLMMetadata | null;
     const runTimestamp = new Date(artifact.Timestamp);
     const queuePolicy = artifact.QueueConfig;
-    const historyAttemptsLabel =
-        queuePolicy && queuePolicy.HistoryMaxAttempts && queuePolicy.HistoryMaxAttempts > 0
-            ? queuePolicy.HistoryMaxAttempts
-            : 'unbounded';
     const helperSummaries = artifact.HelperSummaries;
     const mappingHelper = helperSummaries?.MappingPreflight;
     const comfyHelper = helperSummaries?.ComfyUIStatus;
@@ -469,7 +444,6 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                             const pollLogCount = scene.HistoryPollLog?.length ?? 0;
                             const lastPollStatus =
                                 pollLogCount > 0 ? scene.HistoryPollLog?.[pollLogCount - 1]?.Status ?? 'n/a' : 'n/a';
-                            const fallbackNotes = scene.Telemetry?.System?.FallbackNotes?.filter(Boolean) ?? [];
                             const videoHref = toFileUri(scene.Video?.Path);
                             return (
                                 <tr key={scene.SceneId} className="border-t border-gray-800">
@@ -751,9 +725,14 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                                     )}
                                 </div>
                             )}
-                            {/* TODO: Scene-level video playback - ScenePlayer not yet implemented */}
-                            <div className="mt-3 text-gray-500 text-sm">
-                                Scene video player not yet implemented
+                            {/* Scene-level video playback */}
+                            <div className="mt-3">
+                                <ScenePlayer
+                                    scene={scene}
+                                    runDir={artifact.Archive}
+                                    isRegenerating={regeneratingScenes.has(scene.SceneId)}
+                                    onRegenerateScene={handleRegenerateScene}
+                                />
                             </div>
                         </div>
                     </details>

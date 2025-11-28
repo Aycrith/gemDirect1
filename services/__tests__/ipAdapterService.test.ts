@@ -18,6 +18,9 @@ import {
     prepareIPAdapterPayload,
     applyUploadedImagesToWorkflow,
     resetNodeIdCounter,
+    validateIPAdapterModels,
+    getAvailableIPAdapterModels,
+    getAvailableClipVisionModels,
     RECOMMENDED_WEIGHTS,
     IPADAPTER_NODE_TYPES,
     DEFAULT_IPADAPTER_OPTIONS,
@@ -518,6 +521,49 @@ describe('ipAdapterService', () => {
         it('exports default options', () => {
             expect(DEFAULT_IPADAPTER_OPTIONS.globalWeight).toBe(0.8);
             expect(DEFAULT_IPADAPTER_OPTIONS.defaultModel).toBe('ip-adapter-plus_sd15');
+        });
+    });
+});
+
+describe('IP-Adapter Model Validation', () => {
+    describe('validateIPAdapterModels', () => {
+        it('reports missing models when ComfyUI returns empty model lists', async () => {
+            const references: IPAdapterReference[] = [{
+                id: 'ref-1',
+                imageRef: 'test.png',
+                weight: 0.8,
+                weightType: 'standard',
+                model: 'ip-adapter-plus_sd15',
+            }];
+            
+            // When ComfyUI is unreachable or has no models, validation reports them as missing
+            const result = await validateIPAdapterModels('http://unreachable:9999', references);
+            
+            // Should report valid=false since required models weren't found
+            expect(result.valid).toBe(false);
+            expect(result.missing.length).toBeGreaterThan(0);
+            expect(result.warnings.length).toBeGreaterThan(0);
+        });
+
+        it('handles empty references array', async () => {
+            const result = await validateIPAdapterModels('http://localhost:8188', []);
+            
+            expect(result.valid).toBe(true);
+            expect(result.missing).toEqual([]);
+        });
+    });
+
+    describe('getAvailableIPAdapterModels', () => {
+        it('returns empty array when ComfyUI is unreachable', async () => {
+            const result = await getAvailableIPAdapterModels('http://unreachable:9999');
+            expect(result).toEqual([]);
+        });
+    });
+
+    describe('getAvailableClipVisionModels', () => {
+        it('returns empty array when ComfyUI is unreachable', async () => {
+            const result = await getAvailableClipVisionModels('http://unreachable:9999');
+            expect(result).toEqual([]);
         });
     });
 });

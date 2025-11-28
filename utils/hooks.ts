@@ -8,6 +8,12 @@ import { validateSceneProgression, type SceneProgressionError } from '../service
 import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
 import { convertToStoryBibleV2, needsUpgrade } from '../services/storyBibleConverter';
 import { syncCharacterDescriptors } from '../services/promptPipeline';
+import { 
+    NarrativeState, 
+    createInitialNarrativeState, 
+    serializeNarrativeState, 
+    deserializeNarrativeState 
+} from '../services/narrativeCoherenceService';
 
 const persistentStateDebugEnabled = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_DEBUG_PERSISTENT_STATE ?? 'false') === 'true';
 const debugPersistentState = (...args: unknown[]) => {
@@ -169,6 +175,122 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
     }, [key, state, isLoaded]);
 
     return [state, setState];
+}
+
+/**
+ * Custom hook to manage narrative state persistence across sessions.
+ * Narrative state tracks story elements (characters, locations, temporal position, emotional arc)
+ * across video generation to ensure coherence.
+ * 
+ * @param storyBible - Story bible to initialize narrative state from
+ * @param visualBible - Optional visual bible for character tracking
+ * @returns Narrative state and update function
+ */
+export function useNarrativeState(
+    storyBible: StoryBible | null,
+    visualBible?: VisualBible | null
+): {
+    narrativeState: NarrativeState | null;
+    updateNarrativeState: (newState: NarrativeState) => void;
+    resetNarrativeState: () => void;
+    isLoaded: boolean;
+} {
+    const [narrativeState, setNarrativeState] = useState<NarrativeState | null>(null);
+    const [isLoaded, setIsLoaded] = useState(false);
+    const prevStoryBibleRef = useRef<StoryBible | null>(null);
+
+    // Load narrative state from IndexedDB on mount
+    useEffect(() => {
+        let isMounted = true;
+        const loadState = async () => {
+            try {
+                const serialized = await db.getData('narrativeState');
+                if (isMounted && serialized && typeof serialized === 'string') {
+                    const parsed = deserializeNarrativeState(serialized);
+                    if (parsed) {
+                        setNarrativeState(parsed);
+                        debugPersistentState('[useNarrativeState] Loaded from IndexedDB:', {
+                            version: parsed.version,
+                            characters: Object.keys(parsed.characters).length,
+                            lastUpdatedForScene: parsed.lastUpdatedForScene
+                        });
+                    }
+                }
+            } catch (error) {
+                console.warn('[useNarrativeState] Failed to load from IndexedDB:', error);
+            } finally {
+                if (isMounted) {
+                    setIsLoaded(true);
+                }
+            }
+        };
+        loadState();
+        return () => { isMounted = false; };
+    }, []);
+
+    // Initialize narrative state when story bible changes (new project)
+    useEffect(() => {
+        if (!isLoaded) return;
+        
+        // If story bible is new or significantly different, reinitialize
+        const storyBibleChanged = storyBible && (
+            !prevStoryBibleRef.current ||
+            prevStoryBibleRef.current.logline !== storyBible.logline
+        );
+        
+        if (storyBibleChanged && !narrativeState) {
+            const initialState = createInitialNarrativeState(storyBible, visualBible || undefined);
+            setNarrativeState(initialState);
+            debugPersistentState('[useNarrativeState] Initialized from story bible:', {
+                characters: Object.keys(initialState.characters).length
+            });
+        }
+        
+        prevStoryBibleRef.current = storyBible;
+    }, [isLoaded, storyBible, visualBible, narrativeState]);
+
+    // Persist narrative state to IndexedDB when it changes
+    useEffect(() => {
+        if (!isLoaded || !narrativeState) return;
+        
+        const saveState = async () => {
+            try {
+                const serialized = serializeNarrativeState(narrativeState);
+                await db.saveData('narrativeState', serialized);
+                debugPersistentState('[useNarrativeState] Saved to IndexedDB:', {
+                    version: narrativeState.version,
+                    lastUpdatedForScene: narrativeState.lastUpdatedForScene
+                });
+            } catch (error) {
+                console.warn('[useNarrativeState] Failed to save to IndexedDB:', error);
+            }
+        };
+        saveState();
+    }, [isLoaded, narrativeState]);
+
+    const updateNarrativeState = useCallback((newState: NarrativeState) => {
+        setNarrativeState(newState);
+    }, []);
+
+    const resetNarrativeState = useCallback(() => {
+        if (storyBible) {
+            const freshState = createInitialNarrativeState(storyBible, visualBible || undefined);
+            setNarrativeState(freshState);
+        } else {
+            setNarrativeState(null);
+        }
+        // Also clear from IndexedDB
+        db.saveData('narrativeState', null).catch(err => 
+            console.warn('[useNarrativeState] Failed to clear from IndexedDB:', err)
+        );
+    }, [storyBible, visualBible]);
+
+    return {
+        narrativeState,
+        updateNarrativeState,
+        resetNarrativeState,
+        isLoaded
+    };
 }
 
 /**
@@ -419,8 +541,8 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
             
             if (progressionValidation.warnings.length > 0) {
                 console.warn('[Scene Progression] Validation warnings:', progressionValidation.warnings);
-                // TODO: Store warnings for UI display (requires App.tsx state integration)
-                // For now, just log them - they'll be visible in console
+                // Scene progression warnings are logged to console. 
+                // Future enhancement: display in UI via toast or dedicated warnings panel.
             }
             
             console.log('[Scene Progression] Metadata:', progressionValidation.metadata);
@@ -674,6 +796,8 @@ export interface VitestSummaryMetadata {
 
 export interface ArtifactSceneMetadata {
     SceneId: string;
+    SceneTitle?: string;
+    SceneSummary?: string;
     Prompt: string;
     NegativePrompt: string;
     FrameFloor: number;

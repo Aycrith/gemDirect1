@@ -374,7 +374,7 @@ export interface WorkflowInput {
     inputType: string; // e.g., 'STRING', 'IMAGE'
 }
 
-export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_json' | 'keyframe_image' | 'negative_prompt';
+export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_json' | 'keyframe_image' | 'negative_prompt' | 'start_image' | 'end_image' | 'ref_image' | 'control_video';
 
 // Key is `${nodeId}:${inputName}`
 export type WorkflowMapping = Record<string, MappableData>; 
@@ -624,6 +624,20 @@ export interface VideoData {
 }
 
 export type SceneGenerationStatus = 'pending' | 'generating' | 'complete' | 'failed';
+
+/**
+ * Full scene generation status object with metadata
+ * Used by useSceneGenerationWatcher hook to track per-scene status
+ */
+export interface SceneStatus {
+    sceneId: string;
+    title: string;
+    status: SceneGenerationStatus;
+    progress: number;
+    error?: string;
+    startTime?: number;
+    endTime?: number;
+}
 
 export interface VisualBibleCharacter {
   id: string;

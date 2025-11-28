@@ -53,6 +53,7 @@ describe('trackPromptExecution', () => {
       status: 'queued',
       message: 'In queue... Position: 4',
       queue_position: 4,
+      promptId: 'prompt-1',
     });
   });
 
@@ -66,16 +67,17 @@ describe('trackPromptExecution', () => {
     ws.simulateMessage({ type: 'executing', data: { prompt_id: 'prompt-1', node: 'positive_clip' } });
     ws.simulateMessage({ type: 'progress', data: { prompt_id: 'prompt-1', value: 10, max: 40 } });
 
-    expect(onProgress).toHaveBeenCalledWith({ status: 'running', message: 'Execution started.' });
+    expect(onProgress).toHaveBeenCalledWith({ status: 'running', message: 'Execution started.', promptId: 'prompt-1' });
     expect(onProgress).toHaveBeenCalledWith(
       expect.objectContaining({
         status: 'running',
         message: 'Executing: CLIPTextEncode - Positive Prompt Layer',
         node_title: 'CLIPTextEncode - Positive Prompt Layer',
+        promptId: 'prompt-1',
       })
     );
     expect(onProgress).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'running', progress: 25 })
+      expect.objectContaining({ status: 'running', progress: 25, promptId: 'prompt-1' })
     );
   });
 
@@ -93,6 +95,7 @@ describe('trackPromptExecution', () => {
     expect(onProgress).toHaveBeenLastCalledWith({
       status: 'error',
       message: 'Execution error on node node-5: something broke',
+      promptId: 'prompt-1',
     });
   });
 
@@ -107,6 +110,7 @@ describe('trackPromptExecution', () => {
     expect(onProgress).toHaveBeenLastCalledWith({
       status: 'complete',
       message: 'Generation complete! No visual output found in final node.',
+      promptId: 'prompt-1',
     });
   });
 
@@ -121,6 +125,7 @@ describe('trackPromptExecution', () => {
     expect(onProgress).toHaveBeenLastCalledWith({
       status: 'error',
       message: expect.stringContaining('WebSocket connection error'),
+      promptId: 'prompt-1',
     });
   });
 });

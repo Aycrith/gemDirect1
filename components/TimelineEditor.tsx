@@ -14,13 +14,14 @@ import { generateTimelineVideos, stripDataUrlPrefix, queueComfyUIPrompt, validat
 import { generateSceneTransitionContext } from '../services/sceneTransitionService';
 import { isBookendKeyframe, isSingleKeyframe, type KeyframeData } from '../types';
 import FinalPromptModal from './FinalPromptModal';
+import VisualBibleLinkModal from './VisualBibleLinkModal';
 import LocalGenerationStatusComponent from './LocalGenerationStatus';
 import TimelineIcon from './icons/TimelineIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
 import Tooltip from './Tooltip';
 import SaveIcon from './icons/SaveIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
-import { useInteractiveSpotlight, useArtifactMetadata, type SceneTelemetryMetadata, useVisualBible } from '../utils/hooks';
+import { useInteractiveSpotlight, useArtifactMetadata, type SceneTelemetryMetadata, useVisualBible, useNarrativeState } from '../utils/hooks';
 import { isValidVideoDataUrl, getVideoSourceWithFallback } from '../utils/videoValidation';
 import GuidedAction from './GuidedAction';
 import GuideCard from './GuideCard';
@@ -33,13 +34,15 @@ import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderCo
 import { useTemplateContext } from '../contexts/TemplateContext';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import { getSceneVisualBibleContext } from '../services/continuityVisualContext';
+// Phase 7: Feature flag integration for UI indicators
+import { isFeatureEnabled } from '../utils/featureFlags';
+// Phase 7: Video upscaling service
+import { isUpscalingSupported, upscaleVideo, DEFAULT_UPSCALE_CONFIG } from '../services/videoUpscalingService';
 // Phase 1C: Unified scene store integration
 import { useUnifiedSceneStoreEnabled } from '../hooks/useSceneStore';
 import { useSceneStateStore } from '../services/sceneStateStore';
 // Phase 6: Global WebSocket event manager for ComfyUI progress
 import { comfyEventManager, type ComfyEvent } from '../services/comfyUIEventManager';
-
-// TODO: import { usePipeline } from '../contexts/PipelineContext'; // Not yet implemented
 
 const formatVramValue = (value?: number | string | null): string => {
     if (value == null) return 'n/a';
@@ -276,6 +279,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [isGeneratingInitialShots, setIsGeneratingInitialShots] = useState(false);
     const [isTemplateGuidanceOpen, setIsTemplateGuidanceOpen] = useState(false);
     const [linkModalState, setLinkModalState] = useState<{ isOpen: boolean; imageData: string; sceneId?: string; shotId?: string } | null>(null);
+    // Phase 7: Video upscaling state
+    const [isUpscaling, setIsUpscaling] = useState(false);
     
     // Phase 1C: Zustand store integration with feature flag
     // When enabled, prefer reading from the new store for consistency
@@ -296,28 +301,42 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         }
     }, [isStoreEnabled]);
     
-    // TODO: Implement usePipeline hook
-    const generateStoryToVideo = async () => { console.log('generateStoryToVideo not implemented'); };
-    const isGenerating = false;
-    
     const templateContext = useTemplateContext();
     const { updateCoveredElements } = templateContext;
-    const latestArtifact = undefined; // No artifact in this context
-    const queuePolicy = latestArtifact?.QueueConfig;
-    const llmMetadata = latestArtifact?.Story.LLM as
-        | {
-              providerUrl?: string;
-              model?: string;
-              requestFormat?: string;
-              seed?: string;
-              durationMs?: number;
-              error?: string;
-          }
-        | undefined;
-    const healthCheck = latestArtifact?.Story.HealthCheck;
-    const latestSceneSnapshot = useMemo(
-        () => (latestArtifact ? latestArtifact.Scenes.find((meta) => meta.SceneId === scene.id) ?? null : null),
-        [latestArtifact, scene.id],
+    
+    // Pipeline artifact context - currently not connected to a real pipeline
+    // These are placeholders for future integration with storyToVideoPipeline service
+    const queuePolicy = undefined;
+    const llmMetadata: {
+        providerUrl?: string;
+        model?: string;
+        requestFormat?: string;
+        seed?: string;
+        durationMs?: number;
+        error?: string;
+    } | undefined = undefined;
+    const healthCheck = undefined;
+    // Pipeline artifact - would contain RunId, Archive path, etc.
+    const latestArtifact: { RunId?: string; Archive?: string } | undefined = undefined;
+    
+    // Scene snapshot type for pipeline integration (future)
+    type SceneSnapshot = {
+        SceneId: string;
+        FrameCount: number;
+        FrameFloor: number;
+        HistoryPollLog?: Array<{ Status?: string }>;
+        HistoryConfig?: {
+            MaxWaitSeconds?: number;
+            PollIntervalSeconds?: number;
+            PostExecutionTimeoutSeconds?: number;
+        };
+        Telemetry?: SceneTelemetryMetadata;
+        Warnings?: string[];
+    } | null;
+    
+    const latestSceneSnapshot: SceneSnapshot = useMemo<SceneSnapshot>(
+        () => null as SceneSnapshot, // Would come from pipeline artifact when implemented
+        [scene.id],
     );
     const latestSceneInsights = latestSceneSnapshot
         ? (() => {
@@ -345,8 +364,27 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     // Visual Bible hook for future integration
     const { visualBible } = useVisualBible();
     
+    // Phase 7: Narrative state persistence for coherence tracking across generations
+    const { 
+        narrativeState, 
+        updateNarrativeState 
+    } = useNarrativeState(storyBible, visualBible);
+    
     // Get Visual Bible context for this scene
     const visualBibleInfo = useMemo(() => getSceneVisualBibleContext(visualBible, scene.id), [scene.id, visualBible]);
+    
+    // Phase 7: Compute active generation features for UI indicators
+    const activeFeatures = useMemo(() => {
+        const flags = localGenSettings?.featureFlags;
+        const hasCharacterRefs = (visualBible?.characters?.filter(c => c.referenceImage)?.length || 0) > 0;
+        
+        return {
+            narrativeTracking: isFeatureEnabled(flags, 'narrativeStateTracking') && !!storyBible,
+            characterConsistency: isFeatureEnabled(flags, 'characterConsistency') && hasCharacterRefs,
+            videoUpscaling: isFeatureEnabled(flags, 'videoUpscaling'),
+            shotLevelContinuity: isFeatureEnabled(flags, 'shotLevelContinuity'),
+        };
+    }, [localGenSettings?.featureFlags, storyBible, visualBible]);
     
     // Auto-save state
     const saveTimeoutRef = useRef<number | null>(null);
@@ -716,6 +754,86 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setIsPromptModalOpen(true);
     };
 
+    // Phase 7: Handle video upscaling
+    const handleUpscaleVideo = async (videoData: string) => {
+        if (!localGenSettings || !isUpscalingSupported(localGenSettings)) {
+            console.warn('[Upscale] Upscaling not supported with current settings');
+            addToast?.('Video upscaling is not configured. Please check ComfyUI settings.', 'warning');
+            return;
+        }
+
+        setIsUpscaling(true);
+        
+        // Update status to show upscaling in progress
+        setLocalGenStatus(prev => ({
+            ...prev,
+            [scene.id]: {
+                ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
+                status: 'running',
+                message: 'Upscaling video...',
+                progress: 0,
+            }
+        }));
+
+        try {
+            // For now, we pass the data URL as the "path" - the upscaler service 
+            // should handle converting this to a file upload if needed
+            const result = await upscaleVideo(
+                localGenSettings,
+                videoData, // This is the base64 data URL
+                DEFAULT_UPSCALE_CONFIG,
+                (progress) => {
+                    setLocalGenStatus(prev => ({
+                        ...prev,
+                        [scene.id]: {
+                            ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
+                            status: 'running',
+                            message: progress.message,
+                            progress: progress.percent,
+                        }
+                    }));
+                }
+            );
+
+            if (result.success && result.outputData) {
+                // Update with upscaled video
+                setLocalGenStatus(prev => ({
+                    ...prev,
+                    [scene.id]: {
+                        ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
+                        status: 'complete' as const,
+                        message: 'Video upscaled successfully!',
+                        progress: 100,
+                        final_output: {
+                            type: 'video' as const,
+                            data: result.outputData!,
+                            filename: 'upscaled_video.mp4'
+                        }
+                    }
+                }));
+                addToast?.('Video upscaled successfully!', 'success');
+            } else {
+                throw new Error(result.error || 'Upscaling failed');
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown upscaling error';
+            console.error('[Upscale] Error:', message);
+            addToast?.(message, 'error');
+            
+            // Restore previous complete status without changing the video
+            setLocalGenStatus(prev => ({
+                ...prev,
+                [scene.id]: {
+                    ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
+                    status: 'complete',
+                    message: 'Upscaling failed - original video preserved',
+                }
+            }));
+        } finally {
+            setIsUpscaling(false);
+        }
+    };
+
     const handleGenerateLocally = async () => {
         if (!scene) return;
 
@@ -857,7 +975,25 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             progress: Math.round(aggregatedProgress)
                         });
                     },
-                    { transitionContext }
+                    { 
+                        transitionContext,
+                        // Phase 7: Full integration - pass story/visual bible for narrative tracking
+                        featureFlags: localGenSettings?.featureFlags,
+                        scene,
+                        sceneKeyframe: resolvedKeyframe,
+                        storyBible: storyBible || undefined,
+                        visualBible: visualBible || undefined,
+                        // Phase 7: Narrative state persistence - pass current state and update callback
+                        narrativeState: narrativeState || undefined,
+                        onNarrativeStateUpdate: updateNarrativeState,
+                        // Phase 7: Character reference images for IP-Adapter (if available from visual bible)
+                        characterReferenceImages: visualBible?.characters?.reduce((acc, char) => {
+                            if (char.referenceImage) {
+                                acc[char.id] = char.referenceImage;
+                            }
+                            return acc;
+                        }, {} as Record<string, string>),
+                    }
                 );
 
                 const lastShotId = timeline.shots[totalShots - 1]?.id;
@@ -1010,7 +1146,25 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         progress: Math.round(aggregatedProgress)
                     });
                 },
-                { transitionContext }
+                { 
+                    transitionContext,
+                    // Phase 7: Full integration - pass story/visual bible for narrative tracking
+                    featureFlags: localGenSettings?.featureFlags,
+                    scene,
+                    sceneKeyframe: assets.sceneKeyframe || undefined,
+                    storyBible: storyBible || undefined,
+                    visualBible: visualBible || undefined,
+                    // Phase 7: Narrative state persistence - pass current state and update callback
+                    narrativeState: narrativeState || undefined,
+                    onNarrativeStateUpdate: updateNarrativeState,
+                    // Phase 7: Character reference images for IP-Adapter (if available from visual bible)
+                    characterReferenceImages: visualBible?.characters?.reduce((acc, char) => {
+                        if (char.referenceImage) {
+                            acc[char.id] = char.referenceImage;
+                        }
+                        return acc;
+                    }, {} as Record<string, string>),
+                }
             );
 
             const lastShotId = timeline.shots[totalShots - 1]?.id;
@@ -1606,7 +1760,38 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                  <LocalGenerationStatusComponent 
                     status={localGenStatus[scene.id] || { status: 'idle', message: '', progress: 0 }}
                     onClear={() => setLocalGenStatus(prev => ({ ...prev, [scene.id]: { status: 'idle', message: '', progress: 0 }}))}
+                    upscalingEnabled={localGenSettings ? isUpscalingSupported(localGenSettings) : false}
+                    onUpscale={handleUpscaleVideo}
+                    isUpscaling={isUpscaling}
                  />
+                 
+                {/* Phase 7: Active Generation Features Indicator */}
+                {Object.values(activeFeatures).some(Boolean) && (
+                    <div className="flex flex-wrap gap-2 px-3 py-2 bg-gray-800/40 rounded-lg border border-gray-700/40">
+                        <span className="text-xs text-gray-500 uppercase tracking-wide mr-2">Active Features:</span>
+                        {activeFeatures.narrativeTracking && (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-900/60 text-[11px] text-blue-300 border border-blue-700/50">
+                                📖 Narrative Tracking
+                            </span>
+                        )}
+                        {activeFeatures.characterConsistency && (
+                            <span className="px-2 py-0.5 rounded-full bg-purple-900/60 text-[11px] text-purple-300 border border-purple-700/50">
+                                👤 Character Consistency (IP-Adapter)
+                            </span>
+                        )}
+                        {activeFeatures.shotLevelContinuity && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-900/60 text-[11px] text-emerald-300 border border-emerald-700/50">
+                                🎬 Shot Continuity
+                            </span>
+                        )}
+                        {activeFeatures.videoUpscaling && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-900/60 text-[11px] text-amber-300 border border-amber-700/50">
+                                ⬆️ Video Upscaling
+                            </span>
+                        )}
+                    </div>
+                )}
+                 
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                     <div className="flex gap-4">
                         <button onClick={handleExportPrompts} className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-full shadow-lg hover:bg-gray-700 transition-colors">
@@ -1649,8 +1834,15 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     onClose={() => setIsTemplateGuidanceOpen(false)}
                 />
             )}
-            {/* TODO: VisualBibleLinkModal not yet implemented */}
-            {linkModalState?.isOpen && null}
+            {linkModalState?.isOpen && (
+                <VisualBibleLinkModal
+                    isOpen={linkModalState.isOpen}
+                    onClose={() => setLinkModalState(null)}
+                    imageData={linkModalState.imageData}
+                    sceneId={linkModalState.sceneId || scene.id}
+                    shotId={linkModalState.shotId}
+                />
+            )}
         </div>
     );
 };

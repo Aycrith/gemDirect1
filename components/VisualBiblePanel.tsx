@@ -1,13 +1,15 @@
-import React, { useCallback, useState, useRef } from 'react';
+import React, { useCallback, useState, useRef, useMemo } from 'react';
 import { useVisualBible, VisualBibleSyncToast } from '../utils/hooks';
 import { getFeatureFlag } from '../utils/featureFlags';
 import { RECOMMENDED_WEIGHTS } from '../services/ipAdapterService';
-import type { StoryBible, VisualBible, VisualBibleCharacter } from '../types';
+import { analyzeCharacterGaps, getTrackingSummary, type CharacterGap } from '../services/characterTrackingService';
+import type { StoryBible, VisualBible, VisualBibleCharacter, Scene } from '../types';
 
 interface VisualBiblePanelProps {
     isOpen?: boolean;
     onClose?: () => void;
     storyBible?: StoryBible | null;
+    scenes?: Scene[];
 }
 
 /** Badge component to show character sync status */
@@ -84,6 +86,125 @@ const SyncToast: React.FC<{
         </div>
     </div>
 );
+
+/** Character Gap Warning Item */
+const CharacterGapWarning: React.FC<{
+    gap: CharacterGap;
+    onNavigateToScene?: (sceneIndex: number) => void;
+}> = ({ gap, onNavigateToScene }) => {
+    const severityConfig = {
+        critical: {
+            bg: 'bg-red-900/30',
+            border: 'border-red-700/50',
+            text: 'text-red-300',
+            icon: '⚠️',
+        },
+        warning: {
+            bg: 'bg-amber-900/30',
+            border: 'border-amber-700/50',
+            text: 'text-amber-300',
+            icon: '⚡',
+        },
+        info: {
+            bg: 'bg-blue-900/30',
+            border: 'border-blue-700/50',
+            text: 'text-blue-300',
+            icon: 'ℹ️',
+        },
+    };
+    
+    const config = severityConfig[gap.severity];
+    
+    return (
+        <div className={`${config.bg} ${config.border} border rounded-lg p-2 text-sm`}>
+            <div className="flex items-start gap-2">
+                <span>{config.icon}</span>
+                <div className="flex-1">
+                    <span className={`font-medium ${config.text}`}>{gap.characterName}</span>
+                    <span className="text-gray-400 text-xs ml-1">({gap.role})</span>
+                    <p className="text-gray-400 text-xs mt-0.5">{gap.message}</p>
+                    {gap.lastSeenSceneIndex >= 0 && onNavigateToScene && (
+                        <button
+                            onClick={() => onNavigateToScene(gap.gapStartSceneIndex)}
+                            className="text-xs text-blue-400 hover:text-blue-300 mt-1"
+                        >
+                            Go to scene {gap.gapStartSceneIndex + 1} →
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+/** Character Tracking Panel Section */
+const CharacterTrackingSection: React.FC<{
+    gaps: CharacterGap[];
+    summary: string;
+    isExpanded: boolean;
+    onToggle: () => void;
+    onNavigateToScene?: (sceneIndex: number) => void;
+}> = ({ gaps, summary, isExpanded, onToggle, onNavigateToScene }) => {
+    const hasGaps = gaps.length > 0;
+    const criticalCount = gaps.filter(g => g.severity === 'critical').length;
+    const warningCount = gaps.filter(g => g.severity === 'warning').length;
+    
+    return (
+        <div className="p-3 border-b border-gray-700">
+            <button
+                onClick={onToggle}
+                className="w-full flex items-center justify-between text-sm"
+            >
+                <div className="flex items-center gap-2">
+                    <span className={hasGaps ? 'text-amber-400' : 'text-green-400'}>
+                        {hasGaps ? '⚠' : '✓'}
+                    </span>
+                    <span className="text-gray-300 font-medium">Character Tracking</span>
+                    {hasGaps && (
+                        <span className="flex gap-1">
+                            {criticalCount > 0 && (
+                                <span className="px-1.5 py-0.5 text-xs bg-red-900/50 text-red-300 rounded">
+                                    {criticalCount}
+                                </span>
+                            )}
+                            {warningCount > 0 && (
+                                <span className="px-1.5 py-0.5 text-xs bg-amber-900/50 text-amber-300 rounded">
+                                    {warningCount}
+                                </span>
+                            )}
+                        </span>
+                    )}
+                </div>
+                <svg
+                    className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+            
+            {isExpanded && (
+                <div className="mt-3 space-y-2">
+                    <p className="text-xs text-gray-500">{summary}</p>
+                    {gaps.slice(0, 5).map((gap, idx) => (
+                        <CharacterGapWarning
+                            key={`${gap.characterId}-${idx}`}
+                            gap={gap}
+                            onNavigateToScene={onNavigateToScene}
+                        />
+                    ))}
+                    {gaps.length > 5 && (
+                        <p className="text-xs text-gray-500 text-center">
+                            +{gaps.length - 5} more gaps
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 /** Character list item component */
 const CharacterListItem: React.FC<{
@@ -243,6 +364,7 @@ const VisualBiblePanel: React.FC<VisualBiblePanelProps> = ({
     isOpen = false, 
     onClose = () => {},
     storyBible = null,
+    scenes = [],
 }) => {
     const { 
         visualBible, 
@@ -255,9 +377,26 @@ const VisualBiblePanel: React.FC<VisualBiblePanelProps> = ({
     } = useVisualBible(storyBible);
     
     const [showResyncConfirm, setShowResyncConfirm] = useState(false);
+    const [showTrackingPanel, setShowTrackingPanel] = useState(false);
     
     // Check if IP-Adapter controls should be shown
     const showIPAdapterControls = getFeatureFlag(undefined, 'characterConsistency') === true;
+    
+    // Check if character tracking should be shown
+    const showCharacterTracking = getFeatureFlag(undefined, 'characterAppearanceTracking') === true;
+    
+    // Analyze character gaps when tracking is enabled
+    const trackingAnalysis = useMemo(() => {
+        if (!showCharacterTracking || scenes.length === 0) {
+            return { gaps: [], consistent: [], totalScenes: 0, stats: { protagonistsTracked: 0, antagonistsTracked: 0, supportingTracked: 0, averageGap: 0, maxGap: 0 } };
+        }
+        return analyzeCharacterGaps(scenes, visualBible, storyBible);
+    }, [showCharacterTracking, scenes, visualBible, storyBible]);
+    
+    const trackingSummary = useMemo(() => {
+        if (!showCharacterTracking) return '';
+        return getTrackingSummary(trackingAnalysis);
+    }, [showCharacterTracking, trackingAnalysis]);
     
     const handleMarkUserEdit = useCallback((characterId: string) => {
         setVisualBible((prev: VisualBible) => ({
@@ -333,6 +472,16 @@ const VisualBiblePanel: React.FC<VisualBiblePanelProps> = ({
                     Resync All
                 </button>
             </div>
+            
+            {/* Character Tracking Section (when feature flag enabled) */}
+            {showCharacterTracking && hasCharacters && scenes.length > 0 && (
+                <CharacterTrackingSection
+                    gaps={trackingAnalysis.gaps}
+                    summary={trackingSummary}
+                    isExpanded={showTrackingPanel}
+                    onToggle={() => setShowTrackingPanel(!showTrackingPanel)}
+                />
+            )}
             
             {/* Character List */}
             <div className="flex-1 overflow-y-auto p-4">

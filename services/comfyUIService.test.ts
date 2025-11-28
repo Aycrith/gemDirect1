@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Shot, CreativeEnhancers, TimelineData } from '../types';
+import type { Shot, CreativeEnhancers, TimelineData, MappableData } from '../types';
 import type { SceneTransitionContext } from './sceneTransitionService';
 import * as comfyUIService from './comfyUIService';
 import { createValidTestSettings } from './__tests__/fixtures';
@@ -155,7 +155,9 @@ describe('generateVideoFromShot', () => {
         negativePrompt: expect.stringContaining('blurry'),
       }),
       baseKeyframe,
-      expect.any(String) // profileId
+      expect.any(String), // profileId
+      undefined, // profileOverride
+      undefined, // options (IP-Adapter)
     );
 
     expect(queueInfoMock).toHaveBeenCalled();
@@ -213,7 +215,9 @@ describe('generateVideoFromShot', () => {
       expect.any(Object),
       expect.objectContaining({ negativePrompt: expect.stringContaining('foggy, desaturated') }),
       baseKeyframe,
-      expect.any(String) // profileId
+      expect.any(String), // profileId
+      undefined, // profileOverride
+      undefined, // options (IP-Adapter)
     );
   });
 
@@ -354,5 +358,126 @@ describe('generateTimelineVideos', () => {
     );
     expect(results['shot-a'].filename).toBe('ERROR_shot-a.mp4');
     expect(results['shot-b'].filename).toBe('shot-b.mp4');
+  });
+});
+
+// ============================================================================
+// Dual-Keyframe Support Tests
+// ============================================================================
+
+describe('supportsNativeDualKeyframe', () => {
+  it('returns false when profile has no mapping', () => {
+    const settings = createValidTestSettings();
+    settings.workflowProfiles = {
+      'test-profile': {
+        id: 'test-profile',
+        label: 'Test Profile',
+        workflowJson: '{}',
+        mapping: {},
+      },
+    };
+    
+    expect(comfyUIService.supportsNativeDualKeyframe(settings, 'test-profile')).toBe(false);
+  });
+
+  it('returns false when profile is missing start_image mapping', () => {
+    const settings = createValidTestSettings();
+    settings.workflowProfiles = {
+      'test-profile': {
+        id: 'test-profile',
+        label: 'Test Profile',
+        workflowJson: '{}',
+        mapping: {
+          '10:image': 'end_image',
+        },
+      },
+    };
+    
+    expect(comfyUIService.supportsNativeDualKeyframe(settings, 'test-profile')).toBe(false);
+  });
+
+  it('returns false when profile is missing end_image mapping', () => {
+    const settings = createValidTestSettings();
+    settings.workflowProfiles = {
+      'test-profile': {
+        id: 'test-profile',
+        label: 'Test Profile',
+        workflowJson: '{}',
+        mapping: {
+          '10:image': 'start_image',
+        },
+      },
+    };
+    
+    expect(comfyUIService.supportsNativeDualKeyframe(settings, 'test-profile')).toBe(false);
+  });
+
+  it('returns true when profile has both start_image and end_image mappings and WanFirstLastFrameToVideo node', () => {
+    const settings = createValidTestSettings();
+    const workflowWithNode = {
+      '12': {
+        class_type: 'WanFirstLastFrameToVideo',
+        inputs: {},
+      },
+    };
+    
+    settings.workflowProfiles = {
+      'wan-flf2v': {
+        id: 'wan-flf2v',
+        label: 'WAN FLF2V',
+        workflowJson: JSON.stringify(workflowWithNode),
+        mapping: {
+          '10:image': 'start_image',
+          '11:image': 'end_image',
+          '5:text': 'human_readable_prompt',
+        },
+      },
+    };
+    
+    expect(comfyUIService.supportsNativeDualKeyframe(settings, 'wan-flf2v')).toBe(true);
+  });
+
+  it('returns true when profile has WanFunInpaintToVideo node', () => {
+    const settings = createValidTestSettings();
+    const workflowWithNode = {
+      '12': {
+        class_type: 'WanFunInpaintToVideo',
+        inputs: {},
+      },
+    };
+    
+    settings.workflowProfiles = {
+      'wan-fun-inpaint': {
+        id: 'wan-fun-inpaint',
+        label: 'WAN Fun Inpaint',
+        workflowJson: JSON.stringify(workflowWithNode),
+        mapping: {
+          '10:image': 'start_image',
+          '11:image': 'end_image',
+        },
+      },
+    };
+    
+    expect(comfyUIService.supportsNativeDualKeyframe(settings, 'wan-fun-inpaint')).toBe(true);
+  });
+
+  it('returns false when profile does not exist', () => {
+    const settings = createValidTestSettings();
+    expect(comfyUIService.supportsNativeDualKeyframe(settings, 'nonexistent')).toBe(false);
+  });
+});
+
+describe('MappableData types', () => {
+  it('should include dual-keyframe mapping types', () => {
+    // Just validate the types compile correctly by using them
+    const mapping: Record<string, MappableData> = {
+      '10:image': 'start_image',
+      '11:image': 'end_image',
+      '5:text': 'human_readable_prompt',
+    };
+    
+    expect(Object.keys(mapping)).toHaveLength(3);
+    expect(mapping['10:image']).toBe('start_image');
+    expect(mapping['11:image']).toBe('end_image');
   });
 });

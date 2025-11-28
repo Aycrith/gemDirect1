@@ -76,6 +76,130 @@
         "missingMappings": [],
         "warnings": []
       }
+    },
+    "wan-flf2v": {
+      "id": "wan-flf2v",
+      "label": "WAN First-Last-Frame→Video (Bookends)",
+      "workflowFile": "workflows/video_wan2_2_5B_flf2v.json",
+      "mapping": {
+        "5:text": "human_readable_prompt",
+        "6:text": "negative_prompt",
+        "10:image": "start_image",
+        "11:image": "end_image"
+      },
+      "metadata": {
+        "lastSyncedAt": 1732700000000,
+        "highlightMappings": [
+          {
+            "type": "human_readable_prompt",
+            "nodeTitle": "CLIP Text Encode (Positive Prompt)",
+            "nodeId": "5",
+            "inputName": "text"
+          },
+          {
+            "type": "start_image",
+            "nodeTitle": "Load Start Image",
+            "nodeId": "10",
+            "inputName": "image"
+          },
+          {
+            "type": "end_image",
+            "nodeTitle": "Load End Image",
+            "nodeId": "11",
+            "inputName": "image"
+          }
+        ],
+        "missingMappings": [],
+        "warnings": [],
+        "notes": "Native dual-keyframe interpolation using WanFirstLastFrameToVideo. No FFmpeg required."
+      }
+    },
+    "wan-fun-inpaint": {
+      "id": "wan-fun-inpaint",
+      "label": "WAN Fun Inpaint→Video (Smooth Motion)",
+      "workflowFile": "workflows/video_wan2_2_5B_fun_inpaint.json",
+      "mapping": {
+        "5:text": "human_readable_prompt",
+        "6:text": "negative_prompt",
+        "10:image": "start_image",
+        "11:image": "end_image"
+      },
+      "metadata": {
+        "lastSyncedAt": 1732700000000,
+        "highlightMappings": [
+          {
+            "type": "human_readable_prompt",
+            "nodeTitle": "CLIP Text Encode (Positive Prompt)",
+            "nodeId": "5",
+            "inputName": "text"
+          },
+          {
+            "type": "start_image",
+            "nodeTitle": "Load Start Image",
+            "nodeId": "10",
+            "inputName": "image"
+          },
+          {
+            "type": "end_image",
+            "nodeTitle": "Load End Image",
+            "nodeId": "11",
+            "inputName": "image"
+          }
+        ],
+        "missingMappings": [],
+        "warnings": [],
+        "notes": "Uses WanFunInpaintToVideo for smoother motion interpolation between keyframes."
+      }
+    },
+    "wan-fun-control": {
+      "id": "wan-fun-control",
+      "label": "WAN Fun Control→Video (Control-based)",
+      "workflowFile": "workflows/video_wan2_2_5B_fun_control.json",
+      "mapping": {
+        "5:text": "human_readable_prompt",
+        "6:text": "negative_prompt",
+        "10:image": "ref_image",
+        "11:file": "control_video"
+      },
+      "metadata": {
+        "lastSyncedAt": 1732700000000,
+        "highlightMappings": [
+          {
+            "type": "human_readable_prompt",
+            "nodeTitle": "CLIP Text Encode (Positive Prompt)",
+            "nodeId": "5",
+            "inputName": "text"
+          },
+          {
+            "type": "ref_image",
+            "nodeTitle": "Load Reference Image",
+            "nodeId": "10",
+            "inputName": "image"
+          },
+          {
+            "type": "control_video",
+            "nodeTitle": "Load Control Video",
+            "nodeId": "11",
+            "inputName": "file"
+          }
+        ],
+        "missingMappings": [],
+        "warnings": [],
+        "notes": "Uses Wan22FunControlToVideo with reference image and control video (Canny/Depth/Pose)."
+      }
+    },
+    "video-upscaler": {
+      "id": "video-upscaler",
+      "label": "Video Upscaler (2x Real-ESRGAN)",
+      "workflowJson": "",
+      "mapping": {},
+      "metadata": {
+        "lastSyncedAt": null,
+        "highlightMappings": [],
+        "missingMappings": ["input_video"],
+        "warnings": ["Workflow not configured - sync a video upscaling workflow from ComfyUI"],
+        "notes": "Video upscaling workflow using Real-ESRGAN or similar models. Requires a ComfyUI workflow that accepts video input and outputs upscaled video."
+      }
     }
   },
   "modelId": "wan-video"

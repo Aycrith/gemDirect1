@@ -213,16 +213,16 @@ export interface FeatureFlags {
  * All disabled by default for backward compatibility
  */
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
-    bookendKeyframes: false,
+    bookendKeyframes: true,  // Enabled: Native dual-keyframe workflows (WanFirstLastFrameToVideo, WanFunInpaintToVideo)
     videoUpscaling: false,
     characterConsistency: false,
-    shotLevelContinuity: false,
+    shotLevelContinuity: true,  // Enable shot-level continuity (Phase 7 integration complete)
     autoSuggestions: false,
-    narrativeStateTracking: false,
+    narrativeStateTracking: true,  // Enable narrative state tracking (Phase 7 integration complete)
     promptABTesting: false,
     showBayesianAnalytics: true,  // Enable Bayesian analytics panel (toggle off near release)
-    enhancedNegativePrompts: false,
-    subjectFirstPrompts: false,
+    enhancedNegativePrompts: true,  // Enable enhanced negative prompts (Phase 7 complete)
+    subjectFirstPrompts: true,      // Enable subject-first prompt ordering (Phase 7 complete)
     promptWeighting: false,
     qualityPrefixVariant: 'legacy',
     providerHealthPolling: false,
@@ -262,10 +262,10 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
     bookendKeyframes: {
         id: 'bookendKeyframes',
         label: 'Bookend Keyframes',
-        description: 'Generate start and end keyframes for each scene to improve temporal consistency',
+        description: 'Generate start and end keyframes for each scene, using native dual-keyframe interpolation (WanFirstLastFrameToVideo) for smooth transitions',
         category: 'workflow',
         stability: 'beta',
-        comingSoon: true, // Phase 7: Needs dual keyframe generation
+        // Implemented: Native dual-keyframe workflows in comfyUIService.ts
     },
     videoUpscaling: {
         id: 'videoUpscaling',
@@ -274,7 +274,7 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         category: 'quality',
         stability: 'experimental',
         dependencies: ['characterConsistency'], // May conflict if not sequenced properly
-        comingSoon: true, // Phase 7: Needs upscaler workflow integration
+        // Phase 7: Upscaler workflow implemented in videoUpscalingService.ts
     },
     characterConsistency: {
         id: 'characterConsistency',
@@ -290,7 +290,7 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Propagate visual continuity cues between shots, not just scenes',
         category: 'continuity',
         stability: 'beta',
-        comingSoon: true, // Phase 7: Needs shot-level continuity system
+        // Phase 7: Shot-level continuity implemented in sceneTransitionService.ts + comfyUIService.ts
     },
     autoSuggestions: {
         id: 'autoSuggestions',
@@ -305,15 +305,15 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Track active characters, locations, and arc position across generations',
         category: 'continuity',
         stability: 'beta',
-        comingSoon: true, // Phase 7: Needs narrative state machine
+        // Implemented: narrativeCoherenceService.ts with full state machine (550+ lines, 41 tests)
     },
     promptABTesting: {
         id: 'promptABTesting',
         label: 'Prompt A/B Testing',
         description: 'Compare different prompt template versions for quality optimization',
         category: 'experimental',
-        stability: 'experimental',
-        comingSoon: true, // Phase 7: Needs A/B testing framework integration
+        stability: 'beta',
+        // Implemented: generationMetrics.ts with Bayesian Beta-Binomial model + BayesianAnalyticsPanel.tsx
     },
     showBayesianAnalytics: {
         id: 'showBayesianAnalytics',
@@ -329,7 +329,6 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Use expanded provider-specific negative prompts (quality, anatomy, composition)',
         category: 'quality',
         stability: 'beta',
-        comingSoon: true, // Needs prompt assembly enhancement
     },
     subjectFirstPrompts: {
         id: 'subjectFirstPrompts',
@@ -337,15 +336,14 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Order prompts as subject → characters → style → technical details',
         category: 'quality',
         stability: 'beta',
-        comingSoon: true, // Needs prompt ordering logic
     },
     promptWeighting: {
         id: 'promptWeighting',
         label: 'Prompt Weighting',
         description: 'Enable weighting syntax (e.g., (subject:1.2)) for supported providers',
-        category: 'experimental',
-        stability: 'experimental',
-        comingSoon: true, // Needs weighting syntax support
+        category: 'quality',
+        stability: 'beta',
+        // Implemented: promptWeightingService.ts with ComfyUI provider support
     },
     qualityPrefixVariant: {
         id: 'qualityPrefixVariant',
@@ -374,7 +372,6 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Warn when characters are absent from storyline for extended periods',
         category: 'continuity',
         stability: 'beta',
-        comingSoon: true, // Needs character tracking system
     },
     // Pipeline Integration Flags
     sceneListContextV2: {
