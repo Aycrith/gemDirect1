@@ -1,0 +1,105 @@
+{
+  "id": "video-upscaler-simple",
+  "revision": 1,
+  "last_node_id": 10,
+  "last_link_id": 10,
+  "_meta": {
+    "title": "Simple Video Upscaler",
+    "description": "Upscales video using Real-ESRGAN or similar model. Takes video input and outputs upscaled video.",
+    "author": "gemDirect",
+    "version": "1.0.0"
+  },
+  "nodes": {
+    "1": {
+      "inputs": {
+        "video": "input_video.mp4"
+      },
+      "class_type": "LoadVideo",
+      "_meta": {
+        "title": "Load Input Video"
+      }
+    },
+    "2": {
+      "inputs": {
+        "model_name": "4x-UltraSharp.pth"
+      },
+      "class_type": "UpscaleModelLoader",
+      "_meta": {
+        "title": "Load Upscale Model"
+      }
+    },
+    "3": {
+      "inputs": {
+        "upscale_model": ["2", 0],
+        "image": ["4", 0]
+      },
+      "class_type": "ImageUpscaleWithModel",
+      "_meta": {
+        "title": "Upscale Frame"
+      }
+    },
+    "4": {
+      "inputs": {
+        "video": ["1", 0]
+      },
+      "class_type": "GetVideoComponents",
+      "_meta": {
+        "title": "Get Video Frames"
+      }
+    },
+    "5": {
+      "inputs": {
+        "upscale_method": "lanczos",
+        "scale_by": 0.5,
+        "image": ["3", 0]
+      },
+      "class_type": "ImageScaleBy",
+      "_meta": {
+        "title": "Scale Down to Target Resolution"
+      }
+    },
+    "6": {
+      "inputs": {
+        "images": ["5", 0],
+        "fps": 24,
+        "lossless": false,
+        "quality": 90,
+        "method": "default"
+      },
+      "class_type": "ImagesToVideo",
+      "_meta": {
+        "title": "Convert Frames to Video"
+      }
+    },
+    "7": {
+      "inputs": {
+        "filename_prefix": "upscaled_video",
+        "format": "auto",
+        "codec": "auto",
+        "video": ["6", 0]
+      },
+      "class_type": "SaveVideo",
+      "_meta": {
+        "title": "Save Upscaled Video"
+      }
+    }
+  },
+  "links": [
+    [1, "1", 0, "4", 0, "VIDEO"],
+    [2, "2", 0, "3", 0, "UPSCALE_MODEL"],
+    [3, "4", 0, "3", 1, "IMAGE"],
+    [4, "3", 0, "5", 0, "IMAGE"],
+    [5, "5", 0, "6", 0, "IMAGE"],
+    [6, "6", 0, "7", 0, "VIDEO"]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "gemDirect": {
+      "profileId": "video-upscaler",
+      "requiredMappings": ["input_video"],
+      "optionalMappings": ["upscale_model", "scale_factor", "fps"]
+    }
+  },
+  "version": 0.4
+}
