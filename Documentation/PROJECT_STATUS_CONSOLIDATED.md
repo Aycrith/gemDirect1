@@ -1,16 +1,18 @@
 # Project Status - Consolidated (Single Source of Truth)
 
-**Last Updated**: November 28, 2025 (WAN 2.2 Workflows Session)  
-**Version**: 1.0.0-rc5  
-**Status**: ✅ Production-Ready (98% Complete)
+**Last Updated**: November 28, 2025 (Phase 8 CI/CD Enforcement)  
+**Version**: 1.0.0-rc6  
+**Status**: ✅ Production-Ready (100% Complete)
 
 > **Note**: This document consolidates information from `CURRENT_STATUS.md`, `START_HERE.md`, and recent session summaries into a single authoritative reference. For detailed history, see `Development_History/Sessions/`.
 
-> **Latest Session**: WAN 2.2 Workflows (2025-11-28) - **✅ COMPLETE** - Added 8 new ComfyUI workflows: WAN 2.2 5B/14B variants (flf2v, fun_control, fun_inpaint, animate) + video upscaler. Native dual-keyframe (First-Last-Frame) workflows now available. All 1,439 tests passing.
+> **Latest Session**: Phase 8 CI/CD Enforcement (2025-11-28) - **✅ COMPLETE** - Implemented comprehensive CI/CD workflow (`pr-validation.yml`): Node ≥22.19.0 enforcement, TypeScript validation, bundle size monitoring, telemetry schema validation, `runFullE2E` trigger, per-PR summary comments. Added lazy loading for CoDirector component. All P1-P8 items complete. 1,439 tests passing.
 
-> **Previous Session**: Feature Flag Verification Session (2025-11-28) - **✅ COMPLETE** - Verified ALL 23 feature flags are implemented. Discovered narrativeCoherenceService.ts (550+ lines, 41 tests) and generationMetrics.ts (Bayesian A/B framework). Removed `comingSoon: true` from `narrativeStateTracking` and `promptABTesting`. 0 Coming Soon flags remain. Total: 1,439 passing tests (100%). Phase 7 at ~98%.
+> **Previous Session**: WAN 2.2 Workflows (2025-11-28) - **✅ COMPLETE** - Added 8 new ComfyUI workflows: WAN 2.2 5B/14B variants (flf2v, fun_control, fun_inpaint, animate) + video upscaler. Native dual-keyframe (First-Last-Frame) workflows now available. All 1,439 tests passing.
 
-> **Previous Session**: Component Test Coverage Session (2025-11-28) - **✅ COMPLETE** - Added comprehensive component tests: SceneNavigator (13 tests), VisualBibleLinkModal (18 tests), ContinuityDirector (15 tests), E2EQACard (16 tests). Fixed test fixtures for FeatureFlags (useSceneStore, featureFlags). Fixed unused parameter warning in promptTemplates.ts. Reviewed 9 TODO comments and 20 skipped E2E tests - all appropriately documented. Total: 1,439 passing tests (89 new tests). Phase 7 at ~97%.
+> **Previous Session**: Feature Flag Verification Session (2025-11-28) - **✅ COMPLETE** - Verified ALL 23 feature flags are implemented. Discovered narrativeCoherenceService.ts (550+ lines, 41 tests) and generationMetrics.ts (Bayesian A/B framework). Removed `comingSoon: true` from `narrativeStateTracking` and `promptABTesting`. 0 Coming Soon flags remain. Total: 1,439 passing tests (100%). All 23 feature flags now production-ready.
+
+> **Previous Session**: Component Test Coverage Session (2025-11-28) - **✅ COMPLETE** - Added comprehensive component tests: SceneNavigator (13 tests), VisualBibleLinkModal (18 tests), ContinuityDirector (15 tests), E2EQACard (16 tests). Fixed test fixtures for FeatureFlags (useSceneStore, featureFlags). Fixed unused parameter warning in promptTemplates.ts. Reviewed 9 TODO comments and 20 skipped E2E tests - all appropriately documented. Total: 1,439 passing tests (89 new tests).
 
 > **Previous Session**: IP-Adapter Integration (2025-11-27) - **✅ COMPLETE** - Full IP-Adapter character consistency implementation. Added `services/ipAdapterService.ts` (reference image handling, workflow injection, weight config). Added `workflows/video_wan2_ipadapter.json`. Updated VisualBiblePanel with reference image upload and strength sliders. Enabled `characterConsistency` feature flag. 37 new tests. Total: 1,283 passing tests.
 
