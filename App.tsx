@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react';
-import { Scene, StoryBible, ToastMessage, WorkflowStage, Suggestion, LocalGenerationStatus, SceneContinuityData, SceneImageGenerationStatus, KeyframeData } from './types';
+import { Scene, ToastMessage, WorkflowStage, Suggestion, LocalGenerationStatus, SceneContinuityData, SceneImageGenerationStatus, KeyframeData, isBookendKeyframe, isSingleKeyframe } from './types';
 import { useProjectData, usePersistentState, useSceneGenerationWatcher } from './utils/hooks';
 import { ApiStatusProvider, useApiStatus } from './contexts/ApiStatusContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
@@ -12,6 +12,7 @@ import { PipelineProvider } from './contexts/PipelineContext';
 import { LocalGenerationProvider } from './contexts/LocalGenerationContext';
 import { GenerationMetricsProvider } from './contexts/GenerationMetricsContext';
 import { createMediaGenerationActions, LOCAL_COMFY_ID } from './services/mediaGenerationService';
+import { HydrationProvider, HydrationGate } from './contexts/HydrationContext';
 
 // Phase 1 State Management: Unified scene store with feature flag support
 import { useSceneStateStore, useSceneStoreHydrated } from './services/sceneStateStore';
@@ -97,7 +98,7 @@ const AppContent: React.FC = () => {
     const [refinedSceneIds, setRefinedSceneIds] = useState(new Set<string>());
     const [continuityModal, setContinuityModal] = useState<{ sceneId: string, lastFrame: string } | null>(null);
     const [isExtending, setIsExtending] = useState(false);
-    const [hasSeenWelcome, setHasSeenWelcome] = usePersistentState('hasSeenWelcome', false);
+    const [_hasSeenWelcome, setHasSeenWelcome] = usePersistentState('hasSeenWelcome', false);
     const [mode, setMode] = usePersistentState<'quick' | 'director'>('mode', 'director');
     const [isVisualBibleOpen, setIsVisualBibleOpen] = useState(false);
     const [isNewProjectConfirmOpen, setIsNewProjectConfirmOpen] = useState(false);
@@ -123,6 +124,9 @@ const AppContent: React.FC = () => {
     // Check if unified store feature flag is enabled
     const useUnifiedStore = getFeatureFlag(localGenSettings?.featureFlags, 'useUnifiedSceneStore');
     const storeHydrated = useSceneStoreHydrated();
+    
+    // Check if Quick Generate is enabled (hidden by default - feature is not implemented)
+    const quickGenerateEnabled = getFeatureFlag(localGenSettings?.featureFlags, 'enableQuickGenerate');
     
     // Get store actions for syncing (only used when flag is enabled)
     const storeSetScenes = useSceneStateStore((state) => state.setScenes);
@@ -299,16 +303,26 @@ const AppContent: React.FC = () => {
         };
     }, []);
 
+    // Use ref counter for unique toast IDs to avoid collision when multiple toasts fire in same millisecond
+    const toastIdRef = React.useRef(0);
     const addToast = useCallback((message: string, type: ToastMessage['type']) => {
-        const id = Date.now();
+        const id = ++toastIdRef.current;
+        console.log(`[Toast] Adding toast ${id}: ${message.slice(0, 50)}...`);
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => {
+            console.log(`[Toast] Auto-dismissing toast ${id}`);
             setToasts(currentToasts => currentToasts.filter(t => t.id !== id));
         }, 5000);
     }, []);
 
     const removeToast = useCallback((id: number) => {
-        setToasts(prev => prev.filter(t => t.id !== id));
+        console.log(`[Toast] Manual dismiss toast ${id}`);
+        setToasts(prev => {
+            console.log(`[Toast] Before filter: ${prev.map(t => t.id).join(', ')}`);
+            const filtered = prev.filter(t => t.id !== id);
+            console.log(`[Toast] After filter: ${filtered.map(t => t.id).join(', ')}`);
+            return filtered;
+        });
     }, []);
 
     const updateSceneImageStatus = useCallback((sceneId: string, update: Partial<SceneImageGenerationStatus>) => {
@@ -338,7 +352,7 @@ const AppContent: React.FC = () => {
     // Set active scene when scenes are loaded/updated
     useEffect(() => {
         if (scenes.length > 0 && !scenes.find(s => s.id === activeSceneId)) {
-            setActiveSceneId(scenes[0].id);
+            setActiveSceneId(scenes[0]?.id ?? null);
         } else if (scenes.length === 0) {
             setActiveSceneId(null);
         }
@@ -440,7 +454,7 @@ const AppContent: React.FC = () => {
         if (!scene || !storyBible) return;
 
         try {
-            updateApiStatus({ status: 'running', message: 'Regenerating scene keyframe...' });
+            updateApiStatus({ status: 'loading', message: 'Regenerating scene keyframe...' });
             const mediaActions = createMediaGenerationActions(LOCAL_COMFY_ID, localGenSettings);
             const image = await mediaActions.generateKeyframeForScene(
                 directorsVision,
@@ -679,15 +693,18 @@ const AppContent: React.FC = () => {
                     <ProviderHealthIndicator addToast={addToast} compact={true} />
                     
                     <div className="flex bg-gray-800 rounded-lg p-1">
-                        <button
-                            data-testid="mode-quick"
-                            onClick={() => setMode('quick')}
-                            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                                mode === 'quick' ? 'bg-amber-600 text-white' : 'text-gray-300 hover:text-white'
-                            }`}
-                        >
-                            Quick Generate
-                        </button>
+                        {/* Quick Generate button - only shown when feature flag is enabled */}
+                        {quickGenerateEnabled && (
+                            <button
+                                data-testid="mode-quick"
+                                onClick={() => setMode('quick')}
+                                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                                    mode === 'quick' ? 'bg-amber-600 text-white' : 'text-gray-300 hover:text-white'
+                                }`}
+                            >
+                                Quick Generate
+                            </button>
+                        )}
                         <button
                             data-testid="mode-director"
                             onClick={() => setMode('director')}
@@ -756,14 +773,14 @@ const AppContent: React.FC = () => {
             
             <main className="py-8 sm:py-12">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    {mode === 'quick' ? (
+                    {mode === 'quick' && quickGenerateEnabled ? (
                         <>
                             <section className="mb-12">
                                 <Suspense fallback={<LoadingFallback message="Loading quick generate..." />}>
                                     <PipelineGenerator onOpenInDirectorMode={(result, prompt) => {
                                         // Create project state and load it
                                         import('./utils/projectUtils').then(({ createQuickProjectState }) => {
-                                            const projectState = createQuickProjectState(result, prompt);
+                                            const projectState = createQuickProjectState(result, prompt ?? '');
                                             
                                             // Load the project into Director Mode
                                             setStoryBible(projectState.storyBible);
@@ -780,13 +797,10 @@ const AppContent: React.FC = () => {
                                     }} />
                                 </Suspense>
                             </section>
-                            <Suspense fallback={<LoadingFallback message="Loading artifacts..." />}>
-                                <ArtifactViewer addToast={addToast} />
-                            </Suspense>
                         </>
                     ) : (
                         <>
-                            {mode === 'director' && (
+                            {mode === 'director' && quickGenerateEnabled && (
                                 <section className="mb-8 p-4 bg-gray-800/30 rounded-lg border border-gray-700/50">
                                     <h2 className="text-lg font-semibold text-amber-400 mb-2">Quick Generate Sandbox</h2>
                                     <p className="text-sm text-gray-400 mb-4">For fast one-prompt to video experiments. Switch to Quick Generate mode for full focus.</p>
@@ -794,7 +808,7 @@ const AppContent: React.FC = () => {
                                         <PipelineGenerator onOpenInDirectorMode={(result, prompt) => {
                                             // Create project state and load it
                                             import('./utils/projectUtils').then(({ createQuickProjectState }) => {
-                                                const projectState = createQuickProjectState(result, prompt);
+                                                const projectState = createQuickProjectState(result, prompt ?? '');
                                                 
                                                 // Load the project into current Director Mode session
                                                 setStoryBible(projectState.storyBible);
@@ -809,9 +823,6 @@ const AppContent: React.FC = () => {
                                 </section>
                             )}
                             <WorkflowTracker currentStage={workflowStage} onStageClick={handleStageClick} />
-                            <Suspense fallback={<LoadingFallback message="Loading artifacts..." />}>
-                                <ArtifactViewer addToast={addToast} />
-                            </Suspense>
                             {generationProgress.total > 0 && (
                                 <ProgressBar
                                     current={generationProgress.current}
@@ -822,6 +833,10 @@ const AppContent: React.FC = () => {
                             {renderCurrentStage()}
                         </>
                     )}
+                    {/* Shared ArtifactViewer - renders after stage content in both modes */}
+                    <Suspense fallback={<LoadingFallback message="Loading artifacts..." />}>
+                        <ArtifactViewer addToast={addToast} />
+                    </Suspense>
                 </div>
             </main>
 
@@ -838,6 +853,36 @@ const AppContent: React.FC = () => {
                         settings={localGenSettings}
                         onSave={(newSettings) => {
                             console.log('[App] onSave received newSettings:', JSON.stringify(newSettings, null, 2));
+                            
+                            // Detect keyframe mode change and clear incompatible keyframes
+                            const oldMode = localGenSettings.keyframeMode ?? 'single';
+                            const newMode = newSettings.keyframeMode ?? 'single';
+                            
+                            if (oldMode !== newMode) {
+                                console.log(`[App] Keyframe mode changed from '${oldMode}' to '${newMode}'`);
+                                
+                                // Check for incompatible keyframes
+                                const incompatibleSceneIds: string[] = [];
+                                Object.entries(generatedImages).forEach(([sceneId, keyframeData]) => {
+                                    if (newMode === 'bookend' && isSingleKeyframe(keyframeData)) {
+                                        incompatibleSceneIds.push(sceneId);
+                                    } else if (newMode === 'single' && isBookendKeyframe(keyframeData)) {
+                                        incompatibleSceneIds.push(sceneId);
+                                    }
+                                });
+                                
+                                if (incompatibleSceneIds.length > 0) {
+                                    // Clear incompatible keyframes
+                                    console.log(`[App] Clearing ${incompatibleSceneIds.length} incompatible keyframes for mode '${newMode}'`);
+                                    setGeneratedImages(prev => {
+                                        const updated = { ...prev };
+                                        incompatibleSceneIds.forEach(id => delete updated[id]);
+                                        return updated;
+                                    });
+                                    addToast(`Cleared ${incompatibleSceneIds.length} keyframe(s) - please regenerate for ${newMode === 'bookend' ? 'bookend' : 'single'} mode`, 'info');
+                                }
+                            }
+                            
                             console.log('[App] Calling setLocalGenSettings...');
                             setLocalGenSettings(newSettings);
                             console.log('[App] setLocalGenSettings called');
@@ -923,27 +968,31 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => (
-    <UsageProvider>
-        <ApiStatusProvider>
-            <PipelineProvider>
-                <PlanExpansionStrategyProvider>
-                    <LocalGenerationSettingsProvider>
-                        <MediaGenerationProviderProvider>
-                            <LocalGenerationProvider>
-                                <GenerationMetricsProvider>
-                                    <TemplateContextProvider>
-                                        <ComfyUICallbackProvider>
-                                            <AppContent />
-                                        </ComfyUICallbackProvider>
-                                    </TemplateContextProvider>
-                                </GenerationMetricsProvider>
-                            </LocalGenerationProvider>
-                        </MediaGenerationProviderProvider>
-                    </LocalGenerationSettingsProvider>
-                </PlanExpansionStrategyProvider>
-            </PipelineProvider>
-        </ApiStatusProvider>
-    </UsageProvider>
+    <HydrationProvider>
+        <UsageProvider>
+            <ApiStatusProvider>
+                <PipelineProvider>
+                    <PlanExpansionStrategyProvider>
+                        <LocalGenerationSettingsProvider>
+                            <MediaGenerationProviderProvider>
+                                <LocalGenerationProvider>
+                                    <GenerationMetricsProvider>
+                                        <TemplateContextProvider>
+                                            <ComfyUICallbackProvider>
+                                                <HydrationGate>
+                                                    <AppContent />
+                                                </HydrationGate>
+                                            </ComfyUICallbackProvider>
+                                        </TemplateContextProvider>
+                                    </GenerationMetricsProvider>
+                                </LocalGenerationProvider>
+                            </MediaGenerationProviderProvider>
+                        </LocalGenerationSettingsProvider>
+                    </PlanExpansionStrategyProvider>
+                </PipelineProvider>
+            </ApiStatusProvider>
+        </UsageProvider>
+    </HydrationProvider>
 );
 
 export default App;

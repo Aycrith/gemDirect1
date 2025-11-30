@@ -80,7 +80,7 @@
     "wan-flf2v": {
       "id": "wan-flf2v",
       "label": "WAN First-Last-Frame→Video (Bookends)",
-      "workflowFile": "workflows/video_wan2_2_5B_flf2v.json",
+      "workflowJson": "{\"1\":{\"inputs\":{\"clip_name\":\"umt5_xxl_fp8_e4m3fn_scaled.safetensors\",\"type\":\"wan\",\"device\":\"default\"},\"class_type\":\"CLIPLoader\",\"_meta\":{\"title\":\"Load CLIP\"}},\"2\":{\"inputs\":{\"vae_name\":\"wan_2.1_vae.safetensors\"},\"class_type\":\"VAELoader\",\"_meta\":{\"title\":\"Load VAE\"}},\"3\":{\"inputs\":{\"unet_name\":\"wan2.2_ti2v_5B_fp16.safetensors\",\"weight_dtype\":\"default\"},\"class_type\":\"UNETLoader\",\"_meta\":{\"title\":\"Load Diffusion Model (5B)\"}},\"4\":{\"inputs\":{\"shift\":8,\"model\":[\"3\",0]},\"class_type\":\"ModelSamplingSD3\",\"_meta\":{\"title\":\"ModelSamplingSD3\"}},\"5\":{\"inputs\":{\"text\":\"A cinematic video scene with smooth motion and natural transitions between the start and end frames.\",\"clip\":[\"1\",0]},\"class_type\":\"CLIPTextEncode\",\"_meta\":{\"title\":\"CLIP Text Encode (Positive Prompt)\"}},\"6\":{\"inputs\":{\"text\":\"static, no motion, frozen, split screen, multiple panels, low quality\",\"clip\":[\"1\",0]},\"class_type\":\"CLIPTextEncode\",\"_meta\":{\"title\":\"CLIP Text Encode (Negative Prompt)\"}},\"10\":{\"inputs\":{\"image\":\"start_keyframe.png\"},\"class_type\":\"LoadImage\",\"_meta\":{\"title\":\"Load Start Image\"}},\"11\":{\"inputs\":{\"image\":\"end_keyframe.png\"},\"class_type\":\"LoadImage\",\"_meta\":{\"title\":\"Load End Image\"}},\"12\":{\"inputs\":{\"width\":1280,\"height\":720,\"length\":81,\"batch_size\":1,\"positive\":[\"5\",0],\"negative\":[\"6\",0],\"vae\":[\"2\",0],\"clip_vision_start_image\":null,\"clip_vision_end_image\":null,\"start_image\":[\"10\",0],\"end_image\":[\"11\",0]},\"class_type\":\"WanFirstLastFrameToVideo\",\"_meta\":{\"title\":\"WAN First-Last Frame to Video\"}},\"13\":{\"inputs\":{\"seed\":123456789,\"steps\":20,\"cfg\":4,\"sampler_name\":\"euler\",\"scheduler\":\"simple\",\"denoise\":1,\"model\":[\"4\",0],\"positive\":[\"12\",0],\"negative\":[\"12\",1],\"latent_image\":[\"12\",2]},\"class_type\":\"KSampler\",\"_meta\":{\"title\":\"KSampler\"}},\"14\":{\"inputs\":{\"samples\":[\"13\",0],\"vae\":[\"2\",0]},\"class_type\":\"VAEDecode\",\"_meta\":{\"title\":\"VAE Decode\"}},\"15\":{\"inputs\":{\"fps\":16,\"images\":[\"14\",0]},\"class_type\":\"CreateVideo\",\"_meta\":{\"title\":\"Create Video\"}},\"16\":{\"inputs\":{\"filename_prefix\":\"video/wan2_flf2v\",\"format\":\"auto\",\"codec\":\"auto\",\"video\":[\"15\",0]},\"class_type\":\"SaveVideo\",\"_meta\":{\"title\":\"Save Video\"}}}",
       "mapping": {
         "5:text": "human_readable_prompt",
         "6:text": "negative_prompt",
@@ -117,7 +117,7 @@
     "wan-fun-inpaint": {
       "id": "wan-fun-inpaint",
       "label": "WAN Fun Inpaint→Video (Smooth Motion)",
-      "workflowFile": "workflows/video_wan2_2_5B_fun_inpaint.json",
+      "workflowJson": "{\"1\":{\"inputs\":{\"clip_name\":\"umt5_xxl_fp8_e4m3fn_scaled.safetensors\",\"type\":\"wan\",\"device\":\"default\"},\"class_type\":\"CLIPLoader\",\"_meta\":{\"title\":\"Load CLIP\"}},\"2\":{\"inputs\":{\"vae_name\":\"wan_2.1_vae.safetensors\"},\"class_type\":\"VAELoader\",\"_meta\":{\"title\":\"Load VAE\"}},\"3\":{\"inputs\":{\"unet_name\":\"wan2.2_fun_inpaint_5B_bf16.safetensors\",\"weight_dtype\":\"default\"},\"class_type\":\"UNETLoader\",\"_meta\":{\"title\":\"Load Diffusion Model (5B Fun Inpaint)\"}},\"4\":{\"inputs\":{\"shift\":8,\"model\":[\"3\",0]},\"class_type\":\"ModelSamplingSD3\",\"_meta\":{\"title\":\"ModelSamplingSD3\"}},\"5\":{\"inputs\":{\"text\":\"A cinematic video scene with smooth motion and natural transitions. High quality, detailed, professional cinematography.\",\"clip\":[\"1\",0]},\"class_type\":\"CLIPTextEncode\",\"_meta\":{\"title\":\"CLIP Text Encode (Positive Prompt)\"}},\"6\":{\"inputs\":{\"text\":\"static, no motion, frozen, split screen, multiple panels, low quality\",\"clip\":[\"1\",0]},\"class_type\":\"CLIPTextEncode\",\"_meta\":{\"title\":\"CLIP Text Encode (Negative Prompt)\"}},\"10\":{\"inputs\":{\"image\":\"start_keyframe.png\"},\"class_type\":\"LoadImage\",\"_meta\":{\"title\":\"Load Start Image\"}},\"11\":{\"inputs\":{\"image\":\"end_keyframe.png\"},\"class_type\":\"LoadImage\",\"_meta\":{\"title\":\"Load End Image\"}},\"12\":{\"inputs\":{\"width\":1280,\"height\":720,\"length\":81,\"batch_size\":1,\"positive\":[\"5\",0],\"negative\":[\"6\",0],\"vae\":[\"2\",0],\"clip_vision_output\":null,\"start_image\":[\"10\",0],\"end_image\":[\"11\",0]},\"class_type\":\"WanFunInpaintToVideo\",\"_meta\":{\"title\":\"WAN Fun Inpaint to Video\"}},\"13\":{\"inputs\":{\"seed\":123456789,\"steps\":20,\"cfg\":3.5,\"sampler_name\":\"euler\",\"scheduler\":\"simple\",\"denoise\":1,\"model\":[\"4\",0],\"positive\":[\"12\",0],\"negative\":[\"12\",1],\"latent_image\":[\"12\",2]},\"class_type\":\"KSampler\",\"_meta\":{\"title\":\"KSampler\"}},\"14\":{\"inputs\":{\"samples\":[\"13\",0],\"vae\":[\"2\",0]},\"class_type\":\"VAEDecode\",\"_meta\":{\"title\":\"VAE Decode\"}},\"15\":{\"inputs\":{\"fps\":16,\"images\":[\"14\",0]},\"class_type\":\"CreateVideo\",\"_meta\":{\"title\":\"Create Video\"}},\"16\":{\"inputs\":{\"filename_prefix\":\"video/wan2_fun_inpaint\",\"format\":\"auto\",\"codec\":\"auto\",\"video\":[\"15\",0]},\"class_type\":\"SaveVideo\",\"_meta\":{\"title\":\"Save Video\"}}}",
       "mapping": {
         "5:text": "human_readable_prompt",
         "6:text": "negative_prompt",
@@ -154,7 +154,7 @@
     "wan-fun-control": {
       "id": "wan-fun-control",
       "label": "WAN Fun Control→Video (Control-based)",
-      "workflowFile": "workflows/video_wan2_2_5B_fun_control.json",
+      "workflowJson": "{\"1\":{\"inputs\":{\"clip_name\":\"umt5_xxl_fp8_e4m3fn_scaled.safetensors\",\"type\":\"wan\",\"device\":\"default\"},\"class_type\":\"CLIPLoader\",\"_meta\":{\"title\":\"Load CLIP\"}},\"2\":{\"inputs\":{\"vae_name\":\"wan_2.1_vae.safetensors\"},\"class_type\":\"VAELoader\",\"_meta\":{\"title\":\"Load VAE\"}},\"3\":{\"inputs\":{\"unet_name\":\"wan2.2_fun_control_5B_bf16.safetensors\",\"weight_dtype\":\"default\"},\"class_type\":\"UNETLoader\",\"_meta\":{\"title\":\"Load Diffusion Model (5B Fun Control)\"}},\"4\":{\"inputs\":{\"shift\":8,\"model\":[\"3\",0]},\"class_type\":\"ModelSamplingSD3\",\"_meta\":{\"title\":\"ModelSamplingSD3\"}},\"5\":{\"inputs\":{\"text\":\"A cinematic video scene with smooth motion and natural transitions. High quality, detailed, professional cinematography.\",\"clip\":[\"1\",0]},\"class_type\":\"CLIPTextEncode\",\"_meta\":{\"title\":\"CLIP Text Encode (Positive Prompt)\"}},\"6\":{\"inputs\":{\"text\":\"static, no motion, frozen, split screen, multiple panels, low quality\",\"clip\":[\"1\",0]},\"class_type\":\"CLIPTextEncode\",\"_meta\":{\"title\":\"CLIP Text Encode (Negative Prompt)\"}},\"10\":{\"inputs\":{\"image\":\"ref_keyframe.png\"},\"class_type\":\"LoadImage\",\"_meta\":{\"title\":\"Load Reference Image\"}},\"11\":{\"inputs\":{\"file\":\"control_video.mp4\"},\"class_type\":\"LoadVideo\",\"_meta\":{\"title\":\"Load Control Video\"}},\"12\":{\"inputs\":{\"images\":[\"11\",0]},\"class_type\":\"GetVideoComponents\",\"_meta\":{\"title\":\"Get Video Components\"}},\"13\":{\"inputs\":{\"low_threshold\":0.1,\"high_threshold\":0.6,\"image\":[\"12\",0]},\"class_type\":\"Canny\",\"_meta\":{\"title\":\"Canny Edge Detection\"}},\"14\":{\"inputs\":{\"width\":1280,\"height\":720,\"length\":81,\"batch_size\":1,\"positive\":[\"5\",0],\"negative\":[\"6\",0],\"vae\":[\"2\",0],\"ref_image\":[\"10\",0],\"control_video\":[\"13\",0]},\"class_type\":\"Wan22FunControlToVideo\",\"_meta\":{\"title\":\"WAN Fun Control to Video\"}},\"15\":{\"inputs\":{\"seed\":123456789,\"steps\":20,\"cfg\":3.5,\"sampler_name\":\"euler\",\"scheduler\":\"simple\",\"denoise\":1,\"model\":[\"4\",0],\"positive\":[\"14\",0],\"negative\":[\"14\",1],\"latent_image\":[\"14\",2]},\"class_type\":\"KSampler\",\"_meta\":{\"title\":\"KSampler\"}},\"16\":{\"inputs\":{\"samples\":[\"15\",0],\"vae\":[\"2\",0]},\"class_type\":\"VAEDecode\",\"_meta\":{\"title\":\"VAE Decode\"}},\"17\":{\"inputs\":{\"fps\":16,\"images\":[\"16\",0]},\"class_type\":\"CreateVideo\",\"_meta\":{\"title\":\"Create Video\"}},\"18\":{\"inputs\":{\"filename_prefix\":\"video/wan2_fun_control\",\"format\":\"auto\",\"codec\":\"auto\",\"video\":[\"17\",0]},\"class_type\":\"SaveVideo\",\"_meta\":{\"title\":\"Save Video\"}}}",
       "mapping": {
         "5:text": "human_readable_prompt",
         "6:text": "negative_prompt",
@@ -191,13 +191,22 @@
     "video-upscaler": {
       "id": "video-upscaler",
       "label": "Video Upscaler (2x Real-ESRGAN)",
-      "workflowJson": "",
-      "mapping": {},
+      "workflowJson": "{\"1\":{\"inputs\":{\"video\":\"input_video.mp4\"},\"class_type\":\"LoadVideo\",\"_meta\":{\"title\":\"Load Input Video\"}},\"2\":{\"inputs\":{\"model_name\":\"4x-UltraSharp.pth\"},\"class_type\":\"UpscaleModelLoader\",\"_meta\":{\"title\":\"Load Upscale Model\"}},\"3\":{\"inputs\":{\"upscale_model\":[\"2\",0],\"image\":[\"4\",0]},\"class_type\":\"ImageUpscaleWithModel\",\"_meta\":{\"title\":\"Upscale Frame\"}},\"4\":{\"inputs\":{\"video\":[\"1\",0]},\"class_type\":\"GetVideoComponents\",\"_meta\":{\"title\":\"Get Video Frames\"}},\"5\":{\"inputs\":{\"upscale_method\":\"lanczos\",\"scale_by\":0.5,\"image\":[\"3\",0]},\"class_type\":\"ImageScaleBy\",\"_meta\":{\"title\":\"Scale Down to Target Resolution\"}},\"6\":{\"inputs\":{\"images\":[\"5\",0],\"fps\":24,\"lossless\":false,\"quality\":90,\"method\":\"default\"},\"class_type\":\"ImagesToVideo\",\"_meta\":{\"title\":\"Convert Frames to Video\"}},\"7\":{\"inputs\":{\"filename_prefix\":\"upscaled_video\",\"format\":\"auto\",\"codec\":\"auto\",\"video\":[\"6\",0]},\"class_type\":\"SaveVideo\",\"_meta\":{\"title\":\"Save Upscaled Video\"}}}",
+      "mapping": {
+        "1:video": "input_video"
+      },
       "metadata": {
-        "lastSyncedAt": null,
-        "highlightMappings": [],
-        "missingMappings": ["input_video"],
-        "warnings": ["Workflow not configured - sync a video upscaling workflow from ComfyUI"],
+        "lastSyncedAt": 1732700000000,
+        "highlightMappings": [
+          {
+            "type": "input_video",
+            "nodeTitle": "Load Input Video",
+            "nodeId": "1",
+            "inputName": "video"
+          }
+        ],
+        "missingMappings": [],
+        "warnings": [],
         "notes": "Video upscaling workflow using Real-ESRGAN or similar models. Requires a ComfyUI workflow that accepts video input and outputs upscaled video."
       }
     }
