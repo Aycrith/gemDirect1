@@ -58,7 +58,6 @@ export function analyzeElementCoverage(
   mandatoryElements: string[],
   confidenceThreshold: number = 0.6
 ): ElementCoverageResult {
-  const contentLower = sceneContent.toLowerCase();
   const contentKeywords = extractKeywords(sceneContent);
   
   const covered = new Set<string>();
@@ -107,11 +106,11 @@ export function analyzeElementCoverage(
  * Get uncovered elements for suggestions
  */
 export function getUncoveredElementSuggestions(
-  mandatoryElements: string[],
+  _mandatoryElements: string[],
   coverage: ElementCoverageResult
 ): string[] {
   return Array.from(coverage.uncovered)
-    .sort((a, b) => coverage.details[b].confidence - coverage.details[a].confidence);
+    .sort((a, b) => (coverage.details[b]?.confidence ?? 0) - (coverage.details[a]?.confidence ?? 0));
 }
 
 /**

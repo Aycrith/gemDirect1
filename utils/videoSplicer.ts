@@ -7,7 +7,6 @@
 
 import { spawn } from 'child_process';
 import { existsSync } from 'fs';
-import path from 'path';
 
 export interface SpliceOptions {
   /**
@@ -71,7 +70,6 @@ export async function spliceVideos(
 ): Promise<SpliceResult> {
   const {
     transitionFrames = 1,
-    transitionType = 'fade',
     fps = 24,
     codec = 'libx264',
     crf = 18
@@ -109,7 +107,7 @@ export async function spliceVideos(
   // Ensure offset is not negative
   const offset = Math.max(0, video1Duration - transitionDuration);
 
-  return new Promise<SpliceResult>((resolve, reject) => {
+  return new Promise<SpliceResult>((resolve, _reject) => {
     const startTime = Date.now();
     
     // ffmpeg command:

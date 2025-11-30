@@ -174,7 +174,7 @@ export function notifyStageEnter(
  */
 export function notifyStageGateBlocked(
     addToast: AddToastFn,
-    currentStage: string,
+    _currentStage: string,
     targetStage: string,
     reason: string
 ): void {

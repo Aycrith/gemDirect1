@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Mock } from 'vitest';
 import {
     notifyValidationResult,
     notifyQualityThreshold,
@@ -30,10 +31,10 @@ import { ValidationResult, validationSuccess, validationFailure, createValidatio
 import { CoherenceCheckResult } from '../coherenceGate';
 
 describe('qualityNotifications', () => {
-    let mockAddToast: ReturnType<typeof vi.fn>;
+    let mockAddToast: Mock<AddToastFn>;
 
     beforeEach(() => {
-        mockAddToast = vi.fn();
+        mockAddToast = vi.fn() as Mock<AddToastFn>;
     });
 
     describe('notifyValidationResult', () => {
@@ -127,7 +128,7 @@ describe('qualityNotifications', () => {
             
             notifyValidationResult(mockAddToast, result, { maxSuggestions: 1 });
             
-            const callArg = mockAddToast.mock.calls[0][0];
+            const callArg = mockAddToast.mock.calls[0]![0];
             expect(callArg).toContain('Fix 1');
             expect(callArg).not.toContain('Fix 3');
         });
@@ -184,7 +185,7 @@ describe('qualityNotifications', () => {
             
             notifyQualityThreshold(mockAddToast, score, { showScoreDetails: true });
             
-            const callArg = mockAddToast.mock.calls[0][0];
+            const callArg = mockAddToast.mock.calls[0]![0];
             expect(callArg).toContain('90%');
         });
     });
@@ -195,7 +196,7 @@ describe('qualityNotifications', () => {
                 passed: true,
                 score: 0.82,
                 threshold: 0.7,
-                factors: {},
+                message: 'Coherence check passed',
             };
             
             notifyCoherenceGate(mockAddToast, result);
@@ -211,9 +212,9 @@ describe('qualityNotifications', () => {
                 passed: false,
                 score: 0.55,
                 threshold: 0.7,
-                factors: {},
+                message: 'Coherence check failed',
                 suggestions: [
-                    { id: 's1', type: 'fix', description: 'Add more detail', action: 'enhance', autoApplicable: false },
+                    { type: 'UPDATE_SCENE', description: 'Add more detail', payload: { action: 'enhance' } },
                 ],
             };
             

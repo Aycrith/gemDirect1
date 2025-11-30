@@ -1,5 +1,5 @@
 
-import { StoryBible, Scene, LocalGenerationSettings, LocalGenerationStatus, SceneContinuityData } from '../types';
+import { StoryBible, Scene, LocalGenerationSettings, LocalGenerationStatus, SceneContinuityData, KeyframeData } from '../types';
 import { blobToBase64, base64ToBlob } from './videoUtils';
 import { StoryToVideoResult } from '../services/storyToVideoPipeline';
 
@@ -8,7 +8,7 @@ export interface ProjectSaveState {
     storyBible: StoryBible | null;
     directorsVision: string;
     scenes: Scene[];
-    generatedImages: Record<string, string>;
+    generatedImages: Record<string, KeyframeData>;
     generatedShotImages: Record<string, string>;
     continuityData: Record<string, SceneContinuityData>;
     localGenSettings: LocalGenerationSettings;
@@ -21,7 +21,9 @@ export const saveProjectToFile = async (state: Omit<ProjectSaveState, 'version' 
     const serializableContinuityData: Record<string, any> = {};
     for (const sceneId in state.continuityData) {
         const data = state.continuityData[sceneId];
-        const { videoFile, videoSrc, ...rest } = data; // Destructure to remove non-serializable parts
+        if (!data) continue;
+        
+        const { videoFile, videoSrc, ...rest } = data as { videoFile?: Blob; videoSrc?: string } & Omit<typeof data, 'videoFile' | 'videoSrc'>;
         
         let videoFileBase64: string | undefined;
         let videoFileType: string | undefined;
@@ -124,7 +126,7 @@ export const loadProjectFromFile = (file: File): Promise<ProjectSaveState> => {
 /**
  * Create a minimal project state from Quick Generate results for promotion to Director Mode
  */
-export const createQuickProjectState = (result: StoryToVideoResult, prompt: string): Omit<ProjectSaveState, 'version' | 'scenesToReview'> & { scenesToReview: Set<string> } => {
+export const createQuickProjectState = (result: StoryToVideoResult, _prompt: string): Omit<ProjectSaveState, 'version' | 'scenesToReview'> & { scenesToReview: Set<string> } => {
   // Convert StoryToVideoResult scenes to Scene objects
   const scenes: Scene[] = result.scenes.map(scene => ({
     id: scene.id,
@@ -141,12 +143,11 @@ export const createQuickProjectState = (result: StoryToVideoResult, prompt: stri
     generatedShotImages: {},
     continuityData: {},
     localGenSettings: {
-      provider: 'comfyui',
-      model: 'default',
-      resolution: '1024x576',
-      frameRate: 25,
-      duration: 4,
-      style: 'cinematic'
+      videoProvider: 'comfyui-local',
+      comfyUIUrl: 'http://127.0.0.1:8188',
+      comfyUIClientId: 'default-client',
+      workflowJson: '',
+      mapping: {},
     },
     localGenStatus: {},
     scenesToReview: new Set()

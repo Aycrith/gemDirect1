@@ -7,7 +7,7 @@ export interface CorrelationContext {
   correlationId: string;
   parentId?: string;
   timestamp: number;
-  source: 'frontend' | 'lm-studio' | 'comfyui';
+  source: 'frontend' | 'lm-studio' | 'comfyui' | 'story-bible' | 'refine-field' | 'set-vision' | 'story-idea' | 'local-story';
 }
 
 export interface NetworkMetadata {

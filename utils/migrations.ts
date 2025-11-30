@@ -65,7 +65,7 @@ const migrations: Migration[] = [
             // Initialize featureFlags if not present
             if (migrated.localGenSettings && !migrated.localGenSettings.featureFlags) {
                 migrated.localGenSettings.featureFlags = {
-                    bookendKeyframes: false,
+                    // Note: bookendKeyframes removed - use localGenSettings.keyframeMode instead
                     videoUpscaling: false,
                     characterConsistency: false,
                     shotLevelContinuity: false,
@@ -76,6 +76,11 @@ const migrations: Migration[] = [
                     promptQualityGate: false,
                     characterAppearanceTracking: false,
                 };
+            }
+            
+            // Remove legacy bookendKeyframes from featureFlags if present (migrated to keyframeMode)
+            if (migrated.localGenSettings?.featureFlags?.bookendKeyframes !== undefined) {
+                delete migrated.localGenSettings.featureFlags.bookendKeyframes;
             }
             
             // Add healthCheckIntervalMs default if not present

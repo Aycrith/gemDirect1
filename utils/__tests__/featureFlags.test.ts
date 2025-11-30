@@ -27,8 +27,8 @@ import {
 describe('featureFlags', () => {
     describe('DEFAULT_FEATURE_FLAGS', () => {
         it('should have expected default values for core flags', () => {
-            // Core workflow flags - bookendKeyframes now enabled (native dual-keyframe support)
-            expect(DEFAULT_FEATURE_FLAGS.bookendKeyframes).toBe(true);
+            // Core workflow flags
+            // Note: bookendKeyframes removed - use LocalGenerationSettings.keyframeMode instead
             expect(DEFAULT_FEATURE_FLAGS.videoUpscaling).toBe(false);
             expect(DEFAULT_FEATURE_FLAGS.characterConsistency).toBe(false);
             
@@ -45,9 +45,9 @@ describe('featureFlags', () => {
             }
         });
 
-        it('should have 24 flags defined', () => {
+        it('should have 26 flags defined', () => {
             const flagCount = Object.keys(DEFAULT_FEATURE_FLAGS).length;
-            expect(flagCount).toBe(24);
+            expect(flagCount).toBe(26);
         });
 
         it('should have metadata for every flag', () => {
@@ -64,24 +64,22 @@ describe('featureFlags', () => {
 
     describe('getFeatureFlag', () => {
         it('should return default value for undefined flags', () => {
-            // bookendKeyframes is now true by default (native dual-keyframe support)
-            expect(getFeatureFlag(undefined, 'bookendKeyframes')).toBe(true);
+            expect(getFeatureFlag(undefined, 'videoUpscaling')).toBe(false);
         });
 
         it('should return default value for missing flag in partial object', () => {
             const partialFlags: Partial<FeatureFlags> = { promptQualityGate: true };
-            // bookendKeyframes is now true by default
-            expect(getFeatureFlag(partialFlags, 'bookendKeyframes')).toBe(true);
+            expect(getFeatureFlag(partialFlags, 'videoUpscaling')).toBe(false);
         });
 
         it('should return user value when flag is explicitly set', () => {
-            const flags: Partial<FeatureFlags> = { bookendKeyframes: true };
-            expect(getFeatureFlag(flags, 'bookendKeyframes')).toBe(true);
+            const flags: Partial<FeatureFlags> = { promptQualityGate: true };
+            expect(getFeatureFlag(flags, 'promptQualityGate')).toBe(true);
         });
 
         it('should return false when flag is explicitly set to false', () => {
-            const flags: Partial<FeatureFlags> = { bookendKeyframes: false };
-            expect(getFeatureFlag(flags, 'bookendKeyframes')).toBe(false);
+            const flags: Partial<FeatureFlags> = { promptQualityGate: false };
+            expect(getFeatureFlag(flags, 'promptQualityGate')).toBe(false);
         });
     });
 
@@ -93,13 +91,11 @@ describe('featureFlags', () => {
         it('should return true only when flag is explicitly enabled', () => {
             const flags: Partial<FeatureFlags> = { providerHealthPolling: true };
             expect(isFeatureEnabled(flags, 'providerHealthPolling')).toBe(true);
-            // bookendKeyframes is now true by default, so even without setting it, it's enabled
-            expect(isFeatureEnabled(flags, 'bookendKeyframes')).toBe(true);
         });
 
-        it('should handle empty object', () => {
-            // bookendKeyframes is now true by default
-            expect(isFeatureEnabled({}, 'bookendKeyframes')).toBe(true);
+        it('should handle empty object with default-on flags', () => {
+            // promptQualityGate is enabled by default
+            expect(isFeatureEnabled({}, 'promptQualityGate')).toBe(true);
         });
     });
 
@@ -123,7 +119,6 @@ describe('featureFlags', () => {
             
             expect(merged.promptQualityGate).toBe(true);
             expect(merged.providerHealthPolling).toBe(true);
-            expect(merged.bookendKeyframes).toBe(true); // Now enabled by default
         });
 
         it('should preserve all default flags in merged result', () => {
@@ -152,18 +147,18 @@ describe('featureFlags', () => {
             const flags: Partial<FeatureFlags> = {
                 promptQualityGate: true,
                 autoSuggestions: true,
-                bookendKeyframes: false,
+                videoUpscaling: false,
             };
             const enabled = getEnabledFlags(flags);
             
             expect(enabled).toContain('promptQualityGate');
             expect(enabled).toContain('autoSuggestions');
-            expect(enabled).not.toContain('bookendKeyframes');
+            expect(enabled).not.toContain('videoUpscaling');
         });
 
         it('should return all enabled flags', () => {
             const allEnabled: FeatureFlags = {
-                bookendKeyframes: true,
+                // Note: bookendKeyframes removed - use LocalGenerationSettings.keyframeMode instead
                 videoUpscaling: true,
                 characterConsistency: true,
                 shotLevelContinuity: true,
@@ -190,11 +185,15 @@ describe('featureFlags', () => {
                 // State management flags
                 useUnifiedSceneStore: true,
                 sceneStoreParallelValidation: true,
+                enableQuickGenerate: false,
+                // Generation queue flags
+                useGenerationQueue: false,
+                useLLMTransportAdapter: false,
             };
             
             const enabled = getEnabledFlags(allEnabled);
             // Count boolean flags set to true (excludes qualityPrefixVariant string and union-type 'warn' values)
-            expect(enabled.length).toBe(21);
+            expect(enabled.length).toBe(20);
         });
     });
 
@@ -317,7 +316,7 @@ describe('featureFlags', () => {
         });
 
         it('should capture toggle off events', () => {
-            const event = createFlagChangeEvent('bookendKeyframes', true, false);
+            const event = createFlagChangeEvent('videoUpscaling', true, false);
             
             expect(event.oldValue).toBe(true);
             expect(event.newValue).toBe(false);

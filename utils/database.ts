@@ -95,7 +95,7 @@ export const saveScenes = async (scenes: Scene[]) => {
   try {
     const tx = (await getDB()).transaction(SCENES_STORE, 'readwrite');
     await Promise.all([
-      ...scenes.map((scene, index) => tx.store.put({ ...scene, order: index })),
+      ...scenes.map((scene, index) => tx.store.put({ ...scene, order: index } as Scene & { order: number })),
       tx.done
     ]);
   } catch (error) {

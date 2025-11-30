@@ -44,7 +44,7 @@ const createTestSettings = (useUnifiedSceneStore: boolean): LocalGenerationSetti
     workflowJson: '{}',
     mapping: {},
     featureFlags: {
-        bookendKeyframes: false,
+        // Note: bookendKeyframes removed - use keyframeMode setting instead
         videoUpscaling: false,
         characterConsistency: false,
         shotLevelContinuity: false,
@@ -68,6 +68,10 @@ const createTestSettings = (useUnifiedSceneStore: boolean): LocalGenerationSetti
         keyframePromptPipeline: false,
         videoPromptPipeline: false,
         bibleV2SaveSync: false,
+        enableQuickGenerate: false,
+        // New infrastructure feature flags
+        useGenerationQueue: false,
+        useLLMTransportAdapter: false,
     },
 });
 

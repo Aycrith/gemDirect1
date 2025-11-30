@@ -3,7 +3,7 @@
  * Unit tests for the Quality Gate hook
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { checkPromptQuality, validatePromptQuality } from '../../hooks/useQualityGate';
 import { ValidationErrorCodes } from '../../types/validation';
 
@@ -124,23 +124,23 @@ describe('useQualityGate', () => {
             
             expect(result.success).toBe(false);
             expect(result.errors).toBeDefined();
-            expect(result.errors?.length).toBeGreaterThan(0);
-            expect(result.errors?.[0].code).toBe(ValidationErrorCodes.PROMPT_LOW_QUALITY_SCORE);
+            expect(result.errors!.length).toBeGreaterThan(0);
+            expect(result.errors![0]!.code).toBe(ValidationErrorCodes.PROMPT_LOW_QUALITY_SCORE);
         });
 
         it('should include quality score data on failure', () => {
             const result = validatePromptQuality('A thing.');
             
             expect(result.data).toBeDefined();
-            expect(result.data?.overall).toBeDefined();
-            expect(result.data?.threshold).toBeDefined();
+            expect(result.data!.overall).toBeDefined();
+            expect(result.data!.threshold).toBeDefined();
         });
 
         it('should include fix suggestion in error', () => {
             const result = validatePromptQuality('A thing.');
             
-            expect(result.errors?.[0].fix).toBeDefined();
-            expect(result.errors?.[0].fix).toContain('visual');
+            expect(result.errors![0]!.fix).toBeDefined();
+            expect(result.errors![0]!.fix).toContain('visual');
         });
 
         it('should respect custom threshold', () => {
@@ -156,7 +156,7 @@ describe('useQualityGate', () => {
         it('should include context in error when provided', () => {
             const result = validatePromptQuality('A thing.', { context: 'Scene 1' });
             
-            expect(result.errors?.[0].context).toBe('Scene 1');
+            expect(result.errors?.[0]?.context).toBe('Scene 1');
         });
 
         it('should include message with percentage', () => {

@@ -247,7 +247,7 @@ export function handleTokenOverflow(
     const mode = getFeatureFlagValue(flags as FeatureFlags, 'promptTokenGuard');
     const message = `Token budget exceeded: ${tokens}/${budget} tokens`;
     
-    if (mode === 'off' || mode === false) {
+    if (mode === 'off') {
         return {
             shouldContinue: true,
             wasWarning: false,
@@ -290,7 +290,7 @@ export function handleValidationError(
     const mode = getFeatureFlagValue(flags as FeatureFlags, 'sceneListValidationMode');
     const message = `Validation failed: ${validationErrors.join('; ')}`;
     
-    if (mode === 'off' || mode === false) {
+    if (mode === 'off') {
         return {
             shouldContinue: true,
             wasWarning: false,

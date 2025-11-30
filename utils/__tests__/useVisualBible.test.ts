@@ -5,9 +5,9 @@
  * Tests character sync, provenance tracking, and resync functionality
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
-import { useVisualBible, VisualBibleSyncToast } from '../hooks';
-import type { StoryBible, StoryBibleV2, VisualBible, VisualBibleCharacter, CharacterProfile } from '../../types';
+import { renderHook, act } from '@testing-library/react';
+import { useVisualBible } from '../hooks';
+import type { StoryBibleV2, VisualBibleCharacter, CharacterProfile } from '../../types';
 
 // Mock the database module
 vi.mock('../database', () => ({
@@ -63,20 +63,15 @@ vi.stubGlobal('sessionStorage', {
 // Helper to create a V2 story bible
 function createV2Bible(characters: CharacterProfile[]): StoryBibleV2 {
   return {
-    version: 2,
-    title: 'Test Story',
+    version: '2.0' as const,
     logline: 'A test story',
-    genre: 'Test',
+    characters: 'Test characters',
     setting: 'Test setting',
-    tone: 'neutral',
-    themes: ['test'],
+    plotOutline: 'Test plot',
     characterProfiles: characters,
-    acts: [],
-    narrativeArcs: [],
-    keyPlotPoints: [],
-    worldBuildingElements: [],
-    symbolism: [],
-    storyEngine: { type: 'basic' },
+    plotScenes: [],
+    genre: 'Test',
+    themes: ['test'],
   };
 }
 
@@ -197,7 +192,7 @@ describe('useVisualBible', () => {
 
     it('should do nothing without characters', () => {
       const storyBible = createV2Bible([
-        { id: 'profile1', name: 'Alice', role: 'protagonist', visualDescriptor: 'blonde hair' },
+        { id: 'profile1', name: 'Alice', role: 'protagonist', visualDescriptor: 'blonde hair', appearance: {}, personality: [], backstory: '', motivations: [], relationships: [] },
       ]);
       
       const { result } = renderHook(() => useVisualBible(storyBible));
@@ -212,7 +207,7 @@ describe('useVisualBible', () => {
 
     it('should sync characters and show toast', async () => {
       const storyBible = createV2Bible([
-        { id: 'profile1', name: 'Alice', role: 'protagonist', visualDescriptor: 'blonde hair, blue eyes' },
+        { id: 'profile1', name: 'Alice', role: 'protagonist', visualDescriptor: 'blonde hair, blue eyes', appearance: {}, personality: [], backstory: '', motivations: [], relationships: [] },
       ]);
       
       const { result } = renderHook(() => useVisualBible(storyBible));
@@ -235,8 +230,8 @@ describe('useVisualBible', () => {
 
     it('should skip user-edited characters', async () => {
       const storyBible = createV2Bible([
-        { id: 'profile1', name: 'Alice', role: 'protagonist', visualDescriptor: 'blonde hair' },
-        { id: 'profile2', name: 'Bob', role: 'supporting', visualDescriptor: 'dark hair' },
+        { id: 'profile1', name: 'Alice', role: 'protagonist', visualDescriptor: 'blonde hair', appearance: {}, personality: [], backstory: '', motivations: [], relationships: [] },
+        { id: 'profile2', name: 'Bob', role: 'supporting', visualDescriptor: 'dark hair', appearance: {}, personality: [], backstory: '', motivations: [], relationships: [] },
       ]);
       
       const { result } = renderHook(() => useVisualBible(storyBible));
@@ -264,8 +259,8 @@ describe('useVisualBible', () => {
   describe('handleResyncAll', () => {
     it('should reset all characters to storyBible source', async () => {
       const storyBible = createV2Bible([
-        { id: 'profile1', name: 'Alice', role: 'protagonist', visualDescriptor: 'blonde hair' },
-        { id: 'profile2', name: 'Bob', role: 'supporting', visualDescriptor: 'dark hair' },
+        { id: 'profile1', name: 'Alice', role: 'protagonist', visualDescriptor: 'blonde hair', appearance: {}, personality: [], backstory: '', motivations: [], relationships: [] },
+        { id: 'profile2', name: 'Bob', role: 'supporting', visualDescriptor: 'dark hair', appearance: {}, personality: [], backstory: '', motivations: [], relationships: [] },
       ]);
       
       const { result } = renderHook(() => useVisualBible(storyBible));
@@ -294,7 +289,7 @@ describe('useVisualBible', () => {
   describe('clearSyncToast', () => {
     it('should clear the sync toast', async () => {
       const storyBible = createV2Bible([
-        { id: 'profile1', name: 'Alice', role: 'protagonist', visualDescriptor: 'blonde hair' },
+        { id: 'profile1', name: 'Alice', role: 'protagonist', visualDescriptor: 'blonde hair', appearance: {}, personality: [], backstory: '', motivations: [], relationships: [] },
       ]);
       
       const { result } = renderHook(() => useVisualBible(storyBible));

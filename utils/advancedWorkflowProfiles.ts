@@ -116,7 +116,7 @@ export function createCCCProfile(
     const mapping: WorkflowMapping = {};
     
     // Map reference images
-    config.referenceImageNodeIds.forEach((nodeId, index) => {
+    config.referenceImageNodeIds.forEach((nodeId, _index) => {
         mapping[`${nodeId}:image`] = 'keyframe_image' as MappableData;
     });
     

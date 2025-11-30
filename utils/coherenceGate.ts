@@ -46,7 +46,7 @@ function generateDefaultSuggestions(
       type: 'UPDATE_SHOT',
       description: 'Review shot transitions and visual flow for better structural continuity',
       reason: `Structural continuity score is ${Math.round(scores.structuralContinuity * 100)}%`,
-      targetId: sceneId,
+      shot_id: sceneId,
       payload: {
         action: 'review_transitions',
         priority: 'medium',
@@ -60,7 +60,7 @@ function generateDefaultSuggestions(
       type: 'UPDATE_TRANSITION',
       description: 'Improve transition effects between shots for smoother flow',
       reason: `Transition quality score is ${Math.round(scores.transitionQuality * 100)}%`,
-      targetId: sceneId,
+      transition_index: 0, // Default to first transition
       payload: {
         action: 'improve_transitions',
         priority: 'medium',
@@ -74,7 +74,7 @@ function generateDefaultSuggestions(
       type: 'UPDATE_SHOT',
       description: 'Adjust shot durations for better pacing and rhythm',
       reason: `Duration consistency score is ${Math.round(scores.durationConsistency * 100)}%`,
-      targetId: sceneId,
+      shot_id: sceneId,
       payload: {
         action: 'adjust_durations',
         priority: 'low',

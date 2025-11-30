@@ -72,7 +72,7 @@ describe('videoSplicer', () => {
             mocks.spawn.mockReturnValue(mockProcess as any);
             mocks.existsSync.mockReturnValue(true); // Output file exists after ffmpeg
 
-            const result = await spliceVideos(
+            await spliceVideos(
                 'video1.mp4',
                 'video2.mp4',
                 'output.mp4',

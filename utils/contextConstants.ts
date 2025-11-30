@@ -68,6 +68,7 @@ export const DEFAULT_LOCAL_GENERATION_SETTINGS: LocalGenerationSettings = {
     llmTemperature: 0.35,
     llmTimeoutMs: 120000,
     llmRequestFormat: 'openai-chat',
+    keyframeMode: 'single', // Explicit default for keyframe generation mode
 };
 
 // --- MediaGenerationProviderContext Constants ---

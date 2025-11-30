@@ -6,7 +6,7 @@ export const blobToBase64 = (blob: Blob): Promise<string> => {
             if (typeof reader.result === 'string') {
                 // The result includes the data URL prefix, which we need to remove.
                 // e.g., "data:image/jpeg;base64,...." -> "...."
-                const base64String = reader.result.split(',')[1];
+                const base64String = reader.result.split(',')[1] ?? '';
                 resolve(base64String);
             } else {
                 reject(new Error('Failed to convert blob to base64 string.'));
@@ -24,6 +24,9 @@ export const base64ToBlob = (base64: string, mimeType: string): Blob => {
     }
 
     const normalized = base64.includes(',') ? base64.split(',')[1] : base64;
+    if (!normalized) {
+        throw new Error('Failed to extract base64 data from input.');
+    }
     const cleaned = normalized.replace(/\s/g, '');
     const chunkSize = 8192; // multiple of 4 to avoid breaking base64 groups
     const parts: BlobPart[] = [];

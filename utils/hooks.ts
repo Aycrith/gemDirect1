@@ -1,19 +1,21 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as db from './database';
-import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot, SceneStatus, SceneGenerationStatus, VisualBible, ComfyUIStatusSummary } from '../types';
+import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot, SceneStatus, SceneGenerationStatus, VisualBible, ComfyUIStatusSummary, KeyframeData } from '../types';
 import { useApiStatus } from '../contexts/ApiStatusContext';
 import { useUsage } from '../contexts/UsageContext';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
-import { validateSceneProgression, type SceneProgressionError } from '../services/sceneProgressionValidator';
-import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
+import { validateSceneProgression } from '../services/sceneProgressionValidator';
 import { convertToStoryBibleV2, needsUpgrade } from '../services/storyBibleConverter';
 import { syncCharacterDescriptors } from '../services/promptPipeline';
+import { validateShotDescription } from '../services/shotValidator';
+import { generateCorrelationId, logCorrelation } from './correlation';
 import { 
     NarrativeState, 
     createInitialNarrativeState, 
     serializeNarrativeState, 
     deserializeNarrativeState 
 } from '../services/narrativeCoherenceService';
+import { useOptionalHydration } from '../contexts/HydrationContext';
 
 const persistentStateDebugEnabled = ((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_DEBUG_PERSISTENT_STATE ?? 'false') === 'true';
 const debugPersistentState = (...args: unknown[]) => {
@@ -27,11 +29,19 @@ const debugPersistentState = (...args: unknown[]) => {
  * sessionStorage provides immediate synchronous access during hot reloads,
  * while IndexedDB provides long-term persistence.
  * 
+ * Integration with HydrationContext:
+ * - Registers key with hydration coordinator on mount
+ * - Marks key as hydrated once IndexedDB load completes
+ * - Enables coordinated hydration across all persistent states
+ * 
  * @param key The key to use for storing the value in the database.
  * @param initialValue The initial value of the state.
  * @returns A state and a setter function, similar to useState.
  */
 export function usePersistentState<T>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+    // Get optional hydration context (may not be available if outside provider)
+    const hydration = useOptionalHydration();
+
     // Try to load from sessionStorage synchronously BEFORE first render
     // This prevents flash of empty state during Vite HMR
     const getInitialState = (): T => {
@@ -56,6 +66,15 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
     const [isLoaded, setIsLoaded] = useState(false);
     const prevStateRef = useRef<T>(state);
     const loadedFromSession = useRef(false);
+    const registeredRef = useRef(false);
+
+    // Register with hydration context on mount
+    useEffect(() => {
+        if (hydration && !registeredRef.current) {
+            hydration.registerKey(key);
+            registeredRef.current = true;
+        }
+    }, [hydration, key]);
 
     // Check if we loaded from sessionStorage (has data)
     useEffect(() => {
@@ -64,11 +83,16 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
             if (sessionData) {
                 loadedFromSession.current = true;
                 debugPersistentState(`[usePersistentState(${key})] Detected sessionStorage data, will skip IndexedDB load`);
+                
+                // Mark as hydrated immediately if loaded from sessionStorage
+                if (hydration) {
+                    hydration.markKeyHydrated(key);
+                }
             }
         } catch (error) {
             // Ignore sessionStorage errors
         }
-    }, [key]);
+    }, [key, hydration]);
 
     // Load initial data from IndexedDB on mount ONLY if sessionStorage was empty
     useEffect(() => {
@@ -101,15 +125,23 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
                 if (persistentStateDebugEnabled) {
                     console.warn(`[usePersistentState(${key})] Failed to load from IndexedDB:`, error);
                 }
+                // Still mark as failed in hydration context
+                if (hydration) {
+                    hydration.markKeyFailed(key, error instanceof Error ? error : undefined);
+                }
             } finally {
                 if (isMounted) {
                     setIsLoaded(true);
+                    // Mark as hydrated in hydration context
+                    if (hydration) {
+                        hydration.markKeyHydrated(key);
+                    }
                 }
             }
         };
         load();
         return () => { isMounted = false; };
-    }, [key, initialValue]);
+    }, [key, initialValue, hydration]);
 
     // Save data to DB whenever state changes (with Set-aware comparison)
     useEffect(() => {
@@ -321,18 +353,19 @@ export function useSceneGenerationWatcher(scenes: Scene[]) {
         progress?: number, 
         error?: string
     ) => {
-        setSceneStatuses(prev => ({
-            ...prev,
-            [sceneId]: {
-                ...prev[sceneId],
+        setSceneStatuses(prev => {
+            const existing = prev[sceneId];
+            const updated: SceneStatus = {
                 sceneId,
+                title: existing?.title ?? '',
                 status,
-                progress: progress ?? prev[sceneId]?.progress ?? 0,
+                progress: progress ?? existing?.progress ?? 0,
                 error,
-                startTime: prev[sceneId]?.startTime || Date.now(),
+                startTime: existing?.startTime ?? Date.now(),
                 endTime: (status === 'complete' || status === 'failed') ? Date.now() : undefined,
-            }
-        }));
+            };
+            return { ...prev, [sceneId]: updated };
+        });
     }, []);
     
     return { sceneStatuses, updateSceneStatus };
@@ -352,7 +385,6 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
     const { updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
     const planActions = usePlanExpansionActions();
-    const mediaActions = useMediaGenerationActions();
 
     // Initial data load
     useEffect(() => {
@@ -404,7 +436,7 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         
         // Only auto-advance if current stage is behind the minimum required
         // This allows manual navigation forward (e.g., bible -> vision) without auto-reset
-        const stageOrder: WorkflowStage[] = ['idea', 'bible', 'vision', 'director', 'review'];
+        const stageOrder: WorkflowStage[] = ['idea', 'bible', 'vision', 'director', 'continuity'];
         const currentStageIndex = stageOrder.indexOf(workflowStage);
         const minRequiredStageIndex = stageOrder.indexOf(minRequiredStage);
         
@@ -456,7 +488,7 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
     const handleGenerateScenes = useCallback(async (
         vision: string, 
         addToast: (message: string, type: ToastMessage['type']) => void, 
-        setGeneratedImages: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+        _setGeneratedImages: React.Dispatch<React.SetStateAction<Record<string, KeyframeData>>>,
         updateSceneStatus?: (sceneId: string, status: SceneGenerationStatus, progress?: number, error?: string) => void
     ) => {
         console.log('[handleGenerateScenes] START - Vision length:', vision?.length || 0);
@@ -594,12 +626,17 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         let newScenesToReview = new Set(scenesToReview);
         let changesMade = false;
         let toastMessage = 'Suggestion applied!';
-    
+
+        const correlationId = generateCorrelationId();
+        let refinedShotCount = 0;
+        let insertedShotCount = 0;
+
         suggestions.forEach(suggestion => {
             switch (suggestion.type) {
                 case 'UPDATE_STORY_BIBLE':
                     if (newStoryBible) {
-                        newStoryBible[suggestion.payload.field] = suggestion.payload.new_content;
+                        // Type assertion: UPDATE_STORY_BIBLE suggestions only target string fields (logline, characters, setting, plotOutline)
+                        (newStoryBible as Record<string, unknown>)[suggestion.payload.field] = suggestion.payload.new_content;
                         changesMade = true;
                         toastMessage = `Story Bible updated: ${suggestion.payload.field} has been changed.`;
                     }
@@ -617,46 +654,173 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                 case 'UPDATE_SHOT':
                 case 'ADD_SHOT_AFTER':
                 case 'UPDATE_TRANSITION':
-                    if (sceneIdToUpdate) {
-                        const sceneIndex = newScenes.findIndex(s => s.id === sceneIdToUpdate);
-                        if (sceneIndex > -1) {
-                            // Deep copy only the scene we're modifying
-                            const sceneToUpdate = JSON.parse(JSON.stringify(newScenes[sceneIndex]));
-                            const timeline: TimelineData = sceneToUpdate.timeline;
-    
-                            if (suggestion.type === 'UPDATE_SHOT') {
-                                const shot = timeline.shots.find(s => s.id === suggestion.shot_id);
-                                if (shot) {
-                                    if (suggestion.payload.description) shot.description = suggestion.payload.description;
-                                    if (suggestion.payload.enhancers) timeline.shotEnhancers[suggestion.shot_id] = { ...(timeline.shotEnhancers[suggestion.shot_id] || {}), ...suggestion.payload.enhancers };
+                    // FAIL-FAST VALIDATION: Ensure sceneId is provided for timeline operations
+                    if (!sceneIdToUpdate) {
+                        console.error('[applySuggestions] FAIL-FAST: Timeline suggestion requires sceneId but none provided', { 
+                            suggestionType: suggestion.type, 
+                            suggestion 
+                        });
+                        addToast?.('Cannot apply suggestion: Scene context missing. This is a bug - please report it.', 'error');
+                        break;
+                    }
+                    
+                    const sceneIndex = newScenes.findIndex(s => s.id === sceneIdToUpdate);
+                    if (sceneIndex === -1) {
+                        console.error('[applySuggestions] FAIL-FAST: Scene not found', { sceneIdToUpdate });
+                        addToast?.(`Cannot apply suggestion: Scene "${sceneIdToUpdate}" not found.`, 'error');
+                        break;
+                    }
+                    
+                    // Deep copy only the scene we're modifying (structuredClone preserves undefined/Date types)
+                    const sceneToUpdate = structuredClone(newScenes[sceneIndex]);
+                    if (!sceneToUpdate) break; // Should never happen since sceneIndex > -1
+                    const timeline: TimelineData = sceneToUpdate.timeline;
+
+                    if (suggestion.type === 'UPDATE_SHOT') {
+                        // FAIL-FAST: Validate target shot exists before attempting update
+                        const targetShotId = suggestion.shot_id;
+                        const shot = timeline.shots.find(s => s.id === targetShotId);
+                        
+                        if (!shot) {
+                            console.error('[applySuggestions] FAIL-FAST: Target shot not found for UPDATE_SHOT', {
+                                targetShotId,
+                                availableShots: timeline.shots.map(s => ({ id: s.id, title: s.title })),
+                                suggestion
+                            });
+                            addToast?.(`Cannot update shot: Shot "${targetShotId}" does not exist in this scene. The AI may have referenced a shot that was removed or never existed.`, 'error');
+                            break;
+                        }
+                        
+                        if (suggestion.payload.description) {
+                            const originalDescription = shot.description || '';
+                            const before = validateShotDescription(originalDescription);
+
+                            const updatedDescription = suggestion.payload.description;
+                            shot.description = updatedDescription;
+
+                            const after = validateShotDescription(updatedDescription);
+
+                            refinedShotCount++;
+
+                            logCorrelation(
+                                { correlationId, timestamp: Date.now(), source: 'frontend' },
+                                'shot-refine',
+                                {
+                                    source: 'suggestion',
+                                    sceneId: sceneIdToUpdate,
+                                    shotId: targetShotId,
+                                    suggestionType: suggestion.type,
+                                    beforeLength: originalDescription.length,
+                                    afterLength: updatedDescription.length,
+                                    beforeWordCount: before.wordCount,
+                                    afterWordCount: after.wordCount,
+                                    beforeErrorCount: before.errorCount,
+                                    afterErrorCount: after.errorCount,
+                                    beforeWarningCount: before.warningCount,
+                                    afterWarningCount: after.warningCount,
                                 }
-                            } else if (suggestion.type === 'ADD_SHOT_AFTER') {
-                                const afterShotIndex = timeline.shots.findIndex(s => s.id === suggestion.after_shot_id);
-                                if (afterShotIndex > -1) {
-                                    const newShot: Shot = {
-                                        id: `shot_${Date.now()}_${Math.random()}`,
-                                        title: suggestion.payload.title,
-                                        description: suggestion.payload.description || '',
-                                    };
-                                    timeline.shots.splice(afterShotIndex + 1, 0, newShot);
-                                    timeline.transitions.splice(afterShotIndex, 0, 'Cut');
-                                    if (suggestion.payload.enhancers) timeline.shotEnhancers[newShot.id] = suggestion.payload.enhancers;
+                            );
+                        }
+                        if (suggestion.payload.enhancers) {
+                            timeline.shotEnhancers[targetShotId] = {
+                                ...(timeline.shotEnhancers[targetShotId] || {}),
+                                ...suggestion.payload.enhancers,
+                            };
+                        }
+                        
+                        newScenes[sceneIndex] = sceneToUpdate;
+                        changesMade = true;
+                        toastMessage = 'Shot updated successfully!';
+                        
+                    } else if (suggestion.type === 'ADD_SHOT_AFTER') {
+                        // FAIL-FAST: Validate reference shot exists before attempting insert
+                        const afterShotId = suggestion.after_shot_id;
+                        const afterShotIndex = timeline.shots.findIndex(s => s.id === afterShotId);
+                        
+                        if (afterShotIndex === -1) {
+                            console.error('[applySuggestions] FAIL-FAST: Reference shot not found for ADD_SHOT_AFTER', {
+                                afterShotId,
+                                availableShots: timeline.shots.map(s => ({ id: s.id, title: s.title })),
+                                suggestion
+                            });
+                            addToast?.(`Cannot add shot: Reference shot "${afterShotId}" does not exist. The AI may have referenced a shot that was removed or never existed.`, 'error');
+                            break;
+                        }
+                        
+                        const newShot: Shot = {
+                            id: `shot-${crypto.randomUUID()}`,
+                            title: suggestion.payload.title,
+                            description: suggestion.payload.description || '',
+                        };
+                        timeline.shots.splice(afterShotIndex + 1, 0, newShot);
+                        timeline.transitions.splice(afterShotIndex, 0, 'Cut');
+
+                        if (suggestion.payload.description) {
+                            const after = validateShotDescription(newShot.description || '');
+                            insertedShotCount++;
+
+                            logCorrelation(
+                                { correlationId, timestamp: Date.now(), source: 'frontend' },
+                                'shot-insert',
+                                {
+                                    source: 'suggestion',
+                                    sceneId: sceneIdToUpdate,
+                                    shotId: newShot.id,
+                                    suggestionType: suggestion.type,
+                                    afterLength: newShot.description.length,
+                                    afterWordCount: after.wordCount,
+                                    afterErrorCount: after.errorCount,
+                                    afterWarningCount: after.warningCount,
                                 }
-                            } else if (suggestion.type === 'UPDATE_TRANSITION') {
-                                if (timeline.transitions[suggestion.transition_index] && suggestion.payload.type) {
-                                    timeline.transitions[suggestion.transition_index] = suggestion.payload.type;
-                                }
-                            }
-    
+                            );
+                        }
+
+                        if (suggestion.payload.enhancers) {
+                            timeline.shotEnhancers[newShot.id] = suggestion.payload.enhancers;
+                        }
+                        
+                        newScenes[sceneIndex] = sceneToUpdate;
+                        changesMade = true;
+                        toastMessage = 'New shot added successfully!';
+                        
+                    } else if (suggestion.type === 'UPDATE_TRANSITION') {
+                        const transitionIndex = suggestion.transition_index;
+                        
+                        // FAIL-FAST: Validate transition index is valid
+                        if (transitionIndex < 0 || transitionIndex >= timeline.transitions.length) {
+                            console.error('[applySuggestions] FAIL-FAST: Invalid transition index for UPDATE_TRANSITION', {
+                                transitionIndex,
+                                transitionCount: timeline.transitions.length,
+                                suggestion
+                            });
+                            addToast?.(`Cannot update transition: Index ${transitionIndex} is out of range (0-${timeline.transitions.length - 1}).`, 'error');
+                            break;
+                        }
+                        
+                        if (suggestion.payload.type) {
+                            timeline.transitions[transitionIndex] = suggestion.payload.type;
                             newScenes[sceneIndex] = sceneToUpdate;
                             changesMade = true;
-                            toastMessage = 'Timeline updated!';
+                            toastMessage = 'Transition updated successfully!';
                         }
                     }
                     break;
             }
         });
     
+        if (sceneIdToUpdate && (refinedShotCount > 0 || insertedShotCount > 0)) {
+            logCorrelation(
+                { correlationId, timestamp: Date.now(), source: 'frontend' },
+                'shot-suggestion-summary',
+                {
+                    sceneId: sceneIdToUpdate,
+                    suggestionCount: suggestions.length,
+                    refinedShotCount,
+                    insertedShotCount,
+                }
+            );
+        }
+
         if(changesMade) {
             if (newStoryBible) setStoryBible(newStoryBible);
             setDirectorsVision(newDirectorsVision);
