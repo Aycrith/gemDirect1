@@ -231,15 +231,15 @@ export const suggestStoryIdeas = async (): Promise<string[]> => {
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const prompt = `Generate 3-5 creative and diverse story ideas suitable for a short video narrative. Each idea should be:
-- A single sentence (140 characters max)
-- Compelling and visually interesting
-- Spanning different genres (sci-fi, fantasy, thriller, drama, etc.)
+    const prompt = `You generate 4-6 DISTINCT story ideas for cinematic short videos.
 
-Return ONLY a JSON array of strings, no surrounding text or markdown.
+Constraints:
+- Avoid repeating any prior suggestions in this session.
+- Strong diversity across genre, tone, premise, stakes, aesthetics.
+- Each idea: 1 sentence, <= 140 characters.
+- Return ONLY JSON array of strings.
 
-Example output format:
-["An astronaut discovers mysterious alien ruins on Mars that hold a dire warning for humanity", "A detective with the ability to see memories must solve her own murder", "In a city where music is outlawed, a young pianist sparks a revolution"]`;
+If there is any duplication risk, replace with a new idea.`;
 
     const body = {
       model: settings.llmModel || DEFAULT_MODEL,
@@ -307,7 +307,7 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<s
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const prompt = `You are a visionary film director. Based on the following story, suggest 3-5 distinct and evocative Director's Vision statements. Each should describe a complete cinematic style, mood, and aesthetic approach.
+    const prompt = `You are a visionary film director. Based on the following story, suggest 3 distinct and evocative Director's Vision statements.
 
 **Story Context:**
 - Logline: ${storyBible.logline}
@@ -315,16 +315,20 @@ export const suggestDirectorsVisions = async (storyBible: StoryBible): Promise<s
 - Setting: ${storyBible.setting?.slice(0, 300) || 'Not specified'}
 - Plot: ${storyBible.plotOutline?.slice(0, 300) || 'Not specified'}
 
+**CRITICAL OUTPUT CONSTRAINTS (HARD LIMITS):**
+- Each vision MUST be 2-3 sentences (maximum 80 words each)
+- Be concise but evocative - every word must count
+- DO NOT add verbose descriptions or flowery prose
+
 **Requirements:**
-- Each vision should be 1-2 sentences
-- Include specific cinematography terms (camera work, lighting, color palette, editing pace)
+- Include specific cinematography terms (camera work, lighting, color palette)
 - Reference film styles or directors when appropriate
 - Make each vision distinct from the others
 
-Return ONLY a JSON array of strings, no surrounding text or markdown.
+Return ONLY a JSON array of 3 strings, no surrounding text or markdown.
 
 Example output format:
-["Naturalistic handheld camerawork with warm diffusion and emphasis on organic textures, evoking Terrence Malick's contemplative pacing", "Stylized neo-noir palette with contrasting pools of light and shadow, reflective surfaces echoing Blade Runner's dystopian aesthetic"]`;
+["Naturalistic handheld camerawork with warm diffusion, evoking Terrence Malick's contemplative pacing.", "Stylized neo-noir palette with contrasting pools of light and shadow, echoing Blade Runner's dystopian aesthetic."]`;
 
     const body = {
       model: settings.llmModel || DEFAULT_MODEL,
@@ -402,12 +406,18 @@ export const refineDirectorsVision = async (vision: string, storyBible: StoryBib
 **Original Director's Vision:**
 "${vision}"
 
+**CRITICAL OUTPUT CONSTRAINTS (HARD LIMITS):**
+- Output MUST be a SINGLE paragraph (no line breaks)
+- HARD LIMIT: Maximum 150 words
+- Be concise but evocative - every word must count
+- DO NOT add unnecessary elaboration
+
 **Your Task:**
 Return a refined, enhanced version of this vision as a single paragraph. It should:
 - Be more descriptive and professional
 - Use specific cinematic terminology (camera work, color palettes, lighting styles, editing pace, sound design)
 - Maintain the original intent while adding depth
-- Be 2-4 sentences long
+- Be 2-4 sentences long (max 150 words)
 
 Return ONLY the refined vision text, no surrounding quotes, markdown, or explanations.`;
 
@@ -565,7 +575,6 @@ export const refineStoryBibleSection = async (
   try {
     const isSuggestionMode = content.includes('[SUGGESTION MODE]');
     const cleanContent = content.replace('[SUGGESTION MODE]', '').trim();
-    const sectionName = section === 'logline' ? 'Logline' : section === 'setting' ? 'Setting' : section === 'characters' ? 'Characters' : 'Plot Outline';
     let prompt = '';
     
     if (section === 'logline') {
@@ -621,6 +630,10 @@ Enhance the setting description by:
 - Creating atmospheric tone that supports the story
 - Focusing on ENVIRONMENT and WORLD, NOT characters
 
+HARD CONSTRAINTS:
+- Target length: 200-300 words (MIN 50, MAX 300)
+- Keep paragraphs concise and focused on visual/atmospheric details
+
 Return the refined setting description (2-4 sentences). Use vivid, cinematic language.`;
     } else if (section === 'characters') {
       prompt = `You are a narrative designer. Refine the following character descriptions to make them more compelling and cinematically vivid.
@@ -638,7 +651,13 @@ Enhance the character descriptions by:
 - Adding specific visual details that would translate well to screen
 - Ensuring each character has a clear arc potential
 
-Return the refined character section. Maintain the original structure but enhance the depth. Use markdown formatting if appropriate (bullet points, bold text).`;
+STRUCTURE & LENGTH CONSTRAINTS:
+- Focus on 3-5 primary characters
+- For each character, use a clear markdown heading or bold name, followed by 2-4 sentences
+- Total section length should be between 200 and 600 words
+- Emphasize VISUAL descriptors (for image/video prompts) plus inner motivation
+
+Return the refined character section. Maintain the original structure but enhance the depth. Use markdown formatting (bold names, bullet points) where appropriate.`;
     } else { // plotOutline
       prompt = `You are a narrative designer. Refine the following plot outline to make it more engaging and structurally sound.
 
@@ -655,7 +674,12 @@ Enhance the plot outline by:
 - Ensuring scene transitions carry deliberate momentum
 - Highlighting key dramatic beats and turning points
 
-Return the refined plot outline. Maintain the original structure but enhance the narrative flow. Use markdown formatting if appropriate (bullet points, bold text).`;
+STRUCTURE & LENGTH CONSTRAINTS:
+- Use a clear three-act structure (Act I, Act II, Act III) with bullet points for key beats
+- Each bullet should be 1-3 sentences (10-60 words)
+- Overall outline should stay within ~150-600 words and avoid excessive exposition
+
+Return the refined plot outline. Maintain the original structure but enhance the narrative flow. Use markdown formatting (acts and bullets).`;
     }
 
     const body = {
@@ -701,7 +725,5 @@ Return the refined plot outline. Maintain the original structure but enhance the
     clearTimeout(timeoutId);
   }
 };
-
-
 
 

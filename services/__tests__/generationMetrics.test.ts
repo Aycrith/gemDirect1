@@ -12,7 +12,6 @@ import {
     getVariantSummary,
     isSignificantDifference,
     compareVariants,
-    generateComparisonReport,
     exportMetricsToJson,
     exportMetricsToCsv,
     bayesianCompareVariants,

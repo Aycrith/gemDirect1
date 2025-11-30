@@ -25,7 +25,6 @@ import {
     IPADAPTER_NODE_TYPES,
     DEFAULT_IPADAPTER_OPTIONS,
     type IPAdapterReference,
-    type IPAdapterOptions,
 } from '../ipAdapterService';
 import type { VisualBible, VisualBibleCharacter, Scene, Shot } from '../../types';
 
@@ -34,18 +33,19 @@ const mockScene: Scene = {
     id: 'scene-1',
     title: 'The Hero Arrives',
     summary: 'A brave warrior named Marcus approaches the ancient temple.',
-    timeline: { shots: [] },
+    timeline: { 
+        shots: [],
+        shotEnhancers: {},
+        transitions: [],
+        negativePrompt: '',
+    },
 };
 
 // Mock shot for testing
 const mockShot: Shot = {
     id: 'shot-1',
     description: 'Marcus draws his sword as he enters the temple.',
-    shotType: 'medium',
-    cameraAngle: 'eye level',
-    cameraMovement: 'static',
-    lighting: 'dramatic',
-    enhancers: {},
+    purpose: 'Establish hero arrival',
 };
 
 // Mock character with reference image
@@ -118,14 +118,14 @@ describe('ipAdapterService', () => {
         it('returns references for characters mapped to scene', () => {
             const refs = getCharacterReferencesForScene(mockVisualBible, mockScene);
             expect(refs).toHaveLength(1);
-            expect(refs[0].characterId).toBe('char-marcus');
-            expect(refs[0].characterName).toBe('Marcus');
-            expect(refs[0].imageRef).toBe('data:image/png;base64,mockImageData123');
+            expect(refs[0]!.characterId).toBe('char-marcus');
+            expect(refs[0]!.characterName).toBe('Marcus');
+            expect(refs[0]!.imageRef).toBe('data:image/png;base64,mockImageData123');
         });
 
         it('respects character ipAdapterWeight', () => {
             const refs = getCharacterReferencesForScene(mockVisualBible, mockScene);
-            expect(refs[0].weight).toBe(0.75);
+            expect(refs[0]!.weight).toBe(0.75);
         });
 
         it('falls back to default weight when not specified', () => {
@@ -137,7 +137,7 @@ describe('ipAdapterService', () => {
                 }],
             };
             const refs = getCharacterReferencesForScene(vb, mockScene);
-            expect(refs[0].weight).toBe(RECOMMENDED_WEIGHTS.medium);
+            expect(refs[0]!.weight).toBe(RECOMMENDED_WEIGHTS.medium);
         });
 
         it('applies globalWeight from options', () => {
@@ -147,7 +147,7 @@ describe('ipAdapterService', () => {
                 { globalWeight: 0.5 }
             );
             // Character has weight 0.75, which should be used directly
-            expect(refs[0].weight).toBe(0.75);
+            expect(refs[0]!.weight).toBe(0.75);
         });
 
         it('falls back to character name matching in scene text', () => {
@@ -158,7 +158,7 @@ describe('ipAdapterService', () => {
             const refs = getCharacterReferencesForScene(vbWithoutMapping, mockScene);
             // Should find Marcus by name in scene summary
             expect(refs).toHaveLength(1);
-            expect(refs[0].characterName).toBe('Marcus');
+            expect(refs[0]!.characterName).toBe('Marcus');
         });
 
         it('skips characters without reference images in scene mapping', () => {
@@ -199,7 +199,7 @@ describe('ipAdapterService', () => {
             };
             const refs = getCharacterReferencesForShot(vbWithShotMapping, mockShot, []);
             expect(refs).toHaveLength(1);
-            expect(refs[0].characterId).toBe('char-marcus');
+            expect(refs[0]!.characterId).toBe('char-marcus');
         });
 
         it('filters scene refs by character mentions in shot description', () => {
@@ -222,7 +222,7 @@ describe('ipAdapterService', () => {
             const refs = getCharacterReferencesForShot(mockVisualBible, mockShot, sceneRefs);
             // Only Marcus mentioned in shot description
             expect(refs).toHaveLength(1);
-            expect(refs[0].characterName).toBe('Marcus');
+            expect(refs[0]!.characterName).toBe('Marcus');
         });
     });
 
@@ -275,7 +275,7 @@ describe('ipAdapterService', () => {
                 n => n.class_type === IPADAPTER_NODE_TYPES.CLIP_VISION
             );
             expect(clipVisionNode).toBeDefined();
-            expect(clipVisionNode?._meta?.title).toContain('CLIP Vision');
+            expect((clipVisionNode?._meta as { title?: string })?.title).toContain('CLIP Vision');
         });
 
         it('creates IP-Adapter loader node', () => {
@@ -292,7 +292,7 @@ describe('ipAdapterService', () => {
                 n => n.class_type === IPADAPTER_NODE_TYPES.LOAD_IMAGE
             );
             expect(loadImageNodes).toHaveLength(1);
-            expect(loadImageNodes[0]?.inputs?.image).toBe('__IPADAPTER_REF_ref-1__');
+            expect((loadImageNodes[0]?.inputs as { image?: string })?.image).toBe('__IPADAPTER_REF_ref-1__');
         });
 
         it('creates Apply node with correct weight', () => {
@@ -301,7 +301,7 @@ describe('ipAdapterService', () => {
                 n => n.class_type === IPADAPTER_NODE_TYPES.APPLY
             );
             expect(applyNode).toBeDefined();
-            expect(applyNode?.inputs?.weight).toBe(0.8);
+            expect((applyNode?.inputs as { weight?: number })?.weight).toBe(0.8);
         });
 
         it('applies globalWeight multiplier', () => {
@@ -313,14 +313,14 @@ describe('ipAdapterService', () => {
             const applyNode = Object.values(nodes).find(
                 n => n.class_type === IPADAPTER_NODE_TYPES.APPLY
             );
-            expect(applyNode?.inputs?.weight).toBe(0.4); // 0.8 * 0.5
+            expect((applyNode?.inputs as { weight?: number })?.weight).toBe(0.4); // 0.8 * 0.5
         });
 
         it('creates connection to replace model input', () => {
             const { connections } = createIPAdapterNodes(mockReferences, 'model-1');
             expect(connections).toHaveLength(1);
-            expect(connections[0].to).toBe('KSampler');
-            expect(connections[0].input).toBe('model');
+            expect(connections[0]!.to).toBe('KSampler');
+            expect(connections[0]!.input).toBe('model');
         });
     });
 
@@ -474,7 +474,7 @@ describe('ipAdapterService', () => {
             const uploadedFilenames = { 'ref-1': 'uploaded_character.png' };
             
             const result = applyUploadedImagesToWorkflow(workflow, uploadedFilenames);
-            expect(result['100'].inputs?.image).toBe('uploaded_character.png');
+            expect((result['100']!.inputs as { image?: string })?.image).toBe('uploaded_character.png');
         });
 
         it('preserves non-placeholder images', () => {
@@ -486,7 +486,7 @@ describe('ipAdapterService', () => {
             };
             
             const result = applyUploadedImagesToWorkflow(workflow, {});
-            expect(result['100'].inputs?.image).toBe('original.png');
+            expect((result['100']!.inputs as { image?: string })?.image).toBe('original.png');
         });
 
         it('handles multiple references', () => {
@@ -506,8 +506,8 @@ describe('ipAdapterService', () => {
             };
             
             const result = applyUploadedImagesToWorkflow(workflow, uploadedFilenames);
-            expect(result['100'].inputs?.image).toBe('hero.png');
-            expect(result['101'].inputs?.image).toBe('sidekick.png');
+            expect((result['100']!.inputs as { image?: string })?.image).toBe('hero.png');
+            expect((result['101']!.inputs as { image?: string })?.image).toBe('sidekick.png');
         });
     });
 

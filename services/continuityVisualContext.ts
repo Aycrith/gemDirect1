@@ -133,7 +133,7 @@ export function findCharacterContinuityIssues(
         for (let i = 0; i < orderedScenes.length - 1; i += 1) {
             const current = orderedScenes[i];
             const next = orderedScenes[i + 1];
-            if (next.index - current.index > 1) {
+            if (current && next && next.index - current.index > 1) {
                 for (let pointer = current.index + 1; pointer < next.index; pointer += 1) {
                     const missingScene = scenes[pointer];
                     if (missingScene) {

@@ -5,7 +5,7 @@
  * Story Idea → Story Bible → Director's Vision → Scene Timeline → Video Generation
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import {
     Shot,
     StoryBible,
@@ -178,6 +178,8 @@ describe('E2E: Story to Video Generation Pipeline', () => {
 
     it('should validate shot enhancers are properly structured', () => {
         const shot1Enhancers = mockScene.timeline.shotEnhancers['shot-1'];
+        expect(shot1Enhancers).toBeDefined();
+        if (!shot1Enhancers) return;
 
         expect(shot1Enhancers.framing).toBeInstanceOf(Array);
         expect(shot1Enhancers.lighting).toBeInstanceOf(Array);
@@ -192,10 +194,12 @@ describe('E2E: Story to Video Generation Pipeline', () => {
     it('should match enhancer values to known categories', () => {
         const validFraming = ['wide angle', 'close-up', 'medium', 'aerial drone'];
         const validMovement = ['steady cam walking', 'static', 'slow pan', 'tracking'];
-        const validLighting = ['night time', 'neon glow', 'low key', 'dramatic'];
-        const validMood = ['mysterious', 'tension', 'suspense', 'atmospheric'];
+        // These are defined for reference but not currently used in assertions
+        // const validLighting = ['night time', 'neon glow', 'low key', 'dramatic'];
+        // const validMood = ['mysterious', 'tension', 'suspense', 'atmospheric'];
 
         const shot1Enhancers = mockScene.timeline.shotEnhancers['shot-1'];
+        if (!shot1Enhancers) return;
 
         shot1Enhancers.framing?.forEach((value) => {
             expect(validFraming).toContain(value);
@@ -239,9 +243,9 @@ describe('E2E: Story to Video Generation Pipeline', () => {
             order: data.order,
         }));
 
-        expect(orderedResults[0].order).toBe(0);
-        expect(orderedResults[1].order).toBe(1);
-        expect(orderedResults[2].order).toBe(2);
+        expect(orderedResults[0]?.order).toBe(0);
+        expect(orderedResults[1]?.order).toBe(1);
+        expect(orderedResults[2]?.order).toBe(2);
     });
 
     it('should support transitions between shots', () => {
@@ -272,6 +276,9 @@ describe('E2E: Story to Video Generation Pipeline', () => {
 
     it('should provide error recovery for failed shots', () => {
         const failedShot = mockScene.timeline.shots[1];
+        expect(failedShot).toBeDefined();
+        if (!failedShot) return;
+        
         const error = new Error(
             `Failed to generate video for shot: ${failedShot.id}`
         );

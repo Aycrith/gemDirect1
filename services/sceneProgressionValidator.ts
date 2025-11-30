@@ -56,7 +56,7 @@ export const validateSceneProgression = (
         const summaryMatch = scene.summary.match(actPattern);
         const match = titleMatch || summaryMatch;
 
-        if (match) {
+        if (match && match[1]) {
             const act = parseInt(match[1], 10);
             actsDetected.push(act);
 
@@ -95,6 +95,7 @@ export const validateSceneProgression = (
         for (let i = 1; i < arcOrders.length; i++) {
             const prev = arcOrders[i - 1];
             const curr = arcOrders[i];
+            if (!prev || !curr) continue;
 
             if (curr.order! < prev.order!) {
                 warnings.push({
@@ -175,5 +176,5 @@ const extractCharacterNames = (charactersMarkdown: string): string[] => {
     if (!charactersMarkdown) return [];
 
     const matches = charactersMarkdown.matchAll(/^##\s+(.+)$/gm);
-    return Array.from(matches, m => m[1].trim());
+    return Array.from(matches, m => m[1]?.trim() ?? '').filter(Boolean);
 };

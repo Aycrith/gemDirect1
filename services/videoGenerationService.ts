@@ -1,6 +1,8 @@
 import { TimelineData, LocalGenerationSettings } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 import type { ArtifactSceneMetadata, SceneVideoMetadata } from '../utils/hooks';
+import { isFeatureEnabled, FeatureFlags } from '../utils/featureFlags';
+import { getGenerationQueue, createVideoTask, GenerationStatus } from './generationQueue';
 
 /**
  * Generates a structured JSON payload and a human-readable text prompt from timeline data.
@@ -140,7 +142,11 @@ export const queueComfyUIPrompt = async (
     for (const [key, dataType] of Object.entries(settings.mapping)) {
         if (dataType === 'none') continue;
 
-        const [nodeId, inputName] = key.split(':');
+        const parts = key.split(':');
+        const nodeId = parts[0];
+        const inputName = parts[1];
+        if (!nodeId || !inputName) continue;
+        
         const node = promptPayloadTemplate[nodeId];
 
         if (!node) {
@@ -163,7 +169,8 @@ export const queueComfyUIPrompt = async (
         // --- STEP 1: UPLOAD ASSETS (IF MAPPED) ---
         const imageMappingKey = Object.keys(settings.mapping).find(key => settings.mapping[key] === 'keyframe_image');
         if (imageMappingKey) {
-            const [nodeId] = imageMappingKey.split(':');
+            const nodeId = imageMappingKey.split(':')[0];
+            if (!nodeId) throw new Error('Invalid mapping key format for keyframe_image');
             const node = promptPayload[nodeId];
 
             if (node && node.class_type === 'LoadImage') {
@@ -187,7 +194,11 @@ export const queueComfyUIPrompt = async (
         for (const [key, dataType] of Object.entries(settings.mapping)) {
             if (dataType === 'none') continue;
 
-            const [nodeId, inputName] = key.split(':');
+            const parts = key.split(':');
+            const nodeId = parts[0];
+            const inputName = parts[1];
+            if (!nodeId || !inputName) continue;
+            
             const node = promptPayload[nodeId];
             
             if (node && node.inputs) {
@@ -452,4 +463,76 @@ export const queueVideoGeneration = async (
             profileId
         );
     }
+};
+
+// ============================================================================
+// Queue-Aware Video Generation (Feature Flag Controlled)
+// ============================================================================
+
+export interface QueuedVideoGenerationOptions {
+    /** Scene ID for task tracking */
+    sceneId: string;
+    /** Shot ID for task tracking */
+    shotId?: string;
+    /** Feature flags to check useGenerationQueue */
+    featureFlags?: FeatureFlags;
+    /** Logging callback */
+    logCallback?: (message: string, level?: 'info' | 'warn' | 'error') => void;
+    /** Progress callback for queue status updates */
+    onProgress?: (progress: number, message?: string) => void;
+    /** Status change callback */
+    onStatusChange?: (status: GenerationStatus) => void;
+}
+
+/**
+ * Queue video generation with optional GenerationQueue routing.
+ * 
+ * When `useGenerationQueue` feature flag is enabled:
+ * - Routes through serial GenerationQueue to prevent VRAM exhaustion
+ * - Provides automatic retry and circuit breaker patterns
+ * - Tracks progress and status changes
+ * 
+ * When disabled:
+ * - Falls back to direct queueVideoGeneration (existing behavior)
+ * 
+ * @param settings Local generation settings
+ * @param payloads Generated payloads (JSON and text prompts)
+ * @param base64Image Keyframe image (base64)
+ * @param profileId Workflow profile ID (ComfyUI only)
+ * @param options Queue-aware options including feature flags
+ * @returns Provider-specific response
+ */
+export const queueVideoGenerationWithQueue = async (
+    settings: LocalGenerationSettings,
+    payloads: { json: string; text: string; structured?: any[]; negativePrompt?: string },
+    base64Image: string,
+    profileId?: string,
+    options?: QueuedVideoGenerationOptions
+): Promise<any> => {
+    const useQueue = isFeatureEnabled(options?.featureFlags, 'useGenerationQueue');
+    const log = options?.logCallback || console.log;
+    
+    if (!useQueue) {
+        // Feature flag disabled: fall back to direct generation
+        log('[VideoGen] GenerationQueue disabled by feature flag, using direct generation', 'info');
+        return await queueVideoGeneration(settings, payloads, base64Image, profileId, options?.logCallback);
+    }
+    
+    // Feature flag enabled: route through GenerationQueue
+    log('[VideoGen] GenerationQueue enabled, queueing video generation task', 'info');
+    
+    const queue = getGenerationQueue();
+    
+    const task = createVideoTask(
+        () => queueVideoGeneration(settings, payloads, base64Image, profileId, options?.logCallback),
+        {
+            sceneId: options?.sceneId || 'unknown',
+            shotId: options?.shotId,
+            priority: 'normal',
+            onProgress: options?.onProgress,
+            onStatusChange: options?.onStatusChange,
+        }
+    );
+    
+    return await queue.enqueue(task);
 };

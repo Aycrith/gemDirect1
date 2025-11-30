@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   generateVideoFromShot,
   generateTimelineVideos,
+  type VideoGenerationDependencies,
+  type VideoGenerationOverrides,
 } from "../comfyUIService";
 import {
   createValidTestSettings,
   createWorkflowWithTransitionMetadataSettings,
 } from "./fixtures";
 import { createComfyUIHarness } from "./mocks/comfyUIHarness";
-import type { TimelineData } from "../../types";
+import type { TimelineData, Shot, CreativeEnhancers, LocalGenerationStatus } from "../../types";
 
 describe("generateVideoFromShot integration", () => {
   let harness: ReturnType<typeof createComfyUIHarness> | null = null;
@@ -578,11 +580,13 @@ describe("generateTimelineVideos integration", () => {
 
     const shotGenerator = (
       genSettings: typeof settings,
-      shot: TimelineData["shots"][number],
-      enhancers: TimelineData["shotEnhancers"][string],
+      shot: Shot,
+      enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>> | undefined,
       vision: string,
       keyframe: string | null,
-      onProgress?: (statusUpdate: any) => void,
+      onProgress?: (statusUpdate: Partial<LocalGenerationStatus>) => void,
+      _dependencies?: VideoGenerationDependencies,
+      _overrides?: VideoGenerationOverrides,
     ) =>
       generateVideoFromShot(
         genSettings,
@@ -592,8 +596,8 @@ describe("generateTimelineVideos integration", () => {
         keyframe,
         onProgress,
         {
-          trackExecution: harness.trackExecution,
-          pollQueueInfo: harness.pollQueueInfo,
+          trackExecution: harness!.trackExecution,
+          pollQueueInfo: harness!.pollQueueInfo,
         },
       );
 
@@ -618,7 +622,7 @@ describe("generateTimelineVideos integration", () => {
     );
 
     expect(Object.keys(results)).toEqual(["shot-a", "shot-b"]);
-    expect(results["shot-a"].filename).toBeTruthy();
-    expect(results["shot-b"].filename).toBeTruthy();
+    expect(results["shot-a"]!.filename).toBeTruthy();
+    expect(results["shot-b"]!.filename).toBeTruthy();
   });
 });

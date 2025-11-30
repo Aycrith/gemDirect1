@@ -49,7 +49,7 @@ describe('storyIdeaEnhancer', () => {
       expect(prompt).toContain('ORIGINAL IDEA:');
       expect(prompt).toContain(idea);
       expect(prompt).toContain('REQUIREMENTS:');
-      expect(prompt).toContain('CONSTRAINTS:');
+      expect(prompt).toContain('CRITICAL CONSTRAINTS'); // Updated to match new prompt format
     });
     
     it('should add word count expansion requirement for short ideas', () => {
@@ -59,7 +59,7 @@ describe('storyIdeaEnhancer', () => {
       const prompt = buildEnhancementPrompt(idea, validation);
       
       expect(prompt).toContain('Expand the idea');
-      expect(prompt).toContain('30-80 words');
+      expect(prompt).toContain('40-120 words'); // Updated to match new DEFAULT_ENHANCEMENT_CONFIG
     });
     
     it('should add protagonist requirement when missing', () => {
@@ -196,6 +196,115 @@ describe('storyIdeaEnhancer', () => {
       const result = parseEnhancementResponse(response, originalIdea);
       
       expect(result).toBe('The robot must find its purpose');
+    });
+    
+    // NEW TESTS: Multi-line response handling (fixes the "**Refined Plot Outline:**" bug)
+    describe('multi-line response handling', () => {
+      it('should handle **Refined Plot Outline:** markdown header followed by content', () => {
+        const response = `**Refined Plot Outline:**
+
+In the desolate, neon-lit ruins of post-apocalyptic Tokyo, Kaito, a lone musician, plays haunting melodies on his modified shamisen.`;
+        
+        const result = parseEnhancementResponse(response, originalIdea);
+        
+        expect(result).toContain('desolate, neon-lit ruins');
+        expect(result).toContain('Kaito');
+        expect(result).not.toContain('Refined Plot Outline');
+      });
+      
+      it('should handle **Enhanced Version:** markdown header', () => {
+        const response = `**Enhanced Version:**
+
+A sentient android named ARIA discovers emotions when she meets a lonely scientist on a dying Mars colony.`;
+        
+        const result = parseEnhancementResponse(response, originalIdea);
+        
+        expect(result).toContain('ARIA');
+        expect(result).toContain('Mars colony');
+        expect(result).not.toContain('Enhanced Version');
+      });
+      
+      it('should handle single-asterisk headers like *Improved Idea:*', () => {
+        const response = `*Improved Idea:*
+
+The last human on Earth befriends an alien visitor, but must choose between humanity's survival and interspecies peace.`;
+        
+        const result = parseEnhancementResponse(response, originalIdea);
+        
+        expect(result).toContain('last human on Earth');
+        expect(result).not.toContain('Improved Idea');
+      });
+      
+      it('should handle multi-paragraph responses and preserve them', () => {
+        const response = `**Refined Plot Outline:**
+
+In a cyberpunk Tokyo, Maya is a hacker with a secret past.
+
+She discovers her memories were implanted by a megacorporation. Now she must find the truth while evading corporate assassins.`;
+        
+        const result = parseEnhancementResponse(response, originalIdea);
+        
+        expect(result).toContain('cyberpunk Tokyo');
+        expect(result).toContain('megacorporation');
+        expect(result).toContain('corporate assassins');
+        expect(result).not.toContain('Refined Plot Outline');
+      });
+      
+      it('should handle generic "Title:" followed by blank line pattern', () => {
+        const response = `Story Summary:
+
+A detective in 1920s Chicago investigates a series of murders linked to jazz clubs and speakeasies.`;
+        
+        const result = parseEnhancementResponse(response, originalIdea);
+        
+        expect(result).toContain('detective');
+        expect(result).toContain('1920s Chicago');
+        expect(result).not.toContain('Story Summary');
+      });
+      
+      it('should NOT remove first line if it contains actual content (sentence with period)', () => {
+        const response = `A brilliant scientist makes a discovery.
+
+This leads to unexpected consequences when the government gets involved.`;
+        
+        const result = parseEnhancementResponse(response, originalIdea);
+        
+        // First line has content (ends with period), should be preserved
+        expect(result).toContain('brilliant scientist');
+        expect(result).toContain('discovery');
+      });
+      
+      it('should handle response that is just content without any header', () => {
+        const response = `A time-traveling archaeologist discovers that ancient civilizations were actually seeded by her future self, creating a paradox that threatens to unravel reality.`;
+        
+        const result = parseEnhancementResponse(response, originalIdea);
+        
+        expect(result).toContain('time-traveling archaeologist');
+        expect(result).toContain('paradox');
+      });
+      
+      it('should handle Refined Plot Outline without markdown formatting', () => {
+        const response = `Refined Plot Outline:
+
+A lone spaceship captain discovers an abandoned alien megastructure.`;
+        
+        const result = parseEnhancementResponse(response, originalIdea);
+        
+        expect(result).toContain('spaceship captain');
+        expect(result).toContain('megastructure');
+        expect(result).not.toContain('Refined Plot Outline');
+      });
+      
+      it('should handle Here is the refined version: preamble', () => {
+        const response = `Here's the refined version:
+
+In a world where dreams are commodities, a dream thief falls in love with her target.`;
+        
+        const result = parseEnhancementResponse(response, originalIdea);
+        
+        expect(result).toContain('dream thief');
+        expect(result).not.toContain('refined version');
+      });
     });
   });
   
@@ -499,10 +608,10 @@ describe('storyIdeaEnhancer', () => {
   });
   
   describe('DEFAULT_ENHANCEMENT_CONFIG', () => {
-    it('should have reasonable default values', () => {
+    it('should have reasonable default values aligned with VALIDATION_THRESHOLDS', () => {
       expect(DEFAULT_ENHANCEMENT_CONFIG.maxAttempts).toBe(3);
-      expect(DEFAULT_ENHANCEMENT_CONFIG.targetWordCount.min).toBe(30);
-      expect(DEFAULT_ENHANCEMENT_CONFIG.targetWordCount.max).toBe(80);
+      expect(DEFAULT_ENHANCEMENT_CONFIG.targetWordCount.min).toBe(40);
+      expect(DEFAULT_ENHANCEMENT_CONFIG.targetWordCount.max).toBe(120);
       expect(DEFAULT_ENHANCEMENT_CONFIG.preserveOriginalIntent).toBe(true);
     });
   });

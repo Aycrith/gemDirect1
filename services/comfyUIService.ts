@@ -13,6 +13,7 @@ import {
     createValidationError,
     createValidationWarning,
     ValidationErrorCodes,
+    ValidationErrorCode,
 } from '../types/validation';
 import { estimateTokens, truncateToTokenLimit, DEFAULT_TOKEN_BUDGETS } from './promptRegistry';
 import { getPromptConfigForModel, applyPromptTemplate, getDefaultNegativePromptForModel, type PromptTarget } from './promptTemplates';
@@ -20,7 +21,6 @@ import { getVisualContextForShot, getCharacterContextForShot, getVisualContextFo
 // Phase 7: Narrative Coherence - track story elements across generations
 import {
     NarrativeState,
-    NarrativeStateSummary,
     createInitialNarrativeState,
     updateNarrativeStateForScene,
     updateNarrativeStateForShot,
@@ -34,6 +34,8 @@ import {
     type IPAdapterPayload,
 } from './ipAdapterService';
 // Phase 7: Video upscaling post-processing (imported when needed)
+// Generation Queue for serial VRAM-safe execution
+import { getGenerationQueue, createVideoTask, GenerationStatus } from './generationQueue';
 
 // Interface for ComfyUI workflow nodes
 interface WorkflowNode {
@@ -52,6 +54,36 @@ const DISCOVERY_CANDIDATES = [
     'http://127.0.0.1:8188',  // ComfyUI standalone default
     'http://localhost:8188',
 ];
+
+const shouldInjectCharacterContinuity = (
+    shot: Shot,
+    visualBible?: VisualBible | null,
+    sceneId?: string
+): boolean => {
+    if (shot.heroMoment) return true;
+
+    const ctx = getCharacterContextForShot(visualBible, sceneId, shot.id);
+    if (!ctx.characterNames.length) return false;
+
+    const descLower = (shot.description || '').toLowerCase();
+    const purposeLower = (shot.purpose || '').toLowerCase();
+    return ctx.characterNames.some(name => {
+        const n = name.toLowerCase();
+        return descLower.includes(n) || purposeLower.includes(n);
+    });
+};
+
+const logPromptDebug = (tag: string, data: Record<string, unknown>) => {
+    try {
+        logCorrelation(
+            { correlationId: generateCorrelationId(), timestamp: Date.now(), source: 'comfyui' },
+            tag,
+            data
+        );
+    } catch {
+        // Best-effort debug logging; do not break pipeline
+    }
+};
 
 export interface WorkflowGenerationMetadata {
     highlightMappings: WorkflowProfileMappingHighlight[];
@@ -88,7 +120,48 @@ export interface ComfyUIPromptResult {
     workflowMeta: WorkflowGenerationMetadata;
 }
 
-const DEFAULT_FETCH_TIMEOUT_MS = 12000;
+// ============================================================================
+// CENTRALIZED TIMEOUT CONFIGURATION
+// ============================================================================
+// All timeout values in one place for easy adjustment and testing.
+// Test environments can override these via the TEST_TIMEOUT_OVERRIDE object.
+// ============================================================================
+
+export const COMFYUI_TIMEOUTS = {
+    /** Timeout for HTTP fetch requests (ms) */
+    FETCH: 12000,
+    /** Grace period after queue empties before checking history fallback (ms) */
+    QUEUE_GRACE_PERIOD: 60_000,
+    /** Interval between queue status polls (ms) */
+    QUEUE_POLL_INTERVAL: 2_000,
+    /** WebSocket connection timeout (ms) */
+    WEBSOCKET_CONNECT: 10_000,
+    /** Generation timeout for waitForComfyCompletion (ms) */
+    GENERATION: 10 * 60 * 1000, // 10 minutes
+    /** Extended timeout for video generation (ms) */
+    VIDEO_GENERATION: 15 * 60 * 1000, // 15 minutes
+    /** Keyframe generation timeout (ms) */
+    KEYFRAME_GENERATION: 5 * 60 * 1000, // 5 minutes
+    /** History API polling timeout (ms) */
+    HISTORY_POLL: 5000,
+    /** Server discovery timeout (ms) */
+    DISCOVERY: 2000,
+} as const;
+
+/**
+ * Test timeout overrides - set by test harness to speed up tests.
+ * Example: In tests, set TEST_TIMEOUT_OVERRIDE.GENERATION = 1000 for 1s timeout.
+ */
+export const TEST_TIMEOUT_OVERRIDE: Partial<typeof COMFYUI_TIMEOUTS> = {};
+
+/**
+ * Get a timeout value, respecting test overrides
+ */
+export const getTimeout = (key: keyof typeof COMFYUI_TIMEOUTS): number => {
+    return TEST_TIMEOUT_OVERRIDE[key] ?? COMFYUI_TIMEOUTS[key];
+};
+
+const DEFAULT_FETCH_TIMEOUT_MS = COMFYUI_TIMEOUTS.FETCH;
 
 // ============================================================================
 // GRACE PERIOD CONFIGURATION - Video Pipeline Race Condition Fix
@@ -99,8 +172,8 @@ const DEFAULT_FETCH_TIMEOUT_MS = 12000;
 //   - RTX 3090: 30-60s typical, 60s grace is safe
 //   - RTX 4090: 20-40s typical, 60s grace is safe  
 //   - Slower GPUs: May need 120s+ grace period
-const GRACE_PERIOD_MS = 60_000;        // 60 seconds after queue empties to wait for asset download
-const POLL_INTERVAL_MS = 2_000;        // 2 seconds between queue polls
+const GRACE_PERIOD_MS = COMFYUI_TIMEOUTS.QUEUE_GRACE_PERIOD;
+const POLL_INTERVAL_MS = COMFYUI_TIMEOUTS.QUEUE_POLL_INTERVAL;
 const FALLBACK_FETCH_ENABLED = true;   // If grace period expires, try fetching from history API
 const DEBUG_VIDEO_PIPELINE = false;    // Set to true for verbose pipeline debugging
 
@@ -284,10 +357,13 @@ const computeHighlightMappings = (workflowJson: string | undefined, mapping: Wor
       return [];
     }
     const [key] = entry;
-    const [nodeId, inputName] = key.split(':');
+    const parts = key.split(':');
+    const nodeId = parts[0] ?? '';
+    const inputName = parts[1] ?? '';
+    if (!nodeId) return [];
     const node = prompt?.[nodeId];
     const nodeTitle = node?._meta?.title || node?.label || `Node ${nodeId}`;
-    return [{ type: type as MappableData, nodeId, inputName: inputName ?? '', nodeTitle }];
+    return [{ type: type as MappableData, nodeId, inputName, nodeTitle }];
   });
 };
 
@@ -309,7 +385,7 @@ export const getQueueInfo = async (url: string): Promise<{ queue_running: number
 
 const resolveWorkflowProfile = (
     settings: LocalGenerationSettings,
-    modelId?: string,
+    _modelId?: string,
     override?: WorkflowProfile,
     profileId?: string
 ): WorkflowProfile => {
@@ -450,7 +526,10 @@ export const validateWorkflowAndMappings = (
     for (const [key, dataType] of Object.entries(mapping)) {
         if (dataType === 'none') continue;
 
-        const [nodeId, inputName] = key.split(':');
+        const parts = key.split(':');
+        const nodeId = parts[0];
+        const inputName = parts[1];
+        if (!nodeId || !inputName) continue;
         const node = promptPayloadTemplate[nodeId];
         const nodeTitle = node?._meta?.title || `Node ${nodeId}`;
 
@@ -597,7 +676,10 @@ export const validateWorkflowAndMappingsResult = (
     for (const [key, dataType] of Object.entries(mapping)) {
         if (dataType === 'none') continue;
 
-        const [nodeId, inputName] = key.split(':');
+        const parts = key.split(':');
+        const nodeId = parts[0];
+        const inputName = parts[1];
+        if (!nodeId || !inputName) continue;
         const node = promptPayloadTemplate[nodeId];
         const nodeTitle = node?._meta?.title || `Node ${nodeId}`;
 
@@ -688,45 +770,153 @@ const ensureWorkflowMappingDefaults = (workflowNodes: Record<string, any>, exist
     return mergedMapping;
 };
 
+/**
+ * Default fetch configuration values for ComfyUI asset retrieval.
+ * These can be overridden via LocalGenerationSettings.
+ */
+const DEFAULT_FETCH_CONFIG = {
+    maxRetries: 3,
+    timeoutMs: 15000,
+    retryDelayMs: 1000,
+};
 
-// Fetches an asset from the ComfyUI server and converts it to a data URL.
-const fetchAssetAsDataURL = async (url: string, filename: string, subfolder: string, type: string): Promise<string> => {
+/**
+ * Configuration for fetchAssetAsDataURL, allowing per-call customization.
+ */
+interface FetchAssetConfig {
+    maxRetries?: number;
+    timeoutMs?: number;
+    retryDelayMs?: number;
+}
+
+/**
+ * Fetches an asset from the ComfyUI server and converts it to a data URL.
+ * Includes configurable retry logic for transient failures.
+ * 
+ * @param url - ComfyUI server URL
+ * @param filename - Asset filename to fetch
+ * @param subfolder - Subfolder path on the server
+ * @param type - Asset type (output, input, etc.)
+ * @param config - Optional configuration for retries and timeouts
+ * @param retryCount - Internal retry counter (do not set manually)
+ * @returns Data URL string (data:mime/type;base64,...)
+ * @throws Error with actionable message including filename for debugging
+ */
+const fetchAssetAsDataURL = async (
+    url: string, 
+    filename: string, 
+    subfolder: string, 
+    type: string, 
+    config: FetchAssetConfig = {},
+    retryCount: number = 0
+): Promise<string> => {
+    const maxRetries = config.maxRetries ?? DEFAULT_FETCH_CONFIG.maxRetries;
+    const timeoutMs = config.timeoutMs ?? DEFAULT_FETCH_CONFIG.timeoutMs;
+    const retryDelayMs = config.retryDelayMs ?? DEFAULT_FETCH_CONFIG.retryDelayMs;
+    
     const baseUrl = getComfyUIBaseUrl(url);
-    const response = await fetchWithTimeout(`${baseUrl}/view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`, undefined, 5000);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch asset from ComfyUI server. Status: ${response.status}`);
-    }
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const dataUrl = reader.result as string;
-            // Micro-instrumentation: emit a short, deterministic anchor so E2E traces
-            // can correlate the inline data: URI with GEMDIRECT console diagnostics.
-            try {
-                // Console anchor (visible in Playwright traces)
-                console.info('GEMDIRECT-KEYFRAME:' + (dataUrl ? dataUrl.slice(0, 200) : ''));
-
-                // Also push a compact diagnostic into a global so tests can read it from the page
-                const g: any = globalThis as any;
-                g.__gemDirectClientDiagnostics = g.__gemDirectClientDiagnostics || [];
-                g.__gemDirectClientDiagnostics.push({
-                    event: 'keyframe-fetched',
-                    filename,
-                    subfolder,
-                    type,
-                    prefix: (dataUrl ? dataUrl.slice(0, 200) : ''),
-                    ts: Date.now(),
-                });
-            } catch (e) {
-                // ignore instrumentation errors
+    const fetchUrl = `${baseUrl}/view?filename=${encodeURIComponent(filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(type)}`;
+    
+    console.log(`[fetchAssetAsDataURL] Fetching: ${fetchUrl}${retryCount > 0 ? ` (retry ${retryCount}/${maxRetries})` : ''}`);
+    
+    try {
+        const response = await fetchWithTimeout(fetchUrl, undefined, timeoutMs);
+        if (!response.ok) {
+            console.error(`[fetchAssetAsDataURL] HTTP error: ${response.status} for ${filename}`);
+            
+            // Retry on server errors (5xx) or specific client errors
+            if (response.status >= 500 || response.status === 408) {
+                if (retryCount < maxRetries) {
+                    console.log(`[fetchAssetAsDataURL] Retrying in ${retryDelayMs}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                    return fetchAssetAsDataURL(url, filename, subfolder, type, config, retryCount + 1);
+                }
             }
+            
+            throw new Error(`Failed to fetch asset "${filename}" from ComfyUI server. Status: ${response.status}. URL: ${fetchUrl}. Try increasing fetch timeout in Settings > ComfyUI Settings > Advanced.`);
+        }
+        
+        const contentType = response.headers.get('content-type') || '';
+        console.log(`[fetchAssetAsDataURL] Response content-type: ${contentType}, status: ${response.status}`);
+        
+        const blob = await response.blob();
+        console.log(`[fetchAssetAsDataURL] Blob size: ${blob.size} bytes, type: ${blob.type}`);
+        
+        if (blob.size === 0) {
+            // Retry for empty blobs (file not finished writing)
+            if (retryCount < maxRetries) {
+                console.log(`[fetchAssetAsDataURL] Empty blob, retrying in ${retryDelayMs * 2}ms...`);
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs * 2));
+                return fetchAssetAsDataURL(url, filename, subfolder, type, config, retryCount + 1);
+            }
+            throw new Error(`Empty blob received for "${filename}". ComfyUI may not have finished writing the file. Try increasing retry delay in Settings > ComfyUI Settings > Advanced.`);
+        }
+        
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const dataUrl = reader.result as string;
+                
+                // Validate data URL format
+                if (!dataUrl || !dataUrl.startsWith('data:')) {
+                    console.error(`[fetchAssetAsDataURL] Invalid data URL for ${filename}: ${dataUrl?.slice(0, 100)}`);
+                    reject(new Error(`Failed to convert blob to data URL for "${filename}". FileReader returned: ${typeof dataUrl === 'string' ? dataUrl.slice(0, 50) : typeof dataUrl}. This is unexpected - please report this issue.`));
+                    return;
+                }
+                
+                console.log(`[fetchAssetAsDataURL] ✅ Successfully converted ${filename} to data URL (${dataUrl.length} chars)`);
+                
+                // Micro-instrumentation: emit a short, deterministic anchor so E2E traces
+                // can correlate the inline data: URI with GEMDIRECT console diagnostics.
+                try {
+                    // Console anchor (visible in Playwright traces)
+                    console.info('GEMDIRECT-KEYFRAME:' + (dataUrl ? dataUrl.slice(0, 200) : ''));
 
-            resolve(dataUrl);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
+                    // Also push a compact diagnostic into a global so tests can read it from the page
+                    const g: any = globalThis as any;
+                    g.__gemDirectClientDiagnostics = g.__gemDirectClientDiagnostics || [];
+                    g.__gemDirectClientDiagnostics.push({
+                        event: 'keyframe-fetched',
+                        filename,
+                        subfolder,
+                        type,
+                        prefix: (dataUrl ? dataUrl.slice(0, 200) : ''),
+                        ts: Date.now(),
+                    });
+                } catch (e) {
+                    // ignore instrumentation errors
+                }
+
+                resolve(dataUrl);
+            };
+            reader.onerror = (e) => {
+                console.error(`[fetchAssetAsDataURL] FileReader error for ${filename}:`, e);
+                reject(new Error(`FileReader failed for "${filename}". Browser may be out of memory or the blob is corrupted. Try reducing video resolution or closing other tabs.`));
+            };
+            reader.readAsDataURL(blob);
+        });
+    } catch (error) {
+        console.error(`[fetchAssetAsDataURL] Failed to fetch ${filename}:`, error);
+        
+        // Retry on network errors
+        if (retryCount < maxRetries && error instanceof Error && 
+            (error.message.includes('network') || error.message.includes('timeout') || error.message.includes('ECONNREFUSED'))) {
+            console.log(`[fetchAssetAsDataURL] Network error, retrying in ${retryDelayMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+            return fetchAssetAsDataURL(url, filename, subfolder, type, config, retryCount + 1);
+        }
+        
+        // Re-throw with actionable context if not already an Error with our message
+        if (error instanceof Error) {
+            // If error already has actionable info (from our throws above), re-throw as-is
+            if (error.message.includes('Settings >') || error.message.includes('report this issue')) {
+                throw error;
+            }
+            // Add context for other errors
+            throw new Error(`Failed to fetch "${filename}" after ${retryCount + 1} attempt(s): ${error.message}. Check ComfyUI server status and network connection.`);
+        }
+        throw new Error(`Failed to fetch "${filename}": Unknown error. Check ComfyUI server status.`);
+    }
 };
 
 
@@ -754,6 +944,29 @@ export const queueComfyUIPrompt = async (
     profileOverride?: WorkflowProfile,
     options?: QueuePromptOptions
 ): Promise<any> => {
+    // ========================================================================
+    // Entry Diagnostics - helps identify why requests never reach ComfyUI
+    // ========================================================================
+    const workflowProfileCount = Object.keys(settings.workflowProfiles || {}).length;
+    const hasRootWorkflowJson = !!settings.workflowJson;
+    const hasProfileWorkflowJson = !!settings.workflowProfiles?.[profileId]?.workflowJson;
+    console.log('[queueComfyUIPrompt] Entry diagnostics:', {
+        comfyUIUrl: settings.comfyUIUrl,
+        profileId,
+        workflowProfileCount,
+        hasRootWorkflowJson,
+        hasProfileWorkflowJson,
+        hasProfileOverride: !!profileOverride,
+        hasImage: !!base64Image && base64Image.length > 0
+    });
+    
+    // Early validation: Check if we have any workflow configured
+    if (workflowProfileCount === 0 && !hasRootWorkflowJson && !profileOverride) {
+        const errorMsg = 'No workflow profiles configured. Please import a workflow in Settings → ComfyUI Settings → Workflow Profiles.';
+        console.error('[queueComfyUIPrompt]', errorMsg);
+        throw new Error(errorMsg);
+    }
+    
     // ========================================================================
     // Token Validation Gate
     // ========================================================================
@@ -903,7 +1116,8 @@ export const queueComfyUIPrompt = async (
         // --- STEP 1: UPLOAD ASSETS (IF MAPPED) ---
         const imageMappingKey = Object.keys(runtimeSettings.mapping).find(key => runtimeSettings.mapping[key] === 'keyframe_image');
         if (imageMappingKey && base64Image) {
-            const [nodeId] = imageMappingKey.split(':');
+            const nodeId = imageMappingKey.split(':')[0];
+            if (!nodeId) throw new Error('Invalid mapping key: missing nodeId');
             const node = promptPayload[nodeId];
 
             if (node && node.class_type === 'LoadImage') {
@@ -938,6 +1152,10 @@ export const queueComfyUIPrompt = async (
                         ? imageRef.split(',')[1] 
                         : imageRef;
                     
+                    if (!base64Data) {
+                        console.warn(`[${profileId}] IP-Adapter: Empty base64 data for reference ${refId}, skipping`);
+                        continue;
+                    }
                     const blob = base64ToBlob(base64Data, 'image/png');
                     const formData = new FormData();
                     formData.append('image', blob, `ipadapter_${refId}_${Date.now()}.png`);
@@ -1003,7 +1221,10 @@ export const queueComfyUIPrompt = async (
         for (const [key, dataType] of Object.entries(runtimeSettings.mapping)) {
             if (dataType === 'none') continue;
 
-            const [nodeId, inputName] = key.split(':');
+            const parts = key.split(':');
+            const nodeId = parts[0];
+            const inputName = parts[1];
+            if (!nodeId || !inputName) continue;
             const node = promptPayload[nodeId] as WorkflowNode | undefined;
             
             if (node && node.inputs) {
@@ -1079,7 +1300,7 @@ export const queueComfyUIPrompt = async (
             throw new Error(errorMessage);
         }
         const result = await response.json();
-        try { pushDiagnostic({ profileId, action: 'prompt:result', promptId: result?.prompt_id, resultSnippet: JSON.stringify(result).slice(0, 1000) }); } catch(e){}
+        try { pushDiagnostic({ profileId, action: 'prompt:result', promptId: result?.prompt_id, resultSnippet: JSON.stringify(result).slice(0, 1000) }); } catch(e) { console.debug('[comfyUIService] Diagnostic push failed:', e); }
 
         let queueSnapshot;
         try {
@@ -1106,7 +1327,7 @@ export const queueComfyUIPrompt = async (
 
     } catch (error) {
         console.error("Error processing ComfyUI request:", error);
-        try { pushDiagnostic({ profileId, action: 'error', message: error instanceof Error ? error.message : String(error) }); } catch(e){}
+        try { pushDiagnostic({ profileId, action: 'error', message: error instanceof Error ? error.message : String(error) }); } catch(e) { console.debug('[comfyUIService] Diagnostic push failed:', e); }
         if (error instanceof Error && error.name === 'AbortError') {
             throw new Error('ComfyUI request timed out. The server may be slow or unresponsive.');
         }
@@ -1181,8 +1402,9 @@ export const queueComfyUIPromptValidated = async (
             profileOverride
         );
 
-        // Convert warnings from metadata to validation warnings
-        const warnings = (result.workflowMeta?.warnings || []).map((w: string, i: number) =>
+        // Convert warnings from metadata to validation warnings (kept for future use)
+        // Note: Currently unused but preserved for potential future integration
+        void (result.workflowMeta?.warnings || []).map((w: string, i: number) =>
             createValidationWarning(`WORKFLOW_WARN_${i}`, w)
         );
 
@@ -1192,7 +1414,7 @@ export const queueComfyUIPromptValidated = async (
         const message = error instanceof Error ? error.message : String(error);
         
         // Categorize error and provide suggestions
-        let errorCode = ValidationErrorCodes.PROVIDER_CONNECTION_FAILED;
+        let errorCode: ValidationErrorCode = ValidationErrorCodes.PROVIDER_CONNECTION_FAILED;
         let suggestions: Array<{ id: string; type: 'fix'; description: string; action: string; autoApplicable: boolean }> = [];
         
         if (message.includes('not valid JSON') || message.includes('re-sync')) {
@@ -1360,12 +1582,26 @@ export const trackPromptExecution = (
                 if (msg.data.prompt_id === promptId) {
                     console.log(`[trackPromptExecution] ✓ Execution complete for promptId=${promptId.slice(0,8)}...`);
                     const outputs = msg.data.output || {};
-                    const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [
-                        { entries: outputs.videos, resultType: 'video' },
-                        { entries: outputs.images, resultType: 'image' },
-                        { entries: outputs.gifs, resultType: 'video' },
-                        { entries: outputs.output, resultType: 'image' },
-                    ];
+                    
+                    // FIXED: Iterate through node outputs like polling handler does
+                    // ComfyUI executed event has outputs keyed by node ID, not flat videos/images
+                    const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [];
+                    
+                    for (const [nodeId, nodeOutput] of Object.entries(outputs)) {
+                        const output = nodeOutput as any;
+                        if (output.videos && Array.isArray(output.videos)) {
+                            console.log(`[trackPromptExecution] Found ${output.videos.length} videos in node ${nodeId}`);
+                            assetSources.push({ entries: output.videos, resultType: 'video' });
+                        }
+                        if (output.images && Array.isArray(output.images)) {
+                            console.log(`[trackPromptExecution] Found ${output.images.length} images in node ${nodeId}`);
+                            assetSources.push({ entries: output.images, resultType: 'image' });
+                        }
+                        if (output.gifs && Array.isArray(output.gifs)) {
+                            console.log(`[trackPromptExecution] Found ${output.gifs.length} gifs in node ${nodeId}`);
+                            assetSources.push({ entries: output.gifs, resultType: 'video' });
+                        }
+                    }
 
                     const fetchAssetCollection = async (
                         entries: any[],
@@ -1415,11 +1651,18 @@ export const trackPromptExecution = (
                         }
 
                         if (downloadedAssets.length > 0) {
+                            const primaryAsset = downloadedAssets[0];
+                            if (!primaryAsset) {
+                                console.error(`[trackPromptExecution] ❌ Primary asset is undefined despite array length > 0`);
+                                dispatchProgress({ status: 'error', message: 'Asset download failed - empty result' });
+                                ws.close();
+                                return;
+                            }
                             const imageAssets = downloadedAssets.filter(asset => asset.type === 'image');
                             const videoAssets = downloadedAssets.filter(asset => asset.type === 'video');
                             
                             // CRITICAL: Validate first asset has valid data URL
-                            const primaryData = downloadedAssets[0].data;
+                            const primaryData = primaryAsset.data;
                             const isValidDataUrl = typeof primaryData === 'string' && 
                                 (primaryData.startsWith('data:video/') || primaryData.startsWith('data:image/'));
                             
@@ -1434,9 +1677,9 @@ export const trackPromptExecution = (
                             }
                             
                             const finalOutput: LocalGenerationStatus['final_output'] = {
-                                type: downloadedAssets[0].type,
-                                data: downloadedAssets[0].data,
-                                filename: downloadedAssets[0].filename,
+                                type: primaryAsset.type,
+                                data: primaryAsset.data,
+                                filename: primaryAsset.filename,
                                 assets: downloadedAssets,
                             };
 
@@ -1578,17 +1821,23 @@ export const generateVideoFromShot = async (
             settings,
             undefined,
             shot.id,
-            'shotVideo',
+            'sceneVideo', // Use sceneVideo for shot video generation
             overrides?.transitionContext,
             overrides?.shotTransitionContext,
             overrides?.narrativeContext
         );
+        logPromptDebug('shot-video-prompt', {
+            shotId: shot.id,
+            hasKeyframe: !!keyframeImage,
+            directorsVisionLength: directorsVision?.length || 0,
+            promptPreview: humanPrompt.substring(0, 160),
+        });
         
         reportProgress({ status: 'running', message: `Prompt: ${humanPrompt.substring(0, 80)}...` });
 
         // Step 2: Build payload with shot-specific data
         const modelId = resolveModelIdFromSettings(settings);
-        const defaultNegativePrompt = getDefaultNegativePromptForModel(modelId, 'shotVideo');
+        const defaultNegativePrompt = getDefaultNegativePromptForModel(modelId, 'sceneVideo');
         const appliedNegativePrompt = overrides?.negativePrompt?.trim()?.length
             ? overrides.negativePrompt
             : defaultNegativePrompt;
@@ -1745,15 +1994,16 @@ export const generateVideoFromShot = async (
             logPipeline('INIT', 'WebSocket tracking started');
 
             // ============================================================================
-            // TIMEOUT - Safety timeout (max 5 minutes per shot)
+            // TIMEOUT - Safety timeout (uses centralized config)
             // ============================================================================
+            const keyframeTimeoutMs = getTimeout('KEYFRAME_GENERATION');
             const timeout = setTimeout(() => {
                 if (isResolved) return;
                 isResolved = true;
-                const message = `${getSceneContext(promptId)} timed out (5 minutes exceeded) while waiting for output`;
+                const message = `${getSceneContext(promptId)} timed out (${keyframeTimeoutMs / 60000} minutes exceeded) while waiting for output`;
                 logPipeline('TIMEOUT', `❌ ${message}`);
                 reject(new Error(message));
-            }, 5 * 60 * 1000);
+            }, keyframeTimeoutMs);
 
             // ============================================================================
             // FALLBACK FETCH - Retrieve output from ComfyUI history API
@@ -1793,7 +2043,7 @@ export const generateVideoFromShot = async (
                     const outputs = promptHistory.outputs || {};
                     const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [];
                     
-                    for (const [nodeId, nodeOutput] of Object.entries(outputs)) {
+                    for (const [_nodeId, nodeOutput] of Object.entries(outputs)) {
                         const output = nodeOutput as any;
                         if (output.images) assetSources.push({ entries: output.images, resultType: 'image' });
                         if (output.videos) assetSources.push({ entries: output.videos, resultType: 'video' });
@@ -1831,8 +2081,14 @@ export const generateVideoFromShot = async (
                         return false;
                     }
                     
+                    const primaryAsset = downloadedAssets[0];
+                    if (!primaryAsset) {
+                        logPipeline('FALLBACK', 'Primary asset is undefined');
+                        return false;
+                    }
+                    
                     // Validate data URL
-                    const primaryData = downloadedAssets[0].data;
+                    const primaryData = primaryAsset.data;
                     const isValidDataUrl = typeof primaryData === 'string' && 
                         (primaryData.startsWith('data:video/') || primaryData.startsWith('data:image/'));
                     
@@ -1843,9 +2099,9 @@ export const generateVideoFromShot = async (
                     
                     // Success! Populate outputData
                     outputData = {
-                        type: downloadedAssets[0].type,
-                        data: downloadedAssets[0].data,
-                        filename: downloadedAssets[0].filename,
+                        type: primaryAsset.type,
+                        data: primaryAsset.data,
+                        filename: primaryAsset.filename,
                         assets: downloadedAssets,
                     };
                     
@@ -2127,20 +2383,36 @@ export const buildShotPrompt = (
     }
     const styleSegment = styleSnippets.length > 0 ? `Visual bible style cues: ${styleSnippets.join('; ')}.` : '';
 
+    // Character context: only inject when this shot explicitly references
+    // one of the characters by name in its description. This prevents
+    // environment-only shots (e.g., starship fly-throughs) from inheriting
+    // random character cues from other scenes.
     const charContext = getCharacterContextForShot(visualBible, sceneId, shotId || shot.id);
     const characterSnippets: string[] = [];
-    if (charContext.characterNames.length > 0) {
-        characterSnippets.push(`Characters: ${charContext.characterNames.join(', ')}`);
-    }
-    if (charContext.identityTags.length > 0) {
-        characterSnippets.push(`Identity tags: ${charContext.identityTags.join(', ')}`);
-    }
-    if (charContext.visualTraits.length > 0) {
-        characterSnippets.push(`Visual traits: ${charContext.visualTraits.join(', ')}`);
+    const descriptionLower = (shot.description || '').toLowerCase();
+    const hasExplicitCharacterMatch =
+        charContext.characterNames.some(name => descriptionLower.includes(name.toLowerCase()));
+
+    if (hasExplicitCharacterMatch) {
+        if (charContext.characterNames.length > 0) {
+            characterSnippets.push(`Characters: ${charContext.characterNames.join(', ')}`);
+        }
+        if (charContext.identityTags.length > 0) {
+            characterSnippets.push(`Identity tags: ${charContext.identityTags.join(', ')}`);
+        }
+        if (charContext.visualTraits.length > 0) {
+            characterSnippets.push(`Visual traits: ${charContext.visualTraits.join(', ')}`);
+        }
     }
     const characterSegment = characterSnippets.length > 0 ? `Visual bible character cues: ${characterSnippets.join('; ')}.` : '';
 
     const combinedVBSegment = [styleSegment, characterSegment].filter(Boolean).join(' ');
+    logPromptDebug('shot-prompt-components', {
+        shotId: shotId || shot.id,
+        hasCharacterCues: characterSegment.length > 0,
+        hasStyleCues: styleSegment.length > 0,
+        target,
+    });
 
     // Apply prompt template with guardrails
     const modelId = resolveModelIdFromSettings(settings);
@@ -2202,7 +2474,7 @@ export const generateTimelineVideos = async (
     settings: LocalGenerationSettings,
     timeline: TimelineData,
     directorsVision: string,
-    sceneSummary: string,
+    _sceneSummary: string,
     keyframeImages: Record<string, string>,
     onProgress?: (shotId: string, statusUpdate: Partial<LocalGenerationStatus>) => void,
     options?: TimelineGenerationOptions
@@ -2227,9 +2499,18 @@ export const generateTimelineVideos = async (
     // Check if shot-level continuity is enabled
     const useShotLevelContinuity = isFeatureEnabled(featureFlags, 'shotLevelContinuity') && scene;
     
+    // Phase 7: IP-Adapter character consistency - use Visual Bible reference images for identity preservation
+    const useIpAdapter = isFeatureEnabled(featureFlags, 'characterConsistency');
+    
     // Phase 7: Narrative state tracking - track story elements across generations
     const useNarrativeTracking = isFeatureEnabled(featureFlags, 'narrativeStateTracking') && options?.storyBible;
     let narrativeState = options?.narrativeState;
+    
+    // Check if GenerationQueue is enabled for VRAM-safe serial execution
+    const useGenerationQueue = isFeatureEnabled(featureFlags, 'useGenerationQueue');
+    if (useGenerationQueue) {
+        console.log('[Timeline Batch] GenerationQueue enabled - shots will be queued serially to prevent VRAM exhaustion');
+    }
     
     // Initialize narrative state from story bible if not provided
     if (useNarrativeTracking && !narrativeState && options?.storyBible) {
@@ -2255,20 +2536,15 @@ export const generateTimelineVideos = async (
         options?.onNarrativeStateUpdate?.(narrativeState);
     }
     
-    // Phase 7: IP-Adapter character consistency - check if available
-    const useIpAdapter = isFeatureEnabled(featureFlags, 'characterConsistency') && 
-        options?.characterReferenceImages && 
-        Object.keys(options.characterReferenceImages).length > 0;
-    if (useIpAdapter) {
-        console.log('[Timeline Batch] IP-Adapter character consistency enabled:', {
-            referenceCount: Object.keys(options.characterReferenceImages!).length
-        });
-    }
-    
     for (let i = 0; i < timeline.shots.length; i++) {
         const shot = timeline.shots[i];
+        if (!shot) {
+            console.warn(`[Timeline Batch] Shot at index ${i} is undefined, skipping`);
+            continue;
+        }
         const enhancers = timeline.shotEnhancers[shot.id];
         const keyframe = keyframeImages[shot.id] || null;
+        const allowCharacterContinuity = shouldInjectCharacterContinuity(shot, options?.visualBible, scene?.id);
         
         // Build shot-level transition context if enabled
         let shotTransitionContext: ShotTransitionContext | undefined;
@@ -2285,9 +2561,9 @@ export const generateTimelineVideos = async (
             }
         }
         
-        // Phase 7: Build narrative context for prompt injection
+        // Phase 7: Build narrative context for prompt injection (only when shot warrants character continuity)
         let narrativePromptContext: string | undefined;
-        if (useNarrativeTracking && narrativeState && scene) {
+        if (useNarrativeTracking && narrativeState && scene && allowCharacterContinuity) {
             try {
                 const narrativeSummary = generateNarrativeStateSummary(narrativeState, scene.id, options?.visualBible);
                 narrativePromptContext = formatNarrativeStateForPrompt(narrativeSummary);
@@ -2311,7 +2587,8 @@ export const generateTimelineVideos = async (
                 });
             }
 
-            const result = await shotExecutor(
+            // Define the shot execution function
+            const executeShotGeneration = () => shotExecutor(
                 settings,
                 shot,
                 enhancers,
@@ -2324,11 +2601,38 @@ export const generateTimelineVideos = async (
                     transitionContext: transitionContext,
                     shotTransitionContext: shotTransitionContext,
                     narrativeContext: narrativePromptContext,
-                    characterReferenceImages: useIpAdapter ? options?.characterReferenceImages : undefined,
-                    visualBible: useIpAdapter ? options?.visualBible : undefined,
-                    scene: useIpAdapter ? scene : undefined,
+                    characterReferenceImages: useIpAdapter && allowCharacterContinuity ? options?.characterReferenceImages : undefined,
+                    visualBible: useIpAdapter && allowCharacterContinuity ? options?.visualBible : undefined,
+                    scene: useIpAdapter && allowCharacterContinuity ? scene : undefined,
                 }
             );
+
+            let result;
+            if (useGenerationQueue) {
+                // Route through GenerationQueue for VRAM-safe serial execution
+                const queue = getGenerationQueue();
+                const task = createVideoTask(
+                    executeShotGeneration,
+                    {
+                        sceneId: scene?.id || 'unknown',
+                        shotId: shot.id,
+                        priority: 'normal',
+                        onProgress: (progress, message) => onProgress?.(shot.id, { progress, message }),
+                        onStatusChange: (status: GenerationStatus) => {
+                            if (status === 'running') {
+                                onProgress?.(shot.id, { status: 'running', message: `Queue: executing shot ${i + 1}` });
+                            } else if (status === 'pending') {
+                                onProgress?.(shot.id, { status: 'queued', message: `Queue: waiting to execute shot ${i + 1}` });
+                            }
+                        },
+                    }
+                );
+                console.log(`[Timeline Batch] Queueing shot ${shot.id} via GenerationQueue`);
+                result = await queue.enqueue(task);
+            } else {
+                // Direct execution (legacy behavior)
+                result = await executeShotGeneration();
+            }
 
             results[shot.id] = result;
             
@@ -2379,23 +2683,55 @@ const waitForComfyCompletion = (
     onProgress?: (statusUpdate: Partial<LocalGenerationStatus>) => void
 ): Promise<LocalGenerationStatus['final_output']> => {
     return new Promise((resolve, reject) => {
-        let finished = false;
-        // Increased timeout to 10 minutes for WAN2 video generation on consumer GPUs
-        const timeout = setTimeout(() => {
-            if (!finished) {
-                finished = true;
-                clearInterval(pollingInterval);
-                reject(new Error('ComfyUI generation timeout (10 minutes exceeded).'));
+        // ARCHITECTURE FIX: Use a mutex pattern to prevent dual resolution
+        // Both WebSocket and polling can detect completion - only the first should resolve
+        let resolutionState: 'pending' | 'resolving' | 'resolved' = 'pending';
+        
+        const tryResolve = (output: LocalGenerationStatus['final_output'], source: 'websocket' | 'polling'): boolean => {
+            if (resolutionState !== 'pending') {
+                console.log(`[waitForComfyCompletion] ⚠️ Ignoring ${source} resolution - already ${resolutionState} for ${promptId.slice(0,8)}...`);
+                return false;
             }
-        }, 10 * 60 * 1000);
+            resolutionState = 'resolving';
+            console.log(`[waitForComfyCompletion] ✓ Resolving Promise for ${promptId.slice(0,8)}... (via ${source})`);
+            cleanup();
+            onProgress?.({ status: 'complete', message: 'Generation complete!', final_output: output });
+            resolve(output);
+            resolutionState = 'resolved';
+            return true;
+        };
+        
+        const tryReject = (error: Error, source: 'websocket' | 'polling' | 'timeout'): boolean => {
+            if (resolutionState !== 'pending') {
+                console.log(`[waitForComfyCompletion] ⚠️ Ignoring ${source} rejection - already ${resolutionState} for ${promptId.slice(0,8)}...`);
+                return false;
+            }
+            resolutionState = 'resolving';
+            console.log(`[waitForComfyCompletion] ✗ Rejecting Promise for ${promptId.slice(0,8)}... (via ${source})`);
+            cleanup();
+            reject(error);
+            resolutionState = 'resolved';
+            return true;
+        };
+        
+        const cleanup = () => {
+            clearTimeout(timeout);
+            clearInterval(pollingInterval);
+        };
+        
+        // Use centralized timeout config - can be overridden for tests
+        const generationTimeoutMs = getTimeout('GENERATION');
+        const timeout = setTimeout(() => {
+            tryReject(new Error(`ComfyUI generation timeout (${generationTimeoutMs / 60000} minutes exceeded).`), 'timeout');
+        }, generationTimeoutMs);
 
         // Polling fallback: Check history API every 2 seconds if WebSocket doesn't deliver completion
         // This handles cases where multiple WebSocket connections cause event routing issues
         let wsReceivedEvents = false;
         console.log(`[waitForComfyCompletion] 🔄 Starting polling fallback for ${promptId.slice(0,8)}... (checking every 2s)`);
         const pollingInterval = setInterval(async () => {
-            if (finished) {
-                console.log(`[waitForComfyCompletion] ⏹️  Stopping polling for ${promptId.slice(0,8)}... (finished=true)`);
+            if (resolutionState !== 'pending') {
+                console.log(`[waitForComfyCompletion] ⏹️  Stopping polling for ${promptId.slice(0,8)}... (${resolutionState})`);
                 clearInterval(pollingInterval);
                 return;
             }
@@ -2420,6 +2756,11 @@ const waitForComfyCompletion = (
 
                 const status = promptHistory.status;
                 if (status?.status_str === 'success' && status?.completed) {
+                    // Check if already resolved before doing expensive work
+                    if (resolutionState !== 'pending') {
+                        return;
+                    }
+                    
                     // Execution completed! Fetch outputs
                     console.log(`[waitForComfyCompletion] 📊 Polling detected completion for ${promptId.slice(0,8)}... (WebSocket events: ${wsReceivedEvents ? 'received' : 'MISSING'})`);
                     
@@ -2427,7 +2768,7 @@ const waitForComfyCompletion = (
                     const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [];
                     
                     // Check all output nodes for images/videos
-                    for (const [nodeId, nodeOutput] of Object.entries(outputs)) {
+                    for (const [_nodeId, nodeOutput] of Object.entries(outputs)) {
                         const output = nodeOutput as any;
                         if (output.images) assetSources.push({ entries: output.images, resultType: 'image' });
                         if (output.videos) assetSources.push({ entries: output.videos, resultType: 'video' });
@@ -2439,6 +2780,13 @@ const waitForComfyCompletion = (
                         const entries = source.entries;
                         if (!Array.isArray(entries) || entries.length === 0) continue;
 
+                        // Build fetch config from settings
+                        const fetchConfig: FetchAssetConfig = {
+                            maxRetries: settings.comfyUIFetchMaxRetries ?? DEFAULT_FETCH_CONFIG.maxRetries,
+                            timeoutMs: settings.comfyUIFetchTimeoutMs ?? DEFAULT_FETCH_CONFIG.timeoutMs,
+                            retryDelayMs: settings.comfyUIFetchRetryDelayMs ?? DEFAULT_FETCH_CONFIG.retryDelayMs,
+                        };
+
                         const assets = await Promise.all(
                             entries.map(async (entry) => ({
                                 type: source.resultType,
@@ -2446,7 +2794,8 @@ const waitForComfyCompletion = (
                                     settings.comfyUIUrl,
                                     entry.filename,
                                     entry.subfolder,
-                                    entry.type || 'output'
+                                    entry.type || 'output',
+                                    fetchConfig
                                 ),
                                 filename: entry.filename,
                             }))
@@ -2455,27 +2804,32 @@ const waitForComfyCompletion = (
                     }
 
                     if (downloadedAssets.length > 0) {
+                        const primaryAsset = downloadedAssets[0];
+                        if (!primaryAsset) {
+                            tryReject(new Error('Primary asset is undefined despite array length > 0'), 'polling');
+                            return;
+                        }
                         const imageAssets = downloadedAssets.filter(asset => asset.type === 'image');
                         const videoAssets = downloadedAssets.filter(asset => asset.type === 'video');
                         
                         // CRITICAL: Validate first asset has valid data URL before proceeding
-                        const primaryData = downloadedAssets[0].data;
+                        const primaryData = primaryAsset.data;
                         const isValidDataUrl = typeof primaryData === 'string' && 
                             (primaryData.startsWith('data:video/') || primaryData.startsWith('data:image/'));
                         
                         if (!isValidDataUrl) {
                             console.error(`[waitForComfyCompletion] Invalid data URL received. Type: ${typeof primaryData}, Preview: ${typeof primaryData === 'string' ? primaryData.slice(0, 100) : 'N/A'}`);
-                            finished = true;
-                            clearTimeout(timeout);
-                            clearInterval(pollingInterval);
-                            reject(new Error(`Asset fetch returned invalid data (not a data URL). Expected 'data:video/...' or 'data:image/...', received: ${typeof primaryData === 'string' ? primaryData.slice(0, 50) : typeof primaryData}`));
+                            tryReject(
+                                new Error(`Asset fetch returned invalid data (not a data URL). Expected 'data:video/...' or 'data:image/...', received: ${typeof primaryData === 'string' ? primaryData.slice(0, 50) : typeof primaryData}`),
+                                'polling'
+                            );
                             return;
                         }
                         
                         const finalOutput: LocalGenerationStatus['final_output'] = {
-                            type: downloadedAssets[0].type,
-                            data: downloadedAssets[0].data,
-                            filename: downloadedAssets[0].filename,
+                            type: primaryAsset.type,
+                            data: primaryAsset.data,
+                            filename: primaryAsset.filename,
                             assets: downloadedAssets,
                         };
 
@@ -2486,23 +2840,13 @@ const waitForComfyCompletion = (
                             finalOutput.videos = videoAssets.map(asset => asset.data);
                         }
 
-                        finished = true;
-                        clearTimeout(timeout);
-                        clearInterval(pollingInterval);
-                        onProgress?.({ status: 'complete', message: 'Generation complete!', final_output: finalOutput });
-                        resolve(finalOutput);
+                        tryResolve(finalOutput, 'polling');
                     } else {
-                        finished = true;
-                        clearTimeout(timeout);
-                        clearInterval(pollingInterval);
-                        reject(new Error('Generation completed but no output files found.'));
+                        tryReject(new Error('Generation completed but no output files found.'), 'polling');
                     }
                 } else if (status?.status_str === 'error') {
-                    finished = true;
-                    clearTimeout(timeout);
-                    clearInterval(pollingInterval);
                     const errorMessage = status.messages?.find((m: any) => m[0] === 'execution_error')?.[1]?.exception_message || 'ComfyUI generation failed.';
-                    reject(new Error(errorMessage));
+                    tryReject(new Error(errorMessage), 'polling');
                 }
             } catch (error) {
                 // Polling error - continue trying (don't fail the whole operation)
@@ -2516,22 +2860,14 @@ const waitForComfyCompletion = (
             
             // Debug logging to trace completion issues
             if (update.status === 'complete' || update.status === 'error') {
-                console.log(`[waitForComfyCompletion] promptId=${promptId.slice(0,8)}... status=${update.status} hasOutput=${!!update.final_output} finished=${finished}`);
+                console.log(`[waitForComfyCompletion] promptId=${promptId.slice(0,8)}... status=${update.status} hasOutput=${!!update.final_output} resolutionState=${resolutionState}`);
             }
             
             onProgress?.(update);
-            if (!finished && update.status === 'complete' && update.final_output) {
-                finished = true;
-                clearTimeout(timeout);
-                clearInterval(pollingInterval);
-                console.log(`[waitForComfyCompletion] ✓ Resolving Promise for ${promptId.slice(0,8)}... (via WebSocket)`);
-                resolve(update.final_output);
-            } else if (!finished && update.status === 'error') {
-                finished = true;
-                clearTimeout(timeout);
-                clearInterval(pollingInterval);
-                console.log(`[waitForComfyCompletion] ✗ Rejecting Promise for ${promptId.slice(0,8)}...`);
-                reject(new Error(update.message || 'ComfyUI generation failed.'));
+            if (update.status === 'complete' && update.final_output) {
+                tryResolve(update.final_output, 'websocket');
+            } else if (update.status === 'error') {
+                tryReject(new Error(update.message || 'ComfyUI generation failed.'), 'websocket');
             }
         });
     });
@@ -2699,7 +3035,7 @@ export async function generateSceneBookendsLocally(
     storyBible: string,
     directorsVision: string,
     negativePrompt: string,
-    logApiCall: ApiLogCallback,
+    _logApiCall: ApiLogCallback,
     onStateChange: (state: any) => void
 ): Promise<{ start: string; end: string }> {
     console.log(`[Bookend Generation] Starting dual keyframe generation for scene ${scene.id}`);
@@ -2789,6 +3125,95 @@ export async function generateSceneBookendsLocally(
 }
 
 /**
+ * Bookend Workflow: Generate a single keyframe (start or end) for bookend mode
+ * Used when user wants to generate keyframes separately
+ * @param settings ComfyUI configuration
+ * @param scene Scene with temporalContext
+ * @param storyBible Story bible context
+ * @param directorsVision Visual style guide
+ * @param negativePrompt Negative prompt to apply
+ * @param which 'start' or 'end' keyframe to generate
+ * @param existingBookend The other keyframe if already generated (for partial update)
+ * @param logApiCall API call logging function
+ * @param onStateChange State change callback
+ * @returns Updated bookend object with start and end base64 images
+ */
+export async function generateSingleBookendLocally(
+    settings: LocalGenerationSettings,
+    scene: Scene,
+    storyBible: string,
+    directorsVision: string,
+    negativePrompt: string,
+    which: 'start' | 'end',
+    existingBookend: { start?: string; end?: string } | null,
+    _logApiCall: ApiLogCallback,
+    onStateChange: (state: any) => void
+): Promise<{ start: string; end: string }> {
+    console.log(`[Bookend Generation] Starting ${which.toUpperCase()} keyframe generation for scene ${scene.id}`);
+    
+    if (!scene.temporalContext) {
+        throw new Error(`Scene ${scene.id} requires temporalContext for bookend generation`);
+    }
+
+    // Import payload service dynamically to avoid circular dependency
+    const { generateBookendPayloads } = await import('./payloadService');
+    
+    const payloads = generateBookendPayloads(
+        scene.summary,
+        storyBible,
+        directorsVision,
+        scene.temporalContext,
+        negativePrompt
+    );
+
+    const moment = which === 'start' ? scene.temporalContext.startMoment : scene.temporalContext.endMoment;
+    console.log(`[Bookend Generation] Generating ${which.toUpperCase()} keyframe (moment: "${moment}")`);
+    onStateChange({ 
+        status: 'running', 
+        message: `Generating ${which} keyframe: ${moment}` 
+    });
+    
+    const payload = which === 'start' ? payloads.start : payloads.end;
+    const response = await queueComfyUIPrompt(
+        settings,
+        payload as any,
+        '', // No input image for T2I
+        settings.imageWorkflowProfile || 'wan-t2i'
+    );
+
+    if (!response?.prompt_id) {
+        throw new Error(`Failed to queue ${which} keyframe generation`);
+    }
+
+    const output = await waitForComfyCompletion(
+        settings,
+        response.prompt_id,
+        onStateChange
+    );
+
+    if (!output?.data) {
+        throw new Error(`${which.charAt(0).toUpperCase() + which.slice(1)} keyframe generation failed: No output data`);
+    }
+
+    const newImage = stripDataUrlPrefix(output.data);
+    console.log(`[Bookend Generation] ${which.toUpperCase()} keyframe generated (${newImage.length} chars)`);
+    console.log(`[Bookend Generation] ✅ Single keyframe generation complete for scene ${scene.id}`);
+
+    // Return combined bookend with existing + new keyframe
+    if (which === 'start') {
+        return { 
+            start: newImage, 
+            end: existingBookend?.end || '' 
+        };
+    } else {
+        return { 
+            start: existingBookend?.start || '', 
+            end: newImage 
+        };
+    }
+}
+
+/**
  * Bookend Workflow: Generate video from start and end keyframes
  * @param settings ComfyUI configuration
  * @param scene Scene with bookend keyframes
@@ -2805,7 +3230,7 @@ export async function generateVideoFromBookends(
     timeline: TimelineData,
     bookends: { start: string; end: string },
     directorsVision: string,
-    logApiCall: ApiLogCallback,
+    _logApiCall: ApiLogCallback,
     onStateChange: (state: any) => void
 ): Promise<string> {
     console.log(`[Bookend Video] Starting video generation with dual keyframes for scene ${scene.id}`);
@@ -2875,7 +3300,7 @@ export async function generateVideoFromBookendsSequential(
     timeline: TimelineData,
     bookends: { start: string; end: string },
     directorsVision: string,
-    logApiCall: ApiLogCallback,
+    _logApiCall: ApiLogCallback,
     onStateChange: (state: any) => void
 ): Promise<string> {
     console.log(`[Sequential Bookend] Starting sequential generation for scene ${scene.id}`);
@@ -3099,7 +3524,7 @@ export async function generateVideoFromBookendsSequential(
  * @param logApiCall API call logging function
  * @param onStateChange State change callback with phase tracking
  * @param profileId Workflow profile ID ('wan-flf2v' or 'wan-fun-inpaint')
- * @returns Promise<string> - Video data URL or file path
+ * @returns Promise<string> - Video data URL
  */
 export async function generateVideoFromBookendsNative(
     settings: LocalGenerationSettings,
@@ -3107,9 +3532,9 @@ export async function generateVideoFromBookendsNative(
     timeline: TimelineData,
     bookends: { start: string; end: string },
     directorsVision: string,
-    logApiCall: ApiLogCallback,
+    _logApiCall: ApiLogCallback,
     onStateChange: (state: any) => void,
-    profileId: 'wan-flf2v' | 'wan-fun-inpaint' = 'wan-flf2v'
+    profileId: 'wan-flf2v' | 'wan-fun-inpaint' = 'wan-fun-inpaint'
 ): Promise<string> {
     console.log(`[Native Bookend] Starting native dual-keyframe generation for scene ${scene.id} using ${profileId}`);
     
@@ -3129,11 +3554,14 @@ export async function generateVideoFromBookendsNative(
         {} // generatedShotImages
     );
     
-    // Get workflow profile
+    // Get workflow profile - require explicit configuration, no silent fallback
     const profile = settings.workflowProfiles?.[profileId];
     if (!profile) {
-        console.warn(`[Native Bookend] Profile '${profileId}' not found, falling back to sequential generation`);
-        return generateVideoFromBookendsSequential(settings, scene, timeline, bookends, directorsVision, logApiCall, onStateChange);
+        throw new Error(
+            `Workflow profile '${profileId}' not found. ` +
+            `Please configure the profile in Settings → ComfyUI Settings → Workflow Profiles. ` +
+            `Native bookend generation requires a dual-keyframe workflow with start_image and end_image mappings.`
+        );
     }
     
     onStateChange({
@@ -3205,20 +3633,18 @@ export const queueComfyUIPromptDualImage = async (
     
     let workflowApi: Record<string, any>;
     try {
-        // If workflowFile is specified, load from file (in Node.js) or use embedded JSON
-        if (profileConfig.workflowFile) {
+        // If sourcePath is specified and workflowJson is empty, attempt to load from file (Node.js only)
+        if (profileConfig.sourcePath && !profileConfig.workflowJson) {
             // For browser, we should have the workflow embedded in workflowJson
-            if (typeof profileConfig.workflowJson === 'string') {
-                workflowApi = JSON.parse(profileConfig.workflowJson);
-            } else if (typeof window === 'undefined') {
+            if (typeof window === 'undefined') {
                 // Node.js environment - read from file
                 const fs = await import('fs');
                 const path = await import('path');
-                const workflowPath = path.join(process.cwd(), profileConfig.workflowFile);
+                const workflowPath = path.join(process.cwd(), profileConfig.sourcePath);
                 const workflowContent = fs.readFileSync(workflowPath, 'utf-8');
                 workflowApi = JSON.parse(workflowContent);
             } else {
-                throw new Error(`Workflow file '${profileConfig.workflowFile}' specified but workflowJson not embedded.`);
+                throw new Error(`Workflow sourcePath '${profileConfig.sourcePath}' specified but workflowJson not embedded. Please sync the workflow.`);
             }
         } else {
             workflowApi = JSON.parse(profile.workflowJson);
@@ -3226,6 +3652,48 @@ export const queueComfyUIPromptDualImage = async (
     } catch (error) {
         throw new Error(`Failed to parse workflow for profile '${profileId}': ${error}`);
     }
+    
+    // Validate workflow format and integrity
+    const { validateWorkflowIntegrity, getWorkflowCategoryForProfile, isApiFormat } = await import('../utils/workflowValidator');
+    
+    if (!isApiFormat(workflowApi)) {
+        throw new Error(
+            `Workflow for profile '${profileId}' is in UI format (contains nodes/links arrays). ` +
+            `Please use the API format version (*API.json) or export as "Save (API Format)" from ComfyUI.`
+        );
+    }
+    
+      const workflowCategory = getWorkflowCategoryForProfile(profileId);
+      if (workflowCategory) {
+          const validation = validateWorkflowIntegrity(workflowApi, workflowCategory);
+
+          // Correlation-friendly observability for workflow integrity
+          try {
+              logCorrelation(
+                  { correlationId: generateCorrelationId(), timestamp: Date.now(), source: 'comfyui' },
+                  'workflow-validate',
+                  {
+                      profileId,
+                      category: workflowCategory,
+                      format: validation.format,
+                      valid: validation.valid,
+                      missingNodes: validation.missingNodes,
+                      nodeTypes: validation.nodeTypes,
+                      errorCount: validation.errors.length,
+                      warningCount: validation.warnings.length,
+                  }
+              );
+          } catch {
+              // Best-effort; do not break on logging failures
+          }
+
+          if (!validation.valid) {
+              throw new Error(`Workflow validation failed for '${profileId}': ${validation.errors.join(' ')}`);
+          }
+          if (validation.warnings.length > 0) {
+              console.warn(`[${profileId}] Workflow warnings:`, validation.warnings);
+          }
+      }
     
     const promptPayloadTemplate = workflowApi.nodes || workflowApi.prompt || workflowApi;
     const mapping = profileConfig.mapping || profile.mapping;
@@ -3250,7 +3718,8 @@ export const queueComfyUIPromptDualImage = async (
     
     // Upload start image
     if (images.start) {
-        const [nodeId] = startImageKey.split(':');
+        const nodeId = startImageKey.split(':')[0];
+        if (!nodeId) throw new Error('Invalid start_image mapping key: missing nodeId');
         const node = promptPayload[nodeId];
         
         if (node && node.class_type === 'LoadImage') {
@@ -3277,7 +3746,8 @@ export const queueComfyUIPromptDualImage = async (
     
     // Upload end image
     if (images.end) {
-        const [nodeId] = endImageKey.split(':');
+        const nodeId = endImageKey.split(':')[0];
+        if (!nodeId) throw new Error('Invalid end_image mapping key: missing nodeId');
         const node = promptPayload[nodeId];
         
         if (node && node.class_type === 'LoadImage') {
@@ -3304,7 +3774,7 @@ export const queueComfyUIPromptDualImage = async (
     
     // Randomize seeds
     const randomSeed = Math.floor(Math.random() * 1e15);
-    for (const [nodeId, nodeEntry] of Object.entries(promptPayload)) {
+    for (const [_nodeId, nodeEntry] of Object.entries(promptPayload)) {
         const node = nodeEntry as WorkflowNode;
         if (typeof node === 'object' && node !== null && node.class_type === 'KSampler' && node.inputs && 'seed' in node.inputs) {
             node.inputs.seed = randomSeed;
@@ -3315,7 +3785,10 @@ export const queueComfyUIPromptDualImage = async (
     for (const [key, dataType] of Object.entries(mapping)) {
         if (dataType === 'none') continue;
         
-        const [nodeId, inputName] = key.split(':');
+        const parts = key.split(':');
+        const nodeId = parts[0];
+        const inputName = parts[1];
+        if (!nodeId || !inputName) continue;
         const node = promptPayload[nodeId] as WorkflowNode | undefined;
         
         if (node && node.inputs) {

@@ -9,8 +9,6 @@ import {
     analyzeCharacterTimeline,
     MAX_PROTAGONIST_GAP,
     MAX_SUPPORTING_GAP,
-    type ShotCharacterAppearance,
-    type CharacterContinuityWarning,
 } from '../characterTracker';
 import type { TimelineData, StoryBibleV2, CharacterProfile, Shot } from '../../types';
 

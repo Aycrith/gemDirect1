@@ -127,10 +127,8 @@ export class ComfyUICallbackManager {
   private transformEventToHistoricalRun(event: ComfyUIWorkflowEvent): HistoricalRun {
     const successCount = event.scenes.filter(s => s.status === 'success').length;
     const failureCount = event.scenes.filter(s => s.status === 'failed' || s.status === 'timeout').length;
-    const skippedCount = event.scenes.filter(s => s.status === 'skipped').length;
     const sceneCount = event.scenes.length;
 
-    const totalFrames = event.scenes.reduce((sum, s) => sum + s.frameCount, 0);
     const averageDurationMs = sceneCount > 0 ? event.totalDurationMs / sceneCount : 0;
     const successRate = sceneCount > 0 ? (successCount / sceneCount) * 100 : 0;
 
@@ -297,14 +295,6 @@ export class ComfyUICallbackManager {
     });
     
     console.log('✓ Queue Monitor polling started (5s interval)');
-  }
-
-  /**
-   * Processes pending workflows from ComfyUI queue
-   */
-  private async processPendingWorkflows(): Promise<void> {
-    // This method is now handled by the queue monitor's polling mechanism
-    // It's kept for backward compatibility but the polling is done in startBatchProcessor
   }
 
   /**

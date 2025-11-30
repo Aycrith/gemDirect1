@@ -179,7 +179,7 @@ export class ComfyUIQueueMonitor {
       if (entry.outputs) {
         // Look for typical output keys
         const imageOutputs = Object.entries(entry.outputs).filter(
-          ([key, value]: [string, any]) =>
+          ([_key, value]: [string, any]) =>
             Array.isArray(value) || (typeof value === 'object' && value.frames)
         );
 

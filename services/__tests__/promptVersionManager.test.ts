@@ -25,7 +25,6 @@ import {
     resetToDefaults,
     PromptTemplate,
     PromptTemplateMetadata,
-    QualityThresholds,
     DEFAULT_SINGLE_FRAME_PREFIX,
     DEFAULT_NEGATIVE_PROMPT_BASE,
 } from '../promptVersionManager';

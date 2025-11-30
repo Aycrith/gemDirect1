@@ -279,7 +279,7 @@ export const createComfyUIHarness = (options: ComfyUIHarnessOptions = {}) => {
   const trackExecution = vi.fn(
     (
       _settings: any,
-      promptId: string,
+      _promptId: string,
       callback: (status: Partial<LocalGenerationStatus>) => void,
     ) => {
       const queueDelayMs = options.queueDelayMs ?? 5;

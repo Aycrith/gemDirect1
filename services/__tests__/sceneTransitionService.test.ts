@@ -325,6 +325,7 @@ describe('sceneTransitionService', () => {
         id: 'empty-scene',
         title: 'Empty Scene',
         summary: 'No shots',
+        timeline: { shots: [], transitions: [], shotEnhancers: {}, negativePrompt: '' },
       };
 
       const batch = generateAllShotTransitionContexts(emptyScene);

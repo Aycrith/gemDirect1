@@ -14,7 +14,6 @@ import {
     StoryBibleV2,
     CharacterProfile,
     CharacterAppearance,
-    CharacterRelationship,
     PlotScene,
     isStoryBibleV2,
 } from '../types';
@@ -55,7 +54,6 @@ function detectRole(text: string): CharacterProfile['role'] {
  */
 function extractAppearanceHints(text: string): Partial<CharacterAppearance> {
     const appearance: Partial<CharacterAppearance> = {};
-    const lower = text.toLowerCase();
     
     // Hair patterns
     const hairPatterns = [
@@ -122,7 +120,6 @@ function extractAppearanceHints(text: string): Partial<CharacterAppearance> {
  */
 function extractPersonality(text: string): string[] {
     const traits: string[] = [];
-    const lower = text.toLowerCase();
     
     const traitPatterns = [
         /(brave|courageous|fearless)/i,
@@ -139,7 +136,7 @@ function extractPersonality(text: string): string[] {
     
     for (const pattern of traitPatterns) {
         const match = text.match(pattern);
-        if (match) {
+        if (match?.[1]) {
             traits.push(match[1].toLowerCase());
         }
     }
@@ -153,7 +150,6 @@ function extractPersonality(text: string): string[] {
  */
 function extractMotivations(text: string): string[] {
     const motivations: string[] = [];
-    const lower = text.toLowerCase();
     
     const motivationPatterns = [
         /seeks?\s+(\w+(?:\s+\w+)?)/i,
@@ -165,7 +161,7 @@ function extractMotivations(text: string): string[] {
     
     for (const pattern of motivationPatterns) {
         const match = text.match(pattern);
-        if (match) {
+        if (match?.[1]) {
             motivations.push(match[1]);
         }
     }
@@ -191,7 +187,7 @@ function parseCharacterEntry(entry: string, index: number): CharacterProfile | n
     
     for (const pattern of patterns) {
         const match = entry.trim().match(pattern);
-        if (match) {
+        if (match?.[1] && match?.[2]) {
             name = match[1].trim();
             description = match[2].trim();
             break;
@@ -264,7 +260,9 @@ export function parseMarkdownToProfiles(markdownCharacters: string): CharacterPr
         .filter(e => e.length > 10); // Filter out short fragments
     
     for (let i = 0; i < entries.length; i++) {
-        const profile = parseCharacterEntry(entries[i], i);
+        const entry = entries[i];
+        if (!entry) continue;
+        const profile = parseCharacterEntry(entry, i);
         if (profile) {
             profiles.push(profile);
         }
@@ -295,7 +293,8 @@ export function parsePlotOutlineToScenes(plotOutline: string): PlotScene[] {
     let sceneInAct = 0;
     
     for (let i = 0; i < actSections.length; i++) {
-        const section = actSections[i].trim();
+        const section = actSections[i]?.trim();
+        if (!section) continue;
         
         // Check if this is an act marker
         const actMatch = section.match(/^[IiVv123]+$/);
@@ -445,8 +444,9 @@ export function scenesToPlotOutline(scenes: PlotScene[]): string {
     const acts: Record<number, PlotScene[]> = { 1: [], 2: [], 3: [] };
     
     for (const scene of scenes) {
-        if (acts[scene.actNumber]) {
-            acts[scene.actNumber].push(scene);
+        const actArr = acts[scene.actNumber];
+        if (actArr) {
+            actArr.push(scene);
         }
     }
     
@@ -454,7 +454,7 @@ export function scenesToPlotOutline(scenes: PlotScene[]): string {
     
     for (const actNum of [1, 2, 3]) {
         const actScenes = acts[actNum];
-        if (actScenes.length === 0) continue;
+        if (!actScenes || actScenes.length === 0) continue;
         
         lines.push(`**Act ${actNum === 1 ? 'I' : actNum === 2 ? 'II' : 'III'}**`);
         

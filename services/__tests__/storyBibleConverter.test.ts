@@ -85,8 +85,8 @@ describe('parseMarkdownToProfiles', () => {
         const profiles = parseMarkdownToProfiles(SAMPLE_CHARACTERS_MARKDOWN);
         
         expect(profiles.length).toBeGreaterThanOrEqual(2);
-        expect(profiles[0].name).toBe('Marcus Cole');
-        expect(profiles[0].role).toBe('protagonist');
+        expect(profiles[0]!.name).toBe('Marcus Cole');
+        expect(profiles[0]!.role).toBe('protagonist');
     });
 
     it('extracts visual appearance hints', () => {

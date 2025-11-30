@@ -3,7 +3,7 @@
  * Validates token counting, fallback behavior, and guard modes
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
     heuristicTokenEstimate,
     countTokensWithFallback,
@@ -28,13 +28,6 @@ const createMockApi = (tokenCount: number): TokenCountApi => ({
 // Mock API that throws an error
 const createErrorApi = (error: string = 'API Error'): TokenCountApi => ({
     countTokens: vi.fn().mockRejectedValue(new Error(error)),
-});
-
-// Mock API that times out
-const createTimeoutApi = (): TokenCountApi => ({
-    countTokens: vi.fn().mockImplementation(() => 
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 1000))
-    ),
 });
 
 describe('tokenValidator', () => {
@@ -190,7 +183,7 @@ describe('tokenValidator', () => {
             const logApiCall = vi.fn();
             
             // Prompt that heuristically is near 100 token budget
-            const result = await guardTokenBudget(
+            await guardTokenBudget(
                 'a'.repeat(320), // ~91 tokens, over 80% of 100
                 100,
                 flags,

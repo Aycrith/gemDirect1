@@ -214,7 +214,7 @@ function parseTemplateSections(content: string): Record<string, string> {
   const extract = (label: string): string => {
     const regex = new RegExp(`=== ${label} ===([\\s\\S]*?)(?=\\n===|$)`);
     const match = content.match(regex);
-    return match ? match[1].trim() : '';
+    return match?.[1]?.trim() ?? '';
   };
 
   sections.structure = extract('SCENE STRUCTURE');

@@ -9,7 +9,6 @@
 import {
   ComfyUICallbackManager,
   ComfyUIWorkflowEvent,
-  createWorkflowEvent,
   getCallbackManager
 } from './comfyUICallbackService';
 import { ComfyUIQueueMonitor, getQueueMonitor } from './comfyUIQueueMonitor';

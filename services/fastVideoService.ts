@@ -51,6 +51,10 @@ export const checkFastVideoHealth = async (
             signal: AbortSignal.timeout(5000)
         });
 
+        if (!response) {
+            throw new Error('No response received from FastVideo server');
+        }
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
@@ -69,7 +73,7 @@ export const checkFastVideoHealth = async (
  */
 const writeTelemetrySummary = async (
     summary: Record<string, any>,
-    outputDir: string
+    _outputDir: string
 ): Promise<void> => {
     try {
         // In browser environment, log to console (can't write files directly)
@@ -171,6 +175,10 @@ export const queueFastVideoPrompt = async (
 
         const elapsed = Date.now() - startTime;
         log(`[FastVideo] Response received (${elapsed}ms)`, 'info');
+
+        if (!response) {
+            throw new Error('No response received from FastVideo server');
+        }
 
         if (!response.ok) {
             const errorText = await response.text();

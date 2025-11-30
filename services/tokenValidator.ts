@@ -261,7 +261,7 @@ export async function guardTokenBudget(
     const guardMode = getFeatureFlagValue(flags as FeatureFlags, 'promptTokenGuard');
     
     // Fast path: guard is off
-    if (guardMode === 'off' || guardMode === false) {
+    if (guardMode === 'off') {
         const tokens = heuristicTokenEstimate(prompt);
         return {
             allowed: true,
@@ -408,7 +408,7 @@ export function summarizeTokenBudgets(
         };
     }
     
-    const tokenCounts = prompts.map(heuristicTokenEstimate);
+    const tokenCounts = prompts.map(p => heuristicTokenEstimate(p));
     const totalTokens = tokenCounts.reduce((a, b) => a + b, 0);
     const maxTokens = Math.max(...tokenCounts);
     const minTokens = Math.min(...tokenCounts);

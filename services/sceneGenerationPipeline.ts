@@ -48,7 +48,7 @@ export const createSceneShotPlan = (
     timeline: TimelineData,
     directorsVision: string,
     sceneSummary: string,
-    settings: LocalGenerationSettings,
+    _settings: LocalGenerationSettings,
     /** Story Bible for prompt pipeline token validation (required) */
     storyBible: StoryBible | StoryBibleV2,
     /** Scene for structured prompt generation (required) */
@@ -64,8 +64,6 @@ export const createSceneShotPlan = (
     const promptWarnings: string[] = [];
 
     const shots: SceneShotPlan[] = timeline.shots.map((shot, index) => {
-        const enhancers = timeline.shotEnhancers[shot.id];
-        
         // Always use prompt pipeline with token validation
         const validatedPrompt = buildComfyUIPrompt(
             bibleV2,
@@ -74,7 +72,7 @@ export const createSceneShotPlan = (
             directorsVision,
             [timeline.negativePrompt || DEFAULT_NEGATIVE_PROMPT],
             500, // Max tokens per shot
-            enhancers
+            timeline.shotEnhancers  // Pass entire map so buildComfyUIPrompt can look up by shot.id
         );
         
         // Collect warnings
@@ -82,6 +80,7 @@ export const createSceneShotPlan = (
             promptWarnings.push(...validatedPrompt.warnings.map(w => `Shot ${index + 1}: ${w}`));
         }
         
+        const enhancers = timeline.shotEnhancers[shot.id];
         return {
             shot,
             order: index,

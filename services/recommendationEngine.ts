@@ -11,7 +11,7 @@ export interface TelemetrySnapshot {
 
 export interface Recommendation {
     id: string;
-    type: 'timeout' | 'memory' | 'performance' | 'gpu' | 'retry';
+    type: 'timeout' | 'memory' | 'performance' | 'gpu' | 'retry' | 'success_rate';
     severity: 'info' | 'warning' | 'critical';
     message: string;
     suggestedAction?: string;

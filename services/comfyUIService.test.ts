@@ -310,7 +310,7 @@ describe('generateTimelineVideos', () => {
 
     expect(mockGenerateShot).toHaveBeenCalledTimes(2);
     expect(Object.keys(results)).toEqual(['shot-a', 'shot-b']);
-    expect(results['shot-a'].filename).toBe('shot-a.mp4');
+    expect(results['shot-a']?.filename).toBe('shot-a.mp4');
     expect(progressSpy).toHaveBeenCalledWith(
       'shot-a',
       expect.objectContaining({ status: 'running', message: 'Generating shot 1/2...' })
@@ -356,8 +356,8 @@ describe('generateTimelineVideos', () => {
       'shot-a',
       expect.objectContaining({ status: 'error', message: expect.stringContaining('Timeout') })
     );
-    expect(results['shot-a'].filename).toBe('ERROR_shot-a.mp4');
-    expect(results['shot-b'].filename).toBe('shot-b.mp4');
+    expect(results['shot-a']?.filename).toBe('ERROR_shot-a.mp4');
+    expect(results['shot-b']?.filename).toBe('shot-b.mp4');
   });
 });
 

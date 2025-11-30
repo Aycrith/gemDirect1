@@ -351,8 +351,8 @@ export function buildShotTransitionContext(
     : null;
 
   // Get transition type (transitions are between shots, so index matches previous shot)
-  const transitionType = shotIndex > 0 && transitions[shotIndex - 1]
-    ? transitions[shotIndex - 1]
+  const transitionType: string | null = shotIndex > 0 && transitions[shotIndex - 1]
+    ? transitions[shotIndex - 1] ?? null
     : null;
 
   // Extract visual continuity elements from previous shot
@@ -368,7 +368,7 @@ export function buildShotTransitionContext(
     previousShotEnhancers,
     visualContinuity,
     transitionType,
-    sceneKeyframeRef: sceneKeyframe || null,
+    sceneKeyframeRef: sceneKeyframe !== undefined ? sceneKeyframe : null,
     narrativePosition,
   };
 }
@@ -492,7 +492,10 @@ export function formatShotTransitionContextForPrompt(context: ShotTransitionCont
     climax: 'SHOT POSITION: Climax moment - heighten tension and visual intensity.',
     closing: 'SHOT POSITION: Closing shot - resolve the scene beat and prepare for transition.',
   };
-  parts.push(positionGuidance[context.narrativePosition]);
+  const positionKey = context.narrativePosition;
+  if (positionKey && positionGuidance[positionKey]) {
+    parts.push(positionGuidance[positionKey]);
+  }
 
   // Previous shot reference
   if (context.previousShotDescription) {

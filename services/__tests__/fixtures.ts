@@ -56,14 +56,18 @@ export const createValidTestSettings = (): LocalGenerationSettings =>
 
 export const createWorkflowMissingNodeSettings = (missingNodeKey: string): LocalGenerationSettings => {
     const workflow = createWorkflowNodes();
-    delete workflow[missingNodeKey as keyof typeof workflow];
+    // Use type assertion to allow delete on non-optional property (test fixture)
+    (workflow as Record<string, unknown>)[missingNodeKey] = undefined;
+    delete (workflow as Record<string, unknown>)[missingNodeKey];
     return buildSettings(workflow, defaultMapping);
 };
 
 export const createWorkflowMissingInputSettings = (): LocalGenerationSettings => {
     const workflow = createWorkflowNodes();
     const node = workflow.positive_clip;
-    delete node.inputs.text;
+    // Use type assertion to allow delete on non-optional property (test fixture)
+    (node.inputs as Record<string, unknown>).text = undefined;
+    delete (node.inputs as Record<string, unknown>).text;
     return buildSettings(workflow, defaultMapping);
 };
 

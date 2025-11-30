@@ -39,9 +39,9 @@ describe('storyToVideoPipeline.generateStoryToVideo', () => {
     expect(spyBlueprint).toHaveBeenCalled();
     expect(spyScenes).toHaveBeenCalled();
     expect(result.scenes).toHaveLength(2);
-    expect(result.scenes[0].heroArcId).toBe('arc-01');
-    expect(result.scenes[0].timeline.shots[0].arcId).toBeDefined();
-    expect(result.scenes[0].timeline.shots[0].heroMoment).toBe(true);
+    expect(result.scenes[0]!.heroArcId).toBe('arc-01');
+    expect(result.scenes[0]!.timeline.shots[0]!.arcId).toBeDefined();
+    expect(result.scenes[0]!.timeline.shots[0]!.heroMoment).toBe(true);
   });
 });
 

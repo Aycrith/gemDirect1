@@ -181,11 +181,14 @@ export const selectVariant = <T extends PromptVariant>(
     const roll = (options.rng ? options.rng() : Math.random()) * totalWeight;
 
     let cursor = 0;
-    let selected = variants[0];
+    let selected: T = variants[0]!; // Safe: we checked variants.length > 0 above
     for (let i = 0; i < variants.length; i++) {
-        cursor += weights[i];
+        const weight = weights[i];
+        if (weight !== undefined) {
+            cursor += weight;
+        }
         if (roll <= cursor) {
-            selected = variants[i];
+            selected = variants[i]!;
             break;
         }
     }

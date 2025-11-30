@@ -10,9 +10,8 @@ import {
     suggestCoDirectorObjectives as llmSuggestCoDirectorObjectives,
     refineStoryBibleSection as llmRefineStoryBibleSection,
 } from './localStoryService';
-import { StoryBible, StoryBibleV2, Scene, TimelineData, BatchShotTask, Shot, CreativeEnhancers, BatchShotResult, DetailedShotResult, CoDirectorResult, ContinuityResult, WorkflowMapping, isStoryBibleV2 } from '../types';
+import { StoryBible, StoryBibleV2, Scene, TimelineData, BatchShotTask, BatchShotResult, DetailedShotResult, CoDirectorResult, ContinuityResult, WorkflowMapping, isStoryBibleV2 } from '../types';
 import { validateStoryBibleHard, buildRegenerationFeedback } from './storyBibleValidator';
-import { estimateTokens, DEFAULT_TOKEN_BUDGETS } from './promptRegistry';
 import { convertToStoryBibleV2 } from './storyBibleConverter';
 
 export type PlanExpansionActions = {
@@ -40,10 +39,10 @@ export type PlanExpansionActions = {
     ) => Promise<string>;
     generateStoryBible: (
         idea: string,
-        genre?: string,
-        logApiCall?: ApiLogCallback,
+        genre: string | undefined,
+        logApiCall: ApiLogCallback,
         onStateChange?: ApiStateChangeCallback
-    ) => Promise<StoryBible>;
+    ) => Promise<StoryBibleV2>;
     generateSceneList: (
         plotOutline: string,
         directorsVision: string,
@@ -77,7 +76,7 @@ export type PlanExpansionActions = {
         onStateChange?: ApiStateChangeCallback
     ) => Promise<string>;
     refineStoryBibleSection: (
-        section: 'characters' | 'plotOutline',
+        section: 'characters' | 'plotOutline' | 'logline' | 'setting',
         content: string,
         prunedContext: string,
         logApiCall: ApiLogCallback,
@@ -145,7 +144,6 @@ export type PlanExpansionActions = {
     ) => Promise<WorkflowMapping>;
 };
 
-const GEMINI_STRATEGY_ID = 'gemini-plan';
 const LOCAL_STRATEGY_ID = 'local-drafter';
 
 /**
@@ -214,7 +212,6 @@ const generateStoryBibleWithValidation = async (
     onStateChange?: ApiStateChangeCallback
 ): Promise<StoryBibleV2> => {
     let lastBible: StoryBible | undefined;
-    let lastValidation: ReturnType<typeof validateStoryBibleHard> | undefined;
     
     for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
         notify(onStateChange, 'loading', 
@@ -243,7 +240,6 @@ const generateStoryBibleWithValidation = async (
             
             // Validate
             const validation = validateStoryBibleHard(bibleV2);
-            lastValidation = validation;
             
             if (validation.valid) {
                 logSuccess(logApiCall, 'generate Story Bible (validated)', LOCAL_STRATEGY_ID);
@@ -337,7 +333,7 @@ const localActions: PlanExpansionActions = {
     generateAndDetailInitialShots: (prunedContext, logApiCall, onStateChange) => runLocal('generate and detail initial shots', () => localFallback.generateAndDetailInitialShots(prunedContext), logApiCall, onStateChange),
     suggestStoryIdeas: (logApiCall, onStateChange) => runLocal('suggest ideas', () => llmSuggestStoryIdeas(), logApiCall, onStateChange),
     suggestDirectorsVisions: (storyBible, logApiCall, onStateChange) => runLocal('suggest visions', () => llmSuggestDirectorsVisions(storyBible), logApiCall, onStateChange),
-    suggestNegativePrompts: (directorsVision, sceneSummary, logApiCall, onStateChange) => runLocal('suggest negative prompts', () => localFallback.suggestNegativePrompts(), logApiCall, onStateChange),
+    suggestNegativePrompts: (_directorsVision, _sceneSummary, logApiCall, onStateChange) => runLocal('suggest negative prompts', () => localFallback.suggestNegativePrompts(), logApiCall, onStateChange),
     refineDirectorsVision: (vision, storyBible, logApiCall, onStateChange) => runLocal('refine director vision', () => llmRefineDirectorsVision(vision, storyBible), logApiCall, onStateChange),
     refineStoryBibleSection: (section, content, prunedContext, logApiCall, onStateChange) => runLocal('refine story bible section', () => llmRefineStoryBibleSection(section, content, prunedContext), logApiCall, onStateChange),
     suggestCoDirectorObjectives: (logline, sceneSummary, directorsVision, logApiCall, onStateChange) => runLocal('suggest Co-Director objectives', () => llmSuggestCoDirectorObjectives(logline, sceneSummary, directorsVision), logApiCall, onStateChange),
@@ -529,7 +525,8 @@ export const createPlanExpansionActions = (strategyId: string): PlanExpansionAct
         'suggestCoDirectorObjectives',
     ];
     LOCAL_ONLY_ACTIONS.forEach((actionName) => {
-        actionsWithFallback[actionName] = localActions[actionName];
+        // Type assertion needed because TypeScript can't narrow the union type
+        (actionsWithFallback as Record<string, unknown>)[actionName] = localActions[actionName];
     });
 
     return actionsWithFallback;

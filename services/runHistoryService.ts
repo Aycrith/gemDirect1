@@ -78,7 +78,7 @@ export interface RunFilterCriteria {
 export interface StoredRecommendation {
   id: string;
   runId: string;
-  type: 'timeout' | 'memory' | 'performance' | 'gpu' | 'retry';
+  type: 'timeout' | 'memory' | 'performance' | 'gpu' | 'retry' | 'success_rate';
   severity: 'critical' | 'warning' | 'info';
   message: string;
   suggestedAction?: string;
@@ -156,7 +156,7 @@ export class RunHistoryDatabase {
       
       // Save run metadata
       const runsStore = transaction.objectStore('runs');
-      const runRequest = runsStore.put(run);
+      runsStore.put(run);
 
       // Save scene metrics
       const scenesStore = transaction.objectStore('scenes');
@@ -387,8 +387,8 @@ export class RunHistoryDatabase {
           totalScenes,
           avgDuration,
           avgSuccessRate,
-          oldestRun: timestamps[0],
-          newestRun: timestamps[timestamps.length - 1]
+          oldestRun: timestamps[0] ?? 0,
+          newestRun: timestamps[timestamps.length - 1] ?? 0
         });
       };
 

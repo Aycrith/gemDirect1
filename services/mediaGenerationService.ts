@@ -7,7 +7,7 @@ export type MediaGenerationActions = {
     generateKeyframeForScene: (
         vision: string,
         sceneSummary: string,
-        sceneId?: string,
+        sceneId: string | undefined,
         logApiCall: ApiLogCallback,
         onStateChange?: ApiStateChangeCallback
     ) => Promise<string>;
@@ -16,13 +16,12 @@ export type MediaGenerationActions = {
         enhancers: Partial<Omit<CreativeEnhancers, 'transitions'>> | undefined,
         directorsVision: string,
         sceneSummary: string,
-        sceneId?: string,
+        sceneId: string | undefined,
         logApiCall: ApiLogCallback,
         onStateChange?: ApiStateChangeCallback
     ) => Promise<string>;
 };
 
-const GEMINI_PROVIDER_ID = 'gemini-image';
 export const LOCAL_COMFY_ID = 'comfyui-local';
 
 const notify = (onStateChange: ApiStateChangeCallback | undefined, status: Parameters<ApiStateChangeCallback>[0], message: string) => {
@@ -58,10 +57,10 @@ const runLocal = async <T>(
 };
 
 const geminiActions: MediaGenerationActions = {
-    generateKeyframeForScene: (vision, sceneSummary, sceneId, logApiCall, onStateChange) =>
+    generateKeyframeForScene: (vision, sceneSummary, _sceneId, logApiCall, onStateChange) =>
         geminiService.generateKeyframeForScene(vision, sceneSummary, logApiCall, onStateChange),
-    generateImageForShot: (shot, enhancers, directorsVision, sceneSummary, sceneId, logApiCall, onStateChange) =>
-        geminiService.generateImageForShot(shot, enhancers, directorsVision, sceneSummary, logApiCall, onStateChange)
+    generateImageForShot: (shot, enhancers, directorsVision, sceneSummary, _sceneId, logApiCall, onStateChange) =>
+        geminiService.generateImageForShot(shot, enhancers ?? {}, directorsVision, sceneSummary, logApiCall, onStateChange)
 };
 
 const createLocalActions = (settings?: LocalGenerationSettings): MediaGenerationActions => {

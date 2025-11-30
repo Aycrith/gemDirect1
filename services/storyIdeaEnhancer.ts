@@ -38,10 +38,11 @@ export interface EnhancementConfig {
 
 /**
  * Default enhancement configuration
+ * Aligned with VALIDATION_THRESHOLDS from storyIdeaValidator.ts
  */
 export const DEFAULT_ENHANCEMENT_CONFIG: EnhancementConfig = {
   maxAttempts: 3,
-  targetWordCount: { min: 30, max: 80 },
+  targetWordCount: { min: 40, max: 120 },  // Safe range within VALIDATION_THRESHOLDS (15-150)
   preserveOriginalIntent: true
 };
 
@@ -124,11 +125,13 @@ REQUIREMENTS:`;
 
   prompt += `
 
-CONSTRAINTS:
-- Keep the enhanced version to 2-4 sentences
+CRITICAL CONSTRAINTS (MUST FOLLOW):
+- HARD LIMIT: Output MUST be between ${config.targetWordCount.min} and ${config.targetWordCount.max} words
+- MUST NOT exceed ${VALIDATION_THRESHOLDS.MAX_WORDS} words under any circumstances
+- Keep the enhanced version to 2-4 sentences maximum
 - Preserve the original author's core vision and intent
 - Make it cinematic and visually evocative
-- Word count should be between ${config.targetWordCount.min} and ${config.targetWordCount.max}
+- DO NOT add unnecessary elaboration or flowery language
 
 Return ONLY the enhanced story idea, no preamble or explanation.`;
 
@@ -136,36 +139,78 @@ Return ONLY the enhanced story idea, no preamble or explanation.`;
 }
 
 /**
- * Parse and clean enhancement response from LLM
+ * Known header/preamble patterns that LLMs commonly prefix responses with.
+ * Comprehensive list to handle various LLM formatting styles.
+ */
+const ENHANCEMENT_HEADER_PATTERNS = [
+  // Markdown bold headers (e.g., **Refined Plot Outline:**)
+  /^\*{1,2}refined\s*(plot\s*)?(outline|version|idea)?:?\*{0,2}\s*/i,
+  /^\*{1,2}enhanced\s*(version|idea)?:?\*{0,2}\s*/i,
+  /^\*{1,2}improved\s*(version|idea)?:?\*{0,2}\s*/i,
+  /^\*{1,2}revised\s*(version|idea)?:?\*{0,2}\s*/i,
+  // Plain text headers
+  /^refined\s*(plot\s*)?(outline|version|idea)?:?\s*/i,
+  /^enhanced\s*(version|idea)?:?\s*/i,
+  /^here'?s?\s*(the\s+)?enhanced\s*(version|idea)?:?\s*/i,
+  /^here'?s?\s*(the\s+)?refined\s*(version|idea)?:?\s*/i,
+  /^improved\s*(version|idea)?:?\s*/i,
+  /^revised\s*(version|idea)?:?\s*/i,
+  /^suggestion:?\s*/i,
+  /^story\s*idea:?\s*/i,
+  /^output:?\s*/i,
+  /^plot\s*outline:?\s*/i,
+];
+
+/**
+ * Parse and clean enhancement response from LLM.
+ * Handles multi-line responses where the first line may be a header.
  */
 export function parseEnhancementResponse(response: string, originalIdea: string): string {
   let cleaned = response.trim();
   
-  // Remove common LLM preambles
-  const preambles = [
-    /^enhanced\s*(version|idea)?:?\s*/i,
-    /^here'?s?\s*(the\s+)?enhanced\s*(version|idea)?:?\s*/i,
-    /^improved\s*(version|idea)?:?\s*/i,
-    /^revised\s*(version|idea)?:?\s*/i,
-    /^suggestion:?\s*/i,
-    /^story\s*idea:?\s*/i,
-  ];
-  
-  for (const preamble of preambles) {
-    cleaned = cleaned.replace(preamble, '');
+  // Apply all header pattern removal
+  for (const pattern of ENHANCEMENT_HEADER_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '');
   }
+  
+  // Split into lines for header detection
+  const lines = cleaned.split('\n').map(l => l.trim());
+  
+  // Check for "Title: followed by blank line" pattern (generic header detection)
+  // If first line looks like a header and is followed by blank, strip both
+  if (lines.length >= 2 && lines[0] && lines[1] === '') {
+    const firstLine = lines[0];
+    // Header heuristic: ends with colon, less than 50 chars, no sentence-ending punctuation
+    if (firstLine.endsWith(':') && firstLine.length < 50 && !firstLine.includes('.') && !firstLine.includes('!') && !firstLine.includes('?')) {
+      lines.shift(); // Remove header line
+      lines.shift(); // Remove blank line after header
+    }
+  }
+  
+  // Join remaining content lines (preserve paragraph breaks as single newlines)
+  cleaned = lines.filter(Boolean).join('\n').trim();
   
   // Remove quotes if the entire response is quoted
   if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
       (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
     cleaned = cleaned.slice(1, -1);
   }
-  
+
   // If cleaning resulted in empty or very short string, return original
   if (cleaned.length < 10) {
+    console.warn('[parseEnhancementResponse] Cleaned response too short, returning original idea');
     return originalIdea;
   }
-  
+
+  // Hard word-count clamp to enforcement range
+  // This guarantees we never exceed the global MAX_WORDS threshold,
+  // even if the LLM ignores prompt instructions.
+  const wordCount = countWords(cleaned);
+  if (wordCount > VALIDATION_THRESHOLDS.MAX_WORDS) {
+    const words = cleaned.split(/\s+/).slice(0, VALIDATION_THRESHOLDS.MAX_WORDS);
+    cleaned = words.join(' ');
+  }
+
   return cleaned.trim();
 }
 

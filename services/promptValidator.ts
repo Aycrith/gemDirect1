@@ -16,7 +16,6 @@ import {
     ValidationError,
     ValidationWarning,
     QualityScore,
-    validationSuccess,
     validationFailure,
     createValidationError,
     createValidationWarning,
@@ -284,7 +283,7 @@ export const validatePromptBatchLegacy = (
 export const scorePromptQuality = (
     prompt: string,
     negativePrompt: string,
-    context: string,
+    _context: string,
     threshold: number = 0.5
 ): QualityScore => {
     const breakdown = {

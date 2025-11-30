@@ -241,16 +241,22 @@ export const getSystemHealthReport = async (
     comfyUIUrl?: string,
     settings?: LocalGenerationSettings
 ): Promise<SystemHealthReport> => {
-    const promises = [
-        checkGeminiHealth(),
-        checkLocalDrafterHealth(),
-        comfyUIUrl ? checkComfyUIHealth(comfyUIUrl) : Promise.resolve(null),
-        (settings && settings.videoProvider === 'fastvideo-local') 
-            ? checkFastVideoServerHealth(settings) 
-            : Promise.resolve(null)
-    ];
+    // These always return ProviderHealthStatus
+    const geminiHealthPromise = checkGeminiHealth();
+    const localHealthPromise = checkLocalDrafterHealth();
+    
+    // These may return null if not configured
+    const comfyHealthPromise = comfyUIUrl ? checkComfyUIHealth(comfyUIUrl) : Promise.resolve(null);
+    const fastVideoHealthPromise = (settings && settings.videoProvider === 'fastvideo-local') 
+        ? checkFastVideoServerHealth(settings) 
+        : Promise.resolve(null);
 
-    const [geminiHealth, localHealth, comfyHealth, fastVideoHealth] = await Promise.all(promises);
+    const [geminiHealth, localHealth, comfyHealth, fastVideoHealth] = await Promise.all([
+        geminiHealthPromise,
+        localHealthPromise,
+        comfyHealthPromise,
+        fastVideoHealthPromise
+    ]);
 
     const providers: ProviderHealthStatus[] = [geminiHealth, localHealth];
     if (comfyHealth) {

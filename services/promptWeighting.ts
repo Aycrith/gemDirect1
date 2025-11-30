@@ -81,10 +81,11 @@ export const applyWeight = (term: string, weight: number): string => {
 export const parseWeightedTerms = (prompt: string): WeightedTerm[] => {
     const matches = Array.from(prompt.matchAll(/\(([^:()]+):\s*([0-9]*\.?[0-9]+)\)/g));
     return matches
-        .map(match => ({
-            term: match[1].trim(),
-            weight: Number.parseFloat(match[2]),
-        }))
+        .map(match => {
+            const term = match[1]?.trim() ?? '';
+            const weight = Number.parseFloat(match[2] ?? '0');
+            return { term, weight };
+        })
         .filter(entry => entry.term.length > 0 && Number.isFinite(entry.weight));
 };
 

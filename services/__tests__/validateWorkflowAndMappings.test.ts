@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateWorkflowAndMappings } from '../comfyUIService';
-import { createValidTestSettings, createValidTestWorkflow } from './fixtures';
+import { createValidTestSettings } from './fixtures';
 import type { LocalGenerationSettings, WorkflowProfile } from '../../types';
 
 const getSettings = () => createValidTestSettings();
@@ -21,13 +21,13 @@ const createProfileBasedSettings = (): LocalGenerationSettings => {
         workflowProfiles: {
             'wan-i2v': {
                 id: 'wan-i2v',
-                name: 'WAN I2V',
+                label: 'WAN I2V',
                 workflowJson,
                 mapping,
             } as WorkflowProfile,
             'wan-t2i': {
                 id: 'wan-t2i',
-                name: 'WAN T2I',
+                label: 'WAN T2I',
                 workflowJson,
                 mapping: {
                     'positive_clip:text': 'human_readable_prompt',
@@ -176,7 +176,7 @@ describe('validateWorkflowAndMappings - Profile Resolution', () => {
     settings.workflowProfiles = {
       'wan-i2v': {
         id: 'wan-i2v',
-        name: 'WAN I2V',
+        label: 'WAN I2V',
         workflowJson: '{}', // Invalid empty workflow
         mapping: {},
       } as WorkflowProfile,
@@ -188,8 +188,8 @@ describe('validateWorkflowAndMappings - Profile Resolution', () => {
   it('uses profile mapping when resolving from profile', () => {
     const settings = createProfileBasedSettings();
     // Remove the keyframe mapping from the profile
-    const profile = settings.workflowProfiles!['wan-i2v'];
-    delete (profile.mapping as any)['keyframe_loader:image'];
+    const profile = settings.workflowProfiles!['wan-i2v']!;
+    delete (profile.mapping as Record<string, unknown>)['keyframe_loader:image'];
     
     // Should throw because profile mapping is missing keyframe_image
     expect(() => validateWorkflowAndMappings(settings, 'wan-i2v')).toThrow(
@@ -210,8 +210,8 @@ describe('validateWorkflowAndMappings - Profile Resolution', () => {
   it('defaults to wan-i2v profile when profileId is not specified', () => {
     const settings = createProfileBasedSettings();
     // Remove keyframe mapping from wan-i2v profile only
-    const i2vProfile = settings.workflowProfiles!['wan-i2v'];
-    delete (i2vProfile.mapping as any)['keyframe_loader:image'];
+    const i2vProfile = settings.workflowProfiles!['wan-i2v']!;
+    delete (i2vProfile.mapping as Record<string, unknown>)['keyframe_loader:image'];
     
     // Default profile is wan-i2v, which now lacks keyframe_image
     expect(() => validateWorkflowAndMappings(settings)).toThrow(

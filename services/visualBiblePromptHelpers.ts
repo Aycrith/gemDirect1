@@ -158,7 +158,7 @@ export function getCharacterContextForShot(
 
 export function attachShotToScene(
     visualBible: VisualBible,
-    sceneId: string,
+    _sceneId: string,
     shot: Shot,
     imageData: string
 ): VisualBible {

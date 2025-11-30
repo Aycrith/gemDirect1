@@ -88,7 +88,7 @@ describe('promptPipeline', () => {
         it('should build a prompt with scene context and shot description', () => {
             const bible = createMockStoryBible();
             const scene = createMockScene([createMockShot('shot-1', 'Wide establishing shot of the castle')]);
-            const shot = scene.timeline.shots[0];
+            const shot = scene.timeline.shots[0]!;
             
             const result = buildComfyUIPrompt(bible, scene, shot, 'Epic fantasy cinematography', []);
             
@@ -100,7 +100,7 @@ describe('promptPipeline', () => {
         it('should include character descriptors from StoryBibleV2', () => {
             const bible = createMockStoryBibleV2();
             const scene = createMockScene([createMockShot('shot-1', 'Elena draws her sword')]);
-            const shot = scene.timeline.shots[0];
+            const shot = scene.timeline.shots[0]!;
             
             const result = buildComfyUIPrompt(bible, scene, shot, 'Fantasy style');
             
@@ -110,7 +110,7 @@ describe('promptPipeline', () => {
         it('should respect token budget', () => {
             const bible = createMockStoryBible();
             const scene = createMockScene([createMockShot('shot-1', 'A very long shot description '.repeat(100))]);
-            const shot = scene.timeline.shots[0];
+            const shot = scene.timeline.shots[0]!;
             
             const result = buildComfyUIPrompt(bible, scene, shot, 'Style', [], 100);
             
@@ -121,7 +121,7 @@ describe('promptPipeline', () => {
         it('should include negative prompts', () => {
             const bible = createMockStoryBible();
             const scene = createMockScene([createMockShot('shot-1', 'Hero stands')]);
-            const shot = scene.timeline.shots[0];
+            const shot = scene.timeline.shots[0]!;
             
             const result = buildComfyUIPrompt(bible, scene, shot, 'Style', ['blurry', 'low quality']);
             
@@ -132,7 +132,7 @@ describe('promptPipeline', () => {
         it('should use default negative prompts when none provided', () => {
             const bible = createMockStoryBible();
             const scene = createMockScene([createMockShot('shot-1', 'Hero stands')]);
-            const shot = scene.timeline.shots[0];
+            const shot = scene.timeline.shots[0]!;
             
             const result = buildComfyUIPrompt(bible, scene, shot, 'Style');
             
@@ -143,7 +143,7 @@ describe('promptPipeline', () => {
         it('should mark withinBudget correctly', () => {
             const bible = createMockStoryBible();
             const scene = createMockScene([createMockShot('shot-1', 'Short')]);
-            const shot = scene.timeline.shots[0];
+            const shot = scene.timeline.shots[0]!;
             
             const result = buildComfyUIPrompt(bible, scene, shot, 'Style', [], 1000);
             
@@ -159,7 +159,7 @@ describe('promptPipeline', () => {
                     lighting: ['golden hour'],
                 },
             };
-            const shot = scene.timeline.shots[0];
+            const shot = scene.timeline.shots[0]!;
             
             const result = buildComfyUIPrompt(
                 bible, scene, shot, 'Style', [], 500,
@@ -587,7 +587,7 @@ describe('promptPipeline', () => {
             // If prompt was long enough, API was called and returns over budget
             if (result.source === 'api') {
                 expect(result.allowed).toBe(true);
-                expect(result.overBudget).toBe(true);
+                expect(result.tokens > result.budget).toBe(true);
                 expect(result.warning).toBeDefined();
                 expect(result.warning).toContain('exceeds');
             } else {
@@ -615,7 +615,7 @@ describe('promptPipeline', () => {
             // If prompt was long enough for API call
             if (result.source === 'api') {
                 expect(result.allowed).toBe(false);
-                expect(result.overBudget).toBe(true);
+                expect(result.tokens > result.budget).toBe(true);
             } else {
                 // Fast path - heuristic showed under budget, so allowed
                 expect(result.allowed).toBe(true);
@@ -673,7 +673,7 @@ describe('promptPipeline', () => {
         it('should return both comfyPrompt and assembled prompt', async () => {
             const bible = createMockStoryBible();
             const scene = createMockScene([createMockShot('shot-1', 'Test shot')]);
-            const shot = scene.timeline.shots[0];
+            const shot = scene.timeline.shots[0]!;
             
             const result = await buildComfyUIPromptWithGuard(
                 bible,
@@ -692,7 +692,7 @@ describe('promptPipeline', () => {
         it('should respect block mode', async () => {
             const bible = createMockStoryBible();
             const scene = createMockScene([createMockShot('shot-1', 'Very long description '.repeat(100))]);
-            const shot = scene.timeline.shots[0];
+            const shot = scene.timeline.shots[0]!;
             const api = createMockApi(1000);
             
             const result = await buildComfyUIPromptWithGuard(
@@ -711,7 +711,7 @@ describe('promptPipeline', () => {
         it('should log API calls when callback provided', async () => {
             const bible = createMockStoryBible();
             const scene = createMockScene([createMockShot('shot-1', 'a'.repeat(400))]); // Near budget
-            const shot = scene.timeline.shots[0];
+            const shot = scene.timeline.shots[0]!;
             const api = createMockApi(450);
             const logApiCall = vi.fn();
             

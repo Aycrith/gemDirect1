@@ -101,8 +101,8 @@ describe('prompt optimization', () => {
         ];
         const rngValues = [0.1, 0.3, 0.6, 0.9];
         let i = 0;
-        const rng = () => {
-            const value = rngValues[i % rngValues.length];
+        const rng = (): number => {
+            const value = rngValues[i % rngValues.length] ?? 0;
             i += 1;
             return value;
         };

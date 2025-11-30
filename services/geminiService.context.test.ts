@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { 
     getPrunedContextForLogline, 
     getPrunedContextForSetting,
@@ -212,7 +212,7 @@ Final showdown in an abandoned factory on the city's edge. Truth about the detec
             
             const pruned = getPrunedContextForPlotOutline(longDescBible);
             const heroDesc = pruned.match(/Hero: (.*?)(?:\.|$)/);
-            if (heroDesc) {
+            if (heroDesc && heroDesc[1]) {
                 expect(heroDesc[1].length).toBeLessThanOrEqual(30);
             }
         });
@@ -249,9 +249,7 @@ Final showdown in an abandoned factory on the city's edge. Truth about the detec
                 const prunedTokens = pruned.split(/\s+/).length;
                 const reduction = ((fullTokens - prunedTokens) / fullTokens) * 100;
                 
-                expect(reduction).toBeGreaterThan(60, 
-                    `${name} pruning only achieved ${reduction.toFixed(1)}% reduction (expected >60%)`
-                );
+                expect(reduction, `${name} pruning only achieved ${reduction.toFixed(1)}% reduction (expected >60%)`).toBeGreaterThan(60);
             });
         });
 

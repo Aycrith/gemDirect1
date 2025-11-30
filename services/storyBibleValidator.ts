@@ -15,7 +15,6 @@
 
 import {
     StoryBible,
-    StoryBibleV2,
     CharacterProfile,
     PlotScene,
     isStoryBibleV2,
@@ -25,12 +24,9 @@ import {
 import {
     estimateTokens,
     validateTokenBudget,
-    validateTokenBudgets,
     countWords,
-    isWithinWordRange,
     DEFAULT_TOKEN_BUDGETS,
     type TokenBudgetValidation,
-    type PromptSection,
 } from './promptRegistry';
 
 // ============================================================================
@@ -390,9 +386,7 @@ export function validateCharactersMarkdown(characters: string): ValidationIssue[
         return issues;
     }
 
-    // Token budget check
-    const tokenResult = validateTokenBudget('characterProfile', characters);
-    // Use higher limit for full characters section (multiple profiles)
+    // Token budget check - use effective budget for multi-profile section
     const effectiveBudget = DEFAULT_TOKEN_BUDGETS.characterProfile * 5;
     const tokens = estimateTokens(characters);
     
@@ -588,7 +582,8 @@ export function detectRepetition(bible: StoryBible): ValidationIssue[] {
     const loglineWords = normalize(bible.logline);
     const charWords = normalize(bible.characters);
     const settingWords = normalize(bible.setting);
-    const plotWords = normalize(bible.plotOutline);
+    // plotWords available for future cross-section repetition checks
+    // const plotWords = normalize(bible.plotOutline);
 
     // Check logline repetition in characters
     const charOverlap = Array.from(charWords).filter(w => loglineWords.has(w)).length;
@@ -808,11 +803,11 @@ export function getIssuesBySection(
     const bySection: Record<string, ValidationIssue[]> = {};
     
     for (const issue of result.issues) {
-        const sectionKey = issue.section.split('.')[0];
+        const sectionKey = issue.section.split('.')[0] ?? 'unknown';
         if (!bySection[sectionKey]) {
             bySection[sectionKey] = [];
         }
-        bySection[sectionKey].push(issue);
+        bySection[sectionKey]!.push(issue);
     }
     
     return bySection;

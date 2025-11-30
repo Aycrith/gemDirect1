@@ -11,8 +11,6 @@
 import { describe, it, expect } from 'vitest';
 import { 
     StoryBibleV2, 
-    CharacterProfile, 
-    PlotScene,
     isStoryBibleV2 
 } from '../../types';
 
@@ -144,8 +142,8 @@ describe('Story Bible V2 Structure', () => {
 });
 
 describe('CharacterProfile Structure', () => {
-    const protagonist = mockGeminiV2Response.characterProfiles[0];
-    const antagonist = mockGeminiV2Response.characterProfiles[1];
+    const protagonist = mockGeminiV2Response.characterProfiles[0]!;
+    const antagonist = mockGeminiV2Response.characterProfiles[1]!;
 
     it('should have required fields for protagonist', () => {
         expect(protagonist.id).toBeDefined();

@@ -20,7 +20,6 @@ import {
     ShotEnhancers,
     CharacterProfile,
     VisualBibleCharacter,
-    VisualBible,
     isStoryBibleV2,
 } from '../types';
 import { 
@@ -40,9 +39,8 @@ import {
     type ProviderId,
     type QualityPrefixVariant,
 } from './promptConstants';
-import { applyWeight, WEIGHTING_PRESETS, isWeightingSupported, getWeightingPreset, DEFAULT_WEIGHTING_PRESET, type WeightingPresetName } from './promptWeighting';
+import { applyWeight, isWeightingSupported, getWeightingPreset, DEFAULT_WEIGHTING_PRESET, type WeightingPresetName } from './promptWeighting';
 import {
-    validateTokenBudget as validateTokenBudgetGuard,
     type TokenValidationResult,
 } from '../utils/pipelineContext';
 import {
@@ -322,15 +320,7 @@ function getCharacterDescriptorsForShot(
             descriptors.push(profile.visualDescriptor);
         }
     }
-    
-    // If no specific characters found, include protagonist descriptor for consistency
-    if (descriptors.length === 0) {
-        const protagonist = bible.characterProfiles.find(p => p.role === 'protagonist');
-        if (protagonist?.visualDescriptor) {
-            descriptors.push(protagonist.visualDescriptor);
-        }
-    }
-    
+
     return descriptors;
 }
 
@@ -1012,7 +1002,7 @@ export async function buildComfyUIPromptWithGuard(
     // Also build assembled format for consistency
     const assembledPrompt = assemblePromptForProvider(
         comfyPrompt.positive,
-        comfyPrompt.negative,
+        [comfyPrompt.negative],
         { provider: 'comfyui' }
     );
     

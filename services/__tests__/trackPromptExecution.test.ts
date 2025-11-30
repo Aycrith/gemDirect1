@@ -46,7 +46,7 @@ describe('trackPromptExecution', () => {
     const onProgress = vi.fn();
     trackPromptExecution(settings, 'prompt-1', onProgress);
 
-    const ws = MockWebSocket.instances[0];
+    const ws = MockWebSocket.instances[0]!;
     ws.simulateMessage({ type: 'status', data: { queue_remaining: 4 } });
 
     expect(onProgress).toHaveBeenCalledWith({
@@ -62,7 +62,7 @@ describe('trackPromptExecution', () => {
     const onProgress = vi.fn();
     trackPromptExecution(settings, 'prompt-1', onProgress);
 
-    const ws = MockWebSocket.instances[0];
+    const ws = MockWebSocket.instances[0]!;
     ws.simulateMessage({ type: 'execution_start', data: { prompt_id: 'prompt-1' } });
     ws.simulateMessage({ type: 'executing', data: { prompt_id: 'prompt-1', node: 'positive_clip' } });
     ws.simulateMessage({ type: 'progress', data: { prompt_id: 'prompt-1', value: 10, max: 40 } });
@@ -86,7 +86,7 @@ describe('trackPromptExecution', () => {
     const onProgress = vi.fn();
     trackPromptExecution(settings, 'prompt-1', onProgress);
 
-    const ws = MockWebSocket.instances[0];
+    const ws = MockWebSocket.instances[0]!;
     ws.simulateMessage({
       type: 'execution_error',
       data: { prompt_id: 'prompt-1', node_id: 'node-5', exception_message: 'something broke' },
@@ -104,7 +104,7 @@ describe('trackPromptExecution', () => {
     const onProgress = vi.fn();
     trackPromptExecution(settings, 'prompt-1', onProgress);
 
-    const ws = MockWebSocket.instances[0];
+    const ws = MockWebSocket.instances[0]!;
     ws.simulateMessage({ type: 'executed', data: { prompt_id: 'prompt-1', output: {} } });
 
     expect(onProgress).toHaveBeenLastCalledWith({
@@ -119,7 +119,7 @@ describe('trackPromptExecution', () => {
     const onProgress = vi.fn();
     trackPromptExecution(settings, 'prompt-1', onProgress);
 
-    const ws = MockWebSocket.instances[0];
+    const ws = MockWebSocket.instances[0]!;
     ws.onerror?.(new Error('connection lost'));
 
     expect(onProgress).toHaveBeenLastCalledWith({

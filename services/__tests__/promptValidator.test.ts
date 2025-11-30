@@ -168,9 +168,9 @@ Render a single still image that captures the mood, palette, and lighting cues o
             expect(result.totalErrors).toBeGreaterThan(0);
             expect(result.results).toHaveLength(3);
             // Updated to use unified ValidationResult.success instead of legacy .isValid
-            expect(result.results[0].success).toBe(true);
-            expect(result.results[1].success).toBe(true);
-            expect(result.results[2].success).toBe(false);
+            expect(result.results[0]?.success).toBe(true);
+            expect(result.results[1]?.success).toBe(true);
+            expect(result.results[2]?.success).toBe(false);
         });
 
         it('should return allValid=true when all prompts pass', () => {

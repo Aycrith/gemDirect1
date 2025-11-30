@@ -8,7 +8,7 @@
  * @module services/narrativeCoherenceService
  */
 
-import { Scene, Shot, StoryBible, VisualBible, VisualBibleCharacter } from '../types';
+import { Scene, Shot, StoryBible, VisualBible } from '../types';
 
 /**
  * Character appearance state
@@ -214,21 +214,22 @@ export function updateNarrativeStateForScene(
   
   for (const charId of Object.keys(updated.characters)) {
     const char = updated.characters[charId];
+    if (!char) continue;
     const isInScene = sceneCharacterIds.includes(charId) || 
-      mentionedCharacters.some(name => name.toLowerCase().includes(char.name.toLowerCase()));
+      mentionedCharacters.some(name => name.toLowerCase().includes(char.name?.toLowerCase() ?? ''));
     
     if (isInScene) {
       updated.characters[charId] = {
         ...char,
         lastSeenSceneId: scene.id,
-        appearanceCount: char.appearanceCount + 1,
+        appearanceCount: (char.appearanceCount ?? 0) + 1,
         scenesSinceLastAppearance: 0,
-      };
+      } as CharacterState;
     } else {
       updated.characters[charId] = {
         ...char,
-        scenesSinceLastAppearance: char.scenesSinceLastAppearance + 1,
-      };
+        scenesSinceLastAppearance: (char.scenesSinceLastAppearance ?? 0) + 1,
+      } as CharacterState;
     }
   }
 
@@ -278,16 +279,17 @@ export function updateNarrativeStateForShot(
 
   for (const charId of Object.keys(updated.characters)) {
     const char = updated.characters[charId];
+    if (!char) continue;
     const isInShot = shotCharacterIds.includes(charId) ||
-      mentionedCharacters.some(name => name.toLowerCase().includes(char.name.toLowerCase()));
+      mentionedCharacters.some(name => name.toLowerCase().includes(char.name?.toLowerCase() ?? ''));
 
     if (isInShot) {
       updated.characters[charId] = {
         ...char,
         lastSeenSceneId: sceneId,
         lastSeenShotId: shot.id,
-        lastKnownState: extractCharacterState(shot.description, char.name),
-      };
+        lastKnownState: extractCharacterState(shot.description, char.name ?? ''),
+      } as CharacterState;
     }
   }
 
@@ -424,10 +426,11 @@ export function trackCharacterAppearance(
   for (const charId of Object.keys(updatedState.characters)) {
     if (!characterIds.includes(charId)) {
       const char = updatedState.characters[charId];
+      if (!char) continue;
       updatedState.characters[charId] = {
         ...char,
-        scenesSinceLastAppearance: char.scenesSinceLastAppearance + 1,
-      };
+        scenesSinceLastAppearance: (char.scenesSinceLastAppearance ?? 0) + 1,
+      } as CharacterState;
     }
   }
 
@@ -450,6 +453,7 @@ function extractCharacterMentions(text: string): string[] {
   
   while ((match = namePattern.exec(text)) !== null) {
     const name = match[1];
+    if (!name) continue;
     // Filter out common non-name words
     const excluded = ['The', 'This', 'That', 'Scene', 'Shot', 'Act', 'Story', 'Chapter'];
     if (!excluded.includes(name) && !names.includes(name)) {
@@ -474,7 +478,7 @@ function extractLocationFromScene(scene: Scene): string | null {
   
   for (const pattern of locationPatterns) {
     const match = summary.match(pattern);
-    if (match) {
+    if (match && match[1]) {
       return match[1];
     }
   }
@@ -511,7 +515,6 @@ function extractLocationCharacteristics(scene: Scene): string[] {
  * Extract character state from shot description
  */
 function extractCharacterState(description: string, characterName: string): string | null {
-  const lowerDesc = description.toLowerCase();
   const lowerName = characterName.toLowerCase();
   
   // Find sentences containing the character name

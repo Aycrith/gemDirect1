@@ -1,6 +1,6 @@
 import { StoryBible, StoryBibleV2, CharacterProfile, PlotScene, Scene, TimelineData, CreativeEnhancers, BatchShotTask, BatchShotResult, DetailedShotResult, Shot, WorkflowMapping, CoDirectorResult, ContinuityResult, HeroArc } from '../types';
 import { estimateTokens } from './promptRegistry';
-import { validateStoryBibleHard, buildRegenerationFeedback } from './storyBibleValidator';
+import { validateStoryBibleHard } from './storyBibleValidator';
 
 const TITLE_LENGTH_LIMIT = 48;
 const BODY_LENGTH_LIMIT = 140;
@@ -25,12 +25,6 @@ const DEFAULT_IDEAS = [
     'A worn-out courier discovers their messages are rewriting history.',
     'Two rivals must choreograph a dance to avert a political coup.',
     'An archivist protects sentient memories from being erased.'
-];
-
-const DEFAULT_VISIONS = [
-    'A painterly 1970s cinematic palette with rich film grain and practical lighting.',
-    'Graphic novel styling with bold silhouettes, halftone textures, and kinetic energy.',
-    'Dreamlike naturalism—soft dawn light, misty atmospherics, and gentle camera drift.'
 ];
 
 const fallbackEnhancers: Partial<Omit<CreativeEnhancers, 'transitions'>> = {
@@ -335,7 +329,6 @@ const buildPlotScenes = (idea: string, protagonist: string): PlotScene[] => {
 export const generateStoryBible = async (idea: string, genre: string = 'sci-fi'): Promise<StoryBibleV2> => {
     const trimmedIdea = idea.trim();
     const protagonist = extractProtagonist(trimmedIdea);
-    const antagonist = pickKeywords(trimmedIdea)[1] || 'A formidable opposition';
     const logline = trimmedIdea.endsWith('.') ? trimmedIdea : `${trimmedIdea}.`;
 
     // Build structured character profiles
@@ -526,7 +519,7 @@ export const refineStoryBibleSection = async (section: 'characters' | 'plotOutli
 };
 
 export const suggestCoDirectorObjectives = async (
-    logline: string,
+    _logline: string,
     sceneSummary: string,
     directorsVision: string
 ): Promise<string[]> => {
@@ -570,6 +563,125 @@ export const getCoDirectorSuggestions = async (
 };
 
 export const batchProcessShotEnhancements = async (tasks: BatchShotTask[]): Promise<BatchShotResult[]> => {
+    // Try to use local LLM if configured
+    const localLLMUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_LOCAL_STORY_PROVIDER_URL) ||
+                        (typeof process !== 'undefined' && process.env?.VITE_LOCAL_STORY_PROVIDER_URL);
+    const localLLMModel = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_LOCAL_LLM_MODEL) ||
+                          (typeof process !== 'undefined' && process.env?.VITE_LOCAL_LLM_MODEL) ||
+                          'mistralai/mistral-7b-instruct-v0.3';
+    
+    if (localLLMUrl) {
+        try {
+            console.log('[localFallbackService] Attempting local LLM for batch processing');
+            
+            const results: BatchShotResult[] = [];
+            
+            for (const task of tasks) {
+                const result: BatchShotResult = { shot_id: task.shot_id };
+                
+                if (task.actions.includes('REFINE_DESCRIPTION')) {
+                    // Build prompt for description refinement
+                    const prompt = `You are a cinematic description writer. Refine this shot description to be more vivid and actionable for video production.
+
+Original: "${task.description}"
+
+Provide ONLY the refined description, no explanations. Keep it under 150 words. Focus on visual details, camera movement, and emotional tone.`;
+
+                    try {
+                        const response = await fetch(localLLMUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                model: localLLMModel,
+                                messages: [{ role: 'user', content: prompt }],
+                                temperature: 0.35,
+                                max_tokens: 200,
+                            }),
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            const content = data.choices?.[0]?.message?.content?.trim();
+                            if (content) {
+                                result.refined_description = content;
+                            }
+                        }
+                    } catch (llmError) {
+                        console.warn('[localFallbackService] LLM call failed for shot', task.shot_id, llmError);
+                    }
+                    
+                    // Fall back to basic enhancement if LLM failed
+                    if (!result.refined_description) {
+                        result.refined_description = enhanceSentence(task.description);
+                    }
+                }
+                
+                if (task.actions.includes('SUGGEST_ENHANCERS')) {
+                    // Build prompt for enhancer suggestions
+                    const prompt = `You are a cinematography advisor. Based on this shot description, suggest creative enhancers.
+
+Shot: "${task.description}"
+
+Return a JSON object with these arrays (3-5 items each):
+- framing: camera framing options (e.g., "Wide establishing", "Medium portrait")
+- movement: camera movement options (e.g., "Slow dolly forward", "Static")
+- lighting: lighting styles (e.g., "Soft rim light", "High contrast")
+- mood: emotional tones (e.g., "Pensive", "Hopeful")
+
+Return ONLY valid JSON, no markdown.`;
+
+                    try {
+                        const response = await fetch(localLLMUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                model: localLLMModel,
+                                messages: [{ role: 'user', content: prompt }],
+                                temperature: 0.35,
+                                max_tokens: 300,
+                            }),
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            const content = data.choices?.[0]?.message?.content?.trim();
+                            if (content) {
+                                try {
+                                    // Try to parse JSON from response
+                                    const jsonMatch = content.match(/\{[\s\S]*\}/);
+                                    if (jsonMatch) {
+                                        const enhancers = JSON.parse(jsonMatch[0]);
+                                        result.suggested_enhancers = enhancers;
+                                    }
+                                } catch {
+                                    console.warn('[localFallbackService] Failed to parse enhancer JSON for shot', task.shot_id);
+                                }
+                            }
+                        }
+                    } catch (llmError) {
+                        console.warn('[localFallbackService] LLM call failed for enhancers', task.shot_id, llmError);
+                    }
+                    
+                    // Fall back to static enhancers if LLM failed
+                    if (!result.suggested_enhancers) {
+                        result.suggested_enhancers = fallbackEnhancers;
+                    }
+                }
+                
+                results.push(result);
+            }
+            
+            console.log('[localFallbackService] Local LLM batch processing complete:', results.length, 'shots');
+            return results;
+            
+        } catch (error) {
+            console.warn('[localFallbackService] Local LLM batch processing failed, using static fallback:', error);
+        }
+    } else {
+        console.info('[localFallbackService] No local LLM configured (VITE_LOCAL_STORY_PROVIDER_URL not set). Using static fallback.');
+    }
+    
+    // Static fallback when no local LLM is available
     return tasks.map(task => {
         const result: BatchShotResult = { shot_id: task.shot_id };
         if (task.actions.includes('REFINE_DESCRIPTION')) {

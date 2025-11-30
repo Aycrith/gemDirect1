@@ -71,8 +71,8 @@ describe('sceneGenerationPipeline', () => {
 
     expect(plan.shots).toHaveLength(2);
     // With buildComfyUIPrompt, prompt format may differ - check it exists and has content
-    expect(plan.shots[0].prompt.length).toBeGreaterThan(0);
-    expect(plan.shots[0].negativePrompt).toBe('low detail, grainy');
+    expect(plan.shots[0]?.prompt.length).toBeGreaterThan(0);
+    expect(plan.shots[0]?.negativePrompt).toBe('low detail, grainy');
     expect(plan.combinedPrompt).toContain('Shot 1');
     expect(plan.timelineJson).toContain('Blade Runner neon noir');
   });

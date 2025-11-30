@@ -12,9 +12,7 @@ import {
     validateLogline,
     validateSetting,
     validateCharacterProfiles,
-    validateCharactersMarkdown,
     validatePlotScenes,
-    validatePlotOutline,
     detectRepetition,
     validateStoryBibleHard,
     validateStoryBibleSoft,
@@ -23,12 +21,9 @@ import {
     getIssuesBySection,
     buildRegenerationFeedback,
     ValidationCodes,
-    WORD_RANGES,
-    CHARACTER_LIMITS,
 } from '../storyBibleValidator';
 import type { 
     StoryBible, 
-    StoryBibleV2, 
     CharacterProfile, 
     PlotScene 
 } from '../../types';

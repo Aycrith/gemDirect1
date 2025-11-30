@@ -1,11 +1,16 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { CoDirectorResult, Shot, StoryBible, StoryBibleV2, CharacterProfile, CharacterAppearance, PlotScene, StoryBibleTokenMetadata, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, Suggestion, DetailedShotResult, WorkflowMapping, isStoryBibleV2 } from "../types";
+import { CoDirectorResult, Shot, StoryBible, StoryBibleV2, CharacterProfile, PlotScene, Scene, TimelineData, CreativeEnhancers, ContinuityResult, BatchShotTask, BatchShotResult, ApiCallLog, DetailedShotResult, WorkflowMapping } from "../types";
 import { ApiStatus } from "../contexts/ApiStatusContext";
 import { loadTemplate } from "./templateLoader";
 import { generateCorrelationId, logCorrelation, networkTap } from "../utils/correlation";
 import { estimateTokens } from "./promptRegistry";
 import { convertToStoryBibleV2 } from "./storyBibleConverter";
 import { loadFeatureFlags, isFeatureEnabled, type FeatureFlags } from "../utils/featureFlags";
+import { 
+    getActiveTransport, 
+    LLMRequest, 
+    LLMResponse,
+} from "./llmTransportAdapter";
 
 // P2.6 Optimization (2025-11-20): Defer Gemini SDK initialization until first API call
 // Instead of creating GoogleGenAI instance at module load, use lazy initialization
@@ -98,7 +103,8 @@ export const withRetry = async <T>(
             });
 
             onStateChange?.('success', `${context} successful!`);
-            logApiCall({ context, model: modelName, tokens, status: 'success' });
+            // Include duration for performance metrics tracking (added 2025-11-29)
+            logApiCall({ context, model: modelName, tokens, status: 'success', durationMs: duration });
             return result;
         } catch (error) {
             lastError = error;
@@ -120,8 +126,133 @@ export const withRetry = async <T>(
     }
     const finalError = handleApiError(lastError, context);
     onStateChange?.('error', finalError.message);
-    logApiCall({ context, model: modelName, tokens: 0, status: 'error' });
+    // Include duration for performance metrics tracking (added 2025-11-29)
+    const errorDuration = Date.now() - startTime;
+    logApiCall({ context, model: modelName, tokens: 0, status: 'error', durationMs: errorDuration });
     throw finalError;
+};
+
+// ============================================================================
+// LLM TRANSPORT ADAPTER INTEGRATION
+// ============================================================================
+
+/**
+ * Send an LLM request through the transport adapter when feature flag is enabled,
+ * otherwise fall back to direct Gemini SDK calls.
+ * 
+ * This function provides a migration path from direct SDK calls to the transport
+ * abstraction layer, allowing incremental adoption.
+ * 
+ * @param request The LLM request to send
+ * @param featureFlags Optional feature flags (if not provided, uses defaults)
+ * @param logApiCall Callback for logging API calls
+ * @param onStateChange Optional callback for state changes
+ * @returns The LLM response
+ */
+export const sendLLMRequestWithAdapter = async (
+    request: LLMRequest,
+    featureFlags: Partial<FeatureFlags> | undefined,
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<LLMResponse> => {
+    const useAdapter = isFeatureEnabled(featureFlags, 'useLLMTransportAdapter');
+    const context = request.metadata?.context || 'llm-request';
+    const correlationId = request.metadata?.correlationId || generateCorrelationId();
+    const startTime = Date.now();
+    
+    if (useAdapter) {
+        // Route through transport adapter
+        console.log(`[LLM] Using transport adapter for: ${context}`);
+        onStateChange?.('loading', `Requesting via adapter: ${context}...`);
+        
+        try {
+            const transport = getActiveTransport();
+            const response = await transport.send(request);
+            
+            const duration = Date.now() - startTime;
+            logCorrelation(
+                { correlationId, timestamp: Date.now(), source: 'frontend' },
+                `Completed ${context} via ${transport.id}`,
+                { model: response.model, tokens: response.usage?.totalTokens || 0, duration }
+            );
+            
+            onStateChange?.('success', `${context} successful!`);
+            logApiCall({ 
+                context, 
+                model: response.model, 
+                tokens: response.usage?.totalTokens || 0, 
+                status: 'success', 
+                durationMs: duration 
+            });
+            
+            return response;
+        } catch (error) {
+            const duration = Date.now() - startTime;
+            onStateChange?.('error', error instanceof Error ? error.message : String(error));
+            logApiCall({ context, model: request.model, tokens: 0, status: 'error', durationMs: duration });
+            throw error;
+        }
+    } else {
+        // Fall back to direct Gemini SDK call (legacy behavior)
+        const apiCall = async () => {
+            // Convert LLMRequest to Gemini format
+            const contents = request.messages
+                .filter(m => m.role !== 'system')
+                .map(m => m.content)
+                .join('\n\n');
+            
+            const systemMessage = request.messages.find(m => m.role === 'system');
+            const config: Record<string, unknown> = {};
+            
+            if (systemMessage?.content) {
+                config.systemInstruction = systemMessage.content;
+            }
+            if (request.temperature !== undefined) {
+                config.temperature = request.temperature;
+            }
+            if (request.maxTokens !== undefined) {
+                config.maxOutputTokens = request.maxTokens;
+            }
+            if (request.responseFormat === 'json') {
+                config.responseMimeType = 'application/json';
+                if (request.schema) {
+                    config.responseSchema = request.schema;
+                }
+            }
+            
+            const response = await getAI().models.generateContent({
+                model: request.model,
+                contents,
+                config,
+            });
+            
+            const text = response.text || '';
+            const tokens = response.usageMetadata?.totalTokenCount || estimateTokens(text);
+            
+            const result: LLMResponse = {
+                text,
+                model: request.model,
+                durationMs: Date.now() - startTime,
+                usage: {
+                    promptTokens: response.usageMetadata?.promptTokenCount || 0,
+                    completionTokens: response.usageMetadata?.candidatesTokenCount || 0,
+                    totalTokens: tokens,
+                },
+            };
+            
+            if (request.responseFormat === 'json') {
+                try {
+                    result.json = JSON.parse(text);
+                } catch {
+                    // Leave json undefined if parsing fails
+                }
+            }
+            
+            return { result, tokens };
+        };
+        
+        return withRetry(apiCall, context, request.model, logApiCall, onStateChange);
+    }
 };
 
 // --- Context Pruning & Summarization ---
@@ -215,7 +346,7 @@ export const getPrunedContextForSetting = (storyBible: StoryBible): string => {
     
     // Extract Act I from plot outline to infer themes
     const actIMatch = plotOutline.match(/Act I[:\-\s]+(.*?)(?=Act II|$)/is);
-    const actISummary = actIMatch ? actIMatch[1].slice(0, 150).replace(/\n/g, ' ').trim() : '';
+    const actISummary = actIMatch?.[1]?.slice(0, 150).replace(/\n/g, ' ').trim() || '';
     
     return `Story: ${logline}. Key themes: ${actISummary}...`;
 };
@@ -236,7 +367,7 @@ export const getPrunedContextForCharacters = (storyBible: StoryBible): string =>
     
     // Act I from plot outline (first 120 chars)
     const actIMatch = plotOutline.match(/Act I[:\-\s]+(.*?)(?=Act II|$)/is);
-    const actISummary = actIMatch ? actIMatch[1].slice(0, 120).replace(/\n/g, ' ').trim() : '';
+    const actISummary = actIMatch?.[1]?.slice(0, 120).replace(/\n/g, ' ').trim() || '';
     
     return `Story: ${logline}. Setting: ${settingSummary}... Key plot: ${actISummary}...`;
 };
@@ -257,7 +388,7 @@ export const getPrunedContextForPlotOutline = (storyBible: StoryBible): string =
         .filter(line => line.trim().startsWith('**') || line.trim().startsWith('-'))
         .map(line => {
             const match = line.match(/\*\*(.*?)\*\*[:\-\s]+(.*?)(?:\.|$)/);
-            if (match) {
+            if (match?.[1] && match?.[2]) {
                 return `${match[1]}: ${match[2].slice(0, 30)}`;
             }
             return null;
@@ -345,6 +476,13 @@ ${template.content}`;
     4. **Plot Outline**: Structure the narrative beats. DO NOT rehash the logline or character descriptions.
 
     Each section must contain NEW, complementary information that builds on previous sections WITHOUT repetition.
+
+    **CRITICAL RULES FOR CHARACTER NAMES:**
+    - Character names MUST be proper nouns (e.g., "Marcus Holt", "Dr. Elena Chen", "Captain Zara")
+    - NEVER use common words, articles, prepositions, or sentence starters as names
+    - FORBIDDEN name patterns: "In", "The", "A", "Distant", "When", "Once", "And", "But", "As", single-word abstract concepts
+    - Names must sound like real human names or plausible fictional character names
+    - If the user's idea doesn't specify names, CREATE appropriate proper noun names
 
     **Narrative Frameworks Available:**
     - **Three-Act Structure:** A classic model with Setup, Confrontation, and Resolution.
@@ -791,16 +929,21 @@ export const suggestStoryIdeas = async (logApiCall: ApiLogCallback, onStateChang
 
 export const suggestDirectorsVisions = async (storyBible: StoryBible, logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<string[]> => {
     const context = 'suggest visions';
-    const prompt = `You are a film theorist and animation historian. Based on this story bible, suggest 3 distinct and evocative "Director's Visions". These can be live-action cinematic styles or animation art styles. Each should be a short paragraph that describes the visual language.
+    const prompt = `You are a film theorist and animation historian. Based on this story bible, suggest 3 distinct and evocative "Director's Visions". These can be live-action cinematic styles or animation art styles.
 
     **Story Bible:**
     - Logline: ${storyBible.logline}
     - Plot: ${storyBible.plotOutline}
 
-    Return a JSON array of strings.
+    **CRITICAL OUTPUT CONSTRAINTS (HARD LIMITS):**
+    - Each vision MUST be 2-3 sentences (maximum 80 words)
+    - Be concise but evocative - every word must count
+    - Focus on actionable visual direction, not verbose descriptions
 
-    Example cinematic style: "A gritty, neo-noir aesthetic with high-contrast, low-key lighting (chiaroscuro), constant rain, and a sense of urban decay. Camera work is mostly handheld and claustrophobic."
-    Example animation style: "A dynamic, comic-book visual language like 'Into the Spider-Verse', using Ben-Day dots, expressive text on-screen, and variable frame rates to heighten the action."`;
+    Return a JSON array of 3 strings. Each describes a distinct visual language.
+
+    Example cinematic style: "A gritty, neo-noir aesthetic with high-contrast chiaroscuro lighting, constant rain, and urban decay. Handheld, claustrophobic camera work creates tension."
+    Example animation style: "Dynamic Spider-Verse visuals with Ben-Day dots, on-screen text, and variable frame rates. Comic book aesthetic heightens action."`;
     
     const responseSchema = {
         type: Type.ARRAY,
@@ -879,8 +1022,15 @@ export const refineDirectorsVision = async (
     "${vision}"
     ---
 
+    **CRITICAL OUTPUT CONSTRAINTS (HARD LIMITS):**
+    - Output MUST be a SINGLE paragraph (no line breaks)
+    - HARD LIMIT: Maximum 150 words (approximately 600 tokens)
+    - Be concise but evocative - every word must count
+    - DO NOT add unnecessary elaboration or flowery prose
+    - Focus on actionable cinematic direction
+
     **Your Output:**
-    Return a single paragraph of the refined Director's Vision. It should be a more descriptive and professional version of the original idea, rich with cinematic terminology (e.g., mentioning camera work, color palettes, lighting styles, editing pace, sound design).`;
+    Return a single paragraph of the refined Director's Vision. It should be a more descriptive and professional version of the original idea, rich with cinematic terminology (e.g., mentioning camera work, color palettes, lighting styles, editing pace, sound design). Keep it under 150 words.`;
 
     const apiCall = async () => {
         const response = await getAI().models.generateContent({
@@ -1191,7 +1341,7 @@ text, watermarks, logos, blurry, ugly, tiling, poorly drawn hands, poorly drawn 
         if (candidate?.content?.parts) {
             for (const part of candidate.content.parts) {
                 if (part.inlineData) {
-                    const base64ImageBytes: string = part.inlineData.data;
+                    const base64ImageBytes = part.inlineData.data ?? '';
                     const tokens = response.usageMetadata?.totalTokenCount || 0;
                     return { result: base64ImageBytes, tokens };
                 }
@@ -1267,7 +1417,7 @@ export const generateKeyframeForSceneV2 = async (
     let prompt: string;
     
     if (usePipeline) {
-        const { buildSceneKeyframePrompt, assemblePromptForProvider } = await loadPromptPipeline();
+        const { buildSceneKeyframePrompt } = await loadPromptPipeline();
         // Pipeline path: Use buildSceneKeyframePrompt for structured assembly
         const negatives = options?.negatives || DEFAULT_GEMINI_NEGATIVES;
         const assembled = buildSceneKeyframePrompt(
@@ -1285,12 +1435,7 @@ Generate a single, cinematic, high-quality keyframe image that encapsulates the 
 
 ${assembled.inlineFormat}`;
         
-        logApiCall({
-            model: imageModel,
-            operation: 'keyframe_generation',
-            status: 'started',
-            details: { usePipeline: true, sceneId: scene.id, hasStoryBible: true },
-        });
+        // Note: API call logging happens in withRetry on completion
     } else {
         // Legacy path: Inline prompt construction
         const sceneSummary = scene.summary || 'A dramatic scene';
@@ -1308,12 +1453,7 @@ Generate a single, cinematic, high-quality keyframe image that encapsulates the 
 ${DEFAULT_GEMINI_NEGATIVES.join(', ')}.
 `;
         
-        logApiCall({
-            model: imageModel,
-            operation: 'keyframe_generation',
-            status: 'started',
-            details: { usePipeline: false, sceneId: scene.id },
-        });
+        // Note: API call logging happens in withRetry on completion
     }
 
     const apiCall = async () => {
@@ -1329,7 +1469,7 @@ ${DEFAULT_GEMINI_NEGATIVES.join(', ')}.
         if (candidate?.content?.parts) {
             for (const part of candidate.content.parts) {
                 if (part.inlineData) {
-                    const base64ImageBytes: string = part.inlineData.data;
+                    const base64ImageBytes = part.inlineData.data ?? '';
                     const tokens = response.usageMetadata?.totalTokenCount || 0;
                     return { result: base64ImageBytes, tokens };
                 }
@@ -1401,7 +1541,7 @@ text, watermark, logo, signature, username, error, blurry, jpeg artifacts, low r
         if (candidate?.content?.parts) {
             for (const part of candidate.content.parts) {
                 if (part.inlineData) {
-                    const base64ImageBytes: string = part.inlineData.data;
+                    const base64ImageBytes = part.inlineData.data ?? '';
                     const tokens = response.usageMetadata?.totalTokenCount || 0;
                     return { result: base64ImageBytes, tokens };
                 }

@@ -1,6 +1,105 @@
 
 import { TimelineData, Shot, CreativeEnhancers, Scene, StoryBible } from '../types';
 import { assemblePromptForProvider, buildSceneKeyframePrompt, buildComfyUIPrompt, type AssembledPrompt } from './promptPipeline';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('Payload');
+
+// ============================================================================
+// Payload Validation
+// ============================================================================
+
+/**
+ * Payload shape expected by ComfyUI integration.
+ */
+export interface ComfyUIPayloads {
+    json: string;
+    text: string;
+    structured: any[];
+    negativePrompt: string;
+}
+
+/**
+ * Validation result for payload shape checking.
+ */
+export interface PayloadValidationResult {
+    valid: boolean;
+    issues: string[];
+}
+
+/**
+ * Validate that a payload object has all required fields with correct types.
+ * Logs warnings but does not throw - allows graceful degradation.
+ * 
+ * @param payload - Object to validate
+ * @param context - Optional context for logging (e.g., "generateKeyframePayloads")
+ * @returns Validation result with any issues found
+ */
+export function validatePayloadShape(
+    payload: unknown,
+    context?: string
+): PayloadValidationResult {
+    const issues: string[] = [];
+    const prefix = context ? `[${context}] ` : '';
+
+    if (!payload || typeof payload !== 'object') {
+        issues.push('Payload must be a non-null object');
+        logger.warn(`${prefix}Invalid payload: not an object`);
+        return { valid: false, issues };
+    }
+
+    const obj = payload as Record<string, unknown>;
+
+    // Required: json (string)
+    if (typeof obj.json !== 'string') {
+        issues.push('Payload.json must be a string');
+    } else if (obj.json.trim() === '') {
+        issues.push('Payload.json must not be empty');
+    }
+
+    // Required: text (string)
+    if (typeof obj.text !== 'string') {
+        issues.push('Payload.text must be a string');
+    } else if (obj.text.trim() === '') {
+        issues.push('Payload.text must not be empty');
+    }
+
+    // Required: structured (array)
+    if (!Array.isArray(obj.structured)) {
+        issues.push('Payload.structured must be an array');
+    }
+
+    // Required: negativePrompt (string, can be empty)
+    if (typeof obj.negativePrompt !== 'string') {
+        issues.push('Payload.negativePrompt must be a string');
+    }
+
+    if (issues.length > 0) {
+        logger.warn(`${prefix}Payload validation failed`, { issues });
+        return { valid: false, issues };
+    }
+
+    return { valid: true, issues: [] };
+}
+
+/**
+ * Assert payload is valid, logging detailed warnings if not.
+ * Does NOT throw - returns the payload unchanged for graceful degradation.
+ * 
+ * @param payload - Payload to validate
+ * @param context - Context for logging
+ * @returns Same payload, unchanged
+ */
+function assertValidPayload<T extends ComfyUIPayloads>(payload: T, context: string): T {
+    const result = validatePayloadShape(payload, context);
+    if (!result.valid) {
+        logger.error(`Payload contract violation in ${context}`, { 
+            issues: result.issues,
+            payloadKeys: Object.keys(payload),
+        });
+    }
+    return payload;
+}
 
 const generateHumanReadablePromptForShot = (
     shot: Shot, 
@@ -100,7 +199,8 @@ export const generateVideoRequestPayloads = (
         fullTextPrompt += `\n\nGlobal Style & Negative Prompt: ${timeline.negativePrompt}`;
     }
 
-    return { json, text: fullTextPrompt.trim(), structured: structuredPayload, negativePrompt: timeline.negativePrompt || '' };
+    const result = { json, text: fullTextPrompt.trim(), structured: structuredPayload, negativePrompt: timeline.negativePrompt || '' };
+    return assertValidPayload(result, 'generateVideoRequestPayloads');
 };
 
 /**
@@ -208,16 +308,6 @@ ${baseContext}`;
 // ============================================================================
 
 /**
- * Payload format expected by queueComfyUIPrompt and related functions.
- */
-export interface ComfyUIPayloads {
-    json: string;
-    text: string;
-    structured: any[];
-    negativePrompt: string;
-}
-
-/**
  * Generates keyframe payloads using the prompt pipeline.
  * 
  * This function uses `buildSceneKeyframePrompt` to create a prompt optimized
@@ -251,7 +341,7 @@ export function generateKeyframePayloads(
         }
     };
     
-    return {
+    const result: ComfyUIPayloads = {
         json: JSON.stringify(jsonPayload, null, 2),
         text: assembled.separateFormat.positive,
         structured: [{
@@ -262,6 +352,7 @@ export function generateKeyframePayloads(
         }],
         negativePrompt: assembled.separateFormat.negative,
     };
+    return assertValidPayload(result, 'generateKeyframePayloads');
 }
 
 /**
@@ -310,7 +401,7 @@ export function generateShotPayloads(
         }
     };
     
-    return {
+    const result: ComfyUIPayloads = {
         json: JSON.stringify(jsonPayload, null, 2),
         text: comfyPrompt.positive,
         structured: [{
@@ -321,6 +412,7 @@ export function generateShotPayloads(
         }],
         negativePrompt: comfyPrompt.negative,
     };
+    return assertValidPayload(result, 'generateShotPayloads');
 }
 
 /**
