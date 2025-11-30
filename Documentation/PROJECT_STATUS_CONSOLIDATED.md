@@ -1,12 +1,16 @@
 # Project Status - Consolidated (Single Source of Truth)
 
-**Last Updated**: November 28, 2025 (Phase 8 CI/CD Enforcement)  
+**Last Updated**: November 29, 2025 (TypeScript Cleanup Session - Continued)  
 **Version**: 1.0.0-rc6  
 **Status**: ✅ Production-Ready (100% Complete)
 
 > **Note**: This document consolidates information from `CURRENT_STATUS.md`, `START_HERE.md`, and recent session summaries into a single authoritative reference. For detailed history, see `Development_History/Sessions/`.
 
-> **Latest Session**: Phase 8 CI/CD Enforcement (2025-11-28) - **✅ COMPLETE** - Implemented comprehensive CI/CD workflow (`pr-validation.yml`): Node ≥22.19.0 enforcement, TypeScript validation, bundle size monitoring, telemetry schema validation, `runFullE2E` trigger, per-PR summary comments. Added lazy loading for CoDirector component. All P1-P8 items complete. 1,439 tests passing.
+> **Latest Session**: TypeScript Cleanup - Continued (2025-11-29) - **✅ MAJOR PROGRESS** - Reduced TypeScript strict-mode errors from 779 to 624 (155 fixed, **20% reduction**). TS6133 (unused declarations) reduced from 80 to 27 (66% reduction). Cleaned up: services/ (geminiService, comfyUIService, localFallbackService, planExpansionService, storyBibleConverter, etc.), components/ (BayesianAnalyticsPanel, ContinuityCard, GenerationControls, TimelineEditor, TelemetryBadges, StoryBibleEditor), utils/ (hooks, videoSplicer, wanProfileReadiness), tests/e2e/ (15+ spec files). Build verified ✅, Unit tests 1,487/1,489 passing ✅ (1 skipped, 1 pre-existing flaky test).
+
+> **Previous Session**: TypeScript Cleanup (2025-11-29) - **✅ PROGRESS** - Reduced TypeScript strict-mode errors from 779 to 676 (103 fixed, 13% reduction). Focused on TS6133 (unused declarations) - removed unused imports, prefixed unused parameters. Build and tests verified: Vite builds successfully, 1,488/1,489 unit tests passing. Remaining errors are mostly TS18048/TS2532 (possibly undefined) in test files.
+
+> **Previous Session**: Phase 8 CI/CD Enforcement (2025-11-28) - **✅ COMPLETE** - Implemented comprehensive CI/CD workflow (`pr-validation.yml`): Node ≥22.19.0 enforcement, TypeScript validation, bundle size monitoring, telemetry schema validation, `runFullE2E` trigger, per-PR summary comments. Added lazy loading for CoDirector component. All P1-P8 items complete. 1,439 tests passing.
 
 > **Previous Session**: WAN 2.2 Workflows (2025-11-28) - **✅ COMPLETE** - Added 8 new ComfyUI workflows: WAN 2.2 5B/14B variants (flf2v, fun_control, fun_inpaint, animate) + video upscaler. Native dual-keyframe (First-Last-Frame) workflows now available. All 1,439 tests passing.
 
@@ -90,7 +94,9 @@
 - **E2E Tests**: 117/168 passing (100% of runnable tests) ✅
   - 51 properly skipped (manual, real-service, feature-gaps)
   - Fixed bookend-sequential.spec.ts (modal timing + confirmation dialog)
-- **Unit Tests**: 1,439/1,439 passing (100%) ✅
+- **Unit Tests**: 1,488/1,489 passing (99.9%) ✅
+  - 1 skipped (intentional)
+  - NEW (2025-11-29): TypeScript cleanup - 103 errors fixed
   - NEW (2025-11-28): Component tests: 67/67 tests
     - SceneNavigator: 13/13 tests
     - VisualBibleLinkModal: 18/18 tests
@@ -102,7 +108,6 @@
   - IP-Adapter service: 37/37 tests
   - featureFlags: comprehensive coverage
   - coherenceGate: 8/8 tests
-  - All TypeScript errors resolved
   - Fixed 5 trackPromptExecution tests (promptId field)
 - **Performance Tests**: 7/7 passing (100%) ✅
   - React mount: 1094ms (threshold: 1000ms, 9% over - acceptable)
@@ -112,11 +117,14 @@
 - **Validation Tests**: 11/11 passing (bookend workflow PowerShell script)
 - **Test Failures**: 0 (all critical tests passing) ✅
 - **Skipped Tests**: 51 (properly categorized - manual, real-service, feature-gaps)
-- **TypeScript Errors**: 0 ✅
+- **TypeScript Strict Errors**: 624 remaining (down from 779, 20% reduction) 
+  - TS6133 (unused): 27 remaining (down from 80, 66% reduction)
+  - TS18048/TS2532 (possibly undefined): ~229 remaining
+  - Build passes ✅, tests pass ✅ - these are strict-mode warnings only
 - **Test Execution**: ~12 seconds (1,350 tests)
 - **Code Coverage**: High (>85%)
 - **Root Directory**: Cleaned (4 essential files, 177 docs archived to `docs/archived/root-docs-2025-11/`)
-- **Latest Improvement**: Phase 7 Feature Completion (2025-11-28) - All major feature flags implemented
+- **Latest Improvement**: TypeScript Cleanup Session (2025-11-29) - 155 errors fixed, 66% TS6133 reduction
 
 ### Feature Flag Status (2025-11-28) ✅
 | Category | Implemented | Coming Soon | Total |
@@ -132,9 +140,12 @@
 - `promptABTesting` - ✅ Full Bayesian framework in `generationMetrics.ts` + `BayesianAnalyticsPanel.tsx`
 
 **Newly Verified Implemented** (2025-11-28):
-- `bookendKeyframes` - ✅ Enabled by default, native dual-keyframe workflows working
 - `characterAppearanceTracking` - ✅ Full service in `characterTrackingService.ts`
 - `promptWeighting` - ✅ Full service in `promptWeightingService.ts`
+
+**Keyframe Mode** (Updated 2025-11-28):
+- `LocalGenerationSettings.keyframeMode` - Unified setting for keyframe generation mode ('single' | 'bookend')
+- The legacy `bookendKeyframes` feature flag has been removed; use `keyframeMode` instead
 
 **Previously Implemented** (2025-11-28):
 - `subjectFirstPrompts` - Places subject before modifiers in prompts

@@ -76,11 +76,15 @@ pwsh -ExecutionPolicy Bypass -File scripts/run-comfyui-e2e.ps1 -FastIteration
 - **React Context** — Cross-cutting concerns (API status, usage)
 
 ### Feature Flags
-23 feature flags control progressive rollout:
+22 feature flags control progressive rollout:
 - `narrativeStateTracking` (default: true) - Narrative coherence
 - `characterConsistency` (default: false) - IP-Adapter integration
 - `videoUpscaling` (default: false) - Post-processing upscaler
-- `bookendKeyframes` (default: true) - Dual-keyframe workflows
+
+### Keyframe Mode Setting
+- `LocalGenerationSettings.keyframeMode` controls keyframe generation ('single' | 'bookend')
+- Default: 'single' - generates one keyframe per scene
+- 'bookend' mode generates start+end keyframes for better temporal consistency
 
 ---
 

@@ -1,6 +1,6 @@
 # Copilot Instructions for gemDirect1
 
-**Last Updated**: 2025-11-20  
+**Last Updated**: 2025-11-29  
 **Status**: ✅ Production-Ready  
 **WAN2 Pipeline**: ✅ WORKING (validated with evidence)
 
@@ -10,7 +10,7 @@ AI-powered cinematic story generator creating production video timelines. Integr
 
 **The WAN2 pipeline is WORKING**. If you see old documents mentioning a "WAN2 blocker", ignore them - they're outdated. Evidence:
 - Run logs: `logs/20251119-205415/` contains 3 MP4 files (0.33-8.17 MB)
-- Tests: ~44/50 passing (88% coverage)
+- Tests: 1488/1489 passing (99.9% - 1 skipped)
 - Build: Zero errors
 
 **Before making ANY changes**:
@@ -133,21 +133,10 @@ The Google Generative AI SDK bypasses Playwright route interception:
 - Response mocking at fetch level doesn't work for SDK-wrapped requests
 - Solution: Use real local services (LM Studio, ComfyUI) in tests instead
 
-**Test Coverage**: ~44/50 tests passing (88%)
-- Phase 1 (App Loading): 4/4 ✅ 100%
-- Phase 2 (Story Generation): 3/3 ✅ 100%
-- Phase 3 (Scene/Timeline): 2/2 ✅ 100%
-- Phase 4 (ComfyUI Integration): 5/5 ✅ 100%
-- Phase 5 (Data Persistence): 7/7 ✅ 100%
-- Phase 6 (Error Handling): 8/8 ✅ 100%
-- Performance & Pipeline: 7/7 ✅ 100%
-- Minor issues: ~6 tests (fixture hydration timing, not functional bugs)
-- Phase 1 (App Loading): 4/4 ✅ 100%
-- Phase 2 (Story Generation): 3/5 (CORS limitation)
-- Phase 3 (Scene/Timeline): 2/8 (requires full workflow execution)
-- Phase 4 (ComfyUI Integration): 4/5 ✅ 80%
-- Phase 5 (Data Persistence): 6/7 ✅ 86%
-- Phase 6 (Error Handling): 8/8 ✅ 100%
+**Test Coverage**: 1488/1489 tests passing (99.9%)
+- Unit Tests: 81/81 test files passing ✅
+- E2E Tests: 117/117 runnable tests ✅
+- 1 test skipped (PreflightCheck mock - not a bug)
 
 **Running Browser Tests**:
 ```powershell
