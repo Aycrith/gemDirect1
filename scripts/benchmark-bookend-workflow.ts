@@ -1,6 +1,6 @@
 
 import { generateVideoFromBookendsSequential, generateSceneKeyframeLocally, checkServerConnection } from '../services/comfyUIService';
-import { LocalGenerationSettings, Scene, TimelineData, Shot } from '../types';
+import { LocalGenerationSettings, Scene, TimelineData } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createRequire } from 'module';
@@ -189,8 +189,9 @@ async function runBenchmark() {
             MOCK_SCENE,
             MOCK_TIMELINE,
             { start: startImage, end: endImage },
-            (log) => console.log(`[API Log] ${log}`),
-            (state) => {
+            'Cinematic benchmark test',
+            (_log: Omit<import('../types').ApiCallLog, 'id' | 'timestamp'>) => console.log(`[API Log]`),
+            (state: { message?: string; progress?: number }) => {
                 if (state.message) console.log(`[Video Gen] ${state.message}`);
                 if (state.progress) process.stdout.write(`Progress: ${state.progress}%\r`);
             }

@@ -40,7 +40,7 @@ const parseArgs = (): { runDir: string } => {
     
     for (let i = 0; i < args.length; i++) {
         if ((args[i] === '--run-dir' || args[i] === '-d') && args[i + 1]) {
-            runDir = path.resolve(args[i + 1]);
+            runDir = path.resolve(args[i + 1] ?? '');
             i++;
         }
     }

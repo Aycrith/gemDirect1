@@ -12,13 +12,13 @@ const parseArgs = (): CliOptions => {
     for (let i = 0; i < args.length; i += 1) {
         const arg = args[i];
         if (arg === '--output' && args[i + 1]) {
-            options.outputDir = path.resolve(args[i + 1]);
+            options.outputDir = path.resolve(args[i + 1] ?? '');
             i += 1;
         } else if (arg === '--scenes' && args[i + 1]) {
             options.sceneCount = Math.max(1, Math.min(3, Number(args[i + 1]) || 3));
             i += 1;
         } else if (arg === '--sampleKeyframe' && args[i + 1]) {
-            options.sampleKeyframe = path.resolve(args[i + 1]);
+            options.sampleKeyframe = path.resolve(args[i + 1] ?? '');
             i += 1;
         } else if (arg === '--useLocalLLM') {
             options.useLocalLLM = true;

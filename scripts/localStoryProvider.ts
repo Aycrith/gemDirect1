@@ -70,7 +70,7 @@ const fetchDirectJsonStory = async (
 
     try {
         const correlationId = generateCorrelationId();
-        logCorrelation(correlationId, 'lm-studio-direct-json', { url, sceneCount: request.sceneCount });
+        logCorrelation({ correlationId, source: 'lm-studio', timestamp: Date.now() }, 'lm-studio-direct-json', { url, sceneCount: request.sceneCount });
 
         const body = {
             sceneCount: request.sceneCount,
@@ -138,7 +138,7 @@ const fetchOpenAIChatStory = async (
         }
 
         const correlationId = generateCorrelationId();
-        logCorrelation(correlationId, 'lm-studio-openai-chat', { url, model, sceneCount: request.sceneCount });
+        logCorrelation({ correlationId, source: 'lm-studio', timestamp: Date.now() }, 'lm-studio-openai-chat', { url, model, sceneCount: request.sceneCount });
 
         const response = await fetch(url, {
             method: 'POST',

@@ -258,7 +258,7 @@ async function main() {
   // Parse --run-dir argument
   const runDirIndex = args.indexOf('--run-dir');
   if (runDirIndex !== -1 && args[runDirIndex + 1]) {
-    runDir = args[runDirIndex + 1];
+    runDir = args[runDirIndex + 1] ?? '';
   }
 
   // Find latest run dir if not specified

@@ -42,7 +42,7 @@ function parseRunSummary(runDir: string): RunMetrics | null {
 
   for (const line of lines) {
     const sceneMatch = line.match(/\[Scene\s+([^\]]+)\]\s+Wan2\s+(.+)/);
-    if (!sceneMatch) continue;
+    if (!sceneMatch || !sceneMatch[1] || !sceneMatch[2]) continue;
     const sceneId = sceneMatch[1].trim();
     const payload = sceneMatch[2];
     let scene = scenesMap.get(sceneId);

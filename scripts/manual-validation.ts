@@ -3,7 +3,7 @@
  * Run with: npx ts-node scripts/manual-validation.ts
  */
 
-import { chromium, Browser, Page } from 'playwright';
+import { chromium, Browser as _Browser, Page } from 'playwright';
 
 interface ValidationResult {
     phase: string;

@@ -86,7 +86,7 @@ function buildMappingPayload(result: ReturnType<typeof buildMappingSummary>) {
 function summarizeSystemStats(data?: any) {
   if (!data) return null;
   const devices = Array.isArray(data.devices)
-    ? data.devices.map((device) => ({
+    ? data.devices.map((device: Record<string, unknown>) => ({
         name: device?.name ?? device?.model ?? 'unknown',
         totalMB: device?.memory_total ?? device?.total ?? null,
         freeMB: device?.memory_free ?? device?.free ?? null,

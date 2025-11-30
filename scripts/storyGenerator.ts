@@ -295,7 +295,9 @@ export const generateStoryAssets = async (options: CliOptions) => {
 
     const generatedScenes: GeneratedScene[] = [];
     for (let i = 0; i < templates.length; i += 1) {
-        const generated = await buildGeneratedScene(runStoryDir, sampleKeyframe, i, templates[i]);
+        const template = templates[i];
+        if (!template) continue;
+        const generated = await buildGeneratedScene(runStoryDir, sampleKeyframe, i, template);
         generatedScenes.push(generated);
     }
 

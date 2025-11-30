@@ -168,7 +168,7 @@ const runValidator = (runDir: string) => {
     const result = spawnSync('pwsh', ['-NoLogo', '-ExecutionPolicy', 'Bypass', '-File', validatorScript, '-RunDir', runDir], {
         encoding: 'utf8',
     });
-    if (result.error && result.error.code === 'ENOENT') {
+    if (result.error && (result.error as NodeJS.ErrnoException).code === 'ENOENT') {
         const fallback = runValidation(runDir);
         return {
             status: fallback.status,
@@ -298,9 +298,11 @@ describe('validate-run-summary.ps1', () => {
         tempDirs.push(runDir);
         writeFileSync(path.join(runDir, 'run-summary.txt'), createRunSummary(true), 'utf8');
         const metadata = createArtifactMetadata(true);
-        const sceneTelemetry = metadata.Scenes[0].Telemetry!;
-        sceneTelemetry.GPU.VramDeltaMB = -500;
-        sceneTelemetry.GPU.VramDelta = sceneTelemetry.GPU.VramDeltaMB * 1048576;
+        const sceneTelemetry = metadata.Scenes?.[0]?.Telemetry;
+        if (sceneTelemetry?.GPU) {
+            sceneTelemetry.GPU.VramDeltaMB = -500;
+            sceneTelemetry.GPU.VramDelta = sceneTelemetry.GPU.VramDeltaMB * 1048576;
+        }
         writeFileSync(path.join(runDir, 'artifact-metadata.json'), JSON.stringify(metadata, null, 2), 'utf8');
 
         const result = runValidator(runDir);

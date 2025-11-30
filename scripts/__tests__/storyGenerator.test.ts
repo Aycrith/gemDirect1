@@ -34,7 +34,7 @@ describe('story generator helpers', () => {
     it('selects fallback scenes when no LLM response is provided', () => {
         const templates = selectSceneTemplates(2, null);
         expect(templates.length).toBe(2);
-        expect(templates[0].title).toBe(SAMPLE_SCENES[0].title);
+        expect(templates[0]?.title).toBe(SAMPLE_SCENES[0]?.title);
     });
 
     it('builds story payload from LLM response when available', () => {
@@ -75,7 +75,7 @@ describe('story generator helpers', () => {
         const { story } = buildStoryPayload([dummyScene], response as any, llmMeta, warnings);
         expect(story.storyId).toBe('llm-story-123');
         expect(story.generator).toMatch(/local-llm:/);
-        expect(story.scenes[0].id).toBe(dummyScene.id);
+        expect((story.scenes as Array<{ id: string }>)[0]?.id).toBe(dummyScene.id);
         expect(story.llm).toEqual(llmMeta);
         expect(story.warnings).toEqual(['warning']);
     });

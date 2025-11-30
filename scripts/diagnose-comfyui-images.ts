@@ -35,10 +35,10 @@ async function checkServerConnection(): Promise<boolean> {
       return false;
     }
     
-    const data = await response.json();
+    const data = await response.json() as { devices?: Array<{ name?: string; vram_total?: number }> };
     console.log('✅ ComfyUI server is running');
     console.log(`   GPU: ${data.devices?.[0]?.name || 'Unknown'}`);
-    console.log(`   VRAM: ${(data.devices?.[0]?.vram_total / (1024**3)).toFixed(2)} GB`);
+    console.log(`   VRAM: ${((data.devices?.[0]?.vram_total ?? 0) / (1024**3)).toFixed(2)} GB`);
     return true;
   } catch (error) {
     console.error('❌ Failed to connect to ComfyUI server:', error instanceof Error ? error.message : error);
