@@ -76,5 +76,8 @@ fastvideo-env-wsl/
 # Large model files
 *.safetensors
 
-# Large model files
-*.safetensors
+# Depreciated/historical workflows (not version controlled)
+depreciated-workflows/
+
+# Generated TypeScript error output
+tsc_errors.txt
