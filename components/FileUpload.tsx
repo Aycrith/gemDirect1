@@ -11,7 +11,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect }) => {
   const handleFile = (files: FileList | null) => {
     if (files && files.length > 0) {
       const file = files[0];
-      if (file.type.startsWith('video/')) {
+      if (file && file.type.startsWith('video/')) {
         onFileSelect(file);
       } else {
         alert('Please select a valid video file.');

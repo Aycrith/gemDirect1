@@ -17,6 +17,11 @@ import { useInteractiveSpotlight, useStoryBibleValidation } from '../utils/hooks
 import GuideCard from './GuideCard';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 import { estimateTokens, DEFAULT_TOKEN_BUDGETS } from '../services/promptRegistry';
+import { validateStoryBibleHard, type StoryBibleValidationResult } from '../services/storyBibleValidator';
+import { refineField } from '../services/refineField';
+import { logCorrelation, generateCorrelationId } from '../utils/correlation';
+import { useFieldState } from '../utils/useFieldState';
+import { suggestionHistoryStore } from '../store/suggestionHistoryStore';
 
 interface StoryBibleEditorProps {
     storyBible: StoryBible;
@@ -109,34 +114,12 @@ const ValidationBadge: React.FC<{
     );
 };
 
+const FieldStateBadge: React.FC<{ state: string }> = ({ state }) => (
+    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-800 text-gray-300 border border-gray-600">
+        {state}
+    </span>
+);
 
-const EditableField: React.FC<{ label: string; description: string; value: string; onChange: (value: string) => void; rows?: number }> = ({ label, description, value, onChange, rows = 3 }) => {
-    
-    const getPlaceholder = () => {
-        switch (label) {
-            case 'Logline':
-                return "e.g., A retired detective is pulled back for one last case that threatens to unravel his past.";
-            case 'Setting':
-                return "e.g., A rain-slicked, neon-lit metropolis in the year 2049, where technology and decay coexist.";
-            default:
-                return `Describe the ${label.toLowerCase()} here...`;
-        }
-    };
-    
-    return (
-        <div>
-            <label className="block text-sm font-medium text-gray-300">{label}</label>
-            <p className="text-xs text-gray-400 mt-1 mb-2">{description}</p>
-            <textarea
-                value={value}
-                placeholder={getPlaceholder()}
-                onChange={(e) => onChange(e.target.value)}
-                rows={rows}
-                className="w-full bg-gray-800/70 border border-gray-700 rounded-md shadow-inner focus:shadow-amber-500/30 shadow-black/30 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-3 transition-all duration-300"
-            />
-        </div>
-    );
-};
 
 const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdate, onGenerateScenes, isLoading, onApiStateChange, onApiLog }) => {
     const [editableBible, setEditableBible] = useState(storyBible);
@@ -146,11 +129,19 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
 
     const [previewContent, setPreviewContent] = useState({ characters: '', plotOutline: '' });
     const [isPreviewLoading, setIsPreviewLoading] = useState({ characters: false, plotOutline: false });
-    const [isEnhancing, setIsEnhancing] = useState({ logline: false, setting: false });
+    // Inline "Enhance" button state for all four Story Bible fields
+    // Characters and PlotOutline added to match Logline/Setting pattern (2025-11-29)
+    const [isEnhancing, setIsEnhancing] = useState({ logline: false, setting: false, characters: false, plotOutline: false });
     const [suggestions, setSuggestions] = useState({ logline: [] as string[], setting: [] as string[] });
     const [isSuggesting, setIsSuggesting] = useState({ logline: false, setting: false });
-    const [showValidationDetails, setShowValidationDetails] = useState(false);
+    const [showValidationDetails, setShowValidationDetails] = useState(true);
+    const [, setLastValidation] = useState<StoryBibleValidationResult | null>(null);
     const planActions = usePlanExpansionActions();
+    const bibleFieldState = useFieldState('Draft');
+    const loglineState = useFieldState('Draft');
+    const charactersState = useFieldState('Draft');
+    const settingState = useFieldState('Draft');
+    const plotOutlineState = useFieldState('Draft');
     
     // Story Bible validation hook - provides real-time validation feedback
     const validation = useStoryBibleValidation(editableBible);
@@ -160,8 +151,56 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
         setEditableBible(storyBible);
     }, [storyBible]);
 
+    // Keep a validation snapshot to surface issues immediately after refinements
+    useEffect(() => {
+        const snapshot = validateStoryBibleHard(editableBible);
+        setLastValidation(snapshot);
+        if (!editableBible.logline && !editableBible.characters && !editableBible.setting && !editableBible.plotOutline) {
+            bibleFieldState.setDraft();
+        } else if (snapshot.errorCount === 0) {
+            bibleFieldState.setValid();
+        } else {
+            bibleFieldState.setHasIssues();
+        }
+        setShowValidationDetails(true);
+    }, [editableBible]);
+
+    useEffect(() => {
+        const updateFieldState = (
+            fieldKey: keyof StoryBible,
+            sectionKey: string,
+            stateHook: ReturnType<typeof useFieldState>
+        ) => {
+            const value = editableBible[fieldKey];
+            // heroArcs is an array, not a string - skip trim check for it
+            const stringValue = typeof value === 'string' ? value : '';
+            if (!stringValue.trim()) {
+                stateHook.setDraft();
+                return;
+            }
+            const hasSectionErrors = validation.errors.some(
+                issue => issue.section.split('.')[0] === sectionKey
+            );
+            if (!hasSectionErrors) {
+                stateHook.setValid();
+            } else {
+                stateHook.setHasIssues();
+            }
+        };
+
+        updateFieldState('logline', 'logline', loglineState);
+        updateFieldState('characters', 'characters', charactersState);
+        updateFieldState('setting', 'setting', settingState);
+        updateFieldState('plotOutline', 'plotOutline', plotOutlineState);
+    }, [editableBible, validation.errors, loglineState, charactersState, settingState, plotOutlineState]);
+
     const handleFieldChange = (field: keyof StoryBible, value: string) => {
-        setEditableBible(prev => ({ ...prev, [field]: value }));
+        setEditableBible(prev => {
+            const next = { ...prev, [field]: value };
+            setLastValidation(validateStoryBibleHard(next));
+            setShowValidationDetails(true);
+            return next;
+        });
     };
 
     const handleSave = () => {
@@ -175,25 +214,55 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
     
     const handleGeneratePreview = async (section: 'characters' | 'plotOutline') => {
         const currentContent = editableBible[section];
+        if (!currentContent.trim()) {
+            return;
+        }
+
         setIsPreviewLoading(prev => ({ ...prev, [section]: true }));
         setPreviewContent(prev => ({ ...prev, [section]: '' })); // Clear previous preview
+
+        if (section === 'characters') {
+            charactersState.setConverging();
+        } else {
+            plotOutlineState.setConverging();
+        }
+
         try {
-            // Use pruned context instead of full Story Bible
             const prunedContext = section === 'characters'
                 ? getPrunedContextForCharacters(editableBible)
                 : getPrunedContextForPlotOutline(editableBible);
-            
-            const refinedText = await planActions.refineStoryBibleSection(
-                section,
-                currentContent,
-                prunedContext,
-                onApiLog,
-                onApiStateChange
-            );
+
+            const sectionIssues = validation.issues.filter(issue => issue.section.split('.')[0] === section);
+            const validationIssues = sectionIssues.map(issue => `${issue.code}: ${issue.message}`);
+            const validationSuggestions = sectionIssues
+                .map(issue => issue.suggestion || '')
+                .filter(Boolean);
+
+            const refinedText = await refineField({
+                fieldType: section,
+                storyIdea: editableBible.logline || '',
+                bibleContext: prunedContext,
+                currentValue: currentContent,
+                validationIssues,
+                validationSuggestions,
+                callLLM: (prompt: string) =>
+                    planActions.refineStoryBibleSection(
+                        section,
+                        prompt,
+                        prunedContext,
+                        onApiLog,
+                        onApiStateChange
+                    ),
+            });
+
             setPreviewContent(prev => ({ ...prev, [section]: refinedText }));
-        } catch(e) {
+        } catch (e) {
             console.error(e);
-            // Error toast handled by service
+            if (section === 'characters') {
+                charactersState.setHasIssues();
+            } else {
+                plotOutlineState.setHasIssues();
+            }
         } finally {
             setIsPreviewLoading(prev => ({ ...prev, [section]: false }));
         }
@@ -209,42 +278,183 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
     };
 
     const acceptPreview = (section: 'characters' | 'plotOutline') => {
-        if (previewContent[section]) {
-            handleFieldChange(section, previewContent[section]);
-            if (section === 'characters') setCharTab('edit');
-            if (section === 'plotOutline') setPlotTab('edit');
+        const updatedValue = previewContent[section];
+        if (!updatedValue) return;
+
+        handleFieldChange(section, updatedValue);
+
+        const validationSnapshot = validateStoryBibleHard({ ...editableBible, [section]: updatedValue });
+        setLastValidation(validationSnapshot);
+        validation.revalidate();
+
+        logCorrelation(
+            { correlationId: generateCorrelationId(), timestamp: Date.now(), source: 'story-bible' },
+            `refine-${section}`,
+            {
+                newLength: updatedValue.length,
+                issues: validationSnapshot.issues.map(i => i.code),
+            }
+        );
+
+        const hasErrorsForSection = validationSnapshot.issues.some(
+            issue => issue.severity === 'error' && issue.section.split('.')[0] === section
+        );
+
+        if (validationSnapshot.errorCount === 0) {
+            bibleFieldState.setValid();
+        } else {
+            bibleFieldState.setConverging();
+        }
+
+        if (section === 'characters') {
+            if (!hasErrorsForSection) {
+                charactersState.setValid();
+            } else {
+                charactersState.setConverging();
+            }
+            setCharTab('edit');
+        } else {
+            if (!hasErrorsForSection) {
+                plotOutlineState.setValid();
+            } else {
+                plotOutlineState.setConverging();
+            }
+            setPlotTab('edit');
         }
     };
 
-    const handleEnhanceField = useCallback(async (field: 'logline' | 'setting') => {
+    /**
+     * handleEnhanceField - Inline refinement for Story Bible fields
+     * 
+     * Supports all four core fields: logline, setting, characters, plotOutline
+     * Uses refineField() with validation-aware prompts for convergent refinements.
+     * 
+     * IMPORTANT: Characters and PlotOutline were added 2025-11-29 to provide
+     * consistent UX across all Story Bible fields. Previously these only had
+     * "Refine with AI" via the Preview tab.
+     * 
+     * @param field - The Story Bible field to enhance
+     */
+    const handleEnhanceField = useCallback(async (field: 'logline' | 'setting' | 'characters' | 'plotOutline') => {
         const currentContent = editableBible[field];
         if (!currentContent.trim()) return;
         
         setIsEnhancing(prev => ({ ...prev, [field]: true }));
+        bibleFieldState.setConverging();
+        
+        // Update per-field state based on which field is being enhanced
+        switch (field) {
+            case 'logline': loglineState.setConverging(); break;
+            case 'setting': settingState.setConverging(); break;
+            case 'characters': charactersState.setConverging(); break;
+            case 'plotOutline': plotOutlineState.setConverging(); break;
+        }
         try {
             // Use pruned context instead of full Story Bible (80-90% token reduction)
-            const prunedContext = field === 'logline'
-                ? getPrunedContextForLogline(editableBible)
-                : getPrunedContextForSetting(editableBible);
+            // Select the appropriate context getter based on field type
+            let prunedContext: string;
+            switch (field) {
+                case 'logline': prunedContext = getPrunedContextForLogline(editableBible); break;
+                case 'setting': prunedContext = getPrunedContextForSetting(editableBible); break;
+                case 'characters': prunedContext = getPrunedContextForCharacters(editableBible); break;
+                case 'plotOutline': prunedContext = getPrunedContextForPlotOutline(editableBible); break;
+            }
             
-            // Use refineStoryBibleSection with correct field type and current content
-            const enhanced = await planActions.refineStoryBibleSection(
-                field, // Pass actual field type ('logline' or 'setting')
-                currentContent, // Pass current content directly, not contextPrompt
-                prunedContext,
-                onApiLog,
-                onApiStateChange
+            // For characters and plotOutline, use refineField for validation-aware refinement
+            // For logline and setting, use existing refineStoryBibleSection pattern
+            let updatedValue: string;
+            
+            if (field === 'characters' || field === 'plotOutline') {
+                // Use refineField for validation-aware refinement (added 2025-11-29)
+                const sectionIssues = validation.issues.filter(issue => issue.section.split('.')[0] === field);
+                const validationIssues = sectionIssues.map(issue => `${issue.code}: ${issue.message}`);
+                const validationSuggestions = sectionIssues.map(issue => issue.suggestion || '').filter(Boolean);
+                
+                updatedValue = await refineField({
+                    fieldType: field,
+                    storyIdea: editableBible.logline || '',
+                    bibleContext: prunedContext,
+                    currentValue: currentContent,
+                    validationIssues,
+                    validationSuggestions,
+                    callLLM: (prompt: string) =>
+                        planActions.refineStoryBibleSection(
+                            field,
+                            prompt,
+                            prunedContext,
+                            onApiLog,
+                            onApiStateChange
+                        ),
+                });
+            } else {
+                // Use refineStoryBibleSection for logline and setting
+                const enhanced = await planActions.refineStoryBibleSection(
+                    field,
+                    currentContent,
+                    prunedContext,
+                    onApiLog,
+                    onApiStateChange
+                );
+                
+                // Extract just the refined text (remove any preamble)
+                const cleanedEnhanced = enhanced.replace(/^.*?(logline|setting):?\s*/i, '').trim();
+                updatedValue = cleanedEnhanced || enhanced;
+            }
+            
+            handleFieldChange(field, updatedValue);
+            const validationSnapshot = validateStoryBibleHard({ ...editableBible, [field]: updatedValue });
+            setLastValidation(validationSnapshot);
+            setShowValidationDetails(true);
+            validation.revalidate();
+            logCorrelation(
+                { correlationId: generateCorrelationId(), timestamp: Date.now(), source: 'story-bible' },
+                `refine-${field}`,
+                {
+                    newLength: updatedValue.length,
+                    issues: validationSnapshot.issues.map(i => i.code),
+                }
             );
             
-            // Extract just the refined text (remove any preamble)
-            const cleanedEnhanced = enhanced.replace(/^.*?(logline|setting):?\s*/i, '').trim();
-            handleFieldChange(field, cleanedEnhanced || enhanced);
+            // Update per-field state based on validation result
+            const hasErrorsForField = validationSnapshot.issues.some(
+                issue => issue.severity === 'error' && issue.section.split('.')[0] === field
+            );
+            
+            if (validationSnapshot.errorCount === 0) {
+                bibleFieldState.setValid();
+            } else {
+                bibleFieldState.setConverging();
+            }
+            
+            // Update the specific field's state
+            switch (field) {
+                case 'logline':
+                    hasErrorsForField ? loglineState.setConverging() : loglineState.setValid();
+                    break;
+                case 'setting':
+                    hasErrorsForField ? settingState.setConverging() : settingState.setValid();
+                    break;
+                case 'characters':
+                    hasErrorsForField ? charactersState.setConverging() : charactersState.setValid();
+                    break;
+                case 'plotOutline':
+                    hasErrorsForField ? plotOutlineState.setConverging() : plotOutlineState.setValid();
+                    break;
+            }
         } catch(e) {
             console.error(e);
+            bibleFieldState.setHasIssues();
+            // Set error state for the specific field
+            switch (field) {
+                case 'logline': loglineState.setHasIssues(); break;
+                case 'setting': settingState.setHasIssues(); break;
+                case 'characters': charactersState.setHasIssues(); break;
+                case 'plotOutline': plotOutlineState.setHasIssues(); break;
+            }
         } finally {
             setIsEnhancing(prev => ({ ...prev, [field]: false }));
         }
-    }, [editableBible, planActions, onApiLog, onApiStateChange]);
+    }, [editableBible, planActions, onApiLog, onApiStateChange, bibleFieldState, validation, loglineState, settingState, charactersState, plotOutlineState]);
 
     const handleSuggestField = useCallback(async (field: 'logline' | 'setting') => {
         setIsSuggesting(prev => ({ ...prev, [field]: true }));
@@ -274,11 +484,15 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
             const parsedSuggestions = lines
                 .map(line => line.replace(/^\d+\.?\s*/, '').trim())
                 .filter(line => line.length > 10)
-                .slice(0, 5);
+                .slice(0, 6);
+            const unique = parsedSuggestions.filter(s => !suggestionHistoryStore.has(s));
+            const needed = Math.max(4, Math.min(6, unique.length));
+            const trimmed = unique.slice(0, needed);
+            suggestionHistoryStore.add(trimmed);
             
             setSuggestions(prev => ({ 
                 ...prev, 
-                [field]: parsedSuggestions.length > 0 ? parsedSuggestions : ['Failed to generate suggestions. Please try again.'] 
+                [field]: trimmed.length > 0 ? trimmed : ['Failed to generate suggestions. Please try again.'] 
             }));
         } catch(e) {
             console.error(e);
@@ -331,13 +545,14 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                 <p className="text-gray-400 mt-2">This is the narrative foundation of your project. Refine it here before generating scenes.</p>
                 
                 {/* Validation Status Badge */}
-                <div className="flex justify-center mt-4">
+                <div className="flex flex-col items-center gap-2 mt-4">
                     <ValidationBadge 
                         valid={validation.valid} 
                         errorCount={validation.errors.length}
                         warningCount={validation.warnings.length}
                         isV2={validation.isV2}
                     />
+                    <span className="text-xs text-gray-400">State: {bibleFieldState.state}</span>
                 </div>
             </div>
 
@@ -405,7 +620,10 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                 <div>
                     <div className="flex justify-between items-center mb-2">
                         <div>
-                            <label className="block text-sm font-medium text-gray-300">Logline</label>
+                            <div className="flex items-center">
+                                <label className="block text-sm font-medium text-gray-300">Logline</label>
+                                <FieldStateBadge state={loglineState.state} />
+                            </div>
                             <p className="text-xs text-gray-400 mt-1">A single, powerful sentence that captures your entire story. This is your north star.</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -465,15 +683,37 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                 
                 <div>
                     <div className="flex justify-between items-center mb-2">
-                        <div>
-                             <label className="block text-sm font-medium text-gray-300">Characters</label>
-                             <p className="text-xs text-gray-400 mt-1">Introduce your key players. Deepen their motivations and conflicts to drive the story.</p>
-                        </div>
-                        <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
-                            <TabButton active={charTab === 'edit'} onClick={() => handleTabClick('characters', 'edit')}>Edit</TabButton>
-                            <TabButton active={charTab === 'preview'} onClick={() => handleTabClick('characters', 'preview')}>
-                                <SparklesIcon className="w-3 h-3" /> Refine with AI
-                            </TabButton>
+                          <div>
+                               <div className="flex items-center">
+                                   <label className="block text-sm font-medium text-gray-300">Characters</label>
+                                   <FieldStateBadge state={charactersState.state} />
+                               </div>
+                               <p className="text-xs text-gray-400 mt-1">Introduce your key players. Deepen their motivations and conflicts to drive the story.</p>
+                          </div>
+                        <div className="flex items-center gap-2">
+                            {/* Inline Enhance button for Characters - added 2025-11-29 for UX consistency */}
+                            {editableBible.characters.trim() && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleEnhanceField('characters')}
+                                    disabled={isEnhancing.characters}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-amber-600/50 text-amber-200 hover:bg-amber-600/80 disabled:bg-gray-600 disabled:text-gray-400"
+                                    title="Quick enhance characters inline"
+                                >
+                                    {isEnhancing.characters ? (
+                                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    ) : (
+                                        <SparklesIcon className="w-3 h-3" />
+                                    )}
+                                    Enhance
+                                </button>
+                            )}
+                            <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
+                                <TabButton active={charTab === 'edit'} onClick={() => handleTabClick('characters', 'edit')}>Edit</TabButton>
+                                <TabButton active={charTab === 'preview'} onClick={() => handleTabClick('characters', 'preview')}>
+                                    <SparklesIcon className="w-3 h-3" /> Refine with AI
+                                </TabButton>
+                            </div>
                         </div>
                     </div>
                     {charTab === 'edit' ? (
@@ -490,8 +730,11 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
 
                 <div>
                     <div className="flex justify-between items-center mb-2">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300">Setting</label>
+                         <div>
+                            <div className="flex items-center">
+                                <label className="block text-sm font-medium text-gray-300">Setting</label>
+                                <FieldStateBadge state={settingState.state} />
+                            </div>
                             <p className="text-xs text-gray-400 mt-1">Describe the world, time, and atmosphere. What does it feel like to be there?</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -552,14 +795,36 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
                 <div>
                     <div className="flex justify-between items-center mb-2">
                          <div>
-                            <label className="block text-sm font-medium text-gray-300">Plot Outline</label>
+                            <div className="flex items-center">
+                                <label className="block text-sm font-medium text-gray-300">Plot Outline</label>
+                                <FieldStateBadge state={plotOutlineState.state} />
+                            </div>
                             <p className="text-xs text-gray-400 mt-1">Structure your narrative. The AI will adapt a classic structure (like The Hero's Journey) to fit your story. Use the AI refiner to add twists and foreshadowing.</p>
                         </div>
-                        <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
-                           <TabButton active={plotTab === 'edit'} onClick={() => handleTabClick('plotOutline', 'edit')}>Edit</TabButton>
-                           <TabButton active={plotTab === 'preview'} onClick={() => handleTabClick('plotOutline', 'preview')}>
-                               <SparklesIcon className="w-3 h-3" /> Refine with AI
-                           </TabButton>
+                        <div className="flex items-center gap-2">
+                            {/* Inline Enhance button for Plot Outline - added 2025-11-29 for UX consistency */}
+                            {editableBible.plotOutline.trim() && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleEnhanceField('plotOutline')}
+                                    disabled={isEnhancing.plotOutline}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors bg-amber-600/50 text-amber-200 hover:bg-amber-600/80 disabled:bg-gray-600 disabled:text-gray-400"
+                                    title="Quick enhance plot outline inline"
+                                >
+                                    {isEnhancing.plotOutline ? (
+                                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    ) : (
+                                        <SparklesIcon className="w-3 h-3" />
+                                    )}
+                                    Enhance
+                                </button>
+                            )}
+                            <div className="flex items-center gap-2 bg-gray-900/50 p-1 rounded-lg">
+                               <TabButton active={plotTab === 'edit'} onClick={() => handleTabClick('plotOutline', 'edit')}>Edit</TabButton>
+                               <TabButton active={plotTab === 'preview'} onClick={() => handleTabClick('plotOutline', 'preview')}>
+                                   <SparklesIcon className="w-3 h-3" /> Refine with AI
+                               </TabButton>
+                            </div>
                         </div>
                     </div>
                      {plotTab === 'edit' ? (

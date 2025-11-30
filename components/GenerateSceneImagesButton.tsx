@@ -4,7 +4,6 @@ import ImageIcon from './icons/ImageIcon';
 import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
 import { useLocalGenerationSettings } from '../contexts/LocalGenerationSettingsContext';
 import { useQualityGate } from '../hooks/useQualityGate';
-import { isFeatureEnabled } from '../utils/featureFlags';
 import type { ApiLogCallback, ApiStateChangeCallback } from '../services/planExpansionService';
 
 interface GenerateSceneImagesButtonProps {
@@ -30,7 +29,7 @@ const GenerateSceneImagesButton: React.FC<GenerateSceneImagesButtonProps> = ({
     onApiStateChange,
     setGenerationProgress,
     updateSceneImageStatus,
-    sceneImageStatuses,
+    sceneImageStatuses: _sceneImageStatuses,
     addToast,
     className = ''
 }) => {
@@ -74,6 +73,7 @@ const GenerateSceneImagesButton: React.FC<GenerateSceneImagesButtonProps> = ({
         try {
             for (let i = 0; i < scenesNeedingImages.length; i++) {
                 const scene = scenesNeedingImages[i];
+                if (!scene) continue; // Guard against undefined array access
                 try {
                     const taskMessage = `Generating keyframe for scene: "${scene.title}"`;
                     setGenerationProgress(prev => ({ ...prev, current: i + 1, task: taskMessage }));
@@ -96,7 +96,7 @@ const GenerateSceneImagesButton: React.FC<GenerateSceneImagesButtonProps> = ({
                         onApiStateChange
                     );
 
-                    const imageLength = typeof image === 'string' ? image.length : (image.start.length + image.end.length);
+                    const imageLength = image.length;
                     console.log(`📸 [Batch Generation] Received image for "${scene.title}" (${scene.id}), length: ${imageLength} chars`);
 
                     // Validate image data before storing
@@ -172,9 +172,11 @@ const GenerateSceneImagesButton: React.FC<GenerateSceneImagesButtonProps> = ({
                 console.log(`📊 [Batch Generation] Final verification: ${persistedCount} images in state`);
                 
                 scenesNeedingImages.forEach((scene, idx) => {
+                    if (!scene) return;
                     const hasImage = currentImages[scene.id];
                     if (hasImage) {
-                        console.log(`✅ [Batch Generation] Scene ${idx + 1} "${scene.title}" (${scene.id}): Image persisted (${hasImage.length} chars)`);
+                        const imgLength = typeof hasImage === 'string' ? hasImage.length : ((hasImage.start?.length ?? 0) + (hasImage.end?.length ?? 0));
+                        console.log(`✅ [Batch Generation] Scene ${idx + 1} "${scene.title}" (${scene.id}): Image persisted (${imgLength} chars)`);
                     } else {
                         console.error(`❌ [Batch Generation] Scene ${idx + 1} "${scene.title}" (${scene.id}): Image MISSING from state!`);
                     }

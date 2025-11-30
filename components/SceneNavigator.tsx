@@ -162,7 +162,7 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                                         })()}
                                         {effectiveSceneImageStatuses[scene.id] && (
                                             <div className="absolute -top-1 -right-1">
-                                                {effectiveSceneImageStatuses[scene.id].status === 'generating' && (
+                                                {effectiveSceneImageStatuses[scene.id]?.status === 'generating' && (
                                                     <span className="inline-flex items-center justify-center w-5 h-5 bg-blue-600 text-white text-[10px] rounded-full border border-gray-800">
                                                         <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -170,10 +170,10 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                                                         </svg>
                                                     </span>
                                                 )}
-                                                {effectiveSceneImageStatuses[scene.id].status === 'complete' && (
+                                                {effectiveSceneImageStatuses[scene.id]?.status === 'complete' && (
                                                     <span className="inline-flex items-center justify-center w-5 h-5 bg-green-600 text-white text-[10px] rounded-full border border-gray-800">✓</span>
                                                 )}
-                                                {effectiveSceneImageStatuses[scene.id].status === 'error' && (
+                                                {effectiveSceneImageStatuses[scene.id]?.status === 'error' && (
                                                     <span className="inline-flex items-center justify-center w-5 h-5 bg-red-600 text-white text-[10px] rounded-full border border-gray-800">✗</span>
                                                 )}
                                             </div>

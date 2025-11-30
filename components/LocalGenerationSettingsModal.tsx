@@ -2,21 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { LocalGenerationSettings, WorkflowProfile } from '../types';
 import { 
     validateWorkflows, 
-    validateWorkflowProfile, 
     parseError, 
     HELP_DOCS,
-    type ValidationResult,
-    type SystemValidation 
+    type ValidationResult
 } from '../utils/settingsValidation';
 import {
-    FeatureFlags,
     FEATURE_FLAG_META,
     DEFAULT_FEATURE_FLAGS,
     mergeFeatureFlags,
     getFlagsByCategory,
     checkFlagDependencies,
     validateFlagCombination,
-    type FeatureFlagMeta,
 } from '../utils/featureFlags';
 
 interface LocalGenerationSettingsModalProps {
@@ -1150,15 +1146,29 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                     // Check if it looks like a ComfyUI workflow:
                                                     // - Has numeric string keys like "3", "6", "7" (ComfyUI node IDs)
                                                     // - OR has a "prompt" property
+                                                    // - OR has "nodes" as object with numeric keys (enhanced format like flf2v)
+                                                    // - OR has "nodes" as array (GUI export format)
                                                     // - AND doesn't look like a settings file (no comfyUIUrl, workflowProfiles, etc.)
                                                     const keys = Object.keys(data);
                                                     const hasNumericKeys = keys.some(k => /^\d+$/.test(k) && typeof data[k] === 'object' && data[k].class_type);
                                                     const hasPromptStructure = 'prompt' in data && typeof data.prompt === 'object';
+                                                    
+                                                    // Enhanced format: nodes as object with numeric keys (e.g., video_wan2_2_5B_flf2v.json)
+                                                    const hasEnhancedFormat = 'nodes' in data && 
+                                                        typeof data.nodes === 'object' && 
+                                                        !Array.isArray(data.nodes) &&
+                                                        Object.keys(data.nodes || {}).some((k: string) => /^\d+$/.test(k) && data.nodes[k]?.class_type);
+                                                    
+                                                    // GUI export format: nodes as array (e.g., exported from ComfyUI GUI)
+                                                    const hasGUIExportFormat = 'nodes' in data && 
+                                                        Array.isArray(data.nodes) &&
+                                                        data.nodes.some((n: any) => n?.type || n?.class_type);
+                                                    
                                                     const looksLikeSettingsFile = 'comfyUIUrl' in data || 'workflowProfiles' in data || 'mapping' in data;
                                                     
-                                                    const isComfyUIWorkflow = (hasNumericKeys || hasPromptStructure) && !looksLikeSettingsFile;
+                                                    const isComfyUIWorkflow = (hasNumericKeys || hasPromptStructure || hasEnhancedFormat || hasGUIExportFormat) && !looksLikeSettingsFile;
                                                     
-                                                    console.log('[Workflow Import] Detection:', { hasNumericKeys, hasPromptStructure, looksLikeSettingsFile, isComfyUIWorkflow });
+                                                    console.log('[Workflow Import] Detection:', { hasNumericKeys, hasPromptStructure, hasEnhancedFormat, hasGUIExportFormat, looksLikeSettingsFile, isComfyUIWorkflow });
                                                     
                                                     if (isComfyUIWorkflow) {
                                                         console.log('[Workflow Import] Prompting for profile ID...');
@@ -1201,10 +1211,22 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                             [profileId.trim()]: newProfile
                                                         };
                                                         
+                                                        // Build updated form data with new profile
+                                                        const updatedFormData = {
+                                                            ...formData,
+                                                            workflowProfiles: updatedProfiles
+                                                        };
+                                                        
                                                         console.log('[Workflow Import] Saving profiles...', Object.keys(updatedProfiles));
-                                                        handleInputChange('workflowProfiles', updatedProfiles);
-                                                        console.log('[Workflow Import] Import complete!');
-                                                        addToast(`Created workflow profile "${profileLabel}" - configure mappings below`, 'success');
+                                                        setFormData(updatedFormData);
+                                                        
+                                                        // CRITICAL: Auto-persist to IndexedDB immediately (like settings file import does)
+                                                        console.log('[Workflow Import] Auto-saving to IndexedDB...');
+                                                        onSave(updatedFormData);
+                                                        setHasChanges(false);
+                                                        
+                                                        console.log('[Workflow Import] Import complete and persisted!');
+                                                        addToast(`Created and saved workflow profile "${profileLabel}" - configure mappings below`, 'success');
                                                         return;
                                                     }
                                                     
@@ -1228,18 +1250,45 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                 <div className="space-y-2 text-sm text-gray-400">
                                     {formData.workflowProfiles && Object.keys(formData.workflowProfiles).length > 0 ? (
                                         Object.entries(formData.workflowProfiles).map(([id, profile]) => {
-                                            const readiness = (() => {
-                                                if (!profile.workflowJson) return null;
-                                                const mapping = profile.mapping || {};
-                                                const mappedTypes = new Set(Object.values(mapping));
-                                                const hasText = mappedTypes.has('human_readable_prompt') || mappedTypes.has('full_timeline_json');
-                                                const hasKeyframe = mappedTypes.has('keyframe_image');
-                                                // Text-to-image profiles (wan-t2i, flux-t2i) only need text mapping
-                                                // Image-to-video profiles (wan-i2v) need both text and keyframe
-                                                const isTextToImageProfile = id === 'wan-t2i' || id === 'flux-t2i' || id.includes('-t2i');
-                                                const isReady = isTextToImageProfile ? hasText : (hasText && hasKeyframe);
-                                                return { isReady, hasText, hasKeyframe };
-                                            })();
+                                            // Determine workflow source and mappings
+                                            const hasWorkflow = !!(profile.workflowJson && profile.workflowJson.trim().length > 10);
+                                            const mapping = profile.mapping || {};
+                                            const mappedTypes = new Set(Object.values(mapping));
+                                            
+                                            // Check various mapping requirements
+                                            const hasText = mappedTypes.has('human_readable_prompt') || mappedTypes.has('full_timeline_json');
+                                            const hasKeyframe = mappedTypes.has('keyframe_image');
+                                            const hasStartEnd = mappedTypes.has('start_image') && mappedTypes.has('end_image');
+                                            const hasRefImage = mappedTypes.has('ref_image');
+                                            const hasControlVideo = mappedTypes.has('control_video');
+                                            const hasInputVideo = mappedTypes.has('input_video');
+                                            
+                                            // Profile-specific readiness logic
+                                            const isTextToImageProfile = id.includes('-t2i');
+                                            const isImageToVideoProfile = id === 'wan-i2v';
+                                            const isBookendProfile = id === 'wan-flf2v' || id === 'wan-fun-inpaint';
+                                            const isControlProfile = id === 'wan-fun-control';
+                                            const isUpscalerProfile = id === 'video-upscaler';
+                                            
+                                            let isReady = false;
+                                            if (!hasWorkflow) {
+                                                isReady = false;
+                                            } else if (isUpscalerProfile) {
+                                                isReady = hasInputVideo;
+                                            } else if (isTextToImageProfile) {
+                                                isReady = hasText;
+                                            } else if (isImageToVideoProfile) {
+                                                isReady = hasText && hasKeyframe;
+                                            } else if (isBookendProfile) {
+                                                isReady = hasText && hasStartEnd;
+                                            } else if (isControlProfile) {
+                                                isReady = hasText && hasRefImage && hasControlVideo;
+                                            } else {
+                                                // Default: text mapping required
+                                                isReady = hasText;
+                                            }
+
+                                            const readiness = hasWorkflow ? { isReady, hasText, hasKeyframe, hasStartEnd, hasRefImage, hasControlVideo, hasInputVideo } : null;
 
                                             return (
                                                 <div key={id} className="flex items-center justify-between py-2 border-b border-gray-700 last:border-0">
@@ -1247,17 +1296,52 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                         <span className="font-medium text-gray-300">{profile.label || id}</span>
                                                         <span className="text-xs text-gray-500 ml-2">({id})</span>
                                                         {readiness && (
-                                                            <div className="flex gap-1 mt-1" data-testid={`wan-readiness-${id}`}>
-                                                                <span className={`text-xs px-1.5 py-0.5 rounded ${
-                                                                    readiness.hasText ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
-                                                                }`} title="CLIP text mapping for prompts">
-                                                                    {readiness.hasText ? '✓' : '✗'} CLIP
-                                                                </span>
-                                                                {id === 'wan-i2v' && (
+                                                            <div className="flex gap-1 mt-1 flex-wrap" data-testid={`wan-readiness-${id}`}>
+                                                                {/* Show CLIP for non-upscaler profiles */}
+                                                                {!isUpscalerProfile && (
+                                                                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                                        readiness.hasText ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                                                                    }`} title="CLIP text mapping for prompts">
+                                                                        {readiness.hasText ? '✓' : '✗'} CLIP
+                                                                    </span>
+                                                                )}
+                                                                {/* Show Keyframe for wan-i2v */}
+                                                                {isImageToVideoProfile && (
                                                                     <span className={`text-xs px-1.5 py-0.5 rounded ${
                                                                         readiness.hasKeyframe ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
                                                                     }`} title="LoadImage mapping for keyframe_image">
                                                                         {readiness.hasKeyframe ? '✓' : '✗'} Keyframe
+                                                                    </span>
+                                                                )}
+                                                                {/* Show Start/End for bookend profiles */}
+                                                                {isBookendProfile && (
+                                                                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                                        readiness.hasStartEnd ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                                                                    }`} title="LoadImage mappings for start_image and end_image">
+                                                                        {readiness.hasStartEnd ? '✓' : '✗'} Start/End
+                                                                    </span>
+                                                                )}
+                                                                {/* Show Ref/Control for control profiles */}
+                                                                {isControlProfile && (
+                                                                    <>
+                                                                        <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                                            readiness.hasRefImage ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                                                                        }`} title="LoadImage mapping for ref_image">
+                                                                            {readiness.hasRefImage ? '✓' : '✗'} RefImg
+                                                                        </span>
+                                                                        <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                                            readiness.hasControlVideo ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                                                                        }`} title="LoadVideo mapping for control_video">
+                                                                            {readiness.hasControlVideo ? '✓' : '✗'} CtrlVid
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                                {/* Show Input Video for upscaler */}
+                                                                {isUpscalerProfile && (
+                                                                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                                        readiness.hasInputVideo ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+                                                                    }`} title="LoadVideo mapping for input_video">
+                                                                        {readiness.hasInputVideo ? '✓' : '✗'} Input
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -1265,9 +1349,9 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                     </div>
                                                     <span className={`text-xs px-2 py-1 rounded ${
                                                         readiness?.isReady ? 'bg-green-900/30 text-green-400' : 
-                                                        profile.workflowJson ? 'bg-amber-900/30 text-amber-400' : 'bg-gray-700 text-gray-400'
+                                                        hasWorkflow ? 'bg-amber-900/30 text-amber-400' : 'bg-gray-700 text-gray-400'
                                                     }`}>
-                                                        {readiness?.isReady ? '✓ Ready' : profile.workflowJson ? '⚠ Incomplete' : '○ Not configured'}
+                                                        {readiness?.isReady ? '✓ Ready' : hasWorkflow ? '⚠ Incomplete' : '○ Not configured'}
                                                     </span>
                                                 </div>
                                             );
@@ -1387,6 +1471,75 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                         <div className="flex justify-between">
                                             <span>Auto-save:</span>
                                             <span className="text-green-400">✓ Enabled</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* ComfyUI Fetch Settings */}
+                                <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
+                                    <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                                        🔄 ComfyUI Asset Fetch Settings
+                                        <span className="text-xs text-gray-500 font-normal">(for video/image retrieval)</span>
+                                    </h4>
+                                    <p className="text-xs text-gray-400 mb-4">
+                                        Adjust these settings if you're experiencing "received filename instead of data URL" errors or timeout issues when generating videos.
+                                    </p>
+                                    
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-300 mb-1">
+                                                Max Retries
+                                            </label>
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="10"
+                                                    value={formData.comfyUIFetchMaxRetries ?? 3}
+                                                    onChange={(e) => handleInputChange('comfyUIFetchMaxRetries', parseInt(e.target.value) || 3)}
+                                                    className="w-24 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                />
+                                                <span className="text-xs text-gray-500">attempts (default: 3)</span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 mt-1">Number of retry attempts if asset fetch fails</p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-300 mb-1">
+                                                Fetch Timeout
+                                            </label>
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="number"
+                                                    min="5000"
+                                                    max="120000"
+                                                    step="1000"
+                                                    value={formData.comfyUIFetchTimeoutMs ?? 15000}
+                                                    onChange={(e) => handleInputChange('comfyUIFetchTimeoutMs', parseInt(e.target.value) || 15000)}
+                                                    className="w-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                />
+                                                <span className="text-xs text-gray-500">ms (default: 15000 = 15s)</span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 mt-1">Timeout for each fetch attempt. Increase for large videos or slow networks.</p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-300 mb-1">
+                                                Retry Delay
+                                            </label>
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="number"
+                                                    min="500"
+                                                    max="10000"
+                                                    step="500"
+                                                    value={formData.comfyUIFetchRetryDelayMs ?? 1000}
+                                                    onChange={(e) => handleInputChange('comfyUIFetchRetryDelayMs', parseInt(e.target.value) || 1000)}
+                                                    className="w-28 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                />
+                                                <span className="text-xs text-gray-500">ms (default: 1000 = 1s)</span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 mt-1">Delay between retry attempts. Increase if ComfyUI needs more time to write files.</p>
                                         </div>
                                     </div>
                                 </div>
@@ -1563,7 +1716,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                 <div className="space-y-2 pl-8">
                                     {getFlagsByCategory('workflow').map(meta => {
                                         const currentFlags = mergeFeatureFlags(formData.featureFlags);
-                                        const isEnabled = currentFlags[meta.id];
+                                        const isEnabled = currentFlags[meta.id] === true || (typeof currentFlags[meta.id] === 'string' && currentFlags[meta.id] !== 'off');
                                         const deps = checkFlagDependencies(formData.featureFlags, meta.id);
                                         const isComingSoon = meta.comingSoon === true;
                                         
@@ -1634,7 +1787,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                 <div className="space-y-2 pl-8">
                                     {getFlagsByCategory('continuity').map(meta => {
                                         const currentFlags = mergeFeatureFlags(formData.featureFlags);
-                                        const isEnabled = currentFlags[meta.id];
+                                        const isEnabled = currentFlags[meta.id] === true || (typeof currentFlags[meta.id] === 'string' && currentFlags[meta.id] !== 'off');
                                         const deps = checkFlagDependencies(formData.featureFlags, meta.id);
                                         const isComingSoon = meta.comingSoon === true;
                                         
@@ -1705,7 +1858,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                 <div className="space-y-2 pl-8">
                                     {getFlagsByCategory('experimental').map(meta => {
                                         const currentFlags = mergeFeatureFlags(formData.featureFlags);
-                                        const isEnabled = currentFlags[meta.id];
+                                        const isEnabled = currentFlags[meta.id] === true || (typeof currentFlags[meta.id] === 'string' && currentFlags[meta.id] !== 'off');
                                         const deps = checkFlagDependencies(formData.featureFlags, meta.id);
                                         const isComingSoon = meta.comingSoon === true;
                                         

@@ -53,7 +53,7 @@ const TransitionSelector: React.FC<TransitionSelectorProps> = ({ value, onChange
                                        <div className="relative">
                                            <InfoIcon className="w-4 h-4 text-gray-500" />
                                            <div className="absolute bottom-0 right-full mr-2 w-64 p-2 text-xs text-center text-white bg-gray-900 border border-gray-600 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
-                                               {CINEMATIC_TERMS.transitions[option]}
+                                               {CINEMATIC_TERMS.transitions?.[option] ?? option}
                                            </div>
                                        </div>
                                     </button>

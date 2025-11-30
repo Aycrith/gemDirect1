@@ -21,25 +21,25 @@ const QueuePolicyCard: React.FC<QueuePolicyCardProps> = ({
   const policies = [
     {
       label: 'Max Wait Time',
-      value: queueConfig.SceneMaxWaitSeconds,
+      value: queueConfig.HistoryMaxWaitSeconds,
       unit: 'seconds',
       description: 'Maximum time to wait for scene generation'
     },
     {
       label: 'Max Poll Attempts',
-      value: queueConfig.SceneHistoryMaxAttempts,
+      value: queueConfig.HistoryMaxAttempts,
       unit: 'attempts',
       description: 'Maximum number of history polling attempts (0 = unlimited)'
     },
     {
       label: 'Poll Interval',
-      value: queueConfig.SceneHistoryPollIntervalSeconds,
+      value: queueConfig.HistoryPollIntervalSeconds,
       unit: 'seconds',
       description: 'Time between history polling attempts'
     },
     {
       label: 'Post-Execution Timeout',
-      value: queueConfig.ScenePostExecutionTimeoutSeconds,
+      value: queueConfig.PostExecutionTimeoutSeconds,
       unit: 'seconds',
       description: 'Timeout after execution detection'
     },
@@ -81,8 +81,8 @@ const QueuePolicyCard: React.FC<QueuePolicyCardProps> = ({
           {/* Effective max attempts */}
           <div>
             <span className="font-semibold">Effective Max Attempts:</span>{' '}
-            {queueConfig.SceneHistoryMaxAttempts > 0 
-              ? `${queueConfig.SceneHistoryMaxAttempts} (${(queueConfig.SceneHistoryMaxAttempts * queueConfig.SceneHistoryPollIntervalSeconds).toFixed(0)}s worst case)`
+            {(queueConfig.HistoryMaxAttempts ?? 0) > 0 
+              ? `${queueConfig.HistoryMaxAttempts} (${((queueConfig.HistoryMaxAttempts ?? 0) * (queueConfig.HistoryPollIntervalSeconds ?? 0)).toFixed(0)}s worst case)`
               : 'Unlimited (until MaxWaitTime)'
             }
           </div>
@@ -91,9 +91,9 @@ const QueuePolicyCard: React.FC<QueuePolicyCardProps> = ({
           <div>
             <span className="font-semibold">Total Timeout Window:</span>{' '}
             {Math.max(
-              queueConfig.SceneMaxWaitSeconds,
-              queueConfig.SceneHistoryMaxAttempts > 0
-                ? queueConfig.SceneHistoryMaxAttempts * queueConfig.SceneHistoryPollIntervalSeconds
+              queueConfig.HistoryMaxWaitSeconds ?? 0,
+              (queueConfig.HistoryMaxAttempts ?? 0) > 0
+                ? (queueConfig.HistoryMaxAttempts ?? 0) * (queueConfig.HistoryPollIntervalSeconds ?? 0)
                 : 0
             )}s
           </div>
@@ -101,7 +101,7 @@ const QueuePolicyCard: React.FC<QueuePolicyCardProps> = ({
           {/* Retry budget */}
           <div>
             <span className="font-semibold">Retry Budget:</span>{' '}
-            {queueConfig.SceneRetryBudget > 0 
+            {(queueConfig.SceneRetryBudget ?? 0) > 0 
               ? `${queueConfig.SceneRetryBudget} automatic requeue${queueConfig.SceneRetryBudget !== 1 ? 's' : ''}`
               : 'No automatic retries'
             }

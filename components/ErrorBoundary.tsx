@@ -31,7 +31,7 @@ class ErrorBoundary extends Component<Props, State> {
         };
     }
 
-    componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
         console.error('[ErrorBoundary] Caught error:', error);
         console.error('[ErrorBoundary] Component stack:', errorInfo.componentStack);
         
@@ -46,7 +46,7 @@ class ErrorBoundary extends Component<Props, State> {
         });
     };
 
-    render() {
+    override render() {
         if (this.state.hasError && this.state.error) {
             if (this.props.FallbackComponent) {
                 return (

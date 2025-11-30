@@ -1,6 +1,5 @@
 import React from 'react';
 import { SceneGenerationStatus } from '../types';
-import ProgressBar from './ProgressBar';
 
 interface SceneStatusIndicatorProps {
   status: SceneGenerationStatus;
@@ -85,7 +84,12 @@ const SceneStatusIndicator: React.FC<SceneStatusIndicatorProps> = ({
         {title && <span className="text-xs opacity-70 ml-auto truncate">{title}</span>}
       </div>
       {status === 'generating' && progress !== undefined && (
-        <ProgressBar progress={progress} height="h-1" />
+        <div className="w-full bg-gray-700 rounded-full h-1">
+          <div 
+            className="bg-blue-500 h-1 rounded-full transition-all duration-300"
+            style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+          />
+        </div>
       )}
       {status === 'failed' && error && (
         <div className="text-xs text-red-600 bg-red-50 p-2 rounded mt-1 max-w-xs">

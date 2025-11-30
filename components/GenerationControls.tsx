@@ -18,7 +18,6 @@ import {
   TimelineData,
   LocalGenerationSettings,
   LocalGenerationStatus as LocalGenerationStatusType,
-  CreativeEnhancers,
 } from "../types";
 import {
   generateVideoFromShot,
@@ -322,11 +321,6 @@ const GenerationControls: React.FC<Props> = ({
   );
 
   // Compute UI state
-  const hasActiveGenerations = Object.values(generationStates).some(
-    (state: LocalGenerationStatusType) =>
-      state.status === "running" || state.status === "queued",
-  );
-
   const hasErrors = Object.values(generationStates).some(
     (state: LocalGenerationStatusType) => state.status === "error",
   );

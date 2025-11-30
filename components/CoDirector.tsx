@@ -5,6 +5,7 @@ import LightbulbIcon from './icons/LightbulbIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import { marked } from 'marked';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
+import { suggestionHistoryStore } from '../store/suggestionHistoryStore';
 
 interface CoDirectorProps {
   onGetSuggestions: (objective: string) => Promise<void>;
@@ -188,8 +189,14 @@ const CoDirector: React.FC<CoDirectorProps> = ({
                 setLastError(warnMsg);
                 addToast?.(warnMsg, 'info');
             } else {
-                setSuggestions(result);
-                console.log('[CoDirector] Successfully set', result.length, 'suggestions');
+                const unique = result
+                    .map(s => s.trim())
+                    .filter(desc => !suggestionHistoryStore.has(desc));
+                const needed = Math.max(4, Math.min(6, unique.length));
+                const trimmed = unique.slice(0, needed);
+                suggestionHistoryStore.add(trimmed);
+                setSuggestions(trimmed);
+                console.log('[CoDirector] Successfully set', trimmed.length, 'unique suggestions');
             }
         } catch(e) {
             const error = e as Error;

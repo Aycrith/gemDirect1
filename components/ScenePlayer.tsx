@@ -18,7 +18,8 @@ const ScenePlayer: React.FC<ScenePlayerProps> = ({ scene, runDir, isRegenerating
     const record = useMemo(() => manager.getSceneVideo(scene, runDir), [manager, scene, runDir]);
     
     // Check for locally generated video (takes priority)
-    const localVideoUrl = useMemo(() => extractVideoFromLocalStatus(localGenStatus), [localGenStatus]);
+    const localVideoOutput = useMemo(() => extractVideoFromLocalStatus(localGenStatus), [localGenStatus]);
+    const localVideoUrl = localVideoOutput?.data;
 
     // Priority: local generation > artifact-based video
     if (localVideoUrl) {

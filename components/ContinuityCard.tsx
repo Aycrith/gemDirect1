@@ -6,7 +6,6 @@ import { extractVideoFromLocalStatus } from '../utils/videoValidation';
 import FileUpload from './FileUpload';
 import VideoPlayer from './VideoPlayer';
 import FeedbackCard from './FeedbackCard';
-import { marked } from 'marked';
 import SparklesIcon from './icons/SparklesIcon';
 import FilmIcon from './icons/FilmIcon';
 import ImageIcon from './icons/ImageIcon';
@@ -24,9 +23,9 @@ interface ContinuityCardProps {
   storyBible: StoryBible;
   narrativeContext: string;
   directorsVision: string;
-  generatedImage: KeyframeData;
+  generatedImage?: KeyframeData;
   data: SceneContinuityData;
-  setContinuityData: (updater: (prev: SceneContinuityData) => SceneContinuityData | SceneContinuityData) => void;
+  setContinuityData: (updater: (prev: SceneContinuityData | undefined) => SceneContinuityData | SceneContinuityData) => void;
   addToast: (message: string, type: ToastMessage['type']) => void;
   onApiStateChange: (status: any, message: string) => void;
   onApiLog: (log: any) => void;
@@ -90,7 +89,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   isRefined,
   onUpdateSceneSummary,
   onExtendTimeline,
-  allSceneIds,
+  allSceneIds: _allSceneIds,
   allScenes,
   onRerunScene,
   characterContinuityIssues = [],
@@ -99,9 +98,10 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
     const { analyzeVideoFrames, getPrunedContextForContinuity, scoreContinuity } = usePlanExpansionActions();
     const { visualBible } = useVisualBible();
 
-    // Extract generated video from local generation status (if available)
+    // Extract generated video data URL from local generation status (if available)
     const generatedVideoUrl = React.useMemo(() => {
-      return extractVideoFromLocalStatus(localGenStatus);
+      const output = extractVideoFromLocalStatus(localGenStatus);
+      return output?.data;
     }, [localGenStatus]);
 
     // Compute continuity score
@@ -123,15 +123,15 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
 
       const frames = await extractFramesFromVideo(file, 1);
       if (frames.length === 0) throw new Error("Could not extract frames. Video might be invalid or in an unsupported format.");
-      setContinuityData(prev => ({ ...prev, frames }));
+      setContinuityData(prev => ({ ...(prev ?? { status: 'idle' }), frames }));
     const analysis = await analyzeVideoFrames(frames, onApiLog, onApiStateChange);
-      setContinuityData(prev => ({ ...prev, videoAnalysis: analysis, status: 'scoring' }));
+      setContinuityData(prev => ({ ...(prev ?? { status: 'idle' }), videoAnalysis: analysis, status: 'scoring' }));
 
       const visualBibleContext = getSceneVisualBibleContext(visualBible, scene.id);
       const extendedNarrativeContext = narrativeContext + (visualBibleContext.styleBoards.length > 0 ? `\n\nVisual Bible Context:\n- Style Boards: ${visualBibleContext.styleBoards.join(', ')}\n- Tags: ${visualBibleContext.tags.join(', ')}` : '');
       const context = await getPrunedContextForContinuity(storyBible, extendedNarrativeContext, scene, directorsVision, onApiLog, onApiStateChange);
       const result = await scoreContinuity(context, scene, analysis, onApiLog, onApiStateChange);
-      setContinuityData(prev => ({ ...prev, continuityResult: result, status: 'complete' }));
+      setContinuityData(prev => ({ ...(prev ?? { status: 'idle' }), continuityResult: result, status: 'complete' }));
 
       addToast(`Analysis complete for Scene ${sceneNumber}!`, 'success');
 
@@ -147,12 +147,6 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
         URL.revokeObjectURL(data.videoSrc);
     }
     setContinuityData(() => ({ status: 'idle' })); // Reset to initial state
-  };
-
-
-  const createMarkup = (markdown: string) => {
-    const rawMarkup = marked.parse(markdown);
-    return { __html: rawMarkup as string };
   };
 
   const isLoading = data.status === 'analyzing' || data.status === 'scoring';
@@ -357,7 +351,10 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                         )}
                         
                         {data.frames && data.frames.length > 0 && (
-                             <button onClick={() => onExtendTimeline(scene.id, data.frames![data.frames!.length - 1])} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-yellow-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
+                             <button onClick={() => {
+                               const lastFrame = data.frames?.[data.frames.length - 1];
+                               if (lastFrame) onExtendTimeline(scene.id, lastFrame);
+                             }} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-yellow-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
                                <FilmIcon className="w-4 h-4" /> Extend Timeline from this Scene
                             </button>
                         )}
@@ -425,7 +422,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                                         <button
                                             onClick={() => {
                                                 if (coherenceCheck.passed) {
-                                                    setContinuityData(prev => ({ ...prev, isAccepted: true }));
+                                                    setContinuityData(prev => ({ ...(prev ?? { status: 'idle' }), isAccepted: true }));
                                                     addToast(`Scene "${scene.title}" marked as final!`, 'success');
                                                 } else {
                                                     addToast(coherenceCheck.message, 'error');
@@ -447,7 +444,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                         })()}
                     </div>
                 ) : (
-                    <FeedbackCard title="Analysis & Feedback" content={data.videoAnalysis} isLoading={isLoading} />
+                    <FeedbackCard title="Analysis & Feedback" content={data.videoAnalysis ?? null} isLoading={isLoading} />
                 )}
             </div>
         </div>

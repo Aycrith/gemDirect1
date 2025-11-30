@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import PaintBrushIcon from './icons/PaintBrushIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
@@ -17,6 +17,9 @@ import {
     type SetVisionValidation,
     type VisionValidationStatus
 } from '../services/setVisionValidator';
+import { useFieldState } from '../utils/useFieldState';
+import { suggestionHistoryStore } from '../store/suggestionHistoryStore';
+import { generateCorrelationId, logCorrelation } from '../utils/correlation';
 
 interface DirectorsVisionFormProps {
     onSubmit: (vision: string) => void;
@@ -31,9 +34,10 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
     const [isEnhancing, setIsEnhancing] = useState(false);
-    const [showValidation, setShowValidation] = useState(false);
+    const [showValidation, setShowValidation] = useState(true);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
     const planActions = usePlanExpansionActions();
+    const fieldState = useFieldState('Draft');
 
     // Compute validation result whenever vision changes
     const validation: SetVisionValidation = useMemo(() => {
@@ -53,9 +57,23 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
     const isTokenWarning = tokens > SET_VISION_TOKEN_BUDGET * 0.8 && tokens <= SET_VISION_TOKEN_BUDGET;
     const isTokenOver = tokens > SET_VISION_TOKEN_BUDGET;
 
+    useEffect(() => {
+        if (!vision.trim()) {
+            fieldState.setDraft();
+            return;
+        }
+        if (validation.issues.length === 0) {
+            fieldState.setValid();
+        } else {
+            fieldState.setHasIssues();
+        }
+        setShowValidation(true);
+    }, [vision, validation, fieldState]);
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (vision.trim() && validation.canProceed) {
+            fieldState.setValidating();
             console.log('[DirectorsVisionForm] Submitting vision with validation:', {
                 tokens: validation.tokenStatus.tokens,
                 qualityScore: validation.qualityScore,
@@ -66,6 +84,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
         } else if (!validation.canProceed) {
             // Show validation panel if trying to submit invalid vision
             setShowValidation(true);
+            fieldState.setHasIssues();
             console.log('[DirectorsVisionForm] Blocked submission - validation failed:', validation.issues);
         }
     };
@@ -75,7 +94,11 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
         setSuggestions([]);
         try {
             const result = await planActions.suggestDirectorsVisions(storyBible, onApiLog, onApiStateChange);
-            setSuggestions(result);
+            const unique = result.filter(r => !suggestionHistoryStore.has(r));
+            const needed = Math.max(4, Math.min(6, unique.length));
+            const trimmed = unique.slice(0, needed);
+            suggestionHistoryStore.add(trimmed);
+            setSuggestions(trimmed);
         } catch (e) {
             console.error(e);
         } finally {
@@ -87,10 +110,30 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
         if (!vision.trim()) return;
         setIsEnhancing(true);
         try {
+            fieldState.setConverging();
+            const beforeIssues = validation.issues.length;
             const enhancedVision = await planActions.refineDirectorsVision(vision, storyBible, onApiLog, onApiStateChange);
             setVision(enhancedVision);
+            const afterValidation = validateSetVision(enhancedVision, storyBible);
+            const correlationId = generateCorrelationId();
+            logCorrelation(
+                { correlationId, timestamp: Date.now(), source: 'set-vision' },
+                'vision-refine',
+                {
+                    beforeIssues,
+                    afterIssues: afterValidation.issues.length,
+                    qualityBefore: validation.qualityScore,
+                    qualityAfter: afterValidation.qualityScore,
+                }
+            );
+            if (afterValidation.issues.length === 0) {
+                fieldState.setValid();
+            } else {
+                fieldState.setConverging();
+            }
         } catch(e) {
             console.error(e);
+            fieldState.setHasIssues();
         } finally {
             setIsEnhancing(false);
         }

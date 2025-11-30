@@ -122,7 +122,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
     const { artifact, error, loading, refresh } = useArtifactMetadata();
     const { historicalRuns, compareWithHistorical, dbInitialized } = useRunHistory();
     const [showWarningsOnly, setShowWarningsOnly] = useState(false);
-    const [comparison, setComparison] = useState<any>(null);
+    const [_comparison, setComparison] = useState<any>(null);
     const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
     const [regeneratingScenes, setRegeneratingScenes] = useState<Set<string>>(new Set());
 
@@ -304,6 +304,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                                 {artifact.Scenes && artifact.Scenes.length > 0 ? (
                                     (() => {
                                         const firstScene = artifact.Scenes[0];
+                                        if (!firstScene) return null;
                                         return (
                                             <FallbackWarningsCard
                                                 exitReason={firstScene.Telemetry?.HistoryExitReason}
@@ -650,15 +651,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                                 <div className="space-y-2 border-t border-gray-800 pt-2 mt-2">
                                     <div className="text-gray-500 block font-semibold text-sm">Telemetry Details</div>
                                     <TelemetryBadges
-                                        duration={scene.Telemetry.DurationSeconds}
-                                        attempts={scene.Telemetry.HistoryAttempts}
-                                        gpuName={scene.Telemetry.GPU?.Name}
-                                        vramBefore={scene.Telemetry.GPU?.VramFreeBefore}
-                                        vramAfter={scene.Telemetry.GPU?.VramFreeAfter}
-                                        vramDelta={scene.Telemetry.GPU?.VramDelta}
-                                        exitReason={scene.Telemetry.HistoryExitReason}
-                                        executionSuccessDetected={scene.Telemetry.ExecutionSuccessDetected}
-                                        postExecutionTimeoutReached={scene.Telemetry.HistoryPostExecutionTimeoutReached}
+                                        telemetry={scene.Telemetry}
                                     />
                                     {scene.Telemetry.QueueStart && (
                                         <div className="text-xs text-gray-400">Queue start: {new Date(scene.Telemetry.QueueStart).toLocaleTimeString()}</div>
@@ -801,7 +794,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                                 }`}
                             >
                                 <div className="flex items-start justify-between mb-2">
-                                    <span className="font-semibold text-sm">{rec.title}</span>
+                                    <span className="font-semibold text-sm">{rec.type.toUpperCase()}</span>
                                     <span className={`text-xs px-2 py-1 rounded ${
                                         rec.severity === 'critical'
                                             ? 'bg-red-500/20'
@@ -812,14 +805,14 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                                         {rec.severity}
                                     </span>
                                 </div>
-                                <p className="text-xs">{rec.description}</p>
-                                {rec.action && (
+                                <p className="text-xs">{rec.message}</p>
+                                {rec.suggestedAction && (
                                     <p className="text-xs mt-2 font-mono text-gray-400">
-                                        💡 {rec.action}
+                                        💡 {rec.suggestedAction}
                                     </p>
                                 )}
                                 <p className="text-xs mt-2 text-gray-500">
-                                    Confidence: {Math.round(rec.confidence * 100)}%
+                                    Confidence: {Math.round(rec.confidence)}%
                                 </p>
                             </div>
                         ))}
@@ -839,10 +832,8 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                         {/* Run-level Comparison */}
                         <div className="mb-6">
                             <HistoricalTelemetryCard
-                                currentDuration={artifact.Story.Telemetry?.DurationMs}
-                                currentSuccessRate={artifact.Story.Telemetry?.SuccessRate}
-                                comparison={comparison}
-                                artifact={artifact}
+                                storyId={artifact.Story.Id}
+                                title="Run History"
                             />
                         </div>
 
@@ -852,7 +843,6 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                             <TelemetryComparisonChart
                                 data={historicalRuns}
                                 metric="duration"
-                                currentValue={artifact.Story.Telemetry?.DurationMs}
                             />
                         </div>
 
@@ -862,16 +852,15 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                             <TelemetryComparisonChart
                                 data={historicalRuns}
                                 metric="successRate"
-                                currentValue={artifact.Story.Telemetry?.SuccessRate}
                             />
                         </div>
 
                         {/* Per-Scene Historical Comparison */}
-                        {artifact.Story.Scenes && artifact.Story.Scenes.length > 0 && (
+                        {artifact.Scenes && artifact.Scenes.length > 0 && (
                             <div>
                                 <div className="text-gray-500 text-[11px] uppercase tracking-wide mb-3">Per-Scene Historical Metrics</div>
                                 <div className="space-y-3">
-                                    {artifact.Story.Scenes.map((scene) => {
+                                    {artifact.Scenes.map((scene: ArtifactSceneMetadata) => {
                                         const sceneHistory = historicalRuns
                                             .flatMap((run) => run.scenes || [])
                                             .filter((s) => s.sceneId === scene.SceneId);
@@ -882,7 +871,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
 
                                         const avgDuration =
                                             sceneHistory.reduce((sum, s) => sum + (s.durationMs || 0), 0) / sceneHistory.length;
-                                        const currentDuration = scene.Telemetry?.DurationMs;
+                                        const currentDuration = (scene.Telemetry as { durationMs?: number } | undefined)?.durationMs;
                                         const delta = currentDuration ? currentDuration - avgDuration : null;
 
                                         return (

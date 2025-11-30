@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import type { ApiLogCallback, ApiStateChangeCallback } from '../services/planExpansionService';
 import SparklesIcon from './icons/SparklesIcon';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
+import { suggestionHistoryStore } from '../store/suggestionHistoryStore';
 
 interface NegativePromptSuggestionsProps {
     directorsVision: string;
@@ -21,7 +22,11 @@ const NegativePromptSuggestions: React.FC<NegativePromptSuggestionsProps> = ({ d
         setSuggestions([]);
         try {
             const result = await planActions.suggestNegativePrompts(directorsVision, sceneSummary, onApiLog, onApiStateChange);
-            setSuggestions(result);
+            const unique = result.filter(r => !suggestionHistoryStore.has(r));
+            const needed = Math.max(4, Math.min(6, unique.length));
+            const trimmed = unique.slice(0, needed);
+            suggestionHistoryStore.add(trimmed);
+            setSuggestions(trimmed);
         } catch (e) {
             console.error(e);
             // Error toast is handled by the service

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import SparklesIcon from './icons/SparklesIcon';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import { useInteractiveSpotlight } from '../utils/hooks';
@@ -13,11 +13,13 @@ import {
     type ValidationStatus
 } from '../services/storyIdeaValidator';
 import {
-    buildEnhancementPrompt,
     parseEnhancementResponse,
     isEnhancementBetter,
-    DEFAULT_ENHANCEMENT_CONFIG
 } from '../services/storyIdeaEnhancer';
+import { refineField } from '../services/refineField';
+import { useFieldState } from '../utils/useFieldState';
+import { suggestionHistoryStore } from '../store/suggestionHistoryStore';
+import { logCorrelation, generateCorrelationId } from '../utils/correlation';
 
 interface StoryIdeaFormProps {
     onSubmit: (idea: string, genre?: string) => void;
@@ -32,7 +34,8 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [isSuggesting, setIsSuggesting] = useState(false);
     const [isEnhancing, setIsEnhancing] = useState(false);
-    const [showValidation, setShowValidation] = useState(false);
+    const [showValidation, setShowValidation] = useState(true);
+    const fieldState = useFieldState('Draft');
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
     const planActions = usePlanExpansionActions();
 
@@ -50,6 +53,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (idea.trim() && validation.canProceed) {
+            fieldState.setValidating();
             console.log('[StoryIdeaForm] Submitting idea with validation:', {
                 wordCount: validation.wordCount,
                 qualityScore: validation.qualityScore,
@@ -59,16 +63,34 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
         } else if (!validation.canProceed) {
             // Show validation panel if trying to submit invalid idea
             setShowValidation(true);
+            fieldState.setHasIssues();
             console.log('[StoryIdeaForm] Blocked submission - validation failed:', validation.issues);
         }
     };
+    
+    useEffect(() => {
+        if (!idea.trim()) {
+            fieldState.setDraft();
+            return;
+        }
+        if (validation.issues.length === 0) {
+            fieldState.setValid();
+        } else {
+            fieldState.setHasIssues();
+        }
+    }, [validation, idea, fieldState]);
     
     const handleSuggest = useCallback(async () => {
         setIsSuggesting(true);
         setSuggestions([]);
         try {
             const result = await planActions.suggestStoryIdeas(onApiLog, onApiStateChange);
-            setSuggestions(result);
+            // Enforce uniqueness across session history
+            const unique = result.filter(r => !suggestionHistoryStore.has(r));
+            const needed = Math.max(4, Math.min(6, unique.length));
+            const trimmed = unique.slice(0, needed);
+            suggestionHistoryStore.add(trimmed);
+            setSuggestions(trimmed);
         } catch (e) {
             console.error(e);
             // The global handler in withRetry will set the error state
@@ -84,29 +106,31 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
         const originalValidation = validation;
         
         try {
-            // Build a smart enhancement prompt based on validation issues
-            const enhancePrompt = buildEnhancementPrompt(
-                idea,
-                originalValidation,
-                genre,
-                DEFAULT_ENHANCEMENT_CONFIG
-            );
-            
-            console.log('[StoryIdeaForm] Enhancing idea with issues:', 
-                originalValidation.issues.map(i => i.code));
-            
-            // Use refineStoryBibleSection as our LLM call mechanism
-            const enhanced = await planActions.refineStoryBibleSection(
-                'plotOutline',
-                enhancePrompt,
-                '',  // No context needed at this stage
-                onApiLog,
-                onApiStateChange
-            );
+            fieldState.setConverging();
+            const enhanced = await refineField({
+                fieldType: 'idea',
+                storyIdea: idea,
+                bibleContext: '',
+                currentValue: idea,
+                validationIssues: originalValidation.issues.map(i => `${i.code}: ${i.message}`),
+                validationSuggestions: originalValidation.issues.map(i => i.suggestion || '').filter(Boolean),
+                callLLM: (prompt) => planActions.refineStoryBibleSection('plotOutline', prompt, '', onApiLog, onApiStateChange),
+            });
             
             // Parse and clean the response
             const cleaned = parseEnhancementResponse(enhanced, idea);
             const newValidation = validateStoryIdea(cleaned);
+            const correlationId = generateCorrelationId();
+            logCorrelation(
+                { correlationId, timestamp: Date.now(), source: 'story-idea' },
+                'story-idea-enhance',
+                {
+                    originalWordCount: originalValidation.wordCount,
+                    enhancedWordCount: newValidation.wordCount,
+                    originalIssues: originalValidation.issues.map(i => i.code),
+                    enhancedIssues: newValidation.issues.map(i => i.code),
+                }
+            );
             
             // Only apply if enhancement is actually better
             if (isEnhancementBetter(originalValidation, newValidation)) {
@@ -117,17 +141,22 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                     newIssues: newValidation.issues.length
                 });
                 setIdea(cleaned);
+                if (newValidation.issues.length === 0) {
+                    fieldState.setValid();
+                } else {
+                    fieldState.setConverging();
+                }
             } else {
-                // Even if not "better" by metrics, still apply if user explicitly clicked enhance
                 console.log('[StoryIdeaForm] Enhancement applied (user requested)');
                 setIdea(cleaned);
             }
         } catch (e) {
             console.error('[StoryIdeaForm] Enhancement error:', e);
+            fieldState.setHasIssues();
         } finally {
             setIsEnhancing(false);
         }
-    }, [idea, genre, validation, planActions, onApiLog, onApiStateChange]);
+    }, [idea, genre, validation, planActions, onApiLog, onApiStateChange, fieldState]);
 
     return (
         <div ref={spotlightRef} className="max-w-3xl mx-auto glass-card p-8 rounded-xl shadow-2xl shadow-black/30 interactive-spotlight" data-testid="StoryIdeaForm">
@@ -192,12 +221,12 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                     <div className="mt-2 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2">
                             <span className={statusColor}>
-                                {validationStatus === 'valid' && '✓ Ready'}
+                                {validationStatus === 'valid' && '✅ Ready'}
                                 {validationStatus === 'warning' && '⚠ Could be improved'}
-                                {validationStatus === 'error' && '✗ Needs attention'}
+                                {validationStatus === 'error' && '⛔ Needs attention'}
                             </span>
                             <span className="text-gray-500">
-                                {validation.wordCount} words • Quality: {Math.round(validation.qualityScore * 100)}%
+                                {validation.wordCount} words • Quality: {Math.round(validation.qualityScore * 100)}% • State: {fieldState.state}
                             </span>
                         </div>
                         {validation.issues.length > 0 && (
@@ -211,37 +240,44 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                         )}
                     </div>
                 )}
-                
-                {/* Validation Issues Panel */}
                 {showValidation && validation.issues.length > 0 && (
-                    <div className="mt-3 p-3 bg-gray-800/50 rounded-lg border border-gray-700/50 space-y-2">
-                        {validation.issues.map((issue, idx) => (
-                            <div key={idx} className={`flex items-start gap-2 text-sm ${
-                                issue.severity === 'error' ? 'text-red-400' : 'text-amber-400'
-                            }`}>
-                                <span className="mt-0.5">
-                                    {issue.severity === 'error' ? '✗' : '⚠'}
+                    <ul className="mt-2 text-xs text-gray-300 space-y-1">
+                        {validation.issues.map((issue, index) => (
+                            <li
+                                key={`${issue.code}-${index}`}
+                                className="flex items-start gap-2"
+                            >
+                                <span
+                                    className={
+                                        issue.severity === 'error'
+                                            ? 'text-red-400'
+                                            : 'text-amber-300'
+                                    }
+                                >
+                                    •
                                 </span>
                                 <div>
-                                    <p>{issue.message}</p>
+                                    <div>{issue.message}</div>
                                     {issue.suggestion && (
-                                        <p className="text-gray-400 text-xs mt-0.5">{issue.suggestion}</p>
+                                        <div className="text-gray-400">
+                                            Suggestion: {issue.suggestion}
+                                        </div>
                                     )}
                                 </div>
-                            </div>
+                            </li>
                         ))}
-                        {validation.issues.some(i => i.autoFixable) && (
-                            <button
-                                type="button"
-                                onClick={handleEnhance}
-                                disabled={isEnhancing}
-                                className="mt-2 text-xs text-amber-300 hover:text-amber-200 flex items-center gap-1"
-                            >
-                                <SparklesIcon className="w-3 h-3" />
-                                Auto-fix with AI enhancement
-                            </button>
-                        )}
-                    </div>
+                    </ul>
+                )}
+                {validation.issues.some(i => i.autoFixable) && (
+                    <button
+                        type="button"
+                        onClick={handleEnhance}
+                        disabled={isEnhancing}
+                        className="mt-2 text-xs text-amber-300 hover:text-amber-200 flex items-center gap-1"
+                    >
+                        <SparklesIcon className="w-3 h-3" />
+                        Auto-fix with AI enhancement
+                    </button>
                 )}
                 
                 <button
@@ -296,3 +332,8 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
 };
 
 export default StoryIdeaForm;
+
+
+
+
+

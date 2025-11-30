@@ -69,17 +69,6 @@ const getProbabilityColor = (p: number): string => {
 };
 
 /**
- * Get background color for probability bar
- */
-const getProbabilityBarColor = (p: number): string => {
-    if (p >= 0.95) return 'bg-green-500';
-    if (p >= 0.80) return 'bg-emerald-500';
-    if (p >= 0.60) return 'bg-yellow-500';
-    if (p >= 0.40) return 'bg-gray-500';
-    return 'bg-red-500';
-};
-
-/**
  * Get confidence level label
  */
 const getConfidenceLabel = (p: number): string => {

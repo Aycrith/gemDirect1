@@ -100,18 +100,14 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
     return findCharacterContinuityIssues(visualBible, effectiveScenes);
   }, [visualBible, effectiveScenes]);
 
-  const handleSelectScene = useCallback((sceneId: string) => {
-    const element = sceneRefs.current[sceneId];
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, []);
   const getNarrativeContext = useCallback((sceneId: string): string => {
       if (!storyBible || !effectiveScenes.length) return '';
       
       const sceneIndex = effectiveScenes.findIndex(s => s.id === sceneId);
-      const scene = effectiveScenes[sceneIndex];
       if (sceneIndex === -1) return '';
+      
+      const scene = effectiveScenes[sceneIndex];
+      if (!scene) return ''; // Safety check for TypeScript
 
       const plotLines = storyBible.plotOutline.split('\n');
       const actStarts: Record<string, number> = {
@@ -143,8 +139,10 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
           actText = storyBible.plotOutline;
       }
 
-      const prevSceneSummary = sceneIndex > 0 ? `PREVIOUS SCENE: ${effectiveScenes[sceneIndex - 1].summary}` : 'This is the opening scene.';
-      const nextSceneSummary = sceneIndex < effectiveScenes.length - 1 ? `NEXT SCENE: ${effectiveScenes[sceneIndex + 1].summary}` : 'This is the final scene.';
+      const prevScene = sceneIndex > 0 ? effectiveScenes[sceneIndex - 1] : undefined;
+      const nextScene = sceneIndex < effectiveScenes.length - 1 ? effectiveScenes[sceneIndex + 1] : undefined;
+      const prevSceneSummary = prevScene ? `PREVIOUS SCENE: ${prevScene.summary}` : 'This is the opening scene.';
+      const nextSceneSummary = nextScene ? `NEXT SCENE: ${nextScene.summary}` : 'This is the final scene.';
 
       return `
 This scene, "${scene.title}", occurs within the following narrative act:
@@ -253,7 +251,7 @@ CONTEXT FROM ADJACENT SCENES:
 
       <div className="space-y-12">
         {effectiveScenes.map((scene, index) => (
-          <div key={scene.id} ref={(el) => sceneRefs.current[scene.id] = el}>
+          <div key={scene.id} ref={(el) => { sceneRefs.current[scene.id] = el; }}>
             <ContinuityCard
               scene={scene}
               sceneNumber={index + 1}

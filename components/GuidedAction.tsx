@@ -8,7 +8,7 @@ interface GuidedActionProps {
     onClick: () => void;
     isLoading?: boolean;
     icon?: React.ReactNode;
-    buttonProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
+    buttonProps?: React.ButtonHTMLAttributes<HTMLButtonElement> & { 'data-testid'?: string };
 }
 
 const GuidedAction: React.FC<GuidedActionProps> = ({

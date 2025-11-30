@@ -1,7 +1,6 @@
 import React from 'react';
 import LightbulbIcon from './icons/LightbulbIcon';
 import BookOpenIcon from './icons/BookOpenIcon';
-import ClapperboardIcon from './icons/ClapperboardIcon';
 import TimelineIcon from './icons/TimelineIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import PaintBrushIcon from './icons/PaintBrushIcon';

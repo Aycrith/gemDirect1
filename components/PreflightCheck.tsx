@@ -91,8 +91,10 @@ const PreflightCheck: React.FC<PreflightCheckProps> = ({ settings }) => {
         setIsChecking(false);
     }, [settings]);
 
-    const isHardError = checkResults.connection.status === 'error' || checkResults.workflow.status === 'error';
-    const isSuccess = checkResults.connection.status === 'success' && checkResults.workflow.status === 'success';
+    const connectionStatus = checkResults.connection?.status ?? 'idle';
+    const workflowStatus = checkResults.workflow?.status ?? 'idle';
+    const isHardError = connectionStatus === 'error' || workflowStatus === 'error';
+    const isSuccess = connectionStatus === 'success' && workflowStatus === 'success';
 
     const overallStatus = isSuccess ? 'success' : isHardError ? 'error' : 'idle';
 
@@ -114,28 +116,30 @@ const PreflightCheck: React.FC<PreflightCheckProps> = ({ settings }) => {
                 {isChecking ? 'Running Diagnostics...' : 'Run System Check'}
             </button>
 
-            {checkResults.connection.status !== 'idle' && (
+            {connectionStatus !== 'idle' && (
                 <div className="mt-4 space-y-2 text-sm">
                     {Object.entries({
                         'Server Connection': checkResults.connection,
                         'System Resources': checkResults.resources,
                         'Queue Status': checkResults.queue,
                         'Workflow & Mapping Consistency': checkResults.workflow,
-                    }).map(([label, result]) => (
-                         result.status !== 'idle' && (
+                    }).map(([label, result]) => {
+                        const resultStatus = result?.status ?? 'idle';
+                        const resultMessage = result?.message ?? '';
+                        return resultStatus !== 'idle' && (
                             <div key={label} className="p-2 bg-gray-800/50 rounded-md">
                                <div className="flex items-start gap-2">
-                                    <StatusIndicator status={result.status} />
+                                    <StatusIndicator status={resultStatus} />
                                     <div className="flex-1">
                                         <p className="font-semibold text-gray-200">{label}</p>
-                                        <p className={`text-xs whitespace-pre-wrap ${result.status === 'error' ? 'text-red-300' : 'text-gray-400'}`}>
-                                            {result.message}
+                                        <p className={`text-xs whitespace-pre-wrap ${resultStatus === 'error' ? 'text-red-300' : 'text-gray-400'}`}>
+                                            {resultMessage}
                                         </p>
                                     </div>
                                 </div>
                             </div>
-                        )
-                    ))}
+                        );
+                    })}
                     {overallStatus === 'success' && (
                         <p className="text-sm font-bold text-green-400 text-center py-2">
                             System Ready for Local Generation!

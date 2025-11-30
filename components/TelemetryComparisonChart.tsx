@@ -24,7 +24,7 @@ const TelemetryComparisonChart: React.FC<TelemetryComparisonChartProps> = ({
   data,
   metric,
   title = 'Telemetry Trend',
-  height = 8,
+  height: _height = 8,
   showValues = true
 }) => {
   const { minValue, maxValue, chartPoints, values } = useMemo(() => {
@@ -70,7 +70,7 @@ const TelemetryComparisonChart: React.FC<TelemetryComparisonChartProps> = ({
   };
 
   // Determine color based on metric and value
-  const getValueColor = (value: number, isMin: boolean, isMax: boolean): string => {
+  const getValueColor = (_value: number, isMin: boolean, isMax: boolean): string => {
     if (metric === 'duration') {
       // For duration, lower is better (green)
       if (isMin) return 'text-green-400';
@@ -128,7 +128,7 @@ const TelemetryComparisonChart: React.FC<TelemetryComparisonChartProps> = ({
       <div className="flex items-end gap-0.5 h-12">
         {chartPoints.map((point, idx) => {
           const barHeight = Math.max(1, Math.round(point * 11)); // 11 character units
-          const value = values[idx];
+          const value = values[idx] ?? 0;
           const isMin = value === minValue;
           const isMax = value === maxValue;
           const color = getValueColor(value, isMin, isMax);

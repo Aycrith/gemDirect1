@@ -103,32 +103,6 @@ const TelemetryBadges: React.FC<TelemetryBadgesProps> = ({
     return 'bg-gray-700/20 text-gray-300 border-gray-600/50';
   };
 
-  // Helper to format field name
-  const formatFieldName = (key: string): string => {
-    return key
-      .replace(/([A-Z])/g, ' $1')
-      .replace(/^./, char => char.toUpperCase())
-      .trim();
-  };
-
-  // Helper to format value
-  const formatValue = (value: any): string => {
-    if (Array.isArray(value)) {
-      return value.join('; ');
-    }
-    if (typeof value === 'object' && value !== null) {
-      return JSON.stringify(value);
-    }
-    if (typeof value === 'number') {
-      // Format large numbers
-      if (value > 1000) {
-        return `${(value / 1000).toFixed(1)}k`;
-      }
-      return value.toString();
-    }
-    return String(value);
-  };
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">

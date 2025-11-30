@@ -6,7 +6,7 @@
  * Integrates with useRunHistory hook for real-time data updates.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useRunHistory } from '../utils/hooks';
 
 interface HistoricalTelemetryCardProps {
@@ -16,16 +16,56 @@ interface HistoricalTelemetryCardProps {
   onRefresh?: () => void;
 }
 
+// Interface for run history entries
+interface RunHistoryEntry {
+  runId: string;
+  timestamp: number;
+  scenes?: Array<{ id: string; title: string }>;
+  metadata?: {
+    successRate: number;
+    totalDuration: number;
+  };
+}
+
+// Interface for computed stats
+interface ComputedStats {
+  totalRuns: number;
+  successRate: number;
+  totalFrames: number;
+  averageDuration: number;
+  minDuration: number;
+  maxDuration: number;
+}
+
 const HistoricalTelemetryCard: React.FC<HistoricalTelemetryCardProps> = ({
-  storyId,
+  storyId: _storyId,
   title = 'Historical Telemetry',
   compact = false,
   onRefresh
 }) => {
-  const { runs, loading, error, stats, refresh } = useRunHistory({
-    storyId,
-    limit: 50
-  });
+  const { historicalRuns, loading, error, fetchRuns } = useRunHistory();
+  
+  // Compute stats from historical runs
+  const runs: RunHistoryEntry[] = historicalRuns as RunHistoryEntry[];
+  const stats: ComputedStats = React.useMemo(() => {
+    if (runs.length === 0) {
+      return { totalRuns: 0, successRate: 0, totalFrames: 0, averageDuration: 0, minDuration: 0, maxDuration: 0 };
+    }
+    const durations = runs.map((r: RunHistoryEntry) => r.metadata?.totalDuration ?? 0);
+    const successRates = runs.map((r: RunHistoryEntry) => r.metadata?.successRate ?? 0);
+    return {
+      totalRuns: runs.length,
+      successRate: successRates.reduce((a, b) => a + b, 0) / successRates.length,
+      totalFrames: 0, // Not tracked in current data
+      averageDuration: durations.reduce((a, b) => a + b, 0) / durations.length,
+      minDuration: Math.min(...durations),
+      maxDuration: Math.max(...durations),
+    };
+  }, [runs]);
+  
+  const refresh = React.useCallback(async () => {
+    await fetchRuns();
+  }, [fetchRuns]);
 
   const [localRefreshTime, setLocalRefreshTime] = useState<number>(Date.now());
 
@@ -41,10 +81,10 @@ const HistoricalTelemetryCard: React.FC<HistoricalTelemetryCardProps> = ({
     if (runs.length < 2) return { trend: 'stable', confidence: 0 };
 
     const recentRuns = runs.slice(-5); // Last 5 runs
-    const successRates = recentRuns.map(r => r.metadata?.successRate || 0);
+    const successRates = recentRuns.map((r: RunHistoryEntry) => r.metadata?.successRate || 0);
     
-    const firstHalf = successRates.slice(0, Math.floor(successRates.length / 2)).reduce((a, b) => a + b) / Math.ceil(successRates.length / 2);
-    const secondHalf = successRates.slice(Math.floor(successRates.length / 2)).reduce((a, b) => a + b) / Math.floor(successRates.length / 2);
+    const firstHalf = successRates.slice(0, Math.floor(successRates.length / 2)).reduce((a: number, b: number) => a + b, 0) / Math.ceil(successRates.length / 2);
+    const secondHalf = successRates.slice(Math.floor(successRates.length / 2)).reduce((a: number, b: number) => a + b, 0) / Math.floor(successRates.length / 2);
 
     const delta = secondHalf - firstHalf;
     const confidence = Math.min(100, Math.abs(delta) * 10 * runs.length);
@@ -245,7 +285,7 @@ const HistoricalTelemetryCard: React.FC<HistoricalTelemetryCardProps> = ({
         <div className="space-y-2 pt-2 border-t border-cyan-600/20">
           <div className="text-xs font-semibold text-cyan-300">Recent Runs</div>
           <div className="space-y-1 max-h-32 overflow-y-auto">
-            {runs.slice(-5).reverse().map((run) => (
+            {runs.slice(-5).reverse().map((run: RunHistoryEntry) => (
               <div
                 key={run.runId}
                 className="text-xs p-2 rounded bg-gray-800/30 border border-gray-700/30 flex justify-between items-center"
@@ -255,11 +295,11 @@ const HistoricalTelemetryCard: React.FC<HistoricalTelemetryCardProps> = ({
                     {new Date(run.timestamp).toLocaleTimeString()}
                   </div>
                   <div className="text-gray-400">
-                    {run.scenes?.length || 0} scenes · {(run.metadata?.totalDuration / 1000).toFixed(1)}s
+                    {run.scenes?.length || 0} scenes · {((run.metadata?.totalDuration ?? 0) / 1000).toFixed(1)}s
                   </div>
                 </div>
                 <div className={`text-xs font-semibold ${run.metadata?.successRate === 100 ? 'text-green-400' : 'text-yellow-400'}`}>
-                  {run.metadata?.successRate?.toFixed(0)}%
+                  {run.metadata?.successRate?.toFixed(0) ?? '0'}%
                 </div>
               </div>
             ))}

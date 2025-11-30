@@ -1,6 +1,5 @@
-import React from "react";
 import { render, screen, fireEvent, waitFor, act, cleanup } from "@testing-library/react";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import GenerationControls from "../GenerationControls";
 import { createValidTestSettings } from "../../services/__tests__/fixtures";
 import type { LocalGenerationStatus } from "../../types";
@@ -71,8 +70,9 @@ const createControlledGenerator = (
     onProgress: (update: Partial<LocalGenerationStatus>) => void,
   ) => {
     for (let i = 0; i < events.length; i++) {
-      await gates[i].promise;
-      onProgress(events[i]);
+      await gates[i]?.promise;
+      const event = events[i];
+      if (event) onProgress(event);
     }
     if (options.reject) {
       throw options.rejectReason ?? new Error("Controlled generator rejected");
