@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 test.describe('Full Lifecycle: Onboarding → Story → Video → Coherence → Persistence', () => {
   test.setTimeout(180_000); // 3 minutes for full workflow
@@ -59,11 +59,7 @@ test.describe('Full Lifecycle: Onboarding → Story → Video → Coherence → 
     // 4. Check ComfyUI Settings Tab
     await settingsModal.getByRole('button', { name: /ComfyUI Settings/i }).click();
     
-    // Check for WAN profile readiness indicators
-    const wanT2iReadiness = settingsModal.getByTestId('wan-readiness-wan-t2i');
-    const wanI2vReadiness = settingsModal.getByTestId('wan-readiness-wan-i2v');
-    
-    // Profiles should exist (even if not ready) - use first() to handle multiple matches
+    // Check for WAN profile readiness indicators - profiles should exist (even if not ready)
     await expect(settingsModal.getByText(/wan-t2i/i).first()).toBeVisible();
     await expect(settingsModal.getByText(/wan-i2v/i).first()).toBeVisible();
 

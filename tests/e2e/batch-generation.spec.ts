@@ -66,7 +66,6 @@ test.describe('Phase 2 Suite 3: Batch Generation Operations', () => {
     // SKIP: Batch generation UI not implemented yet
     console.log('⚠️ SKIP: Batch generation UI not implemented - test will pass once feature is built');
     test.skip();
-    return;
     
     // Verify batch video generation works for multiple scenes
     
@@ -75,7 +74,6 @@ test.describe('Phase 2 Suite 3: Batch Generation Operations', () => {
     if (!setupSuccess) {
       console.log('⚠️ Fixture setup failed');
       test.skip();
-      return;
     }
     
     // Look for "Generate All Videos" type button
@@ -109,7 +107,6 @@ test.describe('Phase 2 Suite 3: Batch Generation Operations', () => {
     // SKIP: Batch generation UI not implemented yet
     console.log('⚠️ SKIP: Batch generation UI not implemented - test will pass once feature is built');
     test.skip();
-    return;
     
     // Explicit test: Multiple items in batch execute one-by-one, not simultaneously
     
@@ -145,7 +142,6 @@ test.describe('Phase 2 Suite 3: Batch Generation Operations', () => {
     // SKIP: Batch generation UI not implemented yet
     console.log('⚠️ SKIP: Batch generation UI not implemented - test will pass once feature is built');
     test.skip();
-    return;
     
     // Test ability to pause and resume batch generation
     
@@ -199,7 +195,6 @@ test.describe('Phase 2 Suite 3: Batch Generation Operations', () => {
     // SKIP: Batch generation UI not implemented yet
     console.log('⚠️ SKIP: Batch generation UI not implemented - test will pass once feature is built');
     test.skip();
-    return;
     
     // Test ability to cancel in-progress batch generation
     

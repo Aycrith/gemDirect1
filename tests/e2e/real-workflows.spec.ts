@@ -11,7 +11,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { quickSetup, setupKeyframeReady, setupVideoReady, waitForGenerationComplete } from '../fixtures/story-scenario';
+import { quickSetup } from '../fixtures/story-scenario';
 
 // Environment variable to enable real workflow tests (default: skip)
 const RUN_REAL_WORKFLOWS = process.env.RUN_REAL_WORKFLOWS === '1';

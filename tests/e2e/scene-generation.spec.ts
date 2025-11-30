@@ -3,8 +3,7 @@ import { mockStoryBible } from '../fixtures/mock-data';
 import { 
   dismissWelcomeDialog, 
   ensureDirectorMode, 
-  loadStateAndWaitForHydration,
-  waitForComponentMount 
+  loadStateAndWaitForHydration
 } from '../fixtures/test-helpers';
 
 test.describe('Scene Generation', () => {

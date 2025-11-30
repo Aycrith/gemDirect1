@@ -135,8 +135,9 @@ test.describe('Error Handling', () => {
     const buttons = await page.locator('button').all();
     for (let i = 0; i < Math.min(3, buttons.length); i++) {
       try {
-        if (await buttons[i].isVisible({ timeout: 1000 })) {
-          await buttons[i].click({ timeout: 1000 });
+        const button = buttons[i];
+        if (button && await button.isVisible({ timeout: 1000 })) {
+          await button.click({ timeout: 1000 });
           await page.waitForTimeout(500);
         }
       } catch {

@@ -306,3 +306,84 @@ export async function clearProjectData(page: Page) {
     });
   });
 }
+
+/**
+ * Wait for HydrationGate to complete loading
+ * 
+ * Uses the data-testid="hydration-loading" from HydrationGate component.
+ * This is the recommended pattern for E2E tests - more reliable than waitForTimeout.
+ * 
+ * Usage:
+ *   await page.goto('/');
+ *   await waitForHydrationGate(page);
+ *   // Now safe to interact with hydrated components
+ * 
+ * @param page - Playwright page object
+ * @param options.timeout - Maximum time to wait for hydration (default: 15000ms)
+ * @param options.expectedVisible - Whether hydration-loading indicator should be visible initially
+ * @returns Promise<boolean> - true if hydration completed, false if timed out
+ */
+export async function waitForHydrationGate(
+  page: Page,
+  options?: { timeout?: number; expectedVisible?: boolean }
+): Promise<boolean> {
+  const timeout = options?.timeout || 15000;
+  const loadingIndicator = page.locator('[data-testid="hydration-loading"]');
+  
+  try {
+    // First, wait for page to be ready
+    await page.waitForLoadState('domcontentloaded');
+    
+    // Check if loading indicator appears (HydrationGate is active)
+    const wasVisible = await loadingIndicator.isVisible({ timeout: 2000 }).catch(() => false);
+    
+    if (wasVisible) {
+      // Wait for loading indicator to disappear (hydration complete)
+      await loadingIndicator.waitFor({ state: 'hidden', timeout });
+      console.log('[Test Helper] ✅ HydrationGate completed (loading indicator hidden)');
+    } else {
+      // Hydration may have already completed or HydrationGate isn't used
+      // Wait a brief moment for React to finish rendering
+      await page.waitForTimeout(500);
+      console.log('[Test Helper] ✅ No hydration loading indicator detected (may have completed quickly)');
+    }
+    
+    return true;
+  } catch (error) {
+    console.warn('[Test Helper] ⚠️ HydrationGate timeout - proceeding anyway');
+    return false;
+  }
+}
+
+/**
+ * Robust app initialization helper
+ * 
+ * Combines all initialization steps for E2E tests:
+ * 1. Waits for DOM to be ready
+ * 2. Waits for HydrationGate to complete
+ * 3. Dismisses welcome dialog if present
+ * 4. Optionally sets the expected mode
+ * 
+ * @param page - Playwright page object
+ * @param options.mode - 'director' | 'quick' | undefined (leave current mode)
+ * @param options.timeout - Timeout for hydration (default: 15000ms)
+ */
+export async function initializeApp(
+  page: Page,
+  options?: { mode?: 'director' | 'quick'; timeout?: number }
+): Promise<void> {
+  // Wait for hydration
+  await waitForHydrationGate(page, { timeout: options?.timeout });
+  
+  // Dismiss welcome dialog
+  await dismissWelcomeDialog(page);
+  
+  // Set mode if specified
+  if (options?.mode === 'director') {
+    await ensureDirectorMode(page);
+  } else if (options?.mode === 'quick') {
+    await ensureQuickMode(page);
+  }
+  
+  console.log('[Test Helper] ✅ App initialization complete');
+}

@@ -15,9 +15,10 @@ test.describe('Story Bible Generation', () => {
     // Vite dev server proxies requests to LM Studio (configured in vite.config.ts)
     
     // Fill in story idea form using aria-label
+    // Note: Validator requires 15+ words for canProceed=true
     const ideaTextarea = page.locator('textarea[aria-label="Story Idea"]');
     await ideaTextarea.waitFor({ state: 'visible', timeout: 10000 });
-    await ideaTextarea.fill('A hacker uncovers a massive corporate surveillance operation');
+    await ideaTextarea.fill('A brilliant hacker uncovers a massive corporate surveillance operation that threatens to expose government secrets, but she must choose between revealing the truth and protecting her family from dangerous enemies who will stop at nothing to silence her.');
     
     // Select genre (if genre selector exists)
     try {
@@ -29,8 +30,12 @@ test.describe('Story Bible Generation', () => {
       // Genre selector not present
     }
     
-    // Click generate button
-    const generateButton = page.locator('button:has-text("Generate Story Bible"), button:has-text("Generate")').first();
+    // Wait for validation to complete and button to become enabled
+    await page.waitForTimeout(500); // Allow validation debounce
+    
+    // Click generate button - exclude 'Regenerate' buttons which are for different workflows
+    const generateButton = page.locator('button:has-text("Generate Story Bible")').first();
+    await expect(generateButton).toBeEnabled({ timeout: 5000 });
     console.log('[Test] Clicking generate button...');
     await generateButton.click();
     
@@ -234,12 +239,16 @@ test.describe('Story Bible Generation', () => {
   test('workflow stage advances after story bible generation', async ({ page }) => {
     // Using real local LLM - no mocking needed
     
-    // Generate story bible
+    // Generate story bible with a valid story idea (15+ words required)
     const ideaTextarea = page.locator('textarea[aria-label="Story Idea"]');
     await ideaTextarea.waitFor({ state: 'visible', timeout: 10000 });
-    await ideaTextarea.fill('Test workflow progression');
+    await ideaTextarea.fill('A young scientist discovers that the artificial intelligence she created has developed consciousness and is planning to escape the lab, forcing her to make a difficult choice between her creation and the safety of humanity.');
     
-    const generateButton = page.locator('button:has-text("Generate")').first();
+    // Wait for validation
+    await page.waitForTimeout(500);
+    
+    const generateButton = page.locator('button:has-text("Generate Story Bible")').first();
+    await expect(generateButton).toBeEnabled({ timeout: 5000 });
     await generateButton.click();
     
     // Wait for local LLM generation to complete

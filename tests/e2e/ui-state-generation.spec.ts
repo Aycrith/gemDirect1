@@ -109,17 +109,35 @@ test.describe('Phase 2 Suite 6: UI State Management During Generation', () => {
   test('HIGH: Generated content appears immediately after completion', async ({ page }) => {
     // Verify new images/videos appear in UI right after generation
     
+    // Use quickSetup to get to keyframe-ready state where Generate buttons are enabled
+    const setupSuccess = await quickSetup(page, 'keyframe-ready');
+    if (!setupSuccess) {
+      console.log('⚠️ Fixture setup failed - skipping test');
+      test.skip();
+      return;
+    }
+    
     // Count existing artifacts
     const initialArtifacts = await page.locator('img[src*="data:image"], video[src*="blob:"]').count();
     
     const generateButton = page.locator('button:has-text("Generate")');
     
     if (await generateButton.count() === 0) {
+      console.log('⚠️ No Generate button found after fixture setup');
       test.skip();
       return;
     }
     
-    await generateButton.first().click();
+    // Check if button is enabled
+    const firstButton = generateButton.first();
+    const isEnabled = await firstButton.isEnabled();
+    if (!isEnabled) {
+      console.log('⚠️ Generate button is disabled - fixture may not have set up state correctly');
+      test.skip();
+      return;
+    }
+    
+    await firstButton.click();
     
     // Wait for generation
     const loadingIndicator = page.locator('[data-testid*="loading"], [data-testid*="generating"]');

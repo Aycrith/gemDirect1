@@ -9,21 +9,14 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { quickSetup } from '../fixtures/story-scenario';
 
 // Environment-aware performance thresholds
+const CI_MULTIPLIER = process.env.CI === 'true' ? 2 : 1;
+
 const PERFORMANCE_THRESHOLDS = {
-  // Allow 2x slower times in CI environments
-  multiplier: process.env.CI === 'true' ? 2 : 1,
-  
-  appLoadTime: 10000, // 10 seconds base
-  memoryIncrease: 500, // 500 MB base
-  generationTimeout: 600, // 10 minutes base
-  
-  // Get adjusted value
-  get(key: keyof Omit<typeof PERFORMANCE_THRESHOLDS, 'multiplier' | 'get'>) {
-    return this[key] * this.multiplier;
-  }
+  appLoadTime: 10000 * CI_MULTIPLIER, // 10 seconds base
+  memoryIncrease: 500 * CI_MULTIPLIER, // 500 MB base
+  generationTimeout: 600 * CI_MULTIPLIER, // 10 minutes base
 };
 
 test.describe('Phase 2 Suite 7: Performance & Load Testing', () => {
@@ -85,7 +78,7 @@ test.describe('Phase 2 Suite 7: Performance & Load Testing', () => {
     console.log(`App load time: ${loadTime}ms`);
     
     // Performance should be acceptable even with many projects
-    const maxLoadTime = PERFORMANCE_THRESHOLDS.get('appLoadTime');
+    const maxLoadTime = PERFORMANCE_THRESHOLDS.appLoadTime;
     console.log(`Threshold: ${maxLoadTime}ms (CI mode: ${process.env.CI === 'true'})`);
     expect(loadTime).toBeLessThan(maxLoadTime);
     
@@ -152,7 +145,7 @@ test.describe('Phase 2 Suite 7: Performance & Load Testing', () => {
     
     console.log(`Memory increase: ${memoryIncreaseMB.toFixed(2)} MB`);
     
-    const maxMemoryIncrease = PERFORMANCE_THRESHOLDS.get('memoryIncrease');
+    const maxMemoryIncrease = PERFORMANCE_THRESHOLDS.memoryIncrease;
     console.log(`Threshold: ${maxMemoryIncrease} MB (CI mode: ${process.env.CI === 'true'})`);
     expect(memoryIncreaseMB).toBeLessThan(maxMemoryIncrease);
     
@@ -210,7 +203,7 @@ test.describe('Phase 2 Suite 7: Performance & Load Testing', () => {
     }
     
     // Shouldn't take more than threshold for any single generation
-    const maxDuration = PERFORMANCE_THRESHOLDS.get('generationTimeout');
+    const maxDuration = PERFORMANCE_THRESHOLDS.generationTimeout;
     console.log(`Threshold: ${maxDuration}s (CI mode: ${process.env.CI === 'true'})`);
     expect(duration).toBeLessThan(maxDuration);
   });

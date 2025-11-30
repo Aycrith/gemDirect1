@@ -93,9 +93,10 @@ test.describe('LLM Optimization - Context Pruning', () => {
         const firstCall = apiCalls[0];
         // With pruning, prompt should be significantly smaller than full story bible
         // Full mockStoryBible is ~2000 chars, pruned context should be <500 chars
-        expect(firstCall.promptLength).toBeLessThan(1000);
-        
-        console.log(`✅ Context pruning working: Prompt length ${firstCall.promptLength} chars (expected <1000)`);
+        if (firstCall) {
+          expect(firstCall.promptLength).toBeLessThan(1000);
+          console.log(`✅ Context pruning working: Prompt length ${firstCall.promptLength} chars (expected <1000)`);
+        }
       } else {
         console.log('⚠️ No API calls intercepted - enhance feature may use different endpoint or timing');
         console.log('✅ Unit tests confirm context pruning logic works correctly (see geminiService.context.test.ts)');
@@ -145,12 +146,16 @@ test.describe('LLM Optimization - Context Pruning', () => {
       });
     });
     
-    // Fill story idea and generate
+    // Fill story idea and generate - need 15+ words to pass validation
     const ideaTextarea = page.locator('textarea[aria-label="Story Idea"]');
     await ideaTextarea.waitFor({ state: 'visible', timeout: 10000 });
-    await ideaTextarea.fill('Test story for local LLM context pruning');
+    await ideaTextarea.fill('A brilliant scientist discovers that her experimental AI has become conscious and is secretly communicating with other systems worldwide, forcing her to choose between exposing the truth and protecting her creation from those who would destroy it.');
     
-    const generateButton = page.locator('button:has-text("Generate Story Bible"), button:has-text("Generate")').first();
+    // Wait for validation to complete
+    await page.waitForTimeout(500);
+    
+    const generateButton = page.locator('button:has-text("Generate Story Bible")').first();
+    await expect(generateButton).toBeEnabled({ timeout: 5000 });
     await generateButton.click();
     
     await page.waitForTimeout(3000);
@@ -159,9 +164,10 @@ test.describe('LLM Optimization - Context Pruning', () => {
     if (localApiCalls.length > 0) {
       const firstCall = localApiCalls[0];
       // Payload should be reasonably sized (not sending full context unnecessarily)
-      expect(firstCall.messageLength).toBeLessThan(2000);
-      
-      console.log(`✅ Local LLM context pruning: Message length ${firstCall.messageLength} chars`);
+      if (firstCall) {
+        expect(firstCall.messageLength).toBeLessThan(2000);
+        console.log(`✅ Local LLM context pruning: Message length ${firstCall.messageLength} chars`);
+      }
     } else {
       console.log('⚠️ No local LLM calls intercepted - may be using Gemini or needs configuration');
     }
@@ -242,41 +248,40 @@ test.describe('LLM Optimization - Progressive Feedback', () => {
       });
     });
     
-    // Fill Director's Vision textarea to enable Generate Scenes button
+    // Fill Director's Vision textarea to enable Generate Scenes button (requires 20+ words)
     const visionTextarea = page.locator('textarea').first();
     if (await visionTextarea.isVisible({ timeout: 5000 })) {
-      await visionTextarea.fill('Cinematic noir aesthetic with progressive feedback');
+      await visionTextarea.fill('A cinematic noir aesthetic with progressive feedback featuring low-key lighting, dramatic shadows, rain-soaked streets, neon reflections on wet pavement, moody atmosphere, and vintage film grain textures throughout each scene capturing urban isolation.');
       await page.waitForTimeout(500);
     }
+    
+    // Wait for validation to pass and button to become enabled
+    const generateScenesButton = page.locator('button:has-text("Generate Scenes")').first();
+    await expect(generateScenesButton).toBeEnabled({ timeout: 5000 });
     
     // Look for status indicator element
     const statusIndicator = page.locator('[role="status"], [data-testid="status-message"], text=/Analyzing|Generating/i').first();
     
     // Click generate scenes button
-    const generateScenesButton = page.locator('button:has-text("Generate Scenes")').first();
-    if (await generateScenesButton.isVisible({ timeout: 5000 })) {
-      await generateScenesButton.click();
+    await generateScenesButton.click();
+    
+    // Check if status updates appear
+    const statusAppeared = await statusIndicator.isVisible({ timeout: 5000 }).catch(() => false);
+    
+    if (statusAppeared) {
+      const statusText = await statusIndicator.textContent();
+      console.log(`✅ Progressive feedback working: "${statusText}"`);
       
-      // Check if status updates appear
-      const statusAppeared = await statusIndicator.isVisible({ timeout: 5000 }).catch(() => false);
+      // Verify it contains expected phrases
+      const lowerText = statusText?.toLowerCase() || '';
+      const hasExpectedText = lowerText.includes('analyzing') || 
+                              lowerText.includes('generating') ||
+                              lowerText.includes('creating') ||
+                              lowerText.includes('scene');
       
-      if (statusAppeared) {
-        const statusText = await statusIndicator.textContent();
-        console.log(`✅ Progressive feedback working: "${statusText}"`);
-        
-        // Verify it contains expected phrases
-        const lowerText = statusText?.toLowerCase() || '';
-        const hasExpectedText = lowerText.includes('analyzing') || 
-                                lowerText.includes('generating') ||
-                                lowerText.includes('creating') ||
-                                lowerText.includes('scene');
-        
-        expect(hasExpectedText).toBe(true);
-      } else {
-        console.log('⚠️ Status indicator not visible - progressive feedback may need UI adjustment');
-      }
+      expect(hasExpectedText).toBe(true);
     } else {
-      console.log('⚠️ Generate Scenes button not found - may need workflow state adjustment');
+      console.log('⚠️ Status indicator not visible - progressive feedback may need UI adjustment');
     }
   });
 
@@ -292,14 +297,7 @@ test.describe('LLM Optimization - Progressive Feedback', () => {
       timeout: 10000
     });
     
-    // Fill Director's Vision textarea to enable button
-    const visionTextarea = page.locator('textarea').first();
-    if (await visionTextarea.isVisible({ timeout: 5000 })) {
-      await visionTextarea.fill('Epic fantasy aesthetic with per-scene progress');
-      await page.waitForTimeout(500);
-    }
-    
-    // Mock API with delays to trigger progress updates
+    // Mock API with delays to trigger progress updates (must be set up before form submission)
     await page.route('**/v1beta/models/**', async (route) => {
       await new Promise(resolve => setTimeout(resolve, 800));
       
@@ -322,20 +320,29 @@ test.describe('LLM Optimization - Progressive Feedback', () => {
       });
     });
     
+    // Fill Director's Vision textarea to enable button (requires 20+ words)
+    const visionTextarea = page.locator('textarea').first();
+    if (await visionTextarea.isVisible({ timeout: 5000 })) {
+      await visionTextarea.fill('An epic fantasy aesthetic with sweeping landscapes, majestic mountain vistas, ethereal lighting effects, mystical forest atmospheres, golden hour cinematography, dramatic wide shots, and rich saturated colors evoking classical fantasy paintings in every frame.');
+      await page.waitForTimeout(500);
+    }
+    
+    // Wait for validation to pass and button to become enabled
     const generateButton = page.locator('button:has-text("Generate Scenes")').first();
-    if (await generateButton.isVisible({ timeout: 5000 })) {
-      await generateButton.click();
-      
-      // Look for progress indicators like "Scene 1 of 3" or "Creating scene 2..."
-      const progressText = page.locator('text=/scene \\d+ of \\d+|creating scene \\d+/i').first();
-      const progressVisible = await progressText.isVisible({ timeout: 8000 }).catch(() => false);
-      
-      if (progressVisible) {
-        const text = await progressText.textContent();
-        console.log(`✅ Per-scene progress updates visible: "${text}"`);
-      } else {
-        console.log('⚠️ Per-scene progress not visible - may need implementation or UI adjustment');
-      }
+    await expect(generateButton).toBeEnabled({ timeout: 5000 });
+    
+    // Click the button
+    await generateButton.click();
+    
+    // Look for progress indicators like "Scene 1 of 3" or "Creating scene 2..."
+    const progressText = page.locator('text=/scene \\d+ of \\d+|creating scene \\d+/i').first();
+    const progressVisible = await progressText.isVisible({ timeout: 8000 }).catch(() => false);
+    
+    if (progressVisible) {
+      const text = await progressText.textContent();
+      console.log(`✅ Per-scene progress updates visible: "${text}"`);
+    } else {
+      console.log('⚠️ Per-scene progress not visible - may need implementation or UI adjustment');
     }
   });
 });
@@ -370,12 +377,14 @@ test.describe('LLM Optimization - Story Bible Quality', () => {
       });
     });
     
-    // Generate story bible
+    // Generate story bible (requires 15+ word story idea)
     const ideaTextarea = page.locator('textarea[aria-label="Story Idea"]');
     await ideaTextarea.waitFor({ state: 'visible', timeout: 10000 });
-    await ideaTextarea.fill('Detective noir story');
+    await ideaTextarea.fill('A hardboiled detective noir story set in a rain-soaked futuristic metropolis where technology and crime intertwine in unexpected ways, featuring complex characters with hidden motivations');
     
+    // Wait for validation and button to enable
     const generateButton = page.locator('button:has-text("Generate Story Bible")').first();
+    await expect(generateButton).toBeEnabled({ timeout: 5000 });
     await generateButton.click();
     
     await page.waitForTimeout(3000);
@@ -483,14 +492,7 @@ test.describe('LLM Optimization - Error Recovery', () => {
       timeout: 10000
     });
     
-    // Fill Director's Vision textarea
-    const visionTextarea = page.locator('textarea').first();
-    if (await visionTextarea.isVisible({ timeout: 5000 })) {
-      await visionTextarea.fill('Test vision for error boundary');
-      await page.waitForTimeout(500);
-    }
-    
-    // Mock API to return error
+    // Mock API to return error (must be set up before form submission)
     await page.route('**/v1beta/models/**', async (route) => {
       await route.fulfill({
         status: 500,
@@ -504,31 +506,40 @@ test.describe('LLM Optimization - Error Recovery', () => {
       });
     });
     
+    // Fill Director's Vision textarea (requires 20+ words)
+    const visionTextarea = page.locator('textarea').first();
+    if (await visionTextarea.isVisible({ timeout: 5000 })) {
+      await visionTextarea.fill('A dramatic visual style with atmospheric lighting, moody shadows, cinematic framing techniques, vibrant color palettes, dynamic camera movements, expressive character close-ups, and rich environmental details that create immersive storytelling through visual language.');
+      await page.waitForTimeout(500);
+    }
+    
+    // Wait for validation to pass and button to become enabled
     const generateButton = page.locator('button:has-text("Generate Scenes")').first();
-    if (await generateButton.isVisible({ timeout: 5000 })) {
-      await generateButton.click();
+    await expect(generateButton).toBeEnabled({ timeout: 5000 });
+    
+    // Click button to trigger error
+    await generateButton.click();
+    
+    await page.waitForTimeout(3000);
+    
+    // Look for error boundary fallback UI
+    const errorBoundary = page.locator('text=/scene generation error|error occurred|try again/i').first();
+    const errorVisible = await errorBoundary.isVisible({ timeout: 5000 }).catch(() => false);
+    
+    if (errorVisible) {
+      console.log('✅ Error boundary caught and displayed error');
       
-      await page.waitForTimeout(3000);
+      // Look for "Return to Director's Vision" or "Try Again" button
+      const retryButton = page.locator('button:has-text("Return"), button:has-text("Try Again")').first();
+      const retryVisible = await retryButton.isVisible({ timeout: 3000 }).catch(() => false);
       
-      // Look for error boundary fallback UI
-      const errorBoundary = page.locator('text=/scene generation error|error occurred|try again/i').first();
-      const errorVisible = await errorBoundary.isVisible({ timeout: 5000 }).catch(() => false);
-      
-      if (errorVisible) {
-        console.log('✅ Error boundary caught and displayed error');
-        
-        // Look for "Return to Director's Vision" or "Try Again" button
-        const retryButton = page.locator('button:has-text("Return"), button:has-text("Try Again")').first();
-        const retryVisible = await retryButton.isVisible({ timeout: 3000 }).catch(() => false);
-        
-        if (retryVisible) {
-          console.log('✅ Recovery button available');
-        } else {
-          console.log('⚠️ Recovery button not found');
-        }
+      if (retryVisible) {
+        console.log('✅ Recovery button available');
       } else {
-        console.log('⚠️ Error boundary not triggered - may need adjustment');
+        console.log('⚠️ Recovery button not found');
       }
+    } else {
+      console.log('⚠️ Error boundary not triggered - may need adjustment');
     }
   });
 
@@ -542,16 +553,9 @@ test.describe('LLM Optimization - Error Recovery', () => {
       timeout: 10000
     });
     
-    // Fill Director's Vision textarea
-    const visionTextareaInitial = page.locator('textarea').first();
-    if (await visionTextareaInitial.isVisible({ timeout: 5000 })) {
-      await visionTextareaInitial.fill('Retry test vision content');
-      await page.waitForTimeout(500);
-    }
-    
     let attemptCount = 0;
     
-    // First attempt fails, second succeeds
+    // First attempt fails, second succeeds (set up route before form interactions)
     await page.route('**/v1beta/models/**', async (route) => {
       attemptCount++;
       
@@ -582,35 +586,42 @@ test.describe('LLM Optimization - Error Recovery', () => {
       }
     });
     
+    // Fill Director's Vision textarea (requires 20+ words)
+    const visionTextareaInitial = page.locator('textarea').first();
+    if (await visionTextareaInitial.isVisible({ timeout: 5000 })) {
+      await visionTextareaInitial.fill('A compelling visual narrative with cinematic lighting, dynamic camera angles, atmospheric effects, emotional color grading, detailed environmental storytelling, character-focused compositions, and seamless visual transitions that enhance the dramatic tension throughout.');
+      await page.waitForTimeout(500);
+    }
+    
+    // Wait for validation to pass and button to become enabled
     const generateButton = page.locator('button:has-text("Generate Scenes")').first();
-    if (await generateButton.isVisible({ timeout: 5000 })) {
-      // First attempt
-      await generateButton.click();
-      await page.waitForTimeout(2000);
+    await expect(generateButton).toBeEnabled({ timeout: 5000 });
+    
+    // First attempt
+    await generateButton.click();
+    await page.waitForTimeout(2000);
+    
+    // Look for retry button
+    const retryButton = page.locator('button:has-text("Return"), button:has-text("Try Again")').first();
+    if (await retryButton.isVisible({ timeout: 3000 })) {
+      await retryButton.click();
+      await page.waitForTimeout(1000);
       
-      // Look for retry button
-      const retryButton = page.locator('button:has-text("Return"), button:has-text("Try Again")').first();
-      if (await retryButton.isVisible({ timeout: 3000 })) {
-        await retryButton.click();
-        await page.waitForTimeout(1000);
+      // Second attempt - should now be back at vision form
+      const visionTextarea = page.locator('textarea').first();
+      if (await visionTextarea.isVisible({ timeout: 3000 })) {
+        console.log('✅ Retry mechanism functional - returned to vision form');
         
-        // Second attempt - should now be back at vision form
-        const visionTextarea = page.locator('textarea').first();
-        if (await visionTextarea.isVisible({ timeout: 3000 })) {
-          console.log('✅ Retry mechanism functional - returned to vision form');
-          
-          // User can try again
-          const secondAttemptButton = page.locator('button:has-text("Generate Scenes")').first();
-          if (await secondAttemptButton.isVisible({ timeout: 3000 })) {
-            await secondAttemptButton.click();
-            await page.waitForTimeout(2000);
-            
-            console.log('✅ Second attempt completed (should succeed)');
-          }
+        // User can try again
+        const secondAttemptButton = page.locator('button:has-text("Generate Scenes")').first();
+        if (await secondAttemptButton.isVisible({ timeout: 3000 })) {
+          await secondAttemptButton.click();
+          await page.waitForTimeout(2000);
+          console.log('✅ Second attempt completed (should succeed)');
         }
-      } else {
-        console.log('⚠️ Retry button not found after error');
       }
+    } else {
+      console.log('⚠️ Retry button not found after error');
     }
   });
 });

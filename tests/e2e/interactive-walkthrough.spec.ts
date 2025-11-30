@@ -13,7 +13,7 @@
  * - Persistence and export/import
  */
 
-import { test, expect, Page } from '@playwright/test';
+import { test, Page } from '@playwright/test';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import * as fs from 'fs';
@@ -23,8 +23,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Configuration
-const LM_STUDIO_URL = 'http://localhost:1234/v1/chat/completions';
-const COMFYUI_URL = 'http://127.0.0.1:8188';
 const COHERENCE_THRESHOLD = 0.7;
 
 // Logging utilities
@@ -32,9 +30,9 @@ class WalkthroughLogger {
   private logs: Array<{ timestamp: string; phase: string; message: string; level: string }> = [];
   private reportDir: string;
 
-  constructor(testName: string) {
+  constructor(_testName: string) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] + '-' + 
-                     new Date().toTimeString().split(' ')[0].replace(/:/g, '');
+                     (new Date().toTimeString().split(' ')[0] ?? '').replace(/:/g, '');
     this.reportDir = join(__dirname, '..', 'logs', `walkthrough-${timestamp}`);
     if (!fs.existsSync(this.reportDir)) {
       fs.mkdirSync(this.reportDir, { recursive: true });
@@ -64,11 +62,6 @@ class WalkthroughLogger {
     await page.screenshot({ path: screenshotPath, fullPage: true });
     this.log('screenshot', `Captured: ${name}`, 'info');
   }
-}
-
-// Helper to wait for network idle
-async function waitForNetworkIdle(page: Page, timeout = 5000) {
-  await page.waitForLoadState('networkidle', { timeout });
 }
 
 test.describe('Interactive Browser Walkthrough', () => {
@@ -385,7 +378,7 @@ test.describe('Interactive Browser Walkthrough', () => {
           
           // Check if score meets threshold
           const scoreMatch = scoreText.match(/(\d+\.?\d*)/);
-          if (scoreMatch) {
+          if (scoreMatch?.[1]) {
             const score = parseFloat(scoreMatch[1]);
             if (score < 1) {
               // Already normalized

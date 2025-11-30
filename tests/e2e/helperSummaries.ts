@@ -26,7 +26,7 @@ for (const p of candidatePaths) {
     }
 }
 // Fallback to the first candidate even if it doesn't exist yet; caller will handle missing file.
-if (!latestArtifactPath) latestArtifactPath = candidatePaths[0];
+if (!latestArtifactPath) latestArtifactPath = candidatePaths[0] ?? null;
 
 const stripFileScheme = (helperPath: string): string => {
     if (helperPath.startsWith('file://')) {

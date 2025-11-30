@@ -5,7 +5,7 @@
  * Captures all errors, warnings, gaps, and issues for resolution
  */
 
-import { test, expect, Page, ConsoleMessage, Request } from '@playwright/test';
+import { test, Page, ConsoleMessage, Request } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -49,9 +49,9 @@ class CriticalAnalyzer {
   private reportDir: string;
   private issueCounter = 0;
 
-  constructor(testName: string) {
+  constructor(_testName: string) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] + '-' + 
-                     new Date().toTimeString().split(' ')[0].replace(/:/g, '');
+                     (new Date().toTimeString().split(' ')[0] ?? '').replace(/:/g, '');
     this.reportDir = path.join(__dirname, '..', '..', 'logs', `critical-analysis-${timestamp}`);
     if (!fs.existsSync(this.reportDir)) {
       fs.mkdirSync(this.reportDir, { recursive: true });
@@ -888,7 +888,7 @@ test.describe('Comprehensive Browser Walkthrough - Critical Analysis', () => {
             
             // Extract numeric score
             const scoreMatch = scoreText.match(/(\d+\.?\d*)/);
-            if (scoreMatch) {
+            if (scoreMatch?.[1]) {
               const score = parseFloat(scoreMatch[1]);
               const normalizedScore = score > 1 ? score / 100 : score;
               

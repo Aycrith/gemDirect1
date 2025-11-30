@@ -1,7 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { dismissWelcomeDialog, ensureDirectorMode, loadProjectState } from '../fixtures/test-helpers';
 import { mockStoryBible } from '../fixtures/mock-data';
-import { capturePageLoadMetrics, startTiming, endTiming, formatMetrics, saveMetrics } from '../fixtures/performance-helpers';
+
+// Chrome-specific performance.memory API type
+interface PerformanceWithMemory extends Performance {
+  memory?: {
+    usedJSHeapSize: number;
+    totalJSHeapSize: number;
+    jsHeapSizeLimit: number;
+  };
+}
 
 /**
  * Performance Benchmarking Test Suite
@@ -259,13 +267,15 @@ test.describe('Performance Benchmarking', () => {
     await dismissWelcomeDialog(page);
     await ensureDirectorMode(page);
     
-    // Measure story generation time
+    // Measure story generation time (requires 15+ word story idea)
     const ideaTextarea = page.locator('textarea[aria-label="Story Idea"]');
     if (await ideaTextarea.isVisible({ timeout: 5000 })) {
-      await ideaTextarea.fill('Performance test story');
+      await ideaTextarea.fill('A performance test story about a futuristic world where artificial intelligence and human creativity merge to create unprecedented works of art and technology');
+      await page.waitForTimeout(500);
       
       const generateStart = Date.now();
       const generateButton = page.locator('button:has-text("Generate")').first();
+      await expect(generateButton).toBeEnabled({ timeout: 5000 });
       await generateButton.click();
       
       // Wait for generation to complete (mock takes 2s)
@@ -422,10 +432,11 @@ test.describe('Performance Benchmarking', () => {
     
     // Measure memory before large operation
     const memoryBefore = await page.evaluate(() => {
-      if (performance.memory) {
+      const perf = performance as PerformanceWithMemory;
+      if (perf.memory) {
         return {
-          usedJSHeapSize: performance.memory.usedJSHeapSize,
-          totalJSHeapSize: performance.memory.totalJSHeapSize
+          usedJSHeapSize: perf.memory.usedJSHeapSize,
+          totalJSHeapSize: perf.memory.totalJSHeapSize
         };
       }
       return null;
@@ -459,10 +470,11 @@ test.describe('Performance Benchmarking', () => {
     
     // Measure memory after
     const memoryAfter = await page.evaluate(() => {
-      if (performance.memory) {
+      const perf = performance as PerformanceWithMemory;
+      if (perf.memory) {
         return {
-          usedJSHeapSize: performance.memory.usedJSHeapSize,
-          totalJSHeapSize: performance.memory.totalJSHeapSize
+          usedJSHeapSize: perf.memory.usedJSHeapSize,
+          totalJSHeapSize: perf.memory.totalJSHeapSize
         };
       }
       return null;

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForHydrationGate } from '../fixtures/test-helpers';
 
 /**
  * Landing Page Visibility Test
@@ -24,9 +25,8 @@ test.describe('Landing Page Visibility', () => {
     // Go to app
     await page.goto('/');
     
-    // Wait for the page to fully load
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000); // Give React time to render
+    // Wait for HydrationGate to complete (preferred over networkidle + waitForTimeout)
+    await waitForHydrationGate(page);
     
     // Take a screenshot for debugging
     await page.screenshot({ path: 'test-results/landing-page-initial-load.png', fullPage: true });
@@ -68,8 +68,7 @@ test.describe('Landing Page Visibility', () => {
   
   test('landing page renders in Director Mode by default', async ({ page }) => {
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
+    await waitForHydrationGate(page);
     
     // Check if Director Mode button is active
     const directorButton = page.locator('[data-testid="mode-director"]');
@@ -81,12 +80,24 @@ test.describe('Landing Page Visibility', () => {
   });
   
   test('can switch between Quick Generate and Director Mode', async ({ page }) => {
+    // Enable Quick Generate feature flag for this test
+    await page.addInitScript(() => {
+      const enableQuickGenerate = () => {
+        const currentSettings = JSON.parse(sessionStorage.getItem('gemDirect_localGenSettings') || '{}');
+        currentSettings.featureFlags = currentSettings.featureFlags || {};
+        currentSettings.featureFlags.enableQuickGenerate = true;
+        sessionStorage.setItem('gemDirect_localGenSettings', JSON.stringify(currentSettings));
+      };
+      enableQuickGenerate();
+      document.addEventListener('DOMContentLoaded', enableQuickGenerate);
+    });
+    
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(1000);
+    await waitForHydrationGate(page);
     
     // Switch to Quick Generate
     const quickButton = page.locator('[data-testid="mode-quick"]');
+    await expect(quickButton).toBeVisible({ timeout: 5000 });
     await quickButton.click();
     await page.waitForTimeout(500);
     

@@ -306,11 +306,23 @@ test.describe('Full E2E Pipeline', () => {
     
     // Step 6: Check IndexedDB for persisted data
     const persistedData = await page.evaluate(async () => {
-      return new Promise((resolve) => {
+      return new Promise<{
+        hasStoryBible?: boolean;
+        hasScenes?: boolean;
+        sceneCount?: number;
+        hasKeyframes?: boolean;
+        keyframeCount?: number;
+      }>((resolve) => {
         const request = indexedDB.open('cinematic-story-db', 1);
         request.onsuccess = () => {
           const db = request.result;
-          const results: any = {};
+          const results: {
+            hasStoryBible?: boolean;
+            hasScenes?: boolean;
+            sceneCount?: number;
+            hasKeyframes?: boolean;
+            keyframeCount?: number;
+          } = {};
           
           // Check for story bible
           const miscTx = db.transaction('misc', 'readonly');

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { dismissWelcomeDialog, clearProjectData } from '../fixtures/test-helpers';
+import { dismissWelcomeDialog } from '../fixtures/test-helpers';
 
 test.describe('Project Import UX Consistency', () => {
   test.beforeEach(async ({ page }) => {

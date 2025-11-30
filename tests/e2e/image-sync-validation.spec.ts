@@ -90,6 +90,7 @@ test.describe('Image Synchronization (ComfyUI → React)', () => {
     // Monitor each scene's image appearance
     for (let i = 0; i < mockScenes.length; i++) {
       const scene = mockScenes[i];
+      if (!scene) continue;
       console.log(`⏳ Waiting for scene ${i + 1}/${mockScenes.length}: "${scene.title}"`);
 
       // Wait for scene image to appear in SceneNavigator

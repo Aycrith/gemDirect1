@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { mockStoryBible } from '../fixtures/mock-data';
-import { dismissWelcomeDialog, ensureDirectorMode, loadProjectState, clearProjectData } from '../fixtures/test-helpers';
+import { dismissWelcomeDialog, ensureDirectorMode, loadProjectState } from '../fixtures/test-helpers';
 
 test.describe('Data Persistence', () => {
   const testProjectState = {

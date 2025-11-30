@@ -133,7 +133,7 @@ test.describe('User Testing Fixes', () => {
       await expect(page.locator('text=Test Workflow')).toBeVisible();
     });
 
-    test('should persist imported profiles after page reload', async ({ page, context }) => {
+    test('should persist imported profiles after page reload', async ({ page, context: _context }) => {
       // Import profiles first
       await page.locator('button[aria-label="Open settings"], button:has-text("Settings")').first().click();
       await page.waitForSelector('text=ComfyUI Settings');
@@ -195,9 +195,7 @@ test.describe('User Testing Fixes', () => {
       const sceneCards = page.locator('[data-scene-index]');
       const initialCount = await sceneCards.count();
       
-      if (initialCount < 2) {
-        test.skip('Need at least 2 scenes to test deletion');
-      }
+      test.skip(initialCount < 2, 'Need at least 2 scenes to test deletion');
       
       // Hover over second scene
       const secondScene = sceneCards.nth(1);
@@ -226,15 +224,12 @@ test.describe('User Testing Fixes', () => {
     test('should not show delete button when only one scene exists', async ({ page }) => {
       // This test needs exactly 1 scene, but quickSetup creates 3
       // Skip for now - would need custom fixture
-      test.skip();
-      return;
+      test.skip(true, 'Test requires custom fixture with exactly 1 scene');
       
       const sceneCards = page.locator('[data-scene-index]');
       const count = await sceneCards.count();
       
-      if (count !== 1) {
-        test.skip('This test requires exactly 1 scene');
-      }
+      test.skip(count !== 1, 'This test requires exactly 1 scene');
       
       // Hover over the only scene
       await sceneCards.first().hover();
@@ -256,9 +251,7 @@ test.describe('User Testing Fixes', () => {
       const sceneCards = page.locator('[data-scene-index]');
       const count = await sceneCards.count();
       
-      if (count === 0) {
-        test.skip('No scenes to verify layout');
-      }
+      test.skip(count === 0, 'No scenes to verify layout');
       
       // Check first scene card structure
       const firstScene = sceneCards.first();
@@ -278,13 +271,9 @@ test.describe('User Testing Fixes', () => {
       const sceneCards = page.locator('[data-scene-index]');
       const count = await sceneCards.count();
       
-      if (count === 0) {
-        test.skip('No scenes to count');
-      }
+      test.skip(count === 0, 'No scenes to count');
       
-      // Look for scene count display (implementation may vary)
-      const countDisplay = page.locator('text=/ total$/i, text=/\\d+ Scene/i');
-      // This is optional - may not be visible if not implemented
+      // Scene count display check would go here if implemented
     });
 
     test('should truncate long scene summaries', async ({ page }) => {
@@ -297,9 +286,7 @@ test.describe('User Testing Fixes', () => {
       const sceneCards = page.locator('[data-scene-index]');
       const count = await sceneCards.count();
       
-      if (count === 0) {
-        test.skip('No scenes to check truncation');
-      }
+      test.skip(count === 0, 'No scenes to check truncation');
       
       // Check if summaries have line-clamp class
       const summary = sceneCards.first().locator('p.line-clamp-2');

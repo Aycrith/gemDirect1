@@ -69,8 +69,6 @@ test.describe('Phase 2 Suite 5: Error Recovery', () => {
     // This test documents expected behavior rather than actually bringing down services
     // In production, services might be unavailable
     
-    const errorDisplay = page.locator('[data-testid*="error"], [role="alert"], text=/service.*unavailable|connection.*failed/i');
-    
     // Check if app shows service status
     const statusIndicator = page.locator('[data-testid*="status"], [aria-label*="status"]');
     
@@ -157,7 +155,6 @@ test.describe('Phase 2 Suite 5: Error Recovery', () => {
     }
     
     // Verify app handles storage errors gracefully
-    const storageError = page.locator('text=/storage.*error|quota.*exceeded/i');
     const hasCriticalError = await page.locator('text=/fatal|crash/i').count() > 0;
     
     expect(hasCriticalError).toBeFalsy();

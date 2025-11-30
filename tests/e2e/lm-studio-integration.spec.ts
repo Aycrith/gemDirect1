@@ -126,7 +126,7 @@ test.describe('LM Studio Integration', () => {
     }
   });
 
-  test.skip('handles JSON parsing errors gracefully', async ({ page }) => {
+  test.skip('handles JSON parsing errors gracefully', async ({ page: _page }) => {
     // SKIPPED: LM Studio consistently returns well-formed JSON in practice.
     // The sanitizeLLMJson function handles markdown fences, but LM Studio's Mistral 7B
     // model reliably produces valid JSON without wrapping or malformed output.
@@ -140,8 +140,8 @@ test.describe('LM Studio Integration', () => {
   test('respects timeout configuration (120s)', async ({ page }) => {
     // Test that long-running requests timeout appropriately
     // This requires mocking a very slow response
-    
     let timeoutTriggered = false;
+    void timeoutTriggered; // Used to track if route handler completed
     
     await page.route('**/api/local-llm', async route => {
       // Delay response beyond timeout
@@ -315,9 +315,6 @@ test.describe('LM Studio Integration', () => {
       return;
     }
     
-    // Capture story content
-    const originalContent = await page.textContent('body');
-    
     // Reload page
     await page.reload();
     await dismissWelcomeDialog(page);
@@ -332,7 +329,7 @@ test.describe('LM Studio Integration', () => {
 });
 
 test.describe('LM Studio Retry Logic', () => {
-  test.skip('retries on transient failures', async ({ page }) => {
+  test.skip('retries on transient failures', async ({ page: _page }) => {
     // SKIPPED: LocalStoryService does not implement retry logic.
     // Instead, it immediately falls back to template-based generation on any error.
     // This is intentional design - local LLM failures should not block users.
@@ -342,7 +339,7 @@ test.describe('LM Studio Retry Logic', () => {
     // if we want to match Gemini's resilience pattern for local LLMs.
   });
 
-  test.skip('stops retrying after max attempts', async ({ page }) => {
+  test.skip('stops retrying after max attempts', async ({ page: _page }) => {
     // SKIPPED: LocalStoryService does not implement retry logic.
     // Instead, it immediately falls back to template-based generation on any error.
     // This is intentional design - local LLM failures should not block users.

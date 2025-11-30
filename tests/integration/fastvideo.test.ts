@@ -3,7 +3,7 @@
  * Tests for FastVideo adapter integration (requires server running)
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { 
     checkFastVideoHealth, 
     queueFastVideoPrompt, 
@@ -13,7 +13,8 @@ import {
 import type { LocalGenerationSettings } from '../../types';
 
 const TEST_SERVER_URL = process.env.FASTVIDEO_TEST_URL || 'http://127.0.0.1:8055';
-const SKIP_LIVE_TESTS = process.env.SKIP_FASTVIDEO_TESTS === 'true';
+// Skip live tests by default - requires explicit opt-in via RUN_FASTVIDEO_TESTS=true
+const SKIP_LIVE_TESTS = process.env.RUN_FASTVIDEO_TESTS !== 'true';
 
 describe('FastVideo Service', () => {
     const mockSettings: LocalGenerationSettings = {
@@ -116,7 +117,7 @@ describe('FastVideo Service', () => {
     describe('Health Check', () => {
         it('should check server health', async () => {
             if (SKIP_LIVE_TESTS) {
-                console.log('⊘ Skipping live FastVideo health check (SKIP_FASTVIDEO_TESTS=true)');
+                console.log('⊘ Skipping live FastVideo health check (set RUN_FASTVIDEO_TESTS=true to run)');
                 return;
             }
 
@@ -155,7 +156,7 @@ describe('FastVideo Service', () => {
     describe('Video Generation', () => {
         it('should queue minimal generation request', async () => {
             if (SKIP_LIVE_TESTS) {
-                console.log('⊘ Skipping live FastVideo generation test (SKIP_FASTVIDEO_TESTS=true)');
+                console.log('⊘ Skipping live FastVideo generation test (set RUN_FASTVIDEO_TESTS=true to run)');
                 return;
             }
 
@@ -209,7 +210,7 @@ describe('FastVideo Service', () => {
     describe('Telemetry', () => {
         it('should track request metadata', async () => {
             if (SKIP_LIVE_TESTS) {
-                console.log('⊘ Skipping telemetry test (SKIP_FASTVIDEO_TESTS=true)');
+                console.log('⊘ Skipping telemetry test (set RUN_FASTVIDEO_TESTS=true to run)');
                 return;
             }
 

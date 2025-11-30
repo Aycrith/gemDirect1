@@ -18,10 +18,8 @@
 import { Page } from '@playwright/test';
 import { 
   dismissWelcomeDialog, 
-  ensureDirectorMode,
   loadProjectState,
-  waitForStateHydration,
-  waitForComponentMount 
+  waitForStateHydration
 } from './test-helpers';
 import { 
   mockStoryBible, 
@@ -74,7 +72,7 @@ export async function setupMinimalStory(page: Page): Promise<boolean> {
  * Use when: Testing shot generation, timeline creation
  * Enables: Generate shots/timeline buttons for each scene
  */
-export async function setupSceneWithoutShots(page: Page, sceneId?: string): Promise<boolean> {
+export async function setupSceneWithoutShots(page: Page, _sceneId?: string): Promise<boolean> {
   console.log('[Fixture] Setting up scenes without shots...');
   
   // Use scenes but remove shot details
@@ -226,7 +224,7 @@ export async function setupKeyframeReady(page: Page): Promise<boolean> {
       });
       break; // Success, exit retry loop
     } catch (e) {
-      if (e.message && e.message.includes('Execution context was destroyed')) {
+      if (e instanceof Error && e.message.includes('Execution context was destroyed')) {
         console.log(`[Fixture] Navigation detected (attempt ${attempt + 1}/3), retrying...`);
         await page.waitForTimeout(2000);
         continue;
@@ -322,8 +320,8 @@ export async function setupSingleScene(page: Page, sceneIndex: number = 0): Prom
     return false;
   }
   
-  const singleScene = [mockScenes[sceneIndex]];
-  const singleKeyframe = { [singleScene[0].id]: mockGeneratedImages[singleScene[0].id] };
+  const singleScene = [mockScenes[sceneIndex]!];
+  const singleKeyframe = { [singleScene[0]!.id]: mockGeneratedImages[singleScene[0]!.id] };
   
   const state = {
     workflowStage: 'timeline',
@@ -348,8 +346,8 @@ export async function setupSingleScene(page: Page, sceneIndex: number = 0): Prom
   await page.waitForTimeout(1500);
   
   console.log('[Fixture] ✅ Single scene setup complete');
-  console.log(`[Fixture]    Scene: ${singleScene[0].title}`);
-  console.log(`[Fixture]    Shots: ${singleScene[0].timeline.shots.length}`);
+  console.log(`[Fixture]    Scene: ${singleScene[0]?.title ?? 'Unknown'}`);
+  console.log(`[Fixture]    Shots: ${singleScene[0]?.timeline.shots.length ?? 0}`);
   return true;
 }
 
@@ -446,7 +444,7 @@ export async function setupGenerationInProgress(page: Page, generationType: 'key
   
   console.log('[Fixture] ✅ In-progress generation state setup complete');
   console.log(`[Fixture]    Type: ${generationType}`);
-  console.log(`[Fixture]    Scene: ${mockScenes[0].title} (${inProgressStatus['scene-001'].progress}%)`);
+  console.log(`[Fixture]    Scene: ${mockScenes[0]?.title ?? 'Unknown'} (${inProgressStatus['scene-001'].progress}%)`);
   return true;
 }
 

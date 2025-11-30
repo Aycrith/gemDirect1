@@ -74,10 +74,10 @@ test.describe('Feature Flags UI', () => {
         await page.click('button:has-text("Features")');
         
         // Check for some specific feature flags
+        // Note: bookendKeyframes was removed - use keyframeMode setting instead
         await expect(page.locator('text=Auto-Generate Suggestions')).toBeVisible();
         await expect(page.locator('text=Provider Health Polling')).toBeVisible();
         await expect(page.locator('text=Prompt Quality Gate')).toBeVisible();
-        await expect(page.locator('text=Bookend Keyframes')).toBeVisible();
         
         // Check for stability badges
         await expect(page.locator('text=STABLE').first()).toBeVisible();
@@ -126,7 +126,8 @@ test.describe('Feature Flags UI', () => {
         await videoUpscalingLabel.click();
         
         // Check for dependency warning (requires Character Consistency)
-        await expect(page.locator('text=⚠️ Requires:')).toBeVisible();
+        // Use first() since multiple features may have dependency warnings
+        await expect(page.locator('text=⚠️ Requires:').first()).toBeVisible();
     });
 
     test('should show configuration warnings when certain flag combinations are enabled', async ({ page }) => {
@@ -136,8 +137,14 @@ test.describe('Feature Flags UI', () => {
         // Click Features tab
         await page.click('button:has-text("Features")');
         
-        // Enable Prompt A/B Testing (should warn without Quality Gate)
-        const abTestingLabel = page.locator('label:has-text("Prompt A/B Testing")');
+        // First disable Prompt Quality Gate (it defaults to true)
+        // This is required because the warning only shows when A/B Testing is enabled WITHOUT Quality Gate
+        const qualityGateLabel = page.locator('label:has-text("Prompt Quality Gate")');
+        await qualityGateLabel.click();
+        
+        // Now enable Prompt A/B Testing (should warn without Quality Gate)
+        // Use exact match to avoid matching description text that mentions "Prompt A/B Testing"
+        const abTestingLabel = page.locator('label').filter({ has: page.locator('input[type="checkbox"]') }).filter({ hasText: /^Prompt A\/B Testing/ });
         await abTestingLabel.click();
         
         // Check for configuration warning (contains the warning about quality gate)
@@ -152,22 +159,24 @@ test.describe('Feature Flags UI', () => {
         // Click Features tab
         await page.click('button:has-text("Features")');
         
-        // Enable a few features
+        // Toggle some features to non-default states
+        // Auto-Generate Suggestions defaults to false, so enable it
         await page.locator('label:has-text("Auto-Generate Suggestions")').click();
+        // Prompt Quality Gate defaults to true, so disable it
         await page.locator('label:has-text("Prompt Quality Gate")').click();
         
-        // Verify they're enabled
+        // Verify they're in non-default states
         const autoSuggestCheckbox = page.locator('label:has-text("Auto-Generate Suggestions") input[type="checkbox"]');
         const qualityGateCheckbox = page.locator('label:has-text("Prompt Quality Gate") input[type="checkbox"]');
         await expect(autoSuggestCheckbox).toBeChecked();
-        await expect(qualityGateCheckbox).toBeChecked();
+        await expect(qualityGateCheckbox).not.toBeChecked();
         
         // Click reset button
         await page.click('button:has-text("Reset all features to defaults")');
         
-        // Verify they're now unchecked
-        await expect(autoSuggestCheckbox).not.toBeChecked();
-        await expect(qualityGateCheckbox).not.toBeChecked();
+        // Verify they're now at default states
+        await expect(autoSuggestCheckbox).not.toBeChecked(); // default: false
+        await expect(qualityGateCheckbox).toBeChecked(); // default: true
     });
 
     test('should save feature flag settings and persist them', async ({ page }) => {
@@ -273,22 +282,24 @@ test.describe('Quality Gate Indicator', () => {
     });
 
     test('should show quality gate indicator when flag is enabled and scenes exist', async ({ page }) => {
-        // First enable Quality Gate flag
+        // Quality Gate is enabled by default, verify it's on
         await openSettingsModal(page);
         await page.click('button:has-text("Features")');
-        await page.locator('label:has-text("Prompt Quality Gate")').click();
-        await page.click('[data-testid="save-settings"]');
-        await page.waitForSelector('[data-testid="LocalGenerationSettingsModal"]', { state: 'hidden' });
+        
+        const qualityGateCheckbox = page.locator('label:has-text("Prompt Quality Gate") input[type="checkbox"]');
+        
+        // Quality Gate defaults to true
+        await expect(qualityGateCheckbox).toBeChecked();
         
         // Note: Full integration testing of quality gate blocking requires
         // completing story generation, which is tested separately in
         // comprehensive-walkthrough.spec.ts
         
-        // For now, just verify the flag was saved
-        await openSettingsModal(page);
-        await page.click('button:has-text("Features")');
+        // Toggle it off then on to verify it can be changed
+        await page.locator('label:has-text("Prompt Quality Gate")').click();
+        await expect(qualityGateCheckbox).not.toBeChecked();
         
-        const qualityGateCheckbox = page.locator('label:has-text("Prompt Quality Gate") input[type="checkbox"]');
+        await page.locator('label:has-text("Prompt Quality Gate")').click();
         await expect(qualityGateCheckbox).toBeChecked();
     });
 });

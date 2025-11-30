@@ -14,7 +14,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { quickSetup, setupKeyframeReady, setupVideoReady } from '../fixtures/story-scenario';
+import { quickSetup } from '../fixtures/story-scenario';
 
 test.describe('Phase 2 Suite 1: Resource Isolation & Sequencing', () => {
   test.beforeEach(async ({ page }) => {

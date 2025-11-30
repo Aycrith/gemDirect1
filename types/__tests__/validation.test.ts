@@ -13,8 +13,6 @@
 import { describe, it, expect } from 'vitest';
 import {
     ValidationResult,
-    ValidationError,
-    ValidationWarning,
     AutoSuggestion,
     QualityScore,
     BatchValidationResult,
@@ -71,7 +69,7 @@ describe('validation types', () => {
             
             expect(result.success).toBe(false);
             expect(result.errors).toHaveLength(2);
-            expect(result.errors![0].code).toBe('ERR_1');
+            expect(result.errors![0]!.code).toBe('ERR_1');
         });
 
         it('should use first error message as default message', () => {
@@ -94,7 +92,7 @@ describe('validation types', () => {
             const result = validationFailure(errors, { warnings });
             
             expect(result.warnings).toHaveLength(1);
-            expect(result.warnings![0].code).toBe('WARN');
+            expect(result.warnings![0]!.code).toBe('WARN');
         });
 
         it('should accept suggestions', () => {
@@ -105,7 +103,7 @@ describe('validation types', () => {
             const result = validationFailure(errors, { suggestions });
             
             expect(result.suggestions).toHaveLength(1);
-            expect(result.suggestions![0].id).toBe('s1');
+            expect(result.suggestions![0]!.id).toBe('s1');
         });
 
         it('should accept context', () => {
@@ -213,7 +211,7 @@ describe('validation types', () => {
                 validationSuccess(undefined),
             ];
             // Add warnings to success result manually
-            results[1].warnings = [createValidationWarning('WARN_2', 'Warning 2')];
+            results[1]!.warnings = [createValidationWarning('WARN_2', 'Warning 2')];
             
             const merged = mergeValidationResults(results);
             
@@ -270,7 +268,7 @@ describe('validation types', () => {
             });
             
             expect(result.errors).toHaveLength(2);
-            expect(result.errors![0].message).toBe('Error 1');
+            expect(result.errors![0]!.message).toBe('Error 1');
         });
 
         it('should convert issues array', () => {
@@ -280,7 +278,7 @@ describe('validation types', () => {
             });
             
             expect(result.errors).toHaveLength(1);
-            expect(result.errors![0].message).toBe('Issue 1');
+            expect(result.errors![0]!.message).toBe('Issue 1');
         });
 
         it('should convert warnings array', () => {
@@ -291,7 +289,7 @@ describe('validation types', () => {
             });
             
             expect(result.warnings).toHaveLength(1);
-            expect(result.warnings![0].message).toBe('Warning 1');
+            expect(result.warnings![0]!.message).toBe('Warning 1');
         });
 
         it('should convert fixes to suggestions', () => {
@@ -302,8 +300,8 @@ describe('validation types', () => {
             });
             
             expect(result.suggestions).toHaveLength(2);
-            expect(result.suggestions![0].type).toBe('fix');
-            expect(result.suggestions![0].description).toBe('Try restarting');
+            expect(result.suggestions![0]!.type).toBe('fix');
+            expect(result.suggestions![0]!.description).toBe('Try restarting');
         });
 
         it('should preserve message', () => {

@@ -458,13 +458,17 @@ test.describe('Manual E2E: Real Generation Workflows', () => {
     // Step 4: Verify no memory leaks (memory shouldn't grow unbounded)
     if (memoryReadings.length >= 3 && baselineMemory) {
       const finalMemory = memoryReadings[memoryReadings.length - 1];
-      const memoryIncreaseMB = parseFloat(finalMemory.increaseMB);
-      
-      // Memory increase should be reasonable (< 200MB for generation)
-      expect(memoryIncreaseMB).toBeLessThan(200);
-      console.log(`[Manual Test] ✓ Memory increase within bounds: ${memoryIncreaseMB} MB`);
-      
-      console.log('[Manual Test] ✅ PASS: Memory remained stable during generation');
+      if (finalMemory) {
+        const memoryIncreaseMB = parseFloat(finalMemory.increaseMB);
+        
+        // Memory increase should be reasonable (< 200MB for generation)
+        expect(memoryIncreaseMB).toBeLessThan(200);
+        console.log(`[Manual Test] ✓ Memory increase within bounds: ${memoryIncreaseMB} MB`);
+        
+        console.log('[Manual Test] ✅ PASS: Memory remained stable during generation');
+      } else {
+        console.log('[Manual Test] ⚠️ Could not get final memory reading');
+      }
     } else {
       console.log('[Manual Test] ⚠️ Could not measure memory (browser may not support performance.memory)');
     }

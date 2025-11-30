@@ -13,7 +13,6 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { quickSetup } from '../fixtures/story-scenario';
 
 test.describe('Phase 2 Suite 4: Continuity Review', () => {
   let featureExists = false;
@@ -61,7 +60,7 @@ test.describe('Phase 2 Suite 4: Continuity Review', () => {
     }
   });
 
-  test('VERIFY: Continuity review feature exists', async ({ page }) => {
+  test('VERIFY: Continuity review feature exists', async ({ page: _page }) => {
     // This test documents feature existence for the report
     
     if (!featureExists) {

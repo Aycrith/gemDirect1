@@ -18,8 +18,8 @@
  */
 
 import { test, expect } from '@playwright/test';
-import * as fs from 'fs';
-import * as path from 'path';
+import * as _fs from 'fs';
+import * as _path from 'path';
 
 test.describe('Manual Browser UI Validation - Video Generation', () => {
   test.use({ 

@@ -23,7 +23,7 @@ const BLOCKED_ORIGINS = [
 ];
 
 test.describe('Network Policy Enforcement', () => {
-  test('should only allow local services and approved CDNs', async ({ page, context }) => {
+  test('should only allow local services and approved CDNs', async ({ page, context: _context }) => {
     const blockedRequests: string[] = [];
     const allowedRequests: string[] = [];
 
