@@ -12,6 +12,32 @@ export function isBookendKeyframe(data: KeyframeData): data is { start: string; 
   return typeof data === 'object' && 'start' in data && 'end' in data;
 }
 
+/**
+ * Structured response for video generation operations.
+ * Provides explicit success/error states with typed error codes.
+ */
+export interface VideoGenerationResponse {
+  /** Whether the generation succeeded */
+  ok: boolean;
+  /** Generated video data (only present when ok=true) */
+  video?: {
+    /** Base64 data URL (data:video/mp4;base64,...) */
+    data: string;
+    /** Suggested filename */
+    filename: string;
+    /** Video duration in seconds */
+    duration: number;
+    /** Frame count if available */
+    frameCount?: number;
+  };
+  /** Error code for programmatic handling (only present when ok=false) */
+  errorCode?: 'PROFILE_NOT_FOUND' | 'WORKFLOW_INVALID' | 'COMFYUI_ERROR' | 'FETCH_FAILED' | 'TIMEOUT' | 'INVALID_OUTPUT';
+  /** Human-readable error message (only present when ok=false) */
+  errorMessage?: string;
+  /** Additional diagnostic details */
+  details?: Record<string, unknown>;
+}
+
 export interface Shot {
   id: string;
   title?: string;
@@ -20,6 +46,20 @@ export interface Shot {
   arcId?: string;
   arcName?: string;
   heroMoment?: boolean;
+  /**
+   * Keyframe for this shot (single mode) or start keyframe (bookend mode).
+   * If undefined, falls back to scene-level keyframe.
+   */
+  keyframeStart?: string;
+  /**
+   * End keyframe for bookend mode.
+   * Only used when LocalGenerationSettings.keyframeMode === 'bookend'.
+   */
+  keyframeEnd?: string;
+  /**
+   * Generated video for this shot as base64 data URL.
+   */
+  generatedVideo?: string;
 }
 
 export interface CreativeEnhancers {
@@ -239,7 +279,7 @@ export interface HeroArc {
 
 export type WorkflowStage = 'idea' | 'bible' | 'vision' | 'director' | 'continuity';
 
-export type ToastType = 'success' | 'error' | 'info';
+export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 export interface ToastMessage {
   id: number;
@@ -278,15 +318,19 @@ export interface ControlSectionConfig {
     options: string[];
 }
 
-export type SuggestionPayload = Partial<Shot> & { enhancers?: ShotEnhancers[string] } & { type?: string };
+export type SuggestionPayload = Partial<Shot> & { enhancers?: ShotEnhancers[string] } & { type?: string } & { action?: string; priority?: string };
 
 // --- Discriminated Union for Suggestions ---
-export interface UpdateShotSuggestion { type: 'UPDATE_SHOT'; shot_id: string; payload: SuggestionPayload; description: string; }
-export interface AddShotAfterSuggestion { type: 'ADD_SHOT_AFTER'; after_shot_id: string; payload: SuggestionPayload; description: string; }
-export interface UpdateTransitionSuggestion { type: 'UPDATE_TRANSITION'; transition_index: number; payload: SuggestionPayload; description: string; }
-export interface UpdateStoryBibleSuggestion { type: 'UPDATE_STORY_BIBLE'; payload: { field: keyof StoryBible; new_content: string }; description: string; }
-export interface UpdateDirectorsVisionSuggestion { type: 'UPDATE_DIRECTORS_VISION'; payload: { new_content: string }; description: string; }
-export interface FlagSceneForReviewSuggestion { type: 'FLAG_SCENE_FOR_REVIEW'; payload: { scene_id: string; reason: string }; description: string; }
+// Base suggestion properties shared by coherence gate suggestions
+interface BaseSuggestionProps { reason?: string; targetId?: string; }
+
+export interface UpdateShotSuggestion extends BaseSuggestionProps { type: 'UPDATE_SHOT'; shot_id: string; payload: SuggestionPayload; description: string; }
+export interface AddShotAfterSuggestion extends BaseSuggestionProps { type: 'ADD_SHOT_AFTER'; after_shot_id: string; payload: SuggestionPayload; description: string; }
+export interface UpdateTransitionSuggestion extends BaseSuggestionProps { type: 'UPDATE_TRANSITION'; transition_index: number; payload: SuggestionPayload; description: string; }
+export interface UpdateStoryBibleSuggestion extends BaseSuggestionProps { type: 'UPDATE_STORY_BIBLE'; payload: { field: keyof StoryBible; new_content: string }; description: string; }
+export interface UpdateDirectorsVisionSuggestion extends BaseSuggestionProps { type: 'UPDATE_DIRECTORS_VISION'; payload: { new_content: string }; description: string; }
+export interface FlagSceneForReviewSuggestion extends BaseSuggestionProps { type: 'FLAG_SCENE_FOR_REVIEW'; payload: { scene_id: string; reason: string }; description: string; }
+export interface UpdateSceneSuggestion extends BaseSuggestionProps { type: 'UPDATE_SCENE'; payload: SuggestionPayload; description: string; }
 
 export type Suggestion =
     | UpdateShotSuggestion
@@ -294,7 +338,8 @@ export type Suggestion =
     | UpdateTransitionSuggestion
     | UpdateStoryBibleSuggestion
     | UpdateDirectorsVisionSuggestion
-    | FlagSceneForReviewSuggestion;
+    | FlagSceneForReviewSuggestion
+    | UpdateSceneSuggestion;
 // --- End Discriminated Union ---
 
 
@@ -364,6 +409,14 @@ export interface ApiCallLog {
     model: string;
     tokens: number;
     status: 'success' | 'error';
+    /** Correlation ID for tracing across services (optional) */
+    correlationId?: string;
+    /** Structured error code for categorization (optional) */
+    errorCode?: string;
+    /** Stack trace for debugging (only on errors, optional) */
+    stackTrace?: string;
+    /** Duration of the API call in milliseconds (optional) */
+    durationMs?: number;
 }
 
 export interface WorkflowInput {
@@ -374,7 +427,7 @@ export interface WorkflowInput {
     inputType: string; // e.g., 'STRING', 'IMAGE'
 }
 
-export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_json' | 'keyframe_image' | 'negative_prompt' | 'start_image' | 'end_image' | 'ref_image' | 'control_video';
+export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_json' | 'keyframe_image' | 'negative_prompt' | 'start_image' | 'end_image' | 'ref_image' | 'control_video' | 'input_video';
 
 // Key is `${nodeId}:${inputName}`
 export type WorkflowMapping = Record<string, MappableData>; 
@@ -391,6 +444,10 @@ export interface WorkflowProfileMetadata {
   highlightMappings?: WorkflowProfileMappingHighlight[];
   missingMappings?: MappableData[];
   warnings?: string[];
+  /** Required ComfyUI nodes for this workflow */
+  requiredNodes?: string[];
+  /** Required data mappings for this workflow */
+  requiredMappings?: MappableData[];
 }
 
 /**
@@ -411,6 +468,11 @@ export interface WorkflowProfile {
   category?: WorkflowCategory;
   chainPosition?: number;  // Order in processing pipeline (1, 2, 3...)
   inputProfiles?: string[];  // Profile IDs this depends on
+  
+  // UI-friendly fields for advanced profile management
+  displayName?: string;
+  description?: string;
+  status?: 'complete' | 'incomplete' | 'error';
 }
 
 export interface ComfyUIStatusQueueSummary {
@@ -510,6 +572,11 @@ export interface LocalGenerationSettings {
     // Quality Enhancement
     upscalerWorkflowProfile?: string;  // Profile ID for video upscaling (optional)
     characterWorkflowProfile?: string; // Profile ID for character consistency (optional)
+    
+    // ComfyUI Fetch Settings (for video/image retrieval robustness)
+    comfyUIFetchMaxRetries?: number;   // Max retry attempts for fetching assets (default: 3)
+    comfyUIFetchTimeoutMs?: number;    // Timeout in ms for each fetch attempt (default: 15000)
+    comfyUIFetchRetryDelayMs?: number; // Delay between retries in ms (default: 1000)
 }
 
 export interface LocalGenerationAsset {

@@ -16,12 +16,8 @@
  * All flags are optional and default to false for backward compatibility.
  */
 export interface FeatureFlags {
-    /**
-     * Enable bookend keyframe mode (start + end keyframes per scene)
-     * Improves temporal consistency for longer shots
-     * @default false
-     */
-    bookendKeyframes: boolean;
+    // Note: bookendKeyframes has been removed - use LocalGenerationSettings.keyframeMode instead
+    // This provides a single unified control for keyframe generation mode ('single' | 'bookend')
 
     /**
      * Enable video upscaling post-processing step
@@ -206,6 +202,39 @@ export interface FeatureFlags {
      * @expires 2026-03-31
      */
     sceneStoreParallelValidation: boolean;
+
+    /**
+     * Enable Quick Generate mode in the UI.
+     * This feature is currently a stub and does not generate real content.
+     * Hidden by default to avoid confusing users.
+     * @default false
+     * @stability experimental
+     */
+    enableQuickGenerate: boolean;
+
+    // ============================================================================
+    // Generation Queue Flags (Infrastructure Integration)
+    // ============================================================================
+
+    /**
+     * Route video/keyframe generation through serial GenerationQueue.
+     * Prevents VRAM exhaustion by serializing GPU-intensive operations
+     * with automatic retry and circuit breaker patterns.
+     * @default false
+     * @stability experimental
+     * @expires 2026-03-31
+     */
+    useGenerationQueue: boolean;
+
+    /**
+     * Route LLM calls through the LLMTransportAdapter abstraction layer.
+     * Enables consistent error handling, mock injection for testing,
+     * and seamless provider switching (Gemini, LM Studio, etc.).
+     * @default false
+     * @stability experimental
+     * @expires 2026-03-31
+     */
+    useLLMTransportAdapter: boolean;
 }
 
 /**
@@ -213,7 +242,7 @@ export interface FeatureFlags {
  * All disabled by default for backward compatibility
  */
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
-    bookendKeyframes: true,  // Enabled: Native dual-keyframe workflows (WanFirstLastFrameToVideo, WanFunInpaintToVideo)
+    // Note: bookendKeyframes removed - use LocalGenerationSettings.keyframeMode instead
     videoUpscaling: false,
     characterConsistency: false,
     shotLevelContinuity: true,  // Enable shot-level continuity (Phase 7 integration complete)
@@ -239,6 +268,12 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
     // State Management Migration Flags (Phase 1C activation)
     useUnifiedSceneStore: true,    // Enable unified Zustand store (Phase 1C)
     sceneStoreParallelValidation: true, // Enable parallel store validation
+    // Quick Generate (hidden - stub feature)
+    enableQuickGenerate: false,    // Quick Generate is not implemented - hidden from users
+    // Generation Queue Integration
+    useGenerationQueue: false,     // Route through serial queue (prevents VRAM exhaustion)
+    // LLM Transport Adapter Integration
+    useLLMTransportAdapter: false, // Route through transport abstraction (enables testing/provider switching)
 };
 
 /**
@@ -259,14 +294,7 @@ export interface FeatureFlagMeta {
  * Metadata for all feature flags
  */
 export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
-    bookendKeyframes: {
-        id: 'bookendKeyframes',
-        label: 'Bookend Keyframes',
-        description: 'Generate start and end keyframes for each scene, using native dual-keyframe interpolation (WanFirstLastFrameToVideo) for smooth transitions',
-        category: 'workflow',
-        stability: 'beta',
-        // Implemented: Native dual-keyframe workflows in comfyUIService.ts
-    },
+    // Note: bookendKeyframes removed - use LocalGenerationSettings.keyframeMode instead
     videoUpscaling: {
         id: 'videoUpscaling',
         label: 'Video Upscaling',
@@ -438,6 +466,30 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         category: 'experimental',
         stability: 'experimental',
         dependencies: ['useUnifiedSceneStore'],
+    },
+    enableQuickGenerate: {
+        id: 'enableQuickGenerate',
+        label: 'Quick Generate Mode',
+        description: 'Enable Quick Generate sandbox for fast one-prompt experiments. Currently not fully implemented.',
+        category: 'experimental',
+        stability: 'experimental',
+        comingSoon: true, // Marks as not yet implemented
+    },
+    // Generation Queue Integration
+    useGenerationQueue: {
+        id: 'useGenerationQueue',
+        label: 'Generation Queue',
+        description: 'Route video/keyframe generation through serial queue to prevent VRAM exhaustion. Includes automatic retry and circuit breaker.',
+        category: 'workflow',
+        stability: 'experimental',
+    },
+    // LLM Transport Adapter Integration
+    useLLMTransportAdapter: {
+        id: 'useLLMTransportAdapter',
+        label: 'LLM Transport Adapter',
+        description: 'Route LLM calls through abstraction layer for consistent error handling, testing support, and provider switching.',
+        category: 'experimental',
+        stability: 'experimental',
     },
 };
 
