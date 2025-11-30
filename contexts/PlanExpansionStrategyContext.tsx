@@ -16,7 +16,11 @@ type PlanExpansionStrategyContextValue = {
 const PlanExpansionStrategyContext = createContext<PlanExpansionStrategyContextValue | undefined>(undefined);
 
 export const PlanExpansionStrategyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [selectedStrategyId, setSelectedStrategyId] = usePersistentState<string>(PLAN_STRATEGY_STORAGE_KEY, FALLBACK_PLAN_STRATEGY.id);
+    const defaultStrategyId = FALLBACK_PLAN_STRATEGY
+        ? FALLBACK_PLAN_STRATEGY.id
+        : (DEFAULT_PLAN_STRATEGIES[0]?.id ?? 'default');
+
+    const [selectedStrategyId, setSelectedStrategyId] = usePersistentState<string>(PLAN_STRATEGY_STORAGE_KEY, defaultStrategyId);
 
     const strategies = DEFAULT_PLAN_STRATEGIES;
 
@@ -67,16 +71,26 @@ export const PlanExpansionStrategyProvider: React.FC<{ children: React.ReactNode
         [strategies, setSelectedStrategyId]
     );
 
-    const actions = useMemo(() => createPlanExpansionActions(activeStrategy.id), [activeStrategy.id]);
+    const actions = useMemo(() => {
+        if (!activeStrategy) {
+            throw new Error('[PlanExpansionStrategy] No active strategy available');
+        }
+        return createPlanExpansionActions(activeStrategy.id);
+    }, [activeStrategy]);
 
-    const value = useMemo<PlanExpansionStrategyContextValue>(() => ({
-        strategies,
-        availableStrategies,
-        activeStrategy,
-        activeStrategyId: activeStrategy.id,
-        selectStrategy,
-        actions,
-    }), [strategies, availableStrategies, activeStrategy, selectStrategy, actions]);
+    const value = useMemo<PlanExpansionStrategyContextValue>(() => {
+        if (!activeStrategy) {
+            throw new Error('[PlanExpansionStrategy] No active strategy available');
+        }
+        return {
+            strategies,
+            availableStrategies,
+            activeStrategy,
+            activeStrategyId: activeStrategy.id,
+            selectStrategy,
+            actions,
+        };
+    }, [strategies, availableStrategies, activeStrategy, selectStrategy, actions]);
 
     return (
         <PlanExpansionStrategyContext.Provider value={value}>

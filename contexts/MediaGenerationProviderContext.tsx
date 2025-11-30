@@ -17,7 +17,8 @@ type MediaGenerationProviderContextValue = {
 const MediaGenerationProviderContext = createContext<MediaGenerationProviderContextValue | undefined>(undefined);
 
 export const MediaGenerationProviderProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [selectedProviderId, setSelectedProviderId] = usePersistentState<string>(MEDIA_PROVIDER_STORAGE_KEY, FALLBACK_MEDIA_PROVIDER.id);
+    const initialProviderId = FALLBACK_MEDIA_PROVIDER?.id ?? DEFAULT_MEDIA_PROVIDERS[0]?.id ?? 'default';
+    const [selectedProviderId, setSelectedProviderId] = usePersistentState<string>(MEDIA_PROVIDER_STORAGE_KEY, initialProviderId);
     const { settings: localGenerationSettings } = useLocalGenerationSettings();
 
     const providers = DEFAULT_MEDIA_PROVIDERS;
@@ -97,19 +98,26 @@ export const MediaGenerationProviderProvider: React.FC<{ children: React.ReactNo
         [providers, setSelectedProviderId]
     );
 
-    const actions = useMemo(
-        () => createMediaGenerationActions(activeProvider.id, localGenerationSettings),
-        [activeProvider.id, localGenerationSettings]
-    );
+    const actions = useMemo(() => {
+        if (!activeProvider) {
+            throw new Error('[MediaGenerationProvider] No active provider available');
+        }
+        return createMediaGenerationActions(activeProvider.id, localGenerationSettings);
+    }, [activeProvider, localGenerationSettings]);
 
-    const value = useMemo<MediaGenerationProviderContextValue>(() => ({
-        providers,
-        availableProviders,
-        activeProvider,
-        activeProviderId: activeProvider.id,
-        selectProvider,
-        actions,
-    }), [providers, availableProviders, activeProvider, selectProvider, actions]);
+    const value = useMemo<MediaGenerationProviderContextValue>(() => {
+        if (!activeProvider) {
+            throw new Error('[MediaGenerationProvider] No active provider available');
+        }
+        return {
+            providers,
+            availableProviders,
+            activeProvider,
+            activeProviderId: activeProvider.id,
+            selectProvider,
+            actions,
+        };
+    }, [providers, availableProviders, activeProvider, selectProvider, actions]);
 
     return (
         <MediaGenerationProviderContext.Provider value={value}>
