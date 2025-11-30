@@ -118,6 +118,172 @@ This validation suite **detects problems AND attempts automatic remediation** wh
 
 ### Common Issues & Fixes
 
+#### Issue: Playwright Lock File Stale
+**Detection**: E2E test fails with "Could not acquire Playwright lock"
+**Remediation**:
+```powershell
+# Check if lock file exists and who owns it
+$lockFile = '.playwright-lock'
+if (Test-Path $lockFile) {
+    $content = Get-Content $lockFile -Raw
+    Write-Host $content
+    
+    # Check if owning process is still running
+    if ($content -match 'PID=(\d+)') {
+        $pid = [int]$Matches[1]
+        $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+        if ($proc) {
+            Write-Host "Lock held by running process PID=$pid"
+            Write-Host "Wait for it to complete or kill it:"
+            Write-Host "  Stop-Process -Id $pid -Force"
+        } else {
+            Write-Host "Lock is stale - safe to remove"
+            Remove-Item $lockFile -Force
+        }
+    }
+}
+```
+
+#### Issue: LM Studio Model Won't Unload
+**Detection**: Pipeline fails at Step 1.5 with VRAM contention
+**Remediation**:
+```powershell
+# Method 1: Use CLI (preferred)
+lms unload --all
+
+# Method 2: Check model state via REST API
+$models = Invoke-RestMethod http://192.168.50.192:1234/api/v0/models
+$loaded = $models.data | Where-Object { $_.state -eq 'loaded' }
+Write-Host "Loaded models: $($loaded.Count)"
+
+# Method 3: Manual unload via LM Studio UI
+# 1. Open LM Studio application
+# 2. Click 'Eject' button next to loaded model
+# 3. Verify: lms ps (should show nothing loaded)
+
+# Method 4: Restart LM Studio server
+# Settings → Server → Stop Server
+# Close LM Studio application
+# Reopen LM Studio
+
+# Verify VRAM freed via ComfyUI
+$stats = Invoke-RestMethod http://127.0.0.1:8188/system_stats
+$freeMB = [math]::Round($stats.devices[0].vram_free / 1MB, 0)
+Write-Host "Free VRAM: ${freeMB} MB"
+```
+
+#### Issue: HydrationContext Timeout
+**Detection**: App shows loading spinner indefinitely, console shows "Hydration timeout"
+**Remediation**:
+```powershell
+# 1. Clear browser storage
+# Open DevTools → Application → IndexedDB → Delete gemDirect1
+
+# 2. Increase timeout (if needed)
+# In contexts/HydrationContext.tsx:
+# const HYDRATION_TIMEOUT_MS = 15000; // Increase from 10000
+
+# 3. Check key registration issues
+# Open DevTools console, look for:
+# "HydrationContext: Key X registered but never completed"
+
+# 4. Force reset hydration state
+# Add ?resetHydration=true to URL (if implemented)
+
+# 5. Common causes:
+# - usePersistentState hooks not calling onHydrated
+# - Too many keys registered (performance issue)
+# - IndexedDB corruption
+```
+
+#### Issue: GenerationQueue Circuit Breaker Tripped
+**Detection**: Queue shows "Circuit breaker open" message, jobs not processing
+**Remediation**:
+```powershell
+# In browser DevTools console:
+# 1. Check queue status
+GenerationQueue.getInstance().getStatus()
+
+# 2. Reset circuit breaker
+GenerationQueue.getInstance().reset()
+
+# 3. Clear stuck jobs
+GenerationQueue.getInstance().clear()
+
+# 4. Verify ComfyUI is responsive
+Invoke-RestMethod http://127.0.0.1:8188/queue
+
+# 5. If ComfyUI queue stuck, clear it
+Invoke-RestMethod -Method Post http://127.0.0.1:8188/queue/clear
+
+# Circuit breaker triggers after 3 consecutive failures
+# Wait 30 seconds for auto-reset, or manually reset
+```
+
+#### Issue: LLMTransportAdapter Registry Conflict
+**Detection**: Test failures mentioning "Transport already registered"
+**Remediation**:
+```powershell
+# In test setup or beforeEach:
+# clearRegistry() from services/llmTransportAdapter.ts
+
+# In code:
+import { clearRegistry, registerTransport } from './llmTransportAdapter';
+clearRegistry(); // Clear all transports
+registerTransport('mock', new MockLLMTransport()); // Re-register
+
+# Common in tests when multiple suites run without cleanup
+# Add to vitest.setup.ts:
+beforeEach(() => {
+    clearRegistry();
+});
+```
+
+#### Issue: WorkflowValidator Format Detection Fails
+**Detection**: "Invalid workflow format" errors, API vs UI format confusion
+**Remediation**:
+```powershell
+# 1. Check workflow file format
+$workflow = Get-Content workflows/video_wan2_2_5B_ti2v.json | ConvertFrom-Json
+
+# API format has top-level numbered nodes: "1", "2", "3"
+# UI format has "_meta" and "prompt" properties
+
+if ($workflow._meta) {
+    Write-Host "UI format detected - needs conversion for API"
+} elseif ($workflow.PSObject.Properties.Name -contains "1") {
+    Write-Host "API format detected - ready for use"
+}
+
+# 2. Convert UI to API format (if needed)
+# Use workflowValidator.convertUIToAPIFormat() function
+
+# 3. Re-export from ComfyUI
+# Save workflow via API: Save (API Format)
+# Not: Save (standard format)
+```
+
+#### Issue: DataIntegrityValidator Rejecting Valid Data
+**Detection**: "Invalid timeline shot" or "Invalid scene data" errors
+**Remediation**:
+```powershell
+# 1. Check what validation is failing
+# Look for specific field in error message
+
+# 2. Common validation issues:
+# - Missing required fields (id, description)
+# - Invalid field types (string expected, got object)
+# - Empty arrays where at least one item expected
+
+# 3. Debug in code:
+import { validateTimelineShot, getValidationErrors } from './dataIntegrityValidator';
+const errors = getValidationErrors(shotData);
+console.log(errors); // Shows exactly what's invalid
+
+# 4. Fix data before passing to validator:
+const sanitizedShot = sanitizeForComfyUI(rawShot);
+```
+
 #### Issue: TypeScript Errors
 **Detection**: Phase 2 fails with type errors
 **Remediation**:
@@ -164,12 +330,17 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8188/queue/clear
 **Detection**: Phase 7 videos not generated
 **Remediation**:
 ```powershell
-# 1. Set LM Studio to CPU-only (0 GPU layers)
-# 2. Close other GPU applications
+# 1. Unload LM Studio model first
+lms unload --all
+
+# 2. Wait for VRAM to be freed (10-30 seconds)
+Start-Sleep -Seconds 15
+
 # 3. Check VRAM:
 (Invoke-RestMethod http://127.0.0.1:8188/system_stats).devices[0].vram_free / 1MB
 
-# 4. If < 2GB, reduce video settings:
+# 4. If still < 4GB, close other GPU applications
+# 5. If < 2GB, reduce video settings:
 #    - Frames: 16-24 (instead of 121)
 #    - Resolution: 1024×576 (instead of 1280×720)
 #    - Steps: 12-15 (instead of 20)
@@ -185,7 +356,8 @@ npx playwright test --debug
 # Common causes:
 # 1. Dev server not started → Check http://localhost:3000
 # 2. LM Studio slow → Increase VITE_LOCAL_LLM_TIMEOUT_MS
-# 3. IndexedDB hydration → Component rendering race condition (known issue, not critical)
+# 3. HydrationContext timeout → Increase HYDRATION_TIMEOUT_MS
+# 4. GenerationQueue stuck → Reset via DevTools
 
 # Re-run specific failing test
 npx playwright test tests/e2e/<test-name>.spec.ts --reporter=list
@@ -220,16 +392,36 @@ npx playwright test tests/e2e/<test-name>.spec.ts --reporter=list
 ✅ **Retries flaky tests** (network timing issues)
 ✅ **Kills port conflicts** (stops stale dev servers)
 ✅ **Generates detailed remediation guidance** (for manual fixes)
+✅ **Unloads LM Studio models** (via lms CLI during pipeline)
+✅ **Removes stale Playwright lock files** (dead process detection)
+✅ **Monitors VRAM via queue polling** (dynamic status checks)
 
 ## 🎯 What This Validation DOES NOT Fix (Requires Manual Intervention)
 
 ❌ **Node.js version** (must manually upgrade to 22.19.0+)
 ❌ **LM Studio configuration** (must manually load model and start server)
+❌ **LM Studio CLI installation** (must add lms to PATH)
 ❌ **Workflow file creation** (must have wan-t2i and wan-i2v JSON files)
 ❌ **Code logic errors** (TypeScript errors, test failures)
 ❌ **VRAM limitations** (hardware constraint, requires settings adjustment)
 ❌ **Workflow mapping configuration** (must configure via UI once)
 ❌ **Quality threshold failures** (requires prompt/model tuning)
+❌ **HydrationContext timeout tuning** (requires code change)
+❌ **GenerationQueue circuit breaker reset** (requires browser DevTools)
+
+---
+
+## 🔄 New Infrastructure Remediation Quick Reference
+
+| Issue | Detection | Quick Fix |
+|-------|-----------|-----------|
+| Playwright lock stale | "Could not acquire lock" | `Remove-Item .playwright-lock -Force` |
+| LM Studio won't unload | VRAM contention | `lms unload --all` or UI eject |
+| HydrationContext timeout | Loading spinner forever | Clear IndexedDB, increase timeout |
+| GenerationQueue stuck | "Circuit breaker open" | `GenerationQueue.getInstance().reset()` |
+| Transport registry conflict | "Already registered" | `clearRegistry()` in test setup |
+| Workflow format wrong | "Invalid format" | Re-export from ComfyUI as API format |
+| DataIntegrity rejection | "Invalid shot/scene" | Check `getValidationErrors()` output |
 
 ---
 
