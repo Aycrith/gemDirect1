@@ -835,3 +835,112 @@ export function applyUploadedImagesToWorkflow(
     
     return result;
 }
+
+// ============================================================================
+// PREFLIGHT CHECKS
+// ============================================================================
+
+/**
+ * Result of IP-Adapter availability check
+ */
+export interface IPAdapterPreflightResult {
+    /** Whether IP-Adapter is available */
+    available: boolean;
+    /** List of available IP-Adapter nodes */
+    availableNodes: string[];
+    /** List of missing required nodes */
+    missingNodes: string[];
+    /** Warning messages */
+    warnings: string[];
+    /** Error message if not available */
+    error?: string;
+}
+
+/**
+ * Required nodes for IP-Adapter functionality
+ */
+const REQUIRED_IPADAPTER_NODES = [
+    'IPAdapterModelLoader',
+    'IPAdapterApply',
+    'CLIPVisionLoader',
+];
+
+/**
+ * Optional nodes that enhance IP-Adapter functionality
+ */
+const OPTIONAL_IPADAPTER_NODES = [
+    'IPAdapterUnifiedLoader',
+    'IPAdapterAdvanced',
+    'IPAdapterApplyFaceID',
+    'IPAdapterEncoder',
+    'IPAdapterCombineEmbeds',
+];
+
+/**
+ * Check if IP-Adapter nodes are available in ComfyUI
+ * 
+ * @param comfyUIUrl - ComfyUI server URL
+ * @returns Preflight result with availability status
+ */
+export async function checkIPAdapterAvailability(
+    comfyUIUrl: string = 'http://127.0.0.1:8188'
+): Promise<IPAdapterPreflightResult> {
+    const result: IPAdapterPreflightResult = {
+        available: false,
+        availableNodes: [],
+        missingNodes: [],
+        warnings: [],
+    };
+    
+    try {
+        const response = await fetch(`${comfyUIUrl}/object_info`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+        });
+        
+        if (!response.ok) {
+            result.error = `Failed to fetch ComfyUI object info: ${response.status}`;
+            return result;
+        }
+        
+        const objectInfo = await response.json();
+        const availableNodeTypes = Object.keys(objectInfo);
+        
+        // Check required nodes
+        for (const nodeType of REQUIRED_IPADAPTER_NODES) {
+            if (availableNodeTypes.includes(nodeType)) {
+                result.availableNodes.push(nodeType);
+            } else {
+                result.missingNodes.push(nodeType);
+            }
+        }
+        
+        // Check optional nodes
+        for (const nodeType of OPTIONAL_IPADAPTER_NODES) {
+            if (availableNodeTypes.includes(nodeType)) {
+                result.availableNodes.push(nodeType);
+            }
+        }
+        
+        // Determine availability
+        result.available = result.missingNodes.length === 0;
+        
+        // Add warnings for missing optional nodes
+        if (result.available && result.availableNodes.length < REQUIRED_IPADAPTER_NODES.length + OPTIONAL_IPADAPTER_NODES.length) {
+            const missingOptional = OPTIONAL_IPADAPTER_NODES.filter(n => !result.availableNodes.includes(n));
+            if (missingOptional.length > 0) {
+                result.warnings.push(`Optional IP-Adapter nodes not installed: ${missingOptional.join(', ')}`);
+            }
+        }
+        
+        if (!result.available) {
+            result.error = `IP-Adapter nodes not found. Missing: ${result.missingNodes.join(', ')}. ` +
+                `Please install ComfyUI-IPAdapter-Plus from https://github.com/cubiq/ComfyUI_IPAdapter_plus`;
+        }
+        
+        return result;
+    } catch (err) {
+        result.error = `Failed to check IP-Adapter availability: ${err instanceof Error ? err.message : String(err)}`;
+        return result;
+    }
+}

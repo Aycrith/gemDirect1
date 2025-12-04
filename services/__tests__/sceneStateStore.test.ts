@@ -343,6 +343,37 @@ describe('sceneStateStore', () => {
             expect(state.generatedImages['scene_clear_test']).toBeUndefined();
             expect(state.sceneImageStatuses['scene_clear_test']).toBeUndefined();
         });
+
+        it('should update keyframe version score', () => {
+            // First, push a keyframe version to create versioned data
+            act(() => {
+                useSceneStateStore.getState().pushKeyframeVersion('scene_score_test', 'base64image', undefined, 'test prompt');
+            });
+            
+            // Verify version exists without score
+            let state = getSceneStoreState();
+            const keyframeData = state.generatedImages['scene_score_test'];
+            expect(keyframeData).toBeDefined();
+            expect((keyframeData as any).versions[0].score).toBeUndefined();
+            
+            // Update the score
+            const testScore = {
+                composition: 85,
+                lighting: 78,
+                characterAccuracy: 90,
+                styleConsistency: 72,
+                overall: 81,
+            };
+            
+            act(() => {
+                useSceneStateStore.getState().updateKeyframeVersionScore('scene_score_test', testScore);
+            });
+            
+            // Verify score was added
+            state = getSceneStoreState();
+            const updatedData = state.generatedImages['scene_score_test'] as any;
+            expect(updatedData.versions[0].score).toEqual(testScore);
+        });
     });
 
     // ========================================================================

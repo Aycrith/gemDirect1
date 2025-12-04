@@ -1,9 +1,11 @@
 import React, { useState, useCallback } from 'react';
-import { Scene, SceneImageGenerationStatus, KeyframeData } from '../types';
+import { Scene, SceneImageGenerationStatus, KeyframeData, getActiveKeyframeImage } from '../types';
 import ImageIcon from './icons/ImageIcon';
 import { useMediaGenerationActions } from '../contexts/MediaGenerationProviderContext';
 import { useLocalGenerationSettings } from '../contexts/LocalGenerationSettingsContext';
 import { useQualityGate } from '../hooks/useQualityGate';
+import { useSceneStateStore } from '../services/sceneStateStore';
+import { getFeatureFlag } from '../utils/featureFlags';
 import type { ApiLogCallback, ApiStateChangeCallback } from '../services/planExpansionService';
 
 interface GenerateSceneImagesButtonProps {
@@ -123,6 +125,15 @@ const GenerateSceneImagesButton: React.FC<GenerateSceneImagesButtonProps> = ({
                         
                         return newState;
                     });
+                    
+                    // Push to keyframe version history if enabled
+                    if (typeof image === 'string' && getFeatureFlag(settings.featureFlags, 'keyframeVersionHistory')) {
+                        // Build prompt context for version history
+                        const promptContext = `Director's Vision: ${directorsVision.slice(0, 100)}... | Scene: ${scene.summary.slice(0, 100)}...`;
+                        useSceneStateStore.getState().pushKeyframeVersion(scene.id, image, undefined, promptContext);
+                        console.log(`📚 [Batch Generation] Pushed version to history for scene ${scene.id}`);
+                    }
+                    
                     successes++;
                     
                     // DEBUG: Verify state propagation with micro-task delay
@@ -175,7 +186,8 @@ const GenerateSceneImagesButton: React.FC<GenerateSceneImagesButtonProps> = ({
                     if (!scene) return;
                     const hasImage = currentImages[scene.id];
                     if (hasImage) {
-                        const imgLength = typeof hasImage === 'string' ? hasImage.length : ((hasImage.start?.length ?? 0) + (hasImage.end?.length ?? 0));
+                        const activeImage = getActiveKeyframeImage(hasImage);
+                        const imgLength = activeImage?.length ?? 0;
                         console.log(`✅ [Batch Generation] Scene ${idx + 1} "${scene.title}" (${scene.id}): Image persisted (${imgLength} chars)`);
                     } else {
                         console.error(`❌ [Batch Generation] Scene ${idx + 1} "${scene.title}" (${scene.id}): Image MISSING from state!`);

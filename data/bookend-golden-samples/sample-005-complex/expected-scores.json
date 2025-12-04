@@ -1,0 +1,42 @@
+{
+  "sampleId": "sample-005-complex",
+  "version": "1.0.0",
+  "createdAt": "2025-12-02T00:00:00Z",
+  
+  "thresholds": {
+    "pass": {
+      "overallContinuity": 65,
+      "characterMatch": 70,
+      "environmentMatch": 75,
+      "startFrameMatch": 35,
+      "endFrameMatch": 35,
+      "motionQuality": 65
+    },
+    "warn": {
+      "overallContinuity": 55,
+      "characterMatch": 60,
+      "environmentMatch": 65,
+      "startFrameMatch": 25,
+      "endFrameMatch": 25,
+      "motionQuality": 55
+    },
+    "fail": {
+      "overallContinuity": 45,
+      "characterMatch": 50,
+      "environmentMatch": 55,
+      "startFrameMatch": 20,
+      "endFrameMatch": 20,
+      "motionQuality": 45
+    }
+  },
+  
+  "notes": "Complex scenes with multiple objects are expected to have lower scores. Focus is on maintaining spatial relationships and object identity.",
+  
+  "criticalMetrics": ["environmentMatch", "overallContinuity"],
+  
+  "expectedResults": {
+    "description": "Complex sample should demonstrate stable object relationships even if individual details vary",
+    "primaryConcern": "Major objects (mug, plant, appliances) maintain position and identity",
+    "secondaryConcern": "Lighting transition appears gradual, no sudden jumps"
+  }
+}

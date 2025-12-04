@@ -11,8 +11,7 @@ export default defineConfig({
     // Exclude Playwright end-to-end specs so Vitest doesn't try to run them.
     // Run E2E tests separately with: npx playwright test
     exclude: ['node_modules', 'dist', 'tests/e2e/**', 'tests/manual/**', '**/*.integration.test.ts'],
-    pool: 'forks',
-    maxWorkers: 1,
-    isolate: false,
+    // Use vmThreads for proper test isolation (prevents global.fetch pollution)
+    pool: 'vmThreads',
   },
 });

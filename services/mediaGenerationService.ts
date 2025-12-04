@@ -2,6 +2,8 @@ import { ApiLogCallback, ApiStateChangeCallback } from './geminiService';
 import * as geminiService from './geminiService';
 import { Shot, CreativeEnhancers, LocalGenerationSettings } from '../types';
 import { generateSceneKeyframeLocally, generateShotImageLocally } from './comfyUIService';
+import { getGenerationQueue, createKeyframeTask, createImageTask, GenerationStatus } from './generationQueue';
+import { isFeatureEnabled } from '../utils/featureFlags';
 
 export type MediaGenerationActions = {
     generateKeyframeForScene: (
@@ -88,21 +90,61 @@ const createLocalActions = (settings?: LocalGenerationSettings): MediaGeneration
         return settings;
     };
 
+    // Check if GenerationQueue is enabled for VRAM-safe serial execution
+    const useQueue = isFeatureEnabled(settings?.featureFlags, 'useGenerationQueue');
+
     return {
-        generateKeyframeForScene: (vision, sceneSummary, sceneId, logApiCall, onStateChange) =>
-            runLocal(
-                'generate scene keyframe',
-                () => generateSceneKeyframeLocally(ensureSettings(), vision, sceneSummary, sceneId),
-                logApiCall,
-                onStateChange
-            ),
-        generateImageForShot: (shot, enhancers, directorsVision, sceneSummary, sceneId, logApiCall, onStateChange) =>
-            runLocal(
-                'generate shot image',
-                () => generateShotImageLocally(ensureSettings(), shot, enhancers, directorsVision, sceneSummary, sceneId),
-                logApiCall,
-                onStateChange
-            )
+        generateKeyframeForScene: (vision, sceneSummary, sceneId, logApiCall, onStateChange) => {
+            const executeKeyframe = () => generateSceneKeyframeLocally(ensureSettings(), vision, sceneSummary, sceneId);
+            
+            if (useQueue) {
+                // Route through GenerationQueue for VRAM-safe serial execution
+                const queue = getGenerationQueue();
+                const task = createKeyframeTask(
+                    () => runLocal('generate scene keyframe', executeKeyframe, logApiCall, onStateChange),
+                    {
+                        sceneId: sceneId || 'unknown',
+                        priority: 'normal',
+                        onStatusChange: (status: GenerationStatus) => {
+                            if (status === 'pending') {
+                                onStateChange?.('loading', 'Queued for generation...');
+                            }
+                        },
+                    }
+                );
+                console.log(`[MediaGeneration] Queueing keyframe for scene ${sceneId} via GenerationQueue`);
+                return queue.enqueue(task);
+            }
+            
+            // Direct execution (legacy behavior)
+            return runLocal('generate scene keyframe', executeKeyframe, logApiCall, onStateChange);
+        },
+        generateImageForShot: (shot, enhancers, directorsVision, sceneSummary, sceneId, logApiCall, onStateChange) => {
+            const executeImage = () => generateShotImageLocally(ensureSettings(), shot, enhancers, directorsVision, sceneSummary, sceneId);
+            
+            if (useQueue) {
+                // Route through GenerationQueue for VRAM-safe serial execution
+                const queue = getGenerationQueue();
+                const task = createImageTask(
+                    () => runLocal('generate shot image', executeImage, logApiCall, onStateChange),
+                    {
+                        sceneId: sceneId || 'unknown',
+                        shotId: shot.id,
+                        priority: 'normal',
+                        onStatusChange: (status: GenerationStatus) => {
+                            if (status === 'pending') {
+                                onStateChange?.('loading', 'Queued for generation...');
+                            }
+                        },
+                    }
+                );
+                console.log(`[MediaGeneration] Queueing image for shot ${shot.id} via GenerationQueue`);
+                return queue.enqueue(task);
+            }
+            
+            // Direct execution (legacy behavior)
+            return runLocal('generate shot image', executeImage, logApiCall, onStateChange);
+        }
     };
 };
 

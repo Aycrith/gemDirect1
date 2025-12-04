@@ -231,3 +231,256 @@ export async function getVideoDuration(videoPath: string): Promise<number> {
     });
   });
 }
+
+/**
+ * Get the total frame count of a video
+ * 
+ * @param videoPath - Path to video file
+ * @returns Promise<number> - Total frame count
+ */
+export async function getVideoFrameCount(videoPath: string): Promise<number> {
+  if (!existsSync(videoPath)) {
+    throw new Error(`Video not found: ${videoPath}`);
+  }
+
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawn('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-count_packets',
+      '-show_entries', 'stream=nb_read_packets',
+      '-of', 'csv=p=0',
+      videoPath
+    ], {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    
+    ffprobe.stdout?.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    ffprobe.on('close', (code) => {
+      if (code === 0) {
+        const frameCount = parseInt(stdout.trim(), 10);
+        resolve(isNaN(frameCount) ? 0 : frameCount);
+      } else {
+        reject(new Error(`ffprobe frame count failed with code ${code}`));
+      }
+    });
+
+    ffprobe.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
+export interface ExtractFrameResult {
+  success: boolean;
+  base64Image?: string;
+  error?: string;
+  frameNumber?: number;
+}
+
+/**
+ * Extract the last frame from a video as a base64-encoded PNG image.
+ * This is the foundation for chain-of-frames video generation, where
+ * the last frame of Shot N becomes the first frame input for Shot N+1.
+ * 
+ * @param videoPath - Path to video file
+ * @param outputFormat - Image format ('png' or 'jpg', default: 'png')
+ * @returns Promise<ExtractFrameResult> - Result with base64 image data
+ * 
+ * @example
+ * const result = await extractLastFrame('output/shot1.mp4');
+ * if (result.success) {
+ *   // Use result.base64Image as input for next shot's generation
+ *   await generateNextShot(result.base64Image, nextShotPrompt);
+ * }
+ */
+export async function extractLastFrame(
+  videoPath: string,
+  outputFormat: 'png' | 'jpg' = 'png'
+): Promise<ExtractFrameResult> {
+  if (!existsSync(videoPath)) {
+    return {
+      success: false,
+      error: `Video not found: ${videoPath}`
+    };
+  }
+
+  try {
+    // First, get the frame count to determine last frame
+    const frameCount = await getVideoFrameCount(videoPath);
+    if (frameCount <= 0) {
+      return {
+        success: false,
+        error: `Could not determine frame count for: ${videoPath}`
+      };
+    }
+
+    const lastFrameNumber = frameCount - 1;
+
+    return new Promise<ExtractFrameResult>((resolve) => {
+      // Use ffmpeg to extract the last frame directly to stdout as base64
+      // -sseof -0.1 seeks to 0.1 seconds before end (more reliable than frame number)
+      // -frames:v 1 extracts exactly one frame
+      // -f image2pipe outputs to pipe instead of file
+      const args = [
+        '-sseof', '-0.1',  // Seek to near end of file
+        '-i', videoPath,
+        '-frames:v', '1',
+        '-f', 'image2pipe',
+        '-vcodec', outputFormat === 'png' ? 'png' : 'mjpeg',
+        '-'  // Output to stdout
+      ];
+
+      const ffmpeg = spawn('ffmpeg', args, {
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      const chunks: Buffer[] = [];
+      let stderr = '';
+
+      ffmpeg.stdout?.on('data', (data) => {
+        chunks.push(data);
+      });
+
+      ffmpeg.stderr?.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      ffmpeg.on('error', (error) => {
+        resolve({
+          success: false,
+          error: `ffmpeg spawn error: ${error.message}`
+        });
+      });
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0 && chunks.length > 0) {
+          const imageBuffer = Buffer.concat(chunks);
+          const mimeType = outputFormat === 'png' ? 'image/png' : 'image/jpeg';
+          const base64Image = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+          
+          resolve({
+            success: true,
+            base64Image,
+            frameNumber: lastFrameNumber
+          });
+        } else {
+          const errorMatch = stderr.match(/Error.*$/m);
+          const errorMsg = errorMatch ? errorMatch[0] : stderr.slice(-200);
+          
+          resolve({
+            success: false,
+            error: `ffmpeg frame extraction failed with code ${code}: ${errorMsg}`,
+            frameNumber: lastFrameNumber
+          });
+        }
+      });
+    });
+  } catch (error) {
+    return {
+      success: false,
+      error: `Frame extraction error: ${error instanceof Error ? error.message : String(error)}`
+    };
+  }
+}
+
+/**
+ * Extract a specific frame from a video as a base64-encoded image.
+ * 
+ * @param videoPath - Path to video file
+ * @param frameNumber - Frame number to extract (0-indexed)
+ * @param outputFormat - Image format ('png' or 'jpg', default: 'png')
+ * @returns Promise<ExtractFrameResult> - Result with base64 image data
+ */
+export async function extractFrame(
+  videoPath: string,
+  frameNumber: number,
+  outputFormat: 'png' | 'jpg' = 'png'
+): Promise<ExtractFrameResult> {
+  if (!existsSync(videoPath)) {
+    return {
+      success: false,
+      error: `Video not found: ${videoPath}`
+    };
+  }
+
+  return new Promise<ExtractFrameResult>((resolve) => {
+    // Calculate timestamp for frame (assuming 24fps, can be adjusted)
+    const fps = 24;
+    const timestamp = frameNumber / fps;
+
+    const args = [
+      '-ss', timestamp.toFixed(4),
+      '-i', videoPath,
+      '-frames:v', '1',
+      '-f', 'image2pipe',
+      '-vcodec', outputFormat === 'png' ? 'png' : 'mjpeg',
+      '-'
+    ];
+
+    const ffmpeg = spawn('ffmpeg', args, {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    const chunks: Buffer[] = [];
+    let stderr = '';
+
+    ffmpeg.stdout?.on('data', (data) => {
+      chunks.push(data);
+    });
+
+    ffmpeg.stderr?.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ffmpeg.on('error', (error) => {
+      resolve({
+        success: false,
+        error: `ffmpeg spawn error: ${error.message}`,
+        frameNumber
+      });
+    });
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0 && chunks.length > 0) {
+        const imageBuffer = Buffer.concat(chunks);
+        const mimeType = outputFormat === 'png' ? 'image/png' : 'image/jpeg';
+        const base64Image = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+        
+        resolve({
+          success: true,
+          base64Image,
+          frameNumber
+        });
+      } else {
+        const errorMatch = stderr.match(/Error.*$/m);
+        const errorMsg = errorMatch ? errorMatch[0] : stderr.slice(-200);
+        
+        resolve({
+          success: false,
+          error: `ffmpeg frame extraction failed with code ${code}: ${errorMsg}`,
+          frameNumber
+        });
+      }
+    });
+  });
+}
+
+/**
+ * Extract first frame from a video (useful for validation or preview)
+ * 
+ * @param videoPath - Path to video file
+ * @param outputFormat - Image format ('png' or 'jpg', default: 'png')
+ * @returns Promise<ExtractFrameResult> - Result with base64 image data
+ */
+export async function extractFirstFrame(
+  videoPath: string,
+  outputFormat: 'png' | 'jpg' = 'png'
+): Promise<ExtractFrameResult> {
+  return extractFrame(videoPath, 0, outputFormat);
+}

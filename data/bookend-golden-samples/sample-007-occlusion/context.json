@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-007-occlusion",
+  "name": "Person Occlusion Test",
+  "type": "occlusion",
+  "description": "Tests identity consistency through occlusion - person walks behind lamppost and re-emerges",
+  
+  "sceneContext": {
+    "sceneId": "golden-007",
+    "summary": "A person walking on a sidewalk passes behind a lamppost, briefly occluded, then re-emerges on the other side. Static camera, consistent lighting, tests identity preservation through temporary occlusion.",
+    "environment": "City sidewalk with single black iron lamppost, brick building in background, overcast daylight",
+    "mood": "Urban, casual, everyday"
+  },
+  
+  "startKeyframe": {
+    "prompt": "A young man in a gray hoodie and blue jeans walking on a city sidewalk, positioned on the left side of frame approaching a black iron lamppost in center, single brick building in background, overcast sky with soft even lighting, medium wide shot, static camera, clean urban composition, professional street photography, 4K resolution, full body visible, simple background",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, multiple people, night, indoor, changing clothes, extra limbs, duplicated person, ghosting through lamppost, teleporting, camera shake, different person"
+  },
+  
+  "endKeyframe": {
+    "prompt": "The same young man in a gray hoodie and blue jeans walking on a city sidewalk, now positioned on the right side of frame having passed the black iron lamppost in center, same single brick building in background, overcast sky with soft even lighting, medium wide shot, static camera, clean urban composition, professional street photography, 4K resolution, full body visible, simple background",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, multiple people, night, indoor, changing clothes, extra limbs, duplicated person, ghosting through lamppost, teleporting, camera shake, different person, new people appearing"
+  },
+  
+  "videoContext": {
+    "motionDescription": "Man walks steadily from left to right across frame. As he passes the lamppost in the center, he is briefly occluded (hidden behind it), then re-emerges on the right side. His identity (gray hoodie, blue jeans, same face/build) must remain consistent before and after occlusion. Static camera throughout.",
+    "cameraMotion": "Completely static camera, no movement, no panning, no zooming",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "Person maintains identical appearance (gray hoodie, blue jeans) before and after lamppost occlusion",
+    "secondary": "Walking motion is smooth and natural, background remains stable, no teleporting or ghosting",
+    "challenges": "Identity preservation through occlusion, avoiding duplication or morphing"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

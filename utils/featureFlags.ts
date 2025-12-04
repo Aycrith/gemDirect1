@@ -204,6 +204,26 @@ export interface FeatureFlags {
     sceneStoreParallelValidation: boolean;
 
     /**
+     * Use Zustand settings store instead of usePersistentState for LocalGenerationSettings.
+     * When enabled, settings flow through the centralized settingsStore with IndexedDB persistence.
+     * This prevents infinite loops from object reference changes in useEffect dependencies.
+     * @default false
+     * @stability experimental
+     * @expires 2026-03-31
+     */
+    useSettingsStore: boolean;
+
+    /**
+     * Use Zustand generation status store instead of prop-drilling localGenStatus.
+     * When enabled, generation status flows through generationStatusStore.
+     * This prevents infinite loops in TimelineEditor during ComfyUI progress updates.
+     * @default false
+     * @stability experimental
+     * @expires 2026-03-31
+     */
+    useGenerationStatusStore: boolean;
+
+    /**
      * Enable Quick Generate mode in the UI.
      * This feature is currently a stub and does not generate real content.
      * Hidden by default to avoid confusing users.
@@ -220,8 +240,8 @@ export interface FeatureFlags {
      * Route video/keyframe generation through serial GenerationQueue.
      * Prevents VRAM exhaustion by serializing GPU-intensive operations
      * with automatic retry and circuit breaker patterns.
-     * @default false
-     * @stability experimental
+     * @default true
+     * @stability beta
      * @expires 2026-03-31
      */
     useGenerationQueue: boolean;
@@ -235,6 +255,138 @@ export interface FeatureFlags {
      * @expires 2026-03-31
      */
     useLLMTransportAdapter: boolean;
+
+    // ============================================================================
+    // Vision LLM Integration Flags
+    // ============================================================================
+
+    /**
+     * Enable vision LLM feedback on generated keyframes.
+     * Uses a vision-language model to analyze keyframe images and suggest
+     * prompt improvements based on visual quality assessment.
+     * @default false
+     * @stability experimental
+     */
+    visionLLMFeedback: boolean;
+
+    /**
+     * Vision LLM provider to use for keyframe analysis.
+     * - 'disabled': Vision feedback disabled
+     * - 'local-qwen': Use local Qwen VL model via LM Studio
+     * - 'gemini': Use Gemini Pro Vision (requires API key)
+     * @default 'disabled'
+     * @stability experimental
+     */
+    visionFeedbackProvider: 'disabled' | 'local-qwen' | 'gemini';
+
+    /**
+     * Auto-analyze keyframes after generation.
+     * When enabled, vision analysis runs automatically after each keyframe.
+     * When disabled, user must manually trigger analysis.
+     * @default false
+     * @stability experimental
+     */
+    autoVisionAnalysis: boolean;
+
+    // ============================================================================
+    // Video Analysis Flags
+    // ============================================================================
+
+    /**
+     * Enable video analysis feedback after video generation.
+     * Uses vision-language model to compare video frames against keyframes
+     * and analyze motion quality.
+     * @default false
+     * @stability experimental
+     */
+    videoAnalysisFeedback: boolean;
+
+    /**
+     * Auto-analyze videos after generation completes.
+     * When enabled, video analysis runs automatically after each video.
+     * When disabled, user must manually trigger analysis.
+     * @default false
+     * @stability experimental
+     */
+    autoVideoAnalysis: boolean;
+
+    /**
+     * Enable video quality gate enforcement.
+     * When enabled, videos are evaluated against quality thresholds and
+     * flagged for regeneration if they don't meet the quality bar.
+     * @default false
+     * @stability experimental
+     */
+    videoQualityGateEnabled: boolean;
+
+    /**
+     * Minimum overall score threshold for video quality acceptance.
+     * Videos below this score will be flagged for regeneration.
+     * @default 60
+     * @stability experimental
+     */
+    videoQualityThreshold: number;
+
+    // ============================================================================
+    // Bookend QA Flags (Phase 8)
+    // ============================================================================
+
+    /**
+     * Enable keyframe pair analysis preflight check before bookend video generation.
+     * Uses vision LLM to analyze start/end keyframes for visual continuity.
+     * Blocks generation if continuity thresholds are not met.
+     * @default false
+     * @stability experimental
+     */
+    keyframePairAnalysis: boolean;
+
+    /**
+     * Master switch for Bookend QA Mode.
+     * When enabled, forces the following flags to be treated as true:
+     * - keyframePairAnalysis
+     * - videoQualityGateEnabled
+     * - autoVideoAnalysis
+     * Use getEffectiveFlagsForQAMode() to apply these overrides.
+     * @default false
+     * @stability beta
+     */
+    bookendQAMode: boolean;
+
+    // ============================================================================
+    // VRAM Management Flags
+    // ============================================================================
+
+    /**
+     * Automatically eject LM Studio models before ComfyUI generation.
+     * When enabled, sends unload request to LM Studio to free VRAM before
+     * queueing ComfyUI prompts. This prevents VRAM contention between LLM
+     * and image/video generation workloads.
+     * @default true
+     * @stability stable
+     */
+    autoEjectLMStudioModels: boolean;
+
+    // ============================================================================
+    // Keyframe Generation Enhancement Flags
+    // ============================================================================
+
+    /**
+     * Enable keyframe version history.
+     * When enabled, regenerations are stored as versions instead of overwriting.
+     * Users can browse and select from previous versions.
+     * @default true
+     * @stability beta
+     */
+    keyframeVersionHistory: boolean;
+
+    /**
+     * Auto-generate temporal context for bookend workflow.
+     * When enabled, start/end moments are automatically generated from scene
+     * description using LLM. When disabled, user must provide them manually.
+     * @default true
+     * @stability beta
+     */
+    autoGenerateTemporalContext: boolean;
 }
 
 /**
@@ -244,7 +396,7 @@ export interface FeatureFlags {
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
     // Note: bookendKeyframes removed - use LocalGenerationSettings.keyframeMode instead
     videoUpscaling: false,
-    characterConsistency: false,
+    characterConsistency: true,  // Enable IP-Adapter character consistency for identity preservation
     shotLevelContinuity: true,  // Enable shot-level continuity (Phase 7 integration complete)
     autoSuggestions: false,
     narrativeStateTracking: true,  // Enable narrative state tracking (Phase 7 integration complete)
@@ -268,12 +420,31 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
     // State Management Migration Flags (Phase 1C activation)
     useUnifiedSceneStore: true,    // Enable unified Zustand store (Phase 1C)
     sceneStoreParallelValidation: true, // Enable parallel store validation
+    useSettingsStore: true,        // Use Zustand settings store (Phase 1D - enabled for testing)
+    useGenerationStatusStore: true, // Use Zustand generation status store (Phase 1D - enabled)
     // Quick Generate (hidden - stub feature)
     enableQuickGenerate: false,    // Quick Generate is not implemented - hidden from users
     // Generation Queue Integration
-    useGenerationQueue: false,     // Route through serial queue (prevents VRAM exhaustion)
+    useGenerationQueue: true,      // Route through serial queue (prevents VRAM exhaustion)
     // LLM Transport Adapter Integration
-    useLLMTransportAdapter: false, // Route through transport abstraction (enables testing/provider switching)
+    useLLMTransportAdapter: true,  // Route through transport abstraction (enables testing/provider switching)
+    // Vision LLM Integration
+    visionLLMFeedback: true,       // Enable vision feedback on keyframes (enabled for quality diagnosis)
+    visionFeedbackProvider: 'local-qwen', // Vision provider - use local Qwen VL
+    autoVisionAnalysis: true,      // Auto-analyze keyframes after generation (enabled)
+    // Video Analysis Integration
+    videoAnalysisFeedback: true,   // Enable video analysis feedback (enabled for quality diagnosis)
+    autoVideoAnalysis: true,       // Auto-analyze videos after generation (enabled for quality diagnosis)
+    videoQualityGateEnabled: false, // Quality gate enforcement (disabled by default - manual review preferred)
+    videoQualityThreshold: 60,     // Minimum acceptable video quality score
+    // Bookend QA (Phase 8)
+    keyframePairAnalysis: true,    // Enable keyframe pair analysis preflight (uses vision LLM)
+    bookendQAMode: false,          // Master switch for Bookend QA Mode (off by default)
+    // VRAM Management
+    autoEjectLMStudioModels: true, // Auto-eject LM Studio models before ComfyUI generation
+    // Keyframe Generation Enhancements
+    keyframeVersionHistory: true,        // Enable keyframe version history
+    autoGenerateTemporalContext: true,   // Auto-generate bookend temporal context from scene
 };
 
 /**
@@ -467,6 +638,20 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         stability: 'experimental',
         dependencies: ['useUnifiedSceneStore'],
     },
+    useSettingsStore: {
+        id: 'useSettingsStore',
+        label: 'Zustand Settings Store',
+        description: 'Use centralized Zustand store for LocalGenerationSettings. Prevents infinite loops from object reference changes.',
+        category: 'workflow',
+        stability: 'experimental',
+    },
+    useGenerationStatusStore: {
+        id: 'useGenerationStatusStore',
+        label: 'Zustand Generation Status Store',
+        description: 'Use centralized Zustand store for generation status. Prevents infinite loops in TimelineEditor during progress updates.',
+        category: 'workflow',
+        stability: 'experimental',
+    },
     enableQuickGenerate: {
         id: 'enableQuickGenerate',
         label: 'Quick Generate Mode',
@@ -481,7 +666,7 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         label: 'Generation Queue',
         description: 'Route video/keyframe generation through serial queue to prevent VRAM exhaustion. Includes automatic retry and circuit breaker.',
         category: 'workflow',
-        stability: 'experimental',
+        stability: 'beta',
     },
     // LLM Transport Adapter Integration
     useLLMTransportAdapter: {
@@ -490,6 +675,101 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Route LLM calls through abstraction layer for consistent error handling, testing support, and provider switching.',
         category: 'experimental',
         stability: 'experimental',
+    },
+    // Vision LLM Integration
+    visionLLMFeedback: {
+        id: 'visionLLMFeedback',
+        label: 'Vision LLM Feedback',
+        description: 'Enable vision-language model analysis of generated keyframes to suggest prompt improvements.',
+        category: 'quality',
+        stability: 'experimental',
+    },
+    visionFeedbackProvider: {
+        id: 'visionFeedbackProvider',
+        label: 'Vision Feedback Provider',
+        description: 'Select vision LLM provider: local Qwen VL via LM Studio or Gemini Pro Vision.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['visionLLMFeedback'],
+    },
+    autoVisionAnalysis: {
+        id: 'autoVisionAnalysis',
+        label: 'Auto Vision Analysis',
+        description: 'Automatically analyze keyframes after generation instead of manual trigger.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['visionLLMFeedback'],
+    },
+    videoAnalysisFeedback: {
+        id: 'videoAnalysisFeedback',
+        label: 'Video Analysis Feedback',
+        description: 'Enable vision-language model analysis of generated videos to compare frames against keyframes and analyze motion quality.',
+        category: 'quality',
+        stability: 'experimental',
+    },
+    autoVideoAnalysis: {
+        id: 'autoVideoAnalysis',
+        label: 'Auto Video Analysis',
+        description: 'Automatically analyze videos after generation completes instead of manual trigger.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['videoAnalysisFeedback'],
+    },
+    videoQualityGateEnabled: {
+        id: 'videoQualityGateEnabled',
+        label: 'Video Quality Gate',
+        description: 'Enforce quality thresholds on generated videos. Videos below threshold will be flagged for regeneration.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['videoAnalysisFeedback'],
+    },
+    videoQualityThreshold: {
+        id: 'videoQualityThreshold',
+        label: 'Video Quality Threshold',
+        description: 'Minimum overall score threshold (0-100) for video quality acceptance. Videos below this score will be flagged for regeneration.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['videoAnalysisFeedback'],
+    },
+    keyframePairAnalysis: {
+        id: 'keyframePairAnalysis',
+        label: 'Keyframe Pair Analysis',
+        description: 'Analyze start/end keyframes for visual continuity before bookend video generation. Uses vision LLM to detect character/environment/camera inconsistencies.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['visionLLMFeedback'],
+    },
+    bookendQAMode: {
+        id: 'bookendQAMode',
+        label: 'Bookend QA Mode',
+        description: 'Master switch for bookend video quality assurance. When enabled, forces keyframe pair analysis, video quality gate, and auto video analysis to be active.',
+        category: 'quality',
+        stability: 'beta',
+        dependencies: [],
+    },
+    autoEjectLMStudioModels: {
+        id: 'autoEjectLMStudioModels',
+        label: 'Auto-Eject LM Studio Models',
+        description: 'Automatically unload LM Studio LLM models before ComfyUI generation to free VRAM.',
+        category: 'quality',
+        stability: 'stable',
+        dependencies: [],
+    },
+    keyframeVersionHistory: {
+        id: 'keyframeVersionHistory',
+        label: 'Keyframe Version History',
+        description: 'Store regenerated keyframes as versions instead of overwriting. Allows browsing and selecting previous versions.',
+        category: 'workflow',
+        stability: 'beta',
+        dependencies: [],
+    },
+    autoGenerateTemporalContext: {
+        id: 'autoGenerateTemporalContext',
+        label: 'Auto-Generate Temporal Context',
+        description: 'Automatically generate start/end moment descriptions for bookend workflow from scene summary.',
+        category: 'workflow',
+        stability: 'beta',
+        dependencies: [],
     },
 };
 
@@ -656,4 +936,29 @@ export function createFlagChangeEvent(
         newValue,
         timestamp: Date.now(),
     };
+}
+
+/**
+ * Get effective feature flags with Bookend QA Mode overrides applied.
+ * When bookendQAMode is true, forces the following flags to be treated as enabled:
+ * - keyframePairAnalysis: Pre-flight keyframe continuity check
+ * - videoQualityGateEnabled: Post-generation quality enforcement
+ * - autoVideoAnalysis: Automatic video analysis after generation
+ * 
+ * @param flags - Partial feature flags from settings
+ * @returns Complete FeatureFlags object with QA mode overrides applied
+ */
+export function getEffectiveFlagsForQAMode(flags: Partial<FeatureFlags> | undefined): FeatureFlags {
+    const merged = mergeFeatureFlags(flags);
+    
+    if (merged.bookendQAMode) {
+        return {
+            ...merged,
+            keyframePairAnalysis: true,
+            videoQualityGateEnabled: true,
+            autoVideoAnalysis: true,
+        };
+    }
+    
+    return merged;
 }

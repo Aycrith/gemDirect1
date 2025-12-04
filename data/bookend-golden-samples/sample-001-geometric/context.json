@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-001-geometric",
+  "name": "Geometric Shapes Motion",
+  "type": "geometric",
+  "description": "Simple static geometric object - tests baseline focus and consistency with minimal motion",
+  
+  "sceneContext": {
+    "sceneId": "golden-001",
+    "summary": "A colorful wooden spinning top toy sitting still on a wooden table, with camera slowly pushing in slightly",
+    "environment": "Warm wooden table surface with soft diffused natural lighting, neutral blurred background",
+    "mood": "Calm, simple, focused"
+  },
+  
+  "startKeyframe": {
+    "prompt": "A single colorful wooden spinning top toy resting upright on a polished wooden table, the top is completely still and stationary, bright primary colors red blue yellow stripes, soft diffused natural lighting, shallow depth of field with top in perfect sharp focus, simple clean composition, warm honey-toned wood grain, plain neutral blurred background, professional product photography, 4K, centered framing, medium shot",
+    "negativePrompt": "blurry subject, noisy, grainy, multiple objects, cluttered, text, watermark, hands, people, complex background, dark shadows, harsh lighting, motion blur, out of focus, camera shake, busy background, reflections, glare, spinning, rotating"
+  },
+  
+  "endKeyframe": {
+    "prompt": "The same single colorful wooden spinning top toy resting upright on the same polished wooden table, completely still and stationary, bright primary colors red blue yellow stripes clearly visible, soft diffused natural lighting, shallow depth of field with top in perfect sharp focus, simple clean composition, warm honey-toned wood grain, plain neutral blurred background, professional product photography, 4K, centered framing, slightly closer shot showing more detail",
+    "negativePrompt": "blurry subject, noisy, grainy, multiple objects, cluttered, text, watermark, hands, people, complex background, dark shadows, harsh lighting, motion blur, out of focus, camera shake, busy background, reflections, glare, spinning, rotating, different object, changed lighting, new objects appearing"
+  },
+  
+  "videoContext": {
+    "motionDescription": "The spinning top remains completely still and stationary throughout. The camera slowly and smoothly pushes in slightly, moving from a medium shot to a slightly closer shot. The top stays in perfect sharp focus the entire time. No object motion, just subtle camera movement.",
+    "cameraMotion": "Very slow, subtle push-in (dolly forward), smooth and steady",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "Top remains perfectly still with crisp sharp focus throughout",
+    "secondary": "Subtle camera push-in reveals more detail of the top",
+    "challenges": "Baseline test for perfect focus stability on static object with minimal camera motion"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

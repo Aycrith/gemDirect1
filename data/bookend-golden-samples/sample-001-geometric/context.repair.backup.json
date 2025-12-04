@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-001-geometric",
+  "name": "Geometric Shapes Motion",
+  "type": "geometric",
+  "description": "Rotating geometric object - tests baseline motion quality with simple rotation",
+  
+  "sceneContext": {
+    "sceneId": "golden-001",
+    "summary": "A colorful spinning top toy rotating on a wooden surface",
+    "environment": "Warm wooden table surface with soft natural lighting",
+    "mood": "Playful, colorful, simple"
+  },
+  
+  "startKeyframe": {
+    "prompt": "A colorful spinning top toy on a wooden table, the top is upright and still, bright primary colors red blue yellow, soft natural lighting, shallow depth of field, simple composition, warm wood grain texture, clean background",
+    "negativePrompt": "blurry, noisy, grainy, multiple objects, cluttered, text, watermark, hands, people, complex background, dark shadows"
+  },
+  
+  "endKeyframe": {
+    "prompt": "A colorful spinning top toy on a wooden table, the top is spinning and slightly tilted, motion blur on the colors, bright primary colors red blue yellow, soft natural lighting, shallow depth of field, simple composition, warm wood grain texture, clean background",
+    "negativePrompt": "blurry, noisy, grainy, multiple objects, cluttered, text, watermark, hands, people, complex background, dark shadows"
+  },
+  
+  "videoContext": {
+    "motionDescription": "The spinning top begins to spin, rotating smoothly with colors blending into motion blur",
+    "cameraMotion": "Static camera, no movement",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "Top spins with visible rotation motion",
+    "secondary": "Colors blur together as top gains speed",
+    "challenges": "Baseline test - simple rotational motion"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

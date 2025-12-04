@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-005-complex",
+  "name": "Complex Scene Transition",
+  "type": "complex",
+  "description": "Tests handling of complex scenes with multiple elements and subtle changes",
+  
+  "sceneContext": {
+    "sceneId": "golden-005",
+    "summary": "Kitchen scene with multiple objects and subtle environmental changes",
+    "environment": "Modern kitchen interior with countertops, appliances, and window lighting",
+    "mood": "Domestic, warm, inviting"
+  },
+  
+  "startKeyframe": {
+    "prompt": "Modern kitchen interior, morning light streaming through window, a coffee mug on the counter, a potted plant on the windowsill, stainless steel appliances, wooden cutting board with fruit, warm color palette, interior photography, 4K resolution",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, people, faces, outdoor, night, messy, cluttered, dirty"
+  },
+  
+  "endKeyframe": {
+    "prompt": "Modern kitchen interior, afternoon light streaming through window, a coffee mug on the counter, a potted plant on the windowsill, stainless steel appliances, wooden cutting board with sliced fruit, warm color palette, interior photography, 4K resolution",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, people, faces, outdoor, night, messy, cluttered, dirty"
+  },
+  
+  "videoContext": {
+    "motionDescription": "Time-lapse style transition from morning to afternoon with subtle changes - light angle shifts, fruit gets sliced on cutting board",
+    "cameraMotion": "Static camera with fixed composition",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "All major objects maintain identity and position throughout transition",
+    "secondary": "Light direction change is gradual and natural",
+    "challenges": "Multiple objects to track, subtle lighting changes, maintaining spatial relationships"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

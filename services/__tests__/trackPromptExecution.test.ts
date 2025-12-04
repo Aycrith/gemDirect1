@@ -94,7 +94,7 @@ describe('trackPromptExecution', () => {
 
     expect(onProgress).toHaveBeenLastCalledWith({
       status: 'error',
-      message: 'Execution error on node node-5: something broke',
+      message: 'ComfyUI error (node node-5): something broke',
       promptId: 'prompt-1',
     });
   });

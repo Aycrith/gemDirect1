@@ -1,0 +1,50 @@
+{
+  "sampleId": "sample-002-character",
+  "version": "1.0.0",
+  "createdAt": "2025-12-02T00:00:00Z",
+  
+  "thresholds": {
+    "pass": {
+      "overallContinuity": 80,
+      "characterMatch": 85,
+      "environmentMatch": 85,
+      "startFrameMatch": 85,
+      "endFrameMatch": 85,
+      "motionQuality": 75
+    },
+    "warn": {
+      "overallContinuity": 70,
+      "characterMatch": 75,
+      "environmentMatch": 75,
+      "startFrameMatch": 75,
+      "endFrameMatch": 75,
+      "motionQuality": 65
+    },
+    "fail": {
+      "overallContinuity": 60,
+      "characterMatch": 65,
+      "environmentMatch": 65,
+      "startFrameMatch": 70,
+      "endFrameMatch": 70,
+      "motionQuality": 55
+    }
+  },
+  
+  "notes": "Character consistency is the most challenging aspect. Hair color, eye color, and facial features must remain stable. Some variance in exact facial geometry during head turn is acceptable.",
+  
+  "criticalMetrics": ["characterMatch", "startFrameMatch", "endFrameMatch"],
+  
+  "expectedResults": {
+    "description": "Character identity should remain recognizably the same person throughout the video",
+    "primaryConcern": "Hair color and style must not change",
+    "secondaryConcern": "Facial features should remain consistent even during head rotation",
+    "acceptableVariance": "Minor changes in expression, slight variations in freckle pattern"
+  },
+  
+  "characterValidation": {
+    "checkHairColor": true,
+    "checkEyeColor": true,
+    "checkClothing": true,
+    "checkFacialStructure": true
+  }
+}

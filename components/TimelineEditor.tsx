@@ -11,9 +11,10 @@ import ImageIcon from './icons/ImageIcon';
 import StatusChip from './StatusChip';
 import ShotCardSkeleton from './ShotCardSkeleton';
 import { generateVideoRequestPayloads } from '../services/payloadService';
-import { generateTimelineVideos, stripDataUrlPrefix, validateWorkflowAndMappings, generateVideoFromBookendsNative, generateSceneBookendsLocally, generateSingleBookendLocally } from '../services/comfyUIService';
+import { generateTimelineVideos, stripDataUrlPrefix, validateWorkflowAndMappings, generateVideoFromBookendsNative, generateSceneBookendsLocally, generateSingleBookendLocally, checkNodeDependencies } from '../services/comfyUIService';
+import { generateSceneVideoChained } from '../services/videoGenerationService';
 import { generateSceneTransitionContext } from '../services/sceneTransitionService';
-import { isBookendKeyframe, isSingleKeyframe, type KeyframeData } from '../types';
+import { isBookendKeyframe, isSingleKeyframe, getActiveKeyframeImage, type KeyframeData } from '../types';
 import FinalPromptModal from './FinalPromptModal';
 import VisualBibleLinkModal from './VisualBibleLinkModal';
 import LocalGenerationStatusComponent from './LocalGenerationStatus';
@@ -40,14 +41,35 @@ import { generateCorrelationId, logCorrelation } from '../utils/correlation';
 // Local fallback service for batch operations when Gemini fails
 import * as localFallbackService from '../services/localFallbackService';
 // Phase 7: Feature flag integration for UI indicators
-import { isFeatureEnabled } from '../utils/featureFlags';
+import { isFeatureEnabled, getFeatureFlag, getEffectiveFlagsForQAMode } from '../utils/featureFlags';
 // Phase 7: Video upscaling service
 import { isUpscalingSupported, upscaleVideo, DEFAULT_UPSCALE_CONFIG } from '../services/videoUpscalingService';
+// Temporal context auto-generation for bookend workflow
+import { generateTemporalContext, extractTemporalContextHeuristic } from '../services/temporalContextService';
 // Phase 1C: Unified scene store integration
 import { useUnifiedSceneStoreEnabled } from '../hooks/useSceneStore';
 import { useSceneStateStore } from '../services/sceneStateStore';
+// Generation queue for VRAM-safe serial execution
+import { getGenerationQueue, createVideoTask, GenerationStatus } from '../services/generationQueue';
 // Phase 6: Global WebSocket event manager for ComfyUI progress
 import { comfyEventManager, type ComfyEvent } from '../services/comfyUIEventManager';
+// Phase 1D: Generation status Zustand store integration
+import { 
+    useSceneGenStatus, 
+    updateSceneStatus as storeUpdateSceneStatus,
+    useGenerationStatusStore,
+    DEFAULT_GENERATION_STATUS
+} from '../services/generationStatusStore';
+// Vision LLM Feedback Integration
+import VisionFeedbackPanel from './VisionFeedbackPanel';
+import { analyzeKeyframe, getVisionConfigFromSettings, type VisionFeedbackResult, type VisionAnalysisRequest } from '../services/visionFeedbackService';
+// Video Analysis Feedback Integration
+import VideoAnalysisCard from './VideoAnalysisCard';
+import type { VideoFeedbackResult, VideoAnalysisRequest as VideoAnalysisRequestType } from '../services/videoFeedbackService';
+import { analyzeVideo as analyzeVideoQuality } from '../services/videoFeedbackService';
+import { evaluateVideoQuality, isQualityGateEnabled, getQualityGateStatusMessage, type QualityGateResult } from '../services/videoQualityGateService';
+// Keyframe Pair Analysis Preflight (Phase 8: Bookend QA)
+import { analyzeKeyframePair, keyframePairMeetsThresholds, getBlockingMessage, type KeyframePairRequest } from '../services/keyframePairAnalysisService';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 // @ts-ignore - Kept for future VRAM monitoring feature
@@ -173,6 +195,18 @@ const TimelineItem: React.FC<{
 }> = ({ shot, index, enhancers, imageUrl, isGeneratingImage, onDescriptionChange, onEnhancersChange, onDeleteShot, onGenerateImage, onLinkToVisualBible, isDragging, visualBible }) => {
     const [isControlsVisible, setIsControlsVisible] = useState(false);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
+    
+    // Local state for textarea to prevent lag during rapid typing
+    // Syncs to parent on blur instead of every keystroke
+    const [localDescription, setLocalDescription] = useState(shot.description);
+    const isTypingRef = useRef(false);
+    
+    // Sync from parent when shot.description changes externally (e.g., AI suggestions)
+    useEffect(() => {
+        if (!isTypingRef.current) {
+            setLocalDescription(shot.description);
+        }
+    }, [shot.description]);
 
     const hasVisualBibleLinks = visualBible?.shotReferences?.[shot.id];
     
@@ -260,8 +294,18 @@ const TimelineItem: React.FC<{
                             )}
                         </label>
                         <textarea
-                            value={shot.description}
-                            onChange={(e) => onDescriptionChange(shot.id, e.target.value)}
+                            value={localDescription}
+                            onChange={(e) => {
+                                isTypingRef.current = true;
+                                setLocalDescription(e.target.value);
+                            }}
+                            onBlur={() => {
+                                isTypingRef.current = false;
+                                // Only propagate if changed
+                                if (localDescription !== shot.description) {
+                                    onDescriptionChange(shot.id, localDescription);
+                                }
+                            }}
                             rows={3}
                             className="w-full bg-gray-900/70 border border-gray-600 rounded-md shadow-sm focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-200 p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
                             placeholder="Describe the shot..."
@@ -335,17 +379,52 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
     const [isBatchProcessing, setIsBatchProcessing] = useState<false | 'description' | 'enhancers'>(false);
+    const [batchProgressMessage, setBatchProgressMessage] = useState<string>('');
     const [isGeneratingInitialShots, setIsGeneratingInitialShots] = useState(false);
     const [isTemplateGuidanceOpen, setIsTemplateGuidanceOpen] = useState(false);
     const [linkModalState, setLinkModalState] = useState<{ isOpen: boolean; imageData: string; sceneId?: string; shotId?: string } | null>(null);
     // Phase 7: Video upscaling state
     const [isUpscaling, setIsUpscaling] = useState(false);
     
+    // Vision LLM Feedback state
+    const [visionFeedback, setVisionFeedback] = useState<VisionFeedbackResult | null>(null);
+    const [isAnalyzingVision, setIsAnalyzingVision] = useState(false);
+    const [visionError, setVisionError] = useState<string | undefined>(undefined);
+    
+    // Video Analysis Feedback state
+    const [videoFeedback, setVideoFeedback] = useState<VideoFeedbackResult | null>(null);
+    const [isAnalyzingVideo, setIsAnalyzingVideo] = useState(false);
+    const [qualityGateResult, setQualityGateResult] = useState<QualityGateResult | null>(null);
+    
     // Phase 1C: Zustand store integration with feature flag
     // When enabled, prefer reading from the new store for consistency
     // The store returns undefined when flag is disabled (falls back to existing props)
     const sceneStore = useSceneStateStore.getState;
     const isStoreEnabled = useUnifiedSceneStoreEnabled(localGenSettings);
+    
+    // Phase 1D: Generation status store integration with feature flag
+    // When enabled, use Zustand store instead of prop-drilled localGenStatus
+    const isGenStatusStoreEnabled = isFeatureEnabled(localGenSettings?.featureFlags, 'useGenerationStatusStore');
+    
+    // Get scene status from Zustand store (always call to maintain hook order)
+    const storeSceneStatus = useSceneGenStatus(scene.id);
+    
+    // Adapter: route to store or props based on feature flag
+    const effectiveSceneStatus: LocalGenerationStatus = isGenStatusStoreEnabled 
+        ? storeSceneStatus 
+        : (localGenStatus[scene.id] ?? DEFAULT_GENERATION_STATUS);
+    
+    // Unified update function that routes to store or props
+    const updateSceneGenStatus = useCallback((updates: Partial<LocalGenerationStatus>) => {
+        if (isGenStatusStoreEnabled) {
+            storeUpdateSceneStatus(scene.id, updates);
+        } else {
+            setLocalGenStatus(prev => ({
+                ...prev,
+                [scene.id]: { ...(prev[scene.id] ?? DEFAULT_GENERATION_STATUS), ...updates }
+            }));
+        }
+    }, [isGenStatusStoreEnabled, scene.id, setLocalGenStatus]);
     
     // Use store data when enabled, otherwise use existing props (prop drilling)
     // Phase 1C: These variables now route through the unified store when flag is enabled
@@ -576,6 +655,12 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             throw new Error('Scene keyframe image is required before generating videos. Please generate scene images first using the "Generate Keyframes" button above.');
         }
 
+        // Get the active image from whatever keyframe type we have
+        const activeKeyframe = getActiveKeyframeImage(resolvedSceneKeyframe);
+        if (!activeKeyframe) {
+            throw new Error('Scene keyframe data is invalid. Please regenerate the keyframe.');
+        }
+
         // Resolve keyframes for each shot with priority:
         // 1. Shot-level keyframeStart (if in single mode or as start in bookend mode)
         // 2. Scene-level keyframe/shotImages
@@ -589,13 +674,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 if (isBookendKeyframe(resolvedSceneKeyframe)) {
                     shotImages[shot.id] = resolvedSceneKeyframe.start;
                 } else {
-                    shotImages[shot.id] = resolvedSceneKeyframe;
+                    shotImages[shot.id] = activeKeyframe;
                 }
             }
         });
 
         return {
-            sceneKeyframe: isBookendKeyframe(resolvedSceneKeyframe) ? resolvedSceneKeyframe.start : resolvedSceneKeyframe,
+            sceneKeyframe: activeKeyframe,
             shotImages,
             keyframeMode,
         };
@@ -640,19 +725,16 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const timelineRef = useRef(timeline);
     const hasChangesRef = useRef(hasChanges);
     const sceneRef = useRef(scene);
+    // FIX (2025-12-01): Use ref for onUpdateScene to avoid dependency in unmount effect
+    // This prevents the infinite loop where onUpdateScene changes → cleanup runs → 
+    // parent re-renders → TimelineEditor unmounts/remounts → cleanup runs again
+    const onUpdateSceneRef = useRef(onUpdateScene);
     
-    // Keep refs in sync
-    useEffect(() => {
-        timelineRef.current = timeline;
-    }, [timeline]);
-    
-    useEffect(() => {
-        hasChangesRef.current = hasChanges;
-    }, [hasChanges]);
-    
-    useEffect(() => {
-        sceneRef.current = scene;
-    }, [scene]);
+    // Keep refs in sync (using direct assignment instead of useEffect to avoid re-render cascade)
+    timelineRef.current = timeline;
+    hasChangesRef.current = hasChanges;
+    sceneRef.current = scene;
+    onUpdateSceneRef.current = onUpdateScene;
     
     // Flush pending save immediately (for unmount/scene-switch)
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -668,7 +750,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         if (hasChangesRef.current && saveStatus !== 'saving') {
             console.log('[TimelineEditor] Flushing pending save for scene:', sceneRef.current.id);
             setSaveStatus('saving');
-            onUpdateScene({ ...sceneRef.current, timeline: timelineRef.current });
+            onUpdateSceneRef.current({ ...sceneRef.current, timeline: timelineRef.current });
             setHasChanges(false);
             // Clear crash recovery since we're saving
             try {
@@ -679,9 +761,11 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             // Immediately mark as saved (no delay during flush)
             setSaveStatus('saved');
         }
-    }, [onUpdateScene, saveStatus, crashRecoveryKey]);
+    }, [saveStatus, crashRecoveryKey]); // Removed onUpdateScene - using ref instead
     
     // Flush on unmount
+    // FIX (2025-12-01): Empty dependency array - use refs for all values
+    // This ensures the cleanup only runs on actual unmount, not on every render
     useEffect(() => {
         return () => {
             // Use refs to get current values during cleanup
@@ -691,13 +775,16 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     clearTimeout(saveTimeoutRef.current);
                     saveTimeoutRef.current = null;
                 }
-                // Synchronously save on unmount
-                onUpdateScene({ ...sceneRef.current, timeline: timelineRef.current });
+                // Synchronously save on unmount using ref
+                onUpdateSceneRef.current({ ...sceneRef.current, timeline: timelineRef.current });
             }
         };
-    }, [onUpdateScene]); // Only depend on onUpdateScene which is stable
+    }, []); // Empty deps - cleanup only on actual unmount
     
     // Handle scene changes - flush pending save for old scene before loading new scene
+    // FIX (2025-12-01): Only update state when scene ID actually changes
+    // Previously, setTimeline/setHasChanges were called on every render, causing infinite loops
+    // Also use onUpdateSceneRef to avoid dependency on changing callback
     useEffect(() => {
         if (prevSceneIdRef.current !== scene.id) {
             // Scene is changing - flush any pending saves for the previous scene first
@@ -707,19 +794,28 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 saveTimeoutRef.current = null;
                 // Note: We save the PREVIOUS scene's data, not the new scene
                 // Use the refs which still have the old values
-                onUpdateScene({ ...sceneRef.current, timeline: timelineRef.current });
+                onUpdateSceneRef.current({ ...sceneRef.current, timeline: timelineRef.current });
             }
             prevSceneIdRef.current = scene.id;
+            
+            // Now load the new scene's timeline (only when scene ID changes)
+            setTimeline(scene.timeline);
+            setHasChanges(false);
+            setSaveStatus('saved');
         }
-        // Now load the new scene's timeline
-        setTimeline(scene.timeline);
-        setHasChanges(false);
-        setSaveStatus('saved');
-    }, [scene, onUpdateScene]);
+    }, [scene.id, scene.timeline]); // Only depend on scene.id and scene.timeline, not entire scene or callback
 
     // Update template coverage when scene content changes
+    // FIX (2025-11-30): Extract stable function reference to prevent infinite loop.
+    // Previously, using `templateContext` as a dependency caused infinite re-renders because:
+    // 1. updateCoveredElements() modifies coveredElements state
+    // 2. This triggers context value to change (new object reference)
+    // 3. Which triggers this useEffect again → infinite loop
+    // Solution: Use the extracted _updateCoveredElements function reference (stable via useCallback in context)
+    // and only depend on selectedTemplate, not the entire context object.
+    const selectedTemplate = templateContext.selectedTemplate;
     useEffect(() => {
-        if (templateContext.selectedTemplate) {
+        if (selectedTemplate) {
             const sceneContent = [
                 scene.title,
                 scene.summary,
@@ -727,9 +823,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 timeline.transitions.join(' '),
             ].join(' ');
             
-            templateContext.updateCoveredElements(sceneContent);
+            _updateCoveredElements(sceneContent);
         }
-    }, [scene, timeline, templateContext]);
+    }, [scene.title, scene.summary, timeline.shots, timeline.transitions, selectedTemplate, _updateCoveredElements]);
 
     // Auto-save effect
     useEffect(() => {
@@ -753,12 +849,34 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     // ========================================================================
     // Subscribe to global ComfyUI events for this scene's generation jobs
     // This provides real-time progress updates that survive navigation
+    
+    // FIX (2025-12-01): Use refs for localGenStatus to avoid infinite loop
+    // Previously, localGenStatus was in the dependency array, so every setLocalGenStatus
+    // call would re-run this effect, causing subscribe/unsubscribe cycles that triggered
+    // the unmount cleanup effect repeatedly (logging "Component unmounting with unsaved changes")
+    const localGenStatusRef = useRef(localGenStatus);
+    useEffect(() => {
+        localGenStatusRef.current = localGenStatus;
+    }, [localGenStatus]);
+    
+    // Track if subscription is active to avoid double-subscription
+    const isSubscribedRef = useRef(false);
+    
     useEffect(() => {
         // Only subscribe if there's an active generation job for this scene
-        const currentStatus = localGenStatus[scene.id];
+        // Use store when enabled, otherwise use ref for legacy mode
+        const currentStatus = isGenStatusStoreEnabled 
+            ? useGenerationStatusStore.getState().getSceneStatus(scene.id)
+            : localGenStatusRef.current[scene.id];
         if (!currentStatus || currentStatus.status === 'complete' || currentStatus.status === 'error') {
             return;
         }
+
+        // Prevent double-subscription
+        if (isSubscribedRef.current) {
+            return;
+        }
+        isSubscribedRef.current = true;
 
         // Subscribe to global events to catch progress updates
         const unsubscribe = comfyEventManager.subscribeAll((event: ComfyEvent) => {
@@ -772,7 +890,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             const promptId = event.promptId;
             if (!promptId) return;
 
-            const currentPromptId = localGenStatus[scene.id]?.promptId;
+            // Use store or ref to get current status without triggering re-renders
+            const currentPromptId = isGenStatusStoreEnabled
+                ? useGenerationStatusStore.getState().getSceneStatus(scene.id)?.promptId
+                : localGenStatusRef.current[scene.id]?.promptId;
             if (!currentPromptId || promptId !== currentPromptId) {
                 return;
             }
@@ -780,40 +901,62 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             // Update local status with progress from WebSocket
             if (event.type === 'progress' && event.data.value !== undefined && event.data.max !== undefined) {
                 const progressPercent = Math.round((event.data.value / event.data.max) * 100);
-                setLocalGenStatus(prev => {
-                    const existing = prev[scene.id];
-                    if (!existing || existing.status !== 'running') return prev;
-                    return {
-                        ...prev,
-                        [scene.id]: {
-                            ...existing,
+                // Use adapter to update status (routes to store or legacy based on flag)
+                if (isGenStatusStoreEnabled) {
+                    const existing = useGenerationStatusStore.getState().getSceneStatus(scene.id);
+                    if (existing && existing.status === 'running') {
+                        storeUpdateSceneStatus(scene.id, {
                             progress: progressPercent,
                             message: `Processing node ${event.data.node || 'unknown'}...`,
-                        }
-                    };
-                });
+                        });
+                    }
+                } else {
+                    setLocalGenStatus(prev => {
+                        const existing = prev[scene.id];
+                        if (!existing || existing.status !== 'running') return prev;
+                        return {
+                            ...prev,
+                            [scene.id]: {
+                                ...existing,
+                                progress: progressPercent,
+                                message: `Processing node ${event.data.node || 'unknown'}...`,
+                            }
+                        };
+                    });
+                }
             } else if (event.type === 'executing' && event.data.node) {
-                setLocalGenStatus(prev => {
-                    const existing = prev[scene.id];
-                    if (!existing || existing.status !== 'running') return prev;
-                    return {
-                        ...prev,
-                        [scene.id]: {
-                            ...existing,
+                // Use adapter to update status (routes to store or legacy based on flag)
+                if (isGenStatusStoreEnabled) {
+                    const existing = useGenerationStatusStore.getState().getSceneStatus(scene.id);
+                    if (existing && existing.status === 'running') {
+                        storeUpdateSceneStatus(scene.id, {
                             message: `Executing node: ${event.data.node}`,
-                        }
-                    };
-                });
+                        });
+                    }
+                } else {
+                    setLocalGenStatus(prev => {
+                        const existing = prev[scene.id];
+                        if (!existing || existing.status !== 'running') return prev;
+                        return {
+                            ...prev,
+                            [scene.id]: {
+                                ...existing,
+                                message: `Executing node: ${event.data.node}`,
+                            }
+                        };
+                    });
+                }
             }
         });
 
         console.log('[TimelineEditor] Subscribed to ComfyUI events for scene:', scene.id);
 
         return () => {
+            isSubscribedRef.current = false;
             unsubscribe();
             console.log('[TimelineEditor] Unsubscribed from ComfyUI events for scene:', scene.id);
         };
-    }, [scene.id, localGenStatus, setLocalGenStatus]);
+    }, [scene.id, setLocalGenStatus, isGenStatusStoreEnabled]); // Removed localGenStatus from dependencies
 
     const getNarrativeContext = useCallback((sceneId: string): string => {
         const sceneIndex = effectiveScenes.findIndex(s => s.id === sceneId);
@@ -954,6 +1097,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         }
 
         setIsBatchProcessing(actionType);
+        setBatchProgressMessage(`Preparing ${tasks.length} shots for AI processing...`);
         
         // Helper function to apply results to timeline
         const applyResults = (results: Array<{ shot_id: string; refined_description?: string; suggested_enhancers?: Partial<Omit<CreativeEnhancers, 'transitions'>> }>) => {
@@ -969,7 +1113,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             let updatedCount = 0;
             const failedShotIds: string[] = [];
             
-            results.forEach(result => {
+            results.forEach((result, idx) => {
+                // Update progress for each shot being processed
+                setBatchProgressMessage(`Applying results to shot ${idx + 1} of ${results.length}...`);
                 const shotIndex = newShots.findIndex(s => s.id === result.shot_id);
                 if (shotIndex === -1) {
                     failedShotIds.push(result.shot_id);
@@ -1043,6 +1189,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         try {
             const narrativeContext = getNarrativeContext(scene.id);
             console.log('[TimelineEditor] Getting pruned context for batch processing');
+            setBatchProgressMessage(`Gathering context for ${tasks.length} shots...`);
 
             let prunedContext: string;
             let results: Awaited<ReturnType<typeof planActions.batchProcessShotEnhancements>> | null = null;
@@ -1056,6 +1203,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     onApiStateChange
                 );
 
+                setBatchProgressMessage(`Sending ${tasks.length} shots to AI for ${actionType === 'description' ? 'refinement' : 'enhancer suggestions'}...`);
                 console.log('[TimelineEditor] Calling batchProcessShotEnhancements with', tasks.length, 'tasks');
                 results = await planActions.batchProcessShotEnhancements(
                     tasks,
@@ -1066,6 +1214,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             } catch (primaryError) {
                 // Primary strategy failed - try explicit local fallback
                 console.warn('[TimelineEditor] Primary batch processing failed, attempting local fallback:', primaryError);
+                setBatchProgressMessage('AI unavailable, trying local fallback...');
                 
                 try {
                     // Use local fallback service directly
@@ -1085,6 +1234,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 }
             }
 
+            setBatchProgressMessage('Processing AI response...');
             console.log('[TimelineEditor] batchProcessShotEnhancements results:', {
                 resultCount: results?.length || 0,
                 hasRefinedDescriptions: results?.some(r => !!r.refined_description),
@@ -1121,6 +1271,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             addToast?.(userMessage, 'error');
         } finally {
             setIsBatchProcessing(false);
+            setBatchProgressMessage('');
         }
     };
     
@@ -1197,15 +1348,11 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         setIsUpscaling(true);
         
         // Update status to show upscaling in progress
-        setLocalGenStatus(prev => ({
-            ...prev,
-            [scene.id]: {
-                ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
-                status: 'running',
-                message: 'Upscaling video...',
-                progress: 0,
-            }
-        }));
+        updateSceneGenStatus({
+            status: 'running',
+            message: 'Upscaling video...',
+            progress: 0,
+        });
 
         try {
             // For now, we pass the data URL as the "path" - the upscaler service 
@@ -1215,34 +1362,26 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 videoData, // This is the base64 data URL
                 DEFAULT_UPSCALE_CONFIG,
                 (progress) => {
-                    setLocalGenStatus(prev => ({
-                        ...prev,
-                        [scene.id]: {
-                            ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
-                            status: 'running',
-                            message: progress.message,
-                            progress: progress.percent,
-                        }
-                    }));
+                    updateSceneGenStatus({
+                        status: 'running',
+                        message: progress.message,
+                        progress: progress.percent,
+                    });
                 }
             );
 
             if (result.success && result.outputData) {
                 // Update with upscaled video
-                setLocalGenStatus(prev => ({
-                    ...prev,
-                    [scene.id]: {
-                        ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
-                        status: 'complete' as const,
-                        message: 'Video upscaled successfully!',
-                        progress: 100,
-                        final_output: {
-                            type: 'video' as const,
-                            data: result.outputData!,
-                            filename: 'upscaled_video.mp4'
-                        }
+                updateSceneGenStatus({
+                    status: 'complete' as const,
+                    message: 'Video upscaled successfully!',
+                    progress: 100,
+                    final_output: {
+                        type: 'video' as const,
+                        data: result.outputData!,
+                        filename: 'upscaled_video.mp4'
                     }
-                }));
+                });
                 addToast?.('Video upscaled successfully!', 'success');
             } else {
                 throw new Error(result.error || 'Upscaling failed');
@@ -1253,14 +1392,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             addToast?.(message, 'error');
             
             // Restore previous complete status without changing the video
-            setLocalGenStatus(prev => ({
-                ...prev,
-                [scene.id]: {
-                    ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
-                    status: 'complete',
-                    message: 'Upscaling failed - original video preserved',
-                }
-            }));
+            updateSceneGenStatus({
+                status: 'complete',
+                message: 'Upscaling failed - original video preserved',
+            });
         } finally {
             setIsUpscaling(false);
         }
@@ -1269,15 +1404,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const handleGenerateLocally = async () => {
         if (!scene) return;
 
-        // Helper to update status
+        // Helper to update status - now uses the unified adapter
         const updateStatus = (update: Partial<LocalGenerationStatus>) => {
-            setLocalGenStatus(prev => ({
-                ...prev,
-                [scene.id]: {
-                    ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
-                    ...update
-                }
-            }));
+            updateSceneGenStatus(update);
         };
 
         // Reset status
@@ -1317,11 +1446,71 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     hasEnd: !!keyframeData.end,
                     startPrefix: keyframeData.start?.slice(0, 50),
                     endPrefix: keyframeData.end?.slice(0, 50),
-                    profile: 'wan-fun-inpaint'
+                    profile: localGenSettings.sceneBookendWorkflowProfile || 'wan-flf2v'
                 });
 
-                // Use native dual-keyframe generation with WanFunInpaintToVideo workflow
-                const videoPath = await generateVideoFromBookendsNative(
+                // ============================================================================
+                // PREFLIGHT: Keyframe Pair Analysis (Phase 8: Bookend QA)
+                // Analyzes start/end keyframes for visual continuity before generation
+                // Uses getEffectiveFlagsForQAMode to respect bookendQAMode master switch
+                // ============================================================================
+                const effectiveFlags = getEffectiveFlagsForQAMode(localGenSettings?.featureFlags);
+                const keyframePairAnalysisEnabled = effectiveFlags.keyframePairAnalysis;
+                if (keyframePairAnalysisEnabled) {
+                    try {
+                        updateStatus({ status: 'running', message: 'Analyzing keyframe pair continuity...' });
+                        console.log('[PIPELINE:BOOKEND] Running keyframe pair analysis preflight...');
+                        
+                        const analysisRequest: KeyframePairRequest = {
+                            startImageBase64: keyframeData.start,
+                            endImageBase64: keyframeData.end,
+                            sceneDescription: scene.summary || '',
+                        };
+                        
+                        const analysisResult = await analyzeKeyframePair(
+                            analysisRequest,
+                            localGenSettings
+                        );
+                        
+                        console.log('[PIPELINE:BOOKEND] Keyframe pair analysis result:', {
+                            characterMatch: analysisResult.characterMatch,
+                            environmentMatch: analysisResult.environmentMatch,
+                            cameraMatch: analysisResult.cameraMatch,
+                            overallContinuity: analysisResult.overallContinuity,
+                            passesThreshold: analysisResult.passesThreshold,
+                        });
+                        
+                        const thresholdCheck = keyframePairMeetsThresholds(analysisResult);
+                        if (!thresholdCheck.passes) {
+                            const blockingMessage = getBlockingMessage(analysisResult) || thresholdCheck.reason || 'Quality check failed';
+                            console.warn('[PIPELINE:BOOKEND] ⚠️ Keyframe pair analysis failed thresholds:', blockingMessage);
+                            
+                            // Block generation with clear guidance
+                            updateStatus({ 
+                                status: 'error', 
+                                message: `Keyframe continuity check failed: ${blockingMessage}. Consider regenerating keyframes for better consistency.`
+                            });
+                            return;
+                        }
+                        
+                        console.log('[PIPELINE:BOOKEND] ✅ Keyframe pair analysis passed');
+                    } catch (analysisError) {
+                        // Graceful fallback: log warning but don't block generation
+                        const errorMsg = analysisError instanceof Error ? analysisError.message : String(analysisError);
+                        console.warn('[PIPELINE:BOOKEND] ⚠️ Keyframe pair analysis unavailable (non-blocking):', errorMsg);
+                        // Continue with generation - analysis failure is non-fatal
+                    }
+                }
+
+                // Use native dual-keyframe generation with configurable bookend workflow profile
+                // Default: wan-flf2v (First-Last-Frame) - designed for bookend video generation
+                // Alternative: wan-fun-inpaint for smooth interpolation (if configured in settings)
+                const bookendProfile = (localGenSettings.sceneBookendWorkflowProfile === 'wan-fun-inpaint' 
+                    ? 'wan-fun-inpaint' 
+                    : 'wan-flf2v') as 'wan-flf2v' | 'wan-fun-inpaint';
+                
+                // Define the generation function
+                const executeBookendGeneration = () => generateVideoFromBookendsNative(
                     localGenSettings,
                     scene,
                     timeline,
@@ -1329,8 +1518,32 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     directorsVision,
                     onApiLog,
                     updateStatus,
-                    'wan-fun-inpaint' // Use fun-inpaint for smoother motion interpolation
+                    bookendProfile
                 );
+
+                // Route through GenerationQueue if enabled (prevents VRAM exhaustion)
+                let videoPath: string;
+                const useQueue = isFeatureEnabled(localGenSettings?.featureFlags, 'useGenerationQueue');
+                if (useQueue) {
+                    const queue = getGenerationQueue();
+                    const task = createVideoTask(
+                        executeBookendGeneration,
+                        {
+                            sceneId: scene.id,
+                            priority: 'normal',
+                            onStatusChange: (status: GenerationStatus) => {
+                                if (status === 'pending') {
+                                    updateStatus({ status: 'queued', message: 'Queued for video generation...' });
+                                }
+                            },
+                        }
+                    );
+                    console.log(`[PIPELINE:BOOKEND] Queueing bookend video via GenerationQueue`);
+                    videoPath = await queue.enqueue(task);
+                } else {
+                    // Direct execution (legacy behavior)
+                    videoPath = await executeBookendGeneration();
+                }
 
                 console.log('[PIPELINE:BOOKEND] Video generation returned:', {
                     hasVideoPath: !!videoPath,
@@ -1388,8 +1601,11 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     throw new Error('Scene keyframe required for video generation. Please generate a keyframe image first.');
                 }
 
-                // Resolve keyframe (handle both single and bookend formats gracefully)
-                const resolvedKeyframe = isSingleKeyframe(keyframeData) ? keyframeData : keyframeData.start;
+                // Resolve keyframe (handle all formats: single, bookend, versioned)
+                const resolvedKeyframe = getActiveKeyframeImage(keyframeData);
+                if (!resolvedKeyframe) {
+                    throw new Error('Invalid keyframe data. Please regenerate the keyframe.');
+                }
                 
                 // Validate workflow before generation
                 try {
@@ -1493,6 +1709,317 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             updateStatus({ status: 'error', message, progress: 0 });
         }
     };
+
+    /**
+     * Chain-of-Frames Video Generation
+     * 
+     * Generates scene videos using ComfyUI's WanFirstLastFrameToVideo node.
+     * This produces smoother, more coherent scene videos by ensuring:
+     * - Each shot's end frame matches the next shot's start frame
+     * - Visual continuity is maintained across cuts
+     * - No "amalgam monster" artifacts from FFmpeg pixel-based concatenation
+     */
+    const handleGenerateChained = async () => {
+        if (!scene) return;
+
+        const updateStatus = (update: Partial<LocalGenerationStatus>) => {
+            updateSceneGenStatus(update);
+        };
+
+        updateStatus({ status: 'running', progress: 0, message: 'Initializing chain-of-frames generation...' });
+
+        try {
+            // Validate we have a scene keyframe to start from
+            const keyframeData = effectiveGeneratedImages[scene.id];
+            if (!keyframeData) {
+                throw new Error('Scene keyframe required for chained video generation. Please generate a keyframe image first.');
+            }
+
+            // Resolve keyframe (handle all formats: single, bookend, versioned)
+            const sceneKeyframe = getActiveKeyframeImage(keyframeData);
+
+            if (!sceneKeyframe) {
+                throw new Error('Could not resolve scene keyframe. Please generate a keyframe image first.');
+            }
+
+            // Check if WanFirstLastFrameToVideo node is available
+            updateStatus({ status: 'running', progress: 5, message: 'Checking ComfyUI node availability...' });
+            
+            const nodeCheck = await checkNodeDependencies(
+                localGenSettings,
+                ['WanFirstLastFrameToVideo']
+            );
+
+            if (!nodeCheck.success) {
+                throw new Error(
+                    `Required ComfyUI node not available: WanFirstLastFrameToVideo. ` +
+                    `Missing nodes: ${nodeCheck.missingNodes.join(', ')}. ` +
+                    `Please install ComfyUI-WAN or the required custom nodes.`
+                );
+            }
+
+            // Validate timeline has shots
+            if (!timeline.shots || timeline.shots.length === 0) {
+                throw new Error('No shots available to generate. Please add shots to the timeline first.');
+            }
+
+            updateStatus({ 
+                status: 'running', 
+                progress: 10, 
+                message: `Starting chain generation for ${timeline.shots.length} shots...` 
+            });
+
+            // Generate chained videos
+            const results = await generateSceneVideoChained(
+                localGenSettings,
+                timeline.shots,
+                timeline,
+                {
+                    sceneId: scene.id,
+                    sceneKeyframe: stripDataUrlPrefix(sceneKeyframe),
+                    sceneSummary: scene.summary || scene.title || '',
+                    directorsVision: directorsVision || '',
+                    featureFlags: localGenSettings?.featureFlags,
+                    onProgress: (current, total, message) => {
+                        const progress = 10 + Math.round((current / total) * 85);
+                        updateStatus({ 
+                            status: 'running', 
+                            progress, 
+                            message: `Shot ${current}/${total}: ${message}` 
+                        });
+                    },
+                    logCallback: (msg, level) => {
+                        console.log(`[ChainedGen][${level || 'info'}] ${msg}`);
+                    }
+                }
+            );
+
+            // Check results - ChainedVideoResult has videoData or videoPath on success, error on failure
+            // Note: In browser context, jobs are queued with pending:promptId and run asynchronously
+            const queuedResults = results.filter(r => r.videoPath?.startsWith('pending:') && !r.error);
+            const successfulResults = results.filter(r => r.videoData && !r.error);
+            const failedResults = results.filter(r => r.error);
+
+            // If we have queued results but no completed results, jobs are running in ComfyUI
+            const isAsyncQueued = queuedResults.length > 0 && successfulResults.length === 0;
+
+            if (failedResults.length === results.length) {
+                const errorMessages = failedResults.map(r => r.error).filter(Boolean).join('; ');
+                throw new Error(`All shot generations failed. Errors: ${errorMessages || 'Unknown error'}`);
+            }
+
+            if (isAsyncQueued) {
+                // Jobs queued successfully - show queued status
+                const promptIds = queuedResults.map(r => r.videoPath?.replace('pending:', '').slice(0, 8)).join(', ');
+                console.log('[ChainedGen] Jobs queued to ComfyUI:', promptIds);
+                
+                updateStatus({
+                    status: 'complete',
+                    progress: 100,
+                    message: `✓ ${queuedResults.length} video jobs queued to ComfyUI. Check ComfyUI UI for progress.`
+                });
+            } else {
+                // Get the last successful result for display
+                const lastResult = successfulResults[successfulResults.length - 1];
+                const finalVideoData = lastResult?.videoData;
+
+                // Validate video data is a proper data URL
+                const isValidDataUrl = typeof finalVideoData === 'string' && 
+                    finalVideoData.startsWith('data:video/');
+
+                if (failedResults.length > 0) {
+                    console.warn(`[ChainedGen] ${failedResults.length} shots failed:`, 
+                        failedResults.map(r => ({ shotId: r.shotId, error: r.error })));
+                }
+
+                updateStatus({
+                    status: isValidDataUrl ? 'complete' : 'error',
+                    progress: 100,
+                    message: isValidDataUrl
+                        ? `Chain generation complete! ${successfulResults.length}/${results.length} shots succeeded.`
+                        : 'Generation completed but video data is invalid.',
+                    final_output: isValidDataUrl ? {
+                        type: 'video' as const,
+                        data: finalVideoData!,
+                        filename: `chained_scene_${scene.id}.mp4`
+                    } : undefined
+                });
+            }
+
+            // Log results for debugging
+            console.log('[ChainedGen] Generation complete:', {
+                total: results.length,
+                successful: successfulResults.length,
+                failed: failedResults.length,
+                queued: queuedResults.length
+            });
+
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error during chained generation.';
+            console.error('[Chained Generation Error]', message, error);
+            updateStatus({ status: 'error', message, progress: 0 });
+        }
+    };
+    
+    // Vision LLM Feedback: Analyze keyframe with vision model
+    const handleAnalyzeKeyframe = useCallback(async () => {
+        const keyframeData = effectiveGeneratedImages[scene.id];
+        if (!keyframeData) {
+            setVisionError('No keyframe image available to analyze');
+            return;
+        }
+        
+        // Check if vision feedback is enabled
+        const visionEnabled = isFeatureEnabled(localGenSettings.featureFlags, 'visionLLMFeedback');
+        if (!visionEnabled) {
+            setVisionError('Vision LLM feedback is not enabled. Enable it in Settings → Features.');
+            return;
+        }
+        
+        setIsAnalyzingVision(true);
+        setVisionError(undefined);
+        
+        try {
+            const imageBase64 = getActiveKeyframeImage(keyframeData);
+            if (!imageBase64) {
+                throw new Error('Invalid keyframe data');
+            }
+            const visionConfig = getVisionConfigFromSettings(localGenSettings);
+            
+            const request: VisionAnalysisRequest = {
+                imageBase64,
+                originalPrompt: scene.summary || scene.title || '',
+                directorsVision: directorsVision || '',
+                scene,
+                storyBible
+            };
+            
+            const result = await analyzeKeyframe(request, visionConfig);
+            setVisionFeedback(result);
+            
+            // Update version history with vision score if version history is enabled
+            if (getFeatureFlag(localGenSettings.featureFlags, 'keyframeVersionHistory')) {
+                // Map VisionFeedbackResult scores to KeyframeVersion score format
+                const versionScore = {
+                    composition: result.scores.composition,
+                    lighting: result.scores.lighting,
+                    characterAccuracy: result.scores.characterAccuracy,
+                    styleConsistency: result.scores.styleAdherence, // Map styleAdherence -> styleConsistency
+                    overall: result.scores.overall,
+                };
+                useSceneStateStore.getState().updateKeyframeVersionScore(scene.id, versionScore);
+                console.log(`📊 [Vision Analysis] Updated version score for scene ${scene.id}:`, versionScore);
+            }
+            
+            // Show toast for auto-analysis
+            if (localGenSettings.featureFlags?.autoVisionAnalysis) {
+                const scoreLabel = result.scores.overall >= 70 ? 'Good' : result.scores.overall >= 50 ? 'Fair' : 'Needs improvement';
+                addToast?.(`Vision analysis complete: ${scoreLabel} (${result.scores.overall}/100)`, 'info');
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Vision analysis failed';
+            setVisionError(message);
+            console.error('[Vision Analysis Error]', error);
+        } finally {
+            setIsAnalyzingVision(false);
+        }
+    }, [effectiveGeneratedImages, scene, directorsVision, storyBible, localGenSettings, addToast]);
+    
+    // Apply refined prompt from vision analysis to scene summary
+    const handleApplyRefinedPrompt = useCallback((refinedPrompt: string) => {
+        if (!refinedPrompt) return;
+        
+        // Update the scene with refined prompt as enhanced summary
+        const updatedScene: Scene = {
+            ...scene,
+            summary: refinedPrompt,
+            // Optionally store original for comparison
+            metadata: {
+                ...scene.metadata,
+                originalSummary: scene.summary,
+                refinedByVision: true,
+                refinedAt: Date.now()
+            }
+        };
+        
+        onUpdateScene(updatedScene);
+        addToast?.('Applied refined prompt to scene summary', 'success');
+    }, [scene, onUpdateScene, addToast]);
+    
+    // Video Quality Analysis: Analyze generated video with vision model
+    const handleAnalyzeVideo = useCallback(async () => {
+        // Get video data from local generation status
+        const localStatus = localGenStatus[scene.id];
+        const videoData = localStatus?.final_output?.type === 'video' ? localStatus.final_output.data : undefined;
+        
+        if (!videoData) {
+            addToast?.('No video available to analyze. Generate a video first.', 'error');
+            return;
+        }
+        
+        // Check if video analysis is enabled
+        const videoAnalysisEnabled = isFeatureEnabled(localGenSettings.featureFlags, 'videoAnalysisFeedback');
+        if (!videoAnalysisEnabled) {
+            addToast?.('Video analysis is not enabled. Enable it in Settings → Features.', 'info');
+            return;
+        }
+        
+        setIsAnalyzingVideo(true);
+        setVideoFeedback(null);
+        setQualityGateResult(null);
+        
+        try {
+            // Get keyframes for comparison (bookend mode)
+            const keyframeData = effectiveGeneratedImages[scene.id];
+            let startKeyframe: string | undefined;
+            let endKeyframe: string | undefined;
+            
+            if (keyframeData) {
+                if (isBookendKeyframe(keyframeData)) {
+                    startKeyframe = keyframeData.start;
+                    endKeyframe = keyframeData.end;
+                } else if (isSingleKeyframe(keyframeData)) {
+                    startKeyframe = keyframeData;
+                }
+            }
+            
+            const request: VideoAnalysisRequestType = {
+                videoBase64: videoData,
+                startKeyframeBase64: startKeyframe,
+                endKeyframeBase64: endKeyframe,
+                originalPrompt: scene.timeline?.shots?.[0]?.description || scene.summary || '',
+                directorsVision: directorsVision || '',
+                scene,
+                storyBible,
+                isBookendVideo: localGenSettings.keyframeMode === 'bookend',
+            };
+            
+            // Check if quality gate is enabled
+            if (isQualityGateEnabled(localGenSettings)) {
+                // Run full quality gate evaluation
+                const gateResult = await evaluateVideoQuality(videoData, request, localGenSettings);
+                setQualityGateResult(gateResult);
+                setVideoFeedback(gateResult.feedbackResult);
+                
+                // Show quality gate result
+                const statusMessage = getQualityGateStatusMessage(gateResult);
+                addToast?.(statusMessage, gateResult.decision === 'fail' ? 'error' : gateResult.decision === 'warning' ? 'info' : 'success');
+            } else {
+                // Run analysis only (no quality gate enforcement)
+                const result = await analyzeVideoQuality(request, localGenSettings);
+                setVideoFeedback(result);
+                
+                const scoreLabel = result.scores.overall >= 70 ? 'Good' : result.scores.overall >= 50 ? 'Fair' : 'Needs improvement';
+                addToast?.(`Video analysis complete: ${scoreLabel} (${result.scores.overall}/100)`, 'info');
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Video analysis failed';
+            addToast?.(message, 'error');
+            console.error('[Video Analysis Error]', error);
+        } finally {
+            setIsAnalyzingVideo(false);
+        }
+    }, [localGenStatus, scene, effectiveGeneratedImages, directorsVision, storyBible, localGenSettings, addToast]);
     
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     // @ts-ignore - Alternative video generation handler (kept for debugging)
@@ -1554,14 +2081,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             return acc;
         }, {});
 
+        // Helper to update status - now uses the unified adapter
         const updateStatus = (update: Partial<LocalGenerationStatus>) => {
-            setLocalGenStatus(prev => ({
-                ...prev,
-                [scene.id]: {
-                    ...(prev[scene.id] || { status: 'idle', message: '', progress: 0 }),
-                    ...update
-                }
-            }));
+            updateSceneGenStatus(update);
         };
 
         if (totalShots === 0) {
@@ -1769,13 +2291,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 </div>
                             </div>
                         ) : (
-                            <img src={`data:image/jpeg;base64,${sceneKeyframe}`} alt={`Keyframe for ${scene.title}`} className="rounded-md aspect-square object-cover" />
+                            <img src={`data:image/jpeg;base64,${getActiveKeyframeImage(sceneKeyframe)}`} alt={`Keyframe for ${scene.title}`} className="rounded-md aspect-square object-cover" />
                         )}
                         <div className="mt-2 flex gap-2">
                             <button
                                 onClick={() => setLinkModalState({ 
                                     isOpen: true, 
-                                    imageData: isBookendKeyframe(sceneKeyframe) ? sceneKeyframe.start : sceneKeyframe, 
+                                    imageData: getActiveKeyframeImage(sceneKeyframe) || '', 
                                     sceneId: scene.id 
                                 })}
                                 className="flex-1 px-3 py-1 bg-amber-600 text-white text-sm rounded-md hover:bg-amber-700 transition-colors"
@@ -1795,6 +2317,18 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                         );
                                         onSceneKeyframeGenerated?.(scene.id, newImage);
                                         onApiStateChange('success', 'Keyframe regenerated!');
+                                        
+                                        // Push to keyframe version history if feature enabled
+                                        if (getFeatureFlag(localGenSettings.featureFlags, 'keyframeVersionHistory')) {
+                                            const promptContext = `${scene.title}: ${scene.summary}`;
+                                            useSceneStateStore.getState().pushKeyframeVersion(scene.id, newImage, undefined, promptContext);
+                                        }
+                                        
+                                        // Auto-analyze if feature is enabled
+                                        if (localGenSettings.featureFlags?.autoVisionAnalysis && 
+                                            isFeatureEnabled(localGenSettings.featureFlags, 'visionLLMFeedback')) {
+                                            setTimeout(() => handleAnalyzeKeyframe(), 500);
+                                        }
                                     } catch (error) {
                                         const message = error instanceof Error ? error.message : 'Failed to regenerate keyframe';
                                         onApiStateChange('error', message);
@@ -1807,6 +2341,51 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 Regenerate
                             </button>
                         </div>
+                        
+                        {/* Vision LLM Feedback Panel */}
+                        {isFeatureEnabled(localGenSettings.featureFlags, 'visionLLMFeedback') && (
+                            <div className="mt-3">
+                                <VisionFeedbackPanel
+                                    result={visionFeedback}
+                                    isAnalyzing={isAnalyzingVision}
+                                    error={visionError}
+                                    onAnalyze={handleAnalyzeKeyframe}
+                                    onApplyRefinedPrompt={handleApplyRefinedPrompt}
+                                    onRegenerate={async (refinedPrompt) => {
+                                        // Apply refined prompt then regenerate
+                                        handleApplyRefinedPrompt(refinedPrompt);
+                                        try {
+                                            onApiStateChange('loading', 'Regenerating with improved prompt...');
+                                            const newImage = await mediaActions.generateKeyframeForScene(
+                                                directorsVision,
+                                                refinedPrompt,
+                                                scene.id,
+                                                onApiLog,
+                                                onApiStateChange
+                                            );
+                                            onSceneKeyframeGenerated?.(scene.id, newImage);
+                                            onApiStateChange('success', 'Keyframe regenerated with improved prompt!');
+                                            
+                                            // Push to keyframe version history if feature enabled
+                                            if (getFeatureFlag(localGenSettings.featureFlags, 'keyframeVersionHistory')) {
+                                                const promptContext = `${scene.title}: ${refinedPrompt}`;
+                                                useSceneStateStore.getState().pushKeyframeVersion(scene.id, newImage, undefined, promptContext);
+                                            }
+                                            
+                                            // Re-analyze the new keyframe
+                                            if (localGenSettings.featureFlags?.autoVisionAnalysis) {
+                                                setTimeout(() => handleAnalyzeKeyframe(), 500);
+                                            }
+                                        } catch (error) {
+                                            const message = error instanceof Error ? error.message : 'Failed to regenerate';
+                                            onApiStateChange('error', message);
+                                        }
+                                    }}
+                                    hasKeyframe={!!sceneKeyframe}
+                                    compact={true}
+                                />
+                            </div>
+                        )}
                     </div>
                 )}
                 <div className="flex-grow">
@@ -1916,10 +2495,39 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                         onClick={async () => {
                                             try {
                                                 onApiStateChange('loading', 'Generating start keyframe...');
+                                                
+                                                // Auto-generate temporal context if enabled and missing
+                                                let sceneWithContext = scene;
+                                                if (!scene.temporalContext?.startMoment && 
+                                                    getFeatureFlag(localGenSettings.featureFlags, 'autoGenerateTemporalContext')) {
+                                                    onApiStateChange('loading', 'Auto-generating temporal context...');
+                                                    try {
+                                                        const result = await generateTemporalContext(scene, localGenSettings);
+                                                        if (result.success && result.context) {
+                                                            sceneWithContext = { ...scene, temporalContext: result.context };
+                                                            onUpdateScene(sceneWithContext);
+                                                            console.log(`[Bookend] Auto-generated temporal context for scene ${scene.id}`);
+                                                        } else {
+                                                            // Fallback to heuristic if LLM fails
+                                                            const fallbackContext = extractTemporalContextHeuristic(scene);
+                                                            sceneWithContext = { ...scene, temporalContext: fallbackContext };
+                                                            onUpdateScene(sceneWithContext);
+                                                            console.log(`[Bookend] Using heuristic temporal context for scene ${scene.id}`);
+                                                        }
+                                                    } catch (err) {
+                                                        console.error('[Bookend] Auto-generate temporal context failed:', err);
+                                                        // Fallback to heuristic
+                                                        const fallbackContext = extractTemporalContextHeuristic(scene);
+                                                        sceneWithContext = { ...scene, temporalContext: fallbackContext };
+                                                        onUpdateScene(sceneWithContext);
+                                                    }
+                                                    onApiStateChange('loading', 'Generating start keyframe...');
+                                                }
+                                                
                                                 const existingBookend = sceneKeyframe && isBookendKeyframe(sceneKeyframe) ? sceneKeyframe : null;
                                                 const newData = await generateSingleBookendLocally(
                                                     localGenSettings,
-                                                    scene,
+                                                    sceneWithContext,
                                                     JSON.stringify(storyBible),
                                                     directorsVision,
                                                     timeline.negativePrompt,
@@ -1952,10 +2560,39 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                         onClick={async () => {
                                             try {
                                                 onApiStateChange('loading', 'Generating end keyframe...');
+                                                
+                                                // Auto-generate temporal context if enabled and missing
+                                                let sceneWithContext = scene;
+                                                if (!scene.temporalContext?.endMoment && 
+                                                    getFeatureFlag(localGenSettings.featureFlags, 'autoGenerateTemporalContext')) {
+                                                    onApiStateChange('loading', 'Auto-generating temporal context...');
+                                                    try {
+                                                        const result = await generateTemporalContext(scene, localGenSettings);
+                                                        if (result.success && result.context) {
+                                                            sceneWithContext = { ...scene, temporalContext: result.context };
+                                                            onUpdateScene(sceneWithContext);
+                                                            console.log(`[Bookend] Auto-generated temporal context for scene ${scene.id}`);
+                                                        } else {
+                                                            // Fallback to heuristic if LLM fails
+                                                            const fallbackContext = extractTemporalContextHeuristic(scene);
+                                                            sceneWithContext = { ...scene, temporalContext: fallbackContext };
+                                                            onUpdateScene(sceneWithContext);
+                                                            console.log(`[Bookend] Using heuristic temporal context for scene ${scene.id}`);
+                                                        }
+                                                    } catch (err) {
+                                                        console.error('[Bookend] Auto-generate temporal context failed:', err);
+                                                        // Fallback to heuristic
+                                                        const fallbackContext = extractTemporalContextHeuristic(scene);
+                                                        sceneWithContext = { ...scene, temporalContext: fallbackContext };
+                                                        onUpdateScene(sceneWithContext);
+                                                    }
+                                                    onApiStateChange('loading', 'Generating end keyframe...');
+                                                }
+                                                
                                                 const existingBookend = sceneKeyframe && isBookendKeyframe(sceneKeyframe) ? sceneKeyframe : null;
                                                 const newData = await generateSingleBookendLocally(
                                                     localGenSettings,
-                                                    scene,
+                                                    sceneWithContext,
                                                     JSON.stringify(storyBible),
                                                     directorsVision,
                                                     timeline.negativePrompt,
@@ -2057,8 +2694,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             {(() => {
                 // Use shared utility for consistent video source handling
                 // Priority: local generation (most recent) > artifact metadata (E2E pipeline)
-                const localStatus = localGenStatus[scene.id];
-                const videoSource = getVideoSourceWithFallback(localStatus, sceneArtifactMetadata?.Video);
+                // Use effectiveSceneStatus instead of localGenStatus[scene.id] for Zustand store compatibility
+                const videoSource = getVideoSourceWithFallback(effectiveSceneStatus, sceneArtifactMetadata?.Video);
                 
                 if (videoSource?.isDataUrl) {
                     // Display video from local generation (data URL)
@@ -2102,6 +2739,61 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     );
                 }
             })()}
+
+            {/* Video Quality Analysis Section */}
+            {isFeatureEnabled(localGenSettings.featureFlags, 'videoAnalysisFeedback') && (
+                <div className="bg-gray-800/30 border border-purple-500/30 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-lg font-semibold text-purple-400">Video Quality Analysis</h3>
+                        <button
+                            onClick={handleAnalyzeVideo}
+                            disabled={isAnalyzingVideo || !effectiveSceneStatus?.final_output?.data}
+                            className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                                isAnalyzingVideo 
+                                    ? 'bg-purple-900/50 text-purple-300 cursor-wait' 
+                                    : effectiveSceneStatus?.final_output?.data
+                                        ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                                        : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                            }`}
+                        >
+                            {isAnalyzingVideo ? 'Analyzing...' : 'Analyze Video'}
+                        </button>
+                    </div>
+                    
+                    {qualityGateResult && (
+                        <div className={`mb-3 p-2 rounded text-sm ${
+                            qualityGateResult.decision === 'pass' 
+                                ? 'bg-green-900/30 text-green-300 border border-green-700/50' 
+                                : qualityGateResult.decision === 'warning'
+                                    ? 'bg-yellow-900/30 text-yellow-300 border border-yellow-700/50'
+                                    : 'bg-red-900/30 text-red-300 border border-red-700/50'
+                        }`}>
+                            {getQualityGateStatusMessage(qualityGateResult)}
+                        </div>
+                    )}
+                    
+                    <VideoAnalysisCard
+                        result={videoFeedback}
+                        qualityGateResult={qualityGateResult}
+                        isAnalyzing={isAnalyzingVideo}
+                        startKeyframe={(() => {
+                            const kf = effectiveGeneratedImages[scene.id];
+                            if (!kf) return undefined;
+                            if (isBookendKeyframe(kf)) return kf.start;
+                            if (isSingleKeyframe(kf)) return kf;
+                            return undefined;
+                        })()}
+                        endKeyframe={(() => {
+                            const kf = effectiveGeneratedImages[scene.id];
+                            if (!kf) return undefined;
+                            if (isBookendKeyframe(kf)) return kf.end;
+                            return undefined;
+                        })()}
+                        onReanalyze={handleAnalyzeVideo}
+                        className="mt-3"
+                    />
+                </div>
+            )}
 
             {latestSceneSnapshot && (
                 <div className="bg-gray-800/30 border border-emerald-500/30 rounded-lg p-4 text-xs text-gray-300 space-y-3">
@@ -2335,6 +3027,18 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 Suggest All Enhancers
                             </button>
                         </div>
+                        {/* Batch processing progress indicator */}
+                        {isBatchProcessing && batchProgressMessage && (
+                            <div className="text-center py-3 px-4 bg-gray-800/50 rounded-lg border border-gray-700 mt-3" role="status" aria-live="polite">
+                                <div className="flex items-center justify-center gap-2 text-sm text-amber-300">
+                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <span>{batchProgressMessage}</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
                     
                     {!coDirectorResult && timeline.shots.length > 0 && (
@@ -2374,8 +3078,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             
             <div className="space-y-6 pt-6 border-t border-gray-700/50">
                  <LocalGenerationStatusComponent 
-                    status={localGenStatus[scene.id] || { status: 'idle', message: '', progress: 0 }}
-                    onClear={() => setLocalGenStatus(prev => ({ ...prev, [scene.id]: { status: 'idle', message: '', progress: 0 }}))}
+                    status={effectiveSceneStatus}
+                    onClear={() => updateSceneGenStatus({ status: 'idle', message: '', progress: 0 })}
                     upscalingEnabled={localGenSettings ? isUpscalingSupported(localGenSettings) : false}
                     onUpscale={handleUpscaleVideo}
                     isUpscaling={isUpscaling}
@@ -2409,7 +3113,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 )}
                  
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <div className="flex gap-4">
+                    <div className="flex gap-4 flex-wrap">
                         <button onClick={handleExportPrompts} className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-full shadow-lg hover:bg-gray-700 transition-colors">
                             Export Prompts
                         </button>
@@ -2421,6 +3125,18 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 className="px-6 py-3 bg-amber-600 text-white font-semibold rounded-full shadow-lg hover:bg-amber-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
                             >
                                Generate Video
+                            </button>
+                        </Tooltip>
+                        <Tooltip text={!isLocalGenConfigured 
+                            ? "Please configure ComfyUI server and sync workflow in Settings." 
+                            : "Chain-of-frames generation: Each shot's end frame becomes the next shot's start frame for smoother scene continuity. Uses WanFirstLastFrameToVideo node."}>
+                            <button
+                                data-testid="generate-chained"
+                                onClick={handleGenerateChained}
+                                disabled={!isLocalGenConfigured}
+                                className="px-6 py-3 bg-emerald-600 text-white font-semibold rounded-full shadow-lg hover:bg-emerald-700 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
+                            >
+                               🔗 Generate Chained
                             </button>
                         </Tooltip>
                         {/* Phase 2.3: "Generate Video" button removed - was redundant with "Generate Locally" 

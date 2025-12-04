@@ -131,6 +131,66 @@ Users should expect the following generation times:
 - **WAN I2V**: `workflows/video_wan2_2_5B_ti2v.json` (video generation)
 - **SVD**: Experimental only (not integrated with UI)
 
+## 🔗 Bookend QA Infrastructure (2025-12)
+
+**Complete regression testing infrastructure for FLF2V (First-Last-Frame to Video) workflows**:
+
+### Golden Samples & Baselines
+- **Location**: `data/bookend-golden-samples/` (3 samples: geometric, character, environment)
+- **Baselines**: `data/bookend-golden-samples/baselines.json` (reference quality metrics)
+- **Frame Similarity**: 0-100 scale with 90+ excellent, 70-79 degradation threshold
+
+### Quick Start (Bookend QA)
+
+```powershell
+# 1. Generate test videos with frame similarity analysis
+npm run bookend:e2e              # Generate videos + compute similarity scores
+npm run bookend:e2e -- -Seed 42  # With fixed seed for reproducibility
+
+# 2. Full regression test (compares against baselines)
+npm run bookend:regression       # All samples pass/warn/fail verdict
+npm run bookend:regression -- -FailThreshold 65  # Custom thresholds
+
+# 3. Optimize WAN 2.2 5B parameters
+npm run bookend:sweep            # Full config matrix
+npm run bookend:sweep -- -QuickMode  # Fast resolution tuning only
+
+# 4. Direct frame similarity analysis
+npm run bookend:similarity -- --video <mp4> --start <png> --end <png>
+```
+
+### Key Scripts
+
+| Script | Purpose | Output |
+|--------|---------|--------|
+| `scripts/bookend-frame-similarity.ts` | CLI tool for pixel-level RGB matching | JSON with startSimilarity, endSimilarity |
+| `scripts/test-bookend-e2e.ps1` | Generate & analyze FLF2V videos | test-results/bookend-e2e/run-*/results.json |
+| `scripts/test-bookend-regression.ps1` | Full regression harness with baselines | test-results/bookend-regression/run-*/results.json |
+| `scripts/wan-parameter-sweep.ps1` | Optimize resolution/CFG/steps/frames | test-results/wan-tuning/sweep-*.json |
+
+### Configuration
+
+**Bookend QA Mode** (`localGenSettings.json`):
+```json
+{
+  "bookendQAMode": {
+    "enabled": false,
+    "enforceKeyframePassthrough": false,
+    "overrideAISuggestions": false
+  }
+}
+```
+
+When enabled, forces keyframe passthrough and disables AI suggestions for consistency testing.
+
+### Documentation
+
+- **Complete Guide**: [`Testing/E2E/BOOKEND_GOLDEN_README.md`](Testing/E2E/BOOKEND_GOLDEN_README.md)
+- **Sample Details**: [`data/bookend-golden-samples/README.md`](data/bookend-golden-samples/README.md)
+- **Phase Status**: Phase 0-5 complete (Phase 6 docs finalizing)
+
+---
+
 ### Experimental Features
 - **Bookend Workflow (Sequential Generation)**: 
   - Generates video from START keyframe + END keyframe

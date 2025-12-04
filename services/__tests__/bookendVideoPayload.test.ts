@@ -6,12 +6,18 @@
  * - Workflow validation rejects UI-format workflows
  * - Video generation returns valid data URL format
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import * as comfyUIService from '../comfyUIService';
 
-// Mock fetch globally
+// Mock fetch globally - save original for proper cleanup
+const originalFetch = global.fetch;
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
+
+// Restore original fetch after all tests
+afterAll(() => {
+    global.fetch = originalFetch;
+});
 
 // Sample workflow JSON in API format
 const validApiWorkflow = JSON.stringify({

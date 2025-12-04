@@ -1,0 +1,41 @@
+{
+  "sampleId": "sample-008-lighting",
+  "name": "Lighting Transition Test",
+  "type": "lighting",
+  "description": "Tests stability under dramatic lighting transition",
+  
+  "thresholds": {
+    "pass": {
+      "overallContinuity": 70,
+      "characterMatch": 75,
+      "environmentMatch": 80,
+      "startFrameMatch": 35,
+      "endFrameMatch": 35,
+      "motionQuality": 65
+    },
+    "warn": {
+      "overallContinuity": 60,
+      "characterMatch": 65,
+      "environmentMatch": 70,
+      "startFrameMatch": 25,
+      "endFrameMatch": 25,
+      "motionQuality": 55
+    },
+    "fail": {
+      "overallContinuity": 50,
+      "characterMatch": 55,
+      "environmentMatch": 60,
+      "startFrameMatch": 20,
+      "endFrameMatch": 20,
+      "motionQuality": 45
+    }
+  },
+  
+  "criticalMetrics": [
+    "environmentMatch",
+    "overallContinuity",
+    "motionQuality"
+  ],
+  
+  "notes": "Environment stability under changing lighting is the primary challenge. All objects should remain in exact same positions as lighting transitions from daylight to lamp light."
+}

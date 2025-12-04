@@ -6,20 +6,31 @@
  */
 
 /**
- * Node types expected in different workflow categories
+ * Node types expected in different workflow categories.
+ * Note: Some categories accept multiple node variants (e.g., 14B vs 5B versions).
  */
 export const REQUIRED_NODE_TYPES = {
   // Text-to-Image workflows
   't2i': ['CLIPTextEncode', 'KSampler', 'VAEDecode', 'SaveImage'],
   // Image-to-Video workflows  
   'i2v': ['CLIPTextEncode', 'KSampler', 'LoadImage', 'SaveVideo'],
-  // First-Last-Frame to Video (bookend)
-  'flf2v': ['CLIPTextEncode', 'KSampler', 'LoadImage', 'WanFirstLastFrameToVideo', 'SaveVideo'],
+  // First-Last-Frame to Video (bookend) - accepts 14B or 5B variants
+  'flf2v': ['CLIPTextEncode', 'KSampler', 'LoadImage', 'SaveVideo'],
   // Fun Inpaint to Video (bookend)
   'fun-inpaint': ['CLIPTextEncode', 'KSampler', 'LoadImage', 'WanFunInpaintToVideo', 'SaveVideo'],
   // Fun Control to Video
   'fun-control': ['CLIPTextEncode', 'KSampler', 'LoadImage', 'Wan22FunControlToVideo', 'SaveVideo'],
 } as const;
+
+/**
+ * Alternative node types that satisfy the same requirement.
+ * Used for workflows that have multiple valid implementations.
+ */
+export const FLF2V_NODE_VARIANTS = [
+  'WanFirstLastFrameToVideo',           // 14B model node
+  'Wan22FirstLastFrameToVideoLatent',   // 5B model node (custom)
+  'Wan22FirstLastFrameToVideoLatentTiledVAE', // 5B model node with tiled VAE (custom)
+] as const;
 
 export type WorkflowCategory = keyof typeof REQUIRED_NODE_TYPES;
 
@@ -166,6 +177,14 @@ export function validateWorkflowIntegrity(
   for (const required of requiredNodes) {
     if (!result.nodeTypes.includes(required)) {
       result.missingNodes.push(required);
+    }
+  }
+
+  // Special handling for FLF2V category - check for any valid variant
+  if (category === 'flf2v') {
+    const hasFlf2vNode = FLF2V_NODE_VARIANTS.some(variant => result.nodeTypes.includes(variant));
+    if (!hasFlf2vNode) {
+      result.missingNodes.push('FLF2V node (WanFirstLastFrameToVideo or Wan22FirstLastFrameToVideoLatent*)');
     }
   }
 

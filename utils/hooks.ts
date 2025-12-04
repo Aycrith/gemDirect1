@@ -67,14 +67,22 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
     const prevStateRef = useRef<T>(state);
     const loadedFromSession = useRef(false);
     const registeredRef = useRef(false);
+    
+    // FIX (2025-12-01): Use ref for hydration callbacks to prevent infinite loops.
+    // The hydration context value changes when any key is hydrated (new Map created).
+    // Using hydration directly in useEffect deps causes re-runs on every context update.
+    // Solution: Store callbacks in ref that updates on every render but doesn't trigger effects.
+    const hydrationRef = useRef(hydration);
+    hydrationRef.current = hydration;
 
     // Register with hydration context on mount
     useEffect(() => {
-        if (hydration && !registeredRef.current) {
-            hydration.registerKey(key);
+        const h = hydrationRef.current;
+        if (h && !registeredRef.current) {
+            h.registerKey(key);
             registeredRef.current = true;
         }
-    }, [hydration, key]);
+    }, [key]); // Note: hydration removed from deps, using ref instead
 
     // Check if we loaded from sessionStorage (has data)
     useEffect(() => {
@@ -85,19 +93,26 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
                 debugPersistentState(`[usePersistentState(${key})] Detected sessionStorage data, will skip IndexedDB load`);
                 
                 // Mark as hydrated immediately if loaded from sessionStorage
-                if (hydration) {
-                    hydration.markKeyHydrated(key);
+                const h = hydrationRef.current;
+                if (h) {
+                    h.markKeyHydrated(key);
                 }
             }
         } catch (error) {
             // Ignore sessionStorage errors
         }
-    }, [key, hydration]);
+    }, [key]); // Note: hydration removed from deps, using ref instead
 
     // Load initial data from IndexedDB on mount ONLY if sessionStorage was empty
+    // FIX (2025-12-01): Removed initialValue from deps array.
+    // If caller passes a literal like [] or {}, it creates a new reference each render,
+    // causing this effect to run infinitely. We only need initialValue for the first load,
+    // which is captured in the closure.
+    const initialValueRef = useRef(initialValue);
     useEffect(() => {
         let isMounted = true;
         const load = async () => {
+            const h = hydrationRef.current;
             try {
                 // CRITICAL FIX: Don't overwrite sessionStorage data with IndexedDB data
                 // This prevents race condition during Vite HMR where IndexedDB has stale data
@@ -110,7 +125,7 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
                 const data = await db.getData(key);
                 if (isMounted && data !== undefined && data !== null) {
                     // Handle Set deserialization
-                    if (initialValue instanceof Set && Array.isArray(data)) {
+                    if (initialValueRef.current instanceof Set && Array.isArray(data)) {
                         const newSet = new Set(data) as T;
                         setState(newSet);
                         prevStateRef.current = newSet;
@@ -126,22 +141,22 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
                     console.warn(`[usePersistentState(${key})] Failed to load from IndexedDB:`, error);
                 }
                 // Still mark as failed in hydration context
-                if (hydration) {
-                    hydration.markKeyFailed(key, error instanceof Error ? error : undefined);
+                if (h) {
+                    h.markKeyFailed(key, error instanceof Error ? error : undefined);
                 }
             } finally {
                 if (isMounted) {
                     setIsLoaded(true);
                     // Mark as hydrated in hydration context
-                    if (hydration) {
-                        hydration.markKeyHydrated(key);
+                    if (h) {
+                        h.markKeyHydrated(key);
                     }
                 }
             }
         };
         load();
         return () => { isMounted = false; };
-    }, [key, initialValue, hydration]);
+    }, [key]); // Note: initialValue and hydration removed from deps, using refs instead
 
     // Save data to DB whenever state changes (with Set-aware comparison)
     useEffect(() => {
@@ -677,8 +692,18 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                     const timeline: TimelineData = sceneToUpdate.timeline;
 
                     if (suggestion.type === 'UPDATE_SHOT') {
-                        // FAIL-FAST: Validate target shot exists before attempting update
+                        // FAIL-FAST: Validate shot_id is present (LLM may omit required fields)
                         const targetShotId = suggestion.shot_id;
+                        if (!targetShotId) {
+                            console.error('[applySuggestions] FAIL-FAST: shot_id missing for UPDATE_SHOT', {
+                                suggestion,
+                                availableShots: timeline.shots.map(s => ({ id: s.id, title: s.title }))
+                            });
+                            addToast?.('Cannot update shot: The AI suggestion is missing a shot ID. Try regenerating suggestions.', 'error');
+                            break;
+                        }
+                        
+                        // FAIL-FAST: Validate target shot exists before attempting update
                         const shot = timeline.shots.find(s => s.id === targetShotId);
                         
                         if (!shot) {
@@ -733,8 +758,18 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                         toastMessage = 'Shot updated successfully!';
                         
                     } else if (suggestion.type === 'ADD_SHOT_AFTER') {
-                        // FAIL-FAST: Validate reference shot exists before attempting insert
+                        // FAIL-FAST: Validate after_shot_id is present (LLM may omit required fields)
                         const afterShotId = suggestion.after_shot_id;
+                        if (!afterShotId) {
+                            console.error('[applySuggestions] FAIL-FAST: after_shot_id missing for ADD_SHOT_AFTER', {
+                                suggestion,
+                                availableShots: timeline.shots.map(s => ({ id: s.id, title: s.title }))
+                            });
+                            addToast?.('Cannot add shot: The AI suggestion is missing a reference shot ID. Try regenerating suggestions.', 'error');
+                            break;
+                        }
+                        
+                        // FAIL-FAST: Validate reference shot exists before attempting insert
                         const afterShotIndex = timeline.shots.findIndex(s => s.id === afterShotId);
                         
                         if (afterShotIndex === -1) {
@@ -785,6 +820,16 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                         
                     } else if (suggestion.type === 'UPDATE_TRANSITION') {
                         const transitionIndex = suggestion.transition_index;
+                        
+                        // FAIL-FAST: Validate transition_index is present (LLM may omit required fields)
+                        if (transitionIndex === undefined || transitionIndex === null) {
+                            console.error('[applySuggestions] FAIL-FAST: transition_index missing for UPDATE_TRANSITION', {
+                                suggestion,
+                                transitionCount: timeline.transitions.length
+                            });
+                            addToast?.('Cannot update transition: The AI suggestion is missing a transition index. Try regenerating suggestions.', 'error');
+                            break;
+                        }
                         
                         // FAIL-FAST: Validate transition index is valid
                         if (transitionIndex < 0 || transitionIndex >= timeline.transitions.length) {

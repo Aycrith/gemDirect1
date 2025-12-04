@@ -133,6 +133,9 @@ export function useProviderHealth(options: UseProviderHealthOptions): {
     
     const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const lastCheckPromiseRef = useRef<Promise<ValidationResult<ProviderHealthStatus>> | null>(null);
+    // FIX (2025-12-01): Use ref for isPolling in checkHealth to avoid dependency cycle
+    // The cycle was: isPolling -> checkHealth -> checkNow -> startPolling -> setIsPolling -> loop
+    const isPollingRef = useRef(false);
 
     // Determine effective polling interval
     const effectivePollingInterval = Math.max(
@@ -222,7 +225,8 @@ export function useProviderHealth(options: UseProviderHealthOptions): {
             ready,
             checking: false,
             lastCheckedAt: Date.now(),
-            nextCheckIn: isPolling ? effectivePollingInterval : null,
+            // FIX (2025-12-01): Use isPollingRef to avoid dependency cycle
+            nextCheckIn: isPollingRef.current ? effectivePollingInterval : null,
             serverConnected,
             systemResources,
             workflowsValid,
@@ -261,7 +265,8 @@ export function useProviderHealth(options: UseProviderHealthOptions): {
                 message: error || 'Provider health check failed',
             });
         }
-    }, [settings, profileId, effectivePollingInterval, isPolling, onHealthChange, onUnhealthy]);
+    // FIX (2025-12-01): Removed isPolling from dependencies to break the update cycle
+    }, [settings, profileId, effectivePollingInterval, onHealthChange, onUnhealthy]);
 
     /**
      * Check health now (debounced to prevent concurrent checks)
@@ -291,6 +296,7 @@ export function useProviderHealth(options: UseProviderHealthOptions): {
         }
 
         setIsPolling(true);
+        isPollingRef.current = true; // FIX: Update ref for checkHealth
         
         // Immediate check
         checkNow();
@@ -310,6 +316,7 @@ export function useProviderHealth(options: UseProviderHealthOptions): {
             pollingIntervalRef.current = null;
         }
         setIsPolling(false);
+        isPollingRef.current = false; // FIX: Update ref for checkHealth
         setStatus(prev => ({ ...prev, nextCheckIn: null }));
     }, []);
 

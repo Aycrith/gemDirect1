@@ -1,0 +1,42 @@
+{
+  "sampleId": "sample-001-geometric",
+  "version": "1.0.0",
+  "createdAt": "2025-12-02T00:00:00Z",
+  
+  "thresholds": {
+    "pass": {
+      "overallContinuity": 90,
+      "characterMatch": 95,
+      "environmentMatch": 95,
+      "startFrameMatch": 95,
+      "endFrameMatch": 95,
+      "motionQuality": 85
+    },
+    "warn": {
+      "overallContinuity": 80,
+      "characterMatch": 85,
+      "environmentMatch": 85,
+      "startFrameMatch": 85,
+      "endFrameMatch": 85,
+      "motionQuality": 75
+    },
+    "fail": {
+      "overallContinuity": 70,
+      "characterMatch": 75,
+      "environmentMatch": 75,
+      "startFrameMatch": 75,
+      "endFrameMatch": 75,
+      "motionQuality": 65
+    }
+  },
+  
+  "notes": "Geometric shapes should have very high scores due to simplicity. Any score below 85% indicates a significant problem with the video generation pipeline.",
+  
+  "criticalMetrics": ["environmentMatch", "startFrameMatch", "endFrameMatch"],
+  
+  "expectedResults": {
+    "description": "This sample should consistently achieve 90%+ scores across all metrics",
+    "primaryConcern": "Shape integrity - circles should remain circular, edges should stay crisp",
+    "secondaryConcern": "Color stability - RGB values should remain constant throughout video"
+  }
+}

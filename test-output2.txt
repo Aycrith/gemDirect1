@@ -1,0 +1,3501 @@
+
+[1m[46m RUN [49m[22m [36mv4.0.8 [39m[90mC:/Dev/gemDirect1[39m
+
+ [32mΓ£ô[39m services/__tests__/llmTransportAdapter.test.ts [2m([22m[2m55 tests[22m[2m)[22m[32m 123[2mms[22m[39m
+ [32mΓ£ô[39m components/__tests__/QueueStatusIndicator.test.tsx [2m([22m[2m23 tests[22m[2m)[22m[32m 74[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/validateRunSummary.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 3465[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m passes when telemetry exists for each scene [33m 398[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m fails when telemetry is missing from artifact metadata [33m 370[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m fails when pollLimit text does not match metadata [33m 388[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m fails when fallback notes lack matching warnings in run-summary [33m 383[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m passes when fallback warnings are logged alongside metadata notes [33m 384[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m fails when SceneRetryBudget text does not match metadata [33m 384[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m fails when VRAMBeforeMB entry is missing from telemetry summary [33m 381[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m fails when reported VRAM delta differs from MB before/after difference [33m 385[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m fails when queue policy values do not match metadata [33m 384[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/preflight-mappings.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 2471[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m writes a summary for a mapped project and exits with warnings [33m 1241[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m fails when wan-i2v LoadImage mapping is missing [33m 1229[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/done-marker.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 805[2mms[22m[39m
+     [33m[2mΓ£ô[22m[39m creates a .done marker for a stable sequence (RunOnce) [33m 805[2mms[22m[39m
+[90mstdout[2m | utils/__tests__/videoSplicer.test.ts[2m > [22m[2mvideoSplicer[2m > [22m[2mspliceVideos[2m > [22m[2mshould generate ffmpeg command with correct parameters
+[22m[39m[Video Splicer] Video 1 duration: 2s
+
+stderr | utils/__tests__/videoSplicer.test.ts > videoSplicer > spliceVideos > should handle ffmpeg failure gracefully
+[Video Splicer] Could not get duration for video1.mp4, using default 2.0s: Error: Video not found: video1.mp4
+    at getVideoDuration (C:/Dev/gemDirect1/utils/videoSplicer.ts:201:11)
+    at Module.spliceVideos (C:/Dev/gemDirect1/utils/videoSplicer.ts:100:28)
+    at C:/Dev/gemDirect1/utils/__tests__/videoSplicer.test.ts:124:34
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:157:11
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:26
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1636:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1602:10)
+    at runTest (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1309:12)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+
+[90mstdout[2m | utils/__tests__/videoSplicer.test.ts[2m > [22m[2mvideoSplicer[2m > [22m[2mspliceVideos[2m > [22m[2mshould calculate transition duration correctly
+[22m[39m[Video Splicer] Video 1 duration: 2s
+
+ [32mΓ£ô[39m utils/__tests__/videoSplicer.test.ts [2m([22m[2m19 tests[22m[2m)[22m[33m 312[2mms[22m[39m
+ [32mΓ£ô[39m components/__tests__/GenerationControls.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[32m 300[2mms[22m[39m
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mstartPipeline[2m > [22m[2mshould create a new pipeline with correct initial state
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902339_1y8loj for scene scene-123 with 3 shots
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mstartPipeline[2m > [22m[2mshould track pipeline in active pipelines
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902340_pnj5a6 for scene scene-123 with 3 shots
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mrecordShotQueued[2m > [22m[2mshould add shot metrics to pipeline
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902340_o00ayi for scene scene-123 with 3 shots
+
+stderr | services/__tests__/pipelineMetrics.test.ts > pipelineMetrics > recordShotQueued > should return null for non-existent pipeline
+[PipelineMetrics] Pipeline non-existent not found
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mrecordShotStarted[2m > [22m[2mshould record start time and calculate queue wait
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902341_x3ezx5 for scene scene-123 with 1 shots
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mrecordShotCompleted[2m > [22m[2mshould record completion for successful shot
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902352_4r0onp for scene scene-123 with 1 shots
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mrecordShotCompleted[2m > [22m[2mshould record completion for failed shot
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902352_9no3wr for scene scene-123 with 1 shots
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mrecordShotValidation[2m > [22m[2mshould record validation results
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902353_qpnugi for scene scene-123 with 1 shots
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mcompletePipeline[2m > [22m[2mshould calculate aggregates on completion
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902353_31run7 for scene scene-123 with 3 shots
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mcompletePipeline[2m > [22m[2mshould calculate aggregates on completion
+[22m[39m[PipelineMetrics] Completed pipeline run_1764637902353_31run7: {
+  totalDurationMs: [33m46[39m,
+  successfulShots: [33m3[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m15.333333333333334[39m,
+  p95ShotDurationMs: [33m16[39m
+}
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mcompletePipeline[2m > [22m[2mshould move pipeline to history
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902400_cv1b81 for scene scene-123 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902400_cv1b81: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mcompletePipeline[2m > [22m[2mshould calculate validation pass rate
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902400_1eg800 for scene scene-123 with 3 shots
+[PipelineMetrics] Completed pipeline run_1764637902400_1eg800: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m3[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mgetGlobalStats[2m > [22m[2mshould aggregate across multiple runs
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902401_shewzu for scene scene-1 with 2 shots
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mgetGlobalStats[2m > [22m[2mshould aggregate across multiple runs
+[22m[39m[PipelineMetrics] Completed pipeline run_1764637902401_shewzu: {
+  totalDurationMs: [33m13[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m1[39m,
+  avgShotDurationMs: [33m6.5[39m,
+  p95ShotDurationMs: [33m13[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902415_ci9oox for scene scene-2 with 3 shots
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mgetGlobalStats[2m > [22m[2mshould aggregate across multiple runs
+[22m[39m[PipelineMetrics] Completed pipeline run_1764637902415_ci9oox: {
+  totalDurationMs: [33m46[39m,
+  successfulShots: [33m3[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m15.333333333333334[39m,
+  p95ShotDurationMs: [33m16[39m
+}
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mexportMetrics[2m > [22m[2mshould export all metrics data
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902462_njpwr4 for scene scene-123 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902462_njpwr4: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mpercentile calculations[2m > [22m[2mshould calculate P50 correctly for odd number of values
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902462_81dych for scene scene-123 with 5 shots
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mpercentile calculations[2m > [22m[2mshould calculate P50 correctly for odd number of values
+[22m[39m[PipelineMetrics] Completed pipeline run_1764637902462_81dych: {
+  totalDurationMs: [33m187[39m,
+  successfulShots: [33m5[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m37.4[39m,
+  p95ShotDurationMs: [33m63[39m
+}
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mpercentile calculations[2m > [22m[2mshould handle single shot correctly
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902650_vxj22v for scene scene-123 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902650_vxj22v: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+
+[90mstdout[2m | services/__tests__/pipelineMetrics.test.ts[2m > [22m[2mpipelineMetrics[2m > [22m[2mhistory limits[2m > [22m[2mshould limit history to MAX_HISTORY_SIZE
+[22m[39m[PipelineMetrics] Started pipeline run_1764637902650_bsn45r for scene scene-0 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902650_bsn45r: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902650_dpm7p4 for scene scene-1 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902650_dpm7p4: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902650_cp9yhu for scene scene-2 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902650_cp9yhu: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902650_pidxxz for scene scene-3 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902650_pidxxz: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902650_0izexm for scene scene-4 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902650_0izexm: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902650_vkufmk for scene scene-5 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902650_vkufmk: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902650_9snumk for scene scene-6 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902650_9snumk: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902650_d7icgk for scene scene-7 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902650_d7icgk: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902650_pal9yy for scene scene-8 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902650_pal9yy: {
+  totalDurationMs: [33m1[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_656xoe for scene scene-9 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_656xoe: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_tyslyr for scene scene-10 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_tyslyr: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_uj44u6 for scene scene-11 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_uj44u6: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_z8rikx for scene scene-12 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_z8rikx: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_mod1eg for scene scene-13 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_mod1eg: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_lg2g3t for scene scene-14 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_lg2g3t: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_zwr5es for scene scene-15 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_zwr5es: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_smnu2z for scene scene-16 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_smnu2z: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_c83te4 for scene scene-17 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_c83te4: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_2w5gqz for scene scene-18 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_2w5gqz: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_cf8mka for scene scene-19 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_cf8mka: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_hpa3yw for scene scene-20 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_hpa3yw: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_kq0t83 for scene scene-21 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_kq0t83: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_pvsd36 for scene scene-22 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_pvsd36: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_iepbfa for scene scene-23 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_iepbfa: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_zc9fni for scene scene-24 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_zc9fni: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_vajsfu for scene scene-25 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_vajsfu: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_sfb9zr for scene scene-26 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_sfb9zr: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_tpjpcd for scene scene-27 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_tpjpcd: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_xci400 for scene scene-28 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_xci400: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_yfbwx8 for scene scene-29 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_yfbwx8: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_ooykym for scene scene-30 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_ooykym: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_miqsvu for scene scene-31 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_miqsvu: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_uv268g for scene scene-32 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_uv268g: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_gsg3jp for scene scene-33 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_gsg3jp: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_bz81xc for scene scene-34 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_bz81xc: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_we2r8n for scene scene-35 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_we2r8n: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_j5l71d for scene scene-36 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_j5l71d: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_2xd4b5 for scene scene-37 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_2xd4b5: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_fbciwp for scene scene-38 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_fbciwp: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_61bzqv for scene scene-39 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_61bzqv: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_xxupyl for scene scene-40 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_xxupyl: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_u5vp2m for scene scene-41 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_u5vp2m: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_oy6x13 for scene scene-42 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_oy6x13: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902651_vjm6gu for scene scene-43 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902651_vjm6gu: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_bca9lp for scene scene-44 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_bca9lp: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_rgm2dg for scene scene-45 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_rgm2dg: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_q4awat for scene scene-46 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_q4awat: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_77w8cq for scene scene-47 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_77w8cq: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_a5os37 for scene scene-48 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_a5os37: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_s484qv for scene scene-49 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_s484qv: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_mhuhse for scene scene-50 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_mhuhse: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_pmygar for scene scene-51 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_pmygar: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_2e8orj for scene scene-52 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_2e8orj: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_mezk10 for scene scene-53 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_mezk10: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+[PipelineMetrics] Started pipeline run_1764637902652_ecw4qk for scene scene-54 with 1 shots
+[PipelineMetrics] Completed pipeline run_1764637902652_ecw4qk: {
+  totalDurationMs: [33m0[39m,
+  successfulShots: [33m1[39m,
+  failedShots: [33m0[39m,
+  avgShotDurationMs: [33m0[39m,
+  p95ShotDurationMs: [33m0[39m
+}
+
+ [32mΓ£ô[39m services/__tests__/pipelineMetrics.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 314[2mms[22m[39m
+stderr | components/__tests__/ContinuityDirector.test.tsx
+[Database] IndexedDB access denied by browser. Using in-memory fallback. Data will not persist between sessions.
+
+[90mstdout[2m | components/__tests__/ContinuityDirector.test.tsx
+[22m[39m[GenerationStatusStore] Rehydrated from IndexedDB
+
+ [32mΓ£ô[39m components/__tests__/ContinuityDirector.test.tsx [2m([22m[2m15 tests[22m[2m)[22m[32m 200[2mms[22m[39m
+ [32mΓ£ô[39m components/__tests__/PreflightCheck.test.tsx [2m([22m[2m14 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[32m 201[2mms[22m[39m
+[90mstdout[2m | services/__tests__/bookendVideoPayload.test.ts[2m > [22m[2mgenerateVideoFromBookendsNative[2m > [22m[2mProfile Validation[2m > [22m[2mthrows explicit error when wan-fun-inpaint profile is missing
+[22m[39m[Native Bookend] Starting native dual-keyframe generation for scene scene-001 using wan-fun-inpaint
+
+[90mstdout[2m | services/__tests__/bookendVideoPayload.test.ts[2m > [22m[2mgenerateVideoFromBookendsNative[2m > [22m[2mProfile Validation[2m > [22m[2mthrows explicit error when wan-flf2v profile is missing
+[22m[39m[Native Bookend] Starting native dual-keyframe generation for scene scene-001 using wan-flf2v
+
+[90mstdout[2m | services/__tests__/bookendVideoPayload.test.ts[2m > [22m[2mgenerateVideoFromBookendsNative[2m > [22m[2mProfile Validation[2m > [22m[2merror message includes configuration instructions
+[22m[39m[Native Bookend] Starting native dual-keyframe generation for scene scene-001 using wan-fun-inpaint
+
+[90mstdout[2m | services/__tests__/bookendVideoPayload.test.ts[2m > [22m[2mgenerateVideoFromBookendsNative[2m > [22m[2mInput Validation[2m > [22m[2mthrows when start keyframe is missing
+[22m[39m[Native Bookend] Starting native dual-keyframe generation for scene scene-001 using wan-fun-inpaint
+
+[90mstdout[2m | services/__tests__/bookendVideoPayload.test.ts[2m > [22m[2mgenerateVideoFromBookendsNative[2m > [22m[2mInput Validation[2m > [22m[2mthrows when end keyframe is missing
+[22m[39m[Native Bookend] Starting native dual-keyframe generation for scene scene-001 using wan-fun-inpaint
+
+[90mstdout[2m | services/__tests__/bookendVideoPayload.test.ts[2m > [22m[2mgenerateVideoFromBookendsNative[2m > [22m[2mDefault Profile[2m > [22m[2mdefaults to wan-fun-inpaint profile when not specified
+[22m[39m[Native Bookend] Starting native dual-keyframe generation for scene scene-001 using wan-fun-inpaint
+
+ [32mΓ£ô[39m services/__tests__/bookendVideoPayload.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 161[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/comfyui-status.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 144[2mms[22m[39m
+ [32mΓ£ô[39m hooks/__tests__/useGenerationQueueState.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 131[2mms[22m[39m
+[90mstdout[2m | agent/__tests__/guardian.test.ts[2m > [22m[2mLogger[2m > [22m[2mshould create log file in specified directory
+[22m[39mΓä╣∩╕Å [2025-12-02T01:11:44.621Z] test message 
+
+[90mstdout[2m | agent/__tests__/guardian.test.ts[2m > [22m[2mLogger[2m > [22m[2mshould store log entries
+[22m[39mΓä╣∩╕Å [2025-12-02T01:11:44.623Z] message 1 
+
+stderr | agent/__tests__/guardian.test.ts > Logger > should store log entries
+ΓÜá∩╕Å [2025-12-02T01:11:44.623Z] message 2 
+Γ¥î [2025-12-02T01:11:44.623Z] message 3 
+
+[90mstdout[2m | agent/__tests__/guardian.test.ts[2m > [22m[2mLogger[2m > [22m[2mshould filter entries by level
+[22m[39mΓä╣∩╕Å [2025-12-02T01:11:44.624Z] info 
+
+stderr | agent/__tests__/guardian.test.ts > Logger > should filter entries by level
+ΓÜá∩╕Å [2025-12-02T01:11:44.624Z] warn 
+Γ¥î [2025-12-02T01:11:44.624Z] error 
+
+[90mstdout[2m | agent/__tests__/guardian.test.ts[2m > [22m[2mStateManager[2m > [22m[2mLock files[2m > [22m[2mshould acquire and release lock
+[22m[39mΓä╣∩╕Å [2025-12-02T01:11:44.700Z] Lock released 
+
+stderr | agent/__tests__/guardian.test.ts > StateManager > Lock files > should detect stale locks
+ΓÜá∩╕Å [2025-12-02T01:11:44.710Z] Removing stale lock (120 minutes old) 
+
+[90mstdout[2m | agent/__tests__/guardian.test.ts[2m > [22m[2mStateManager[2m > [22m[2mLock files[2m > [22m[2mshould detect stale locks
+[22m[39mΓä╣∩╕Å [2025-12-02T01:11:44.718Z] Lock released 
+
+[90mstdout[2m | agent/__tests__/guardian.test.ts[2m > [22m[2mTaskRunner[2m > [22m[2mshould enqueue issues with registered handlers
+[22m[39mΓä╣∩╕Å [2025-12-02T01:11:44.723Z] Enqueued task: test-1 (high) 
+Γä╣∩╕Å [2025-12-02T01:11:44.723Z] Executing task: test-1 
+
+[90mstdout[2m | agent/__tests__/guardian.test.ts[2m > [22m[2mTaskRunner[2m > [22m[2mshould enqueue issues with registered handlers
+[22m[39mΓä╣∩╕Å [2025-12-02T01:11:44.723Z] Task completed: test-1 (auto-fixed) in 0ms 
+
+[90mstdout[2m | agent/__tests__/guardian.test.ts[2m > [22m[2mTaskRunner[2m > [22m[2mshould clear queue
+[22m[39mΓä╣∩╕Å [2025-12-02T01:11:44.728Z] Enqueued task: test-0 (high) 
+Γä╣∩╕Å [2025-12-02T01:11:44.728Z] Executing task: test-0 
+Γä╣∩╕Å [2025-12-02T01:11:44.728Z] Enqueued task: test-1 (high) 
+Γä╣∩╕Å [2025-12-02T01:11:44.728Z] Executing task: test-1 
+Γä╣∩╕Å [2025-12-02T01:11:44.728Z] Enqueued task: test-2 (high) 
+Γä╣∩╕Å [2025-12-02T01:11:44.728Z] Enqueued task: test-3 (high) 
+Γä╣∩╕Å [2025-12-02T01:11:44.728Z] Enqueued task: test-4 (high) 
+Γä╣∩╕Å [2025-12-02T01:11:44.728Z] Cleared 3 tasks from queue 
+
+stderr | agent/__tests__/guardian.test.ts > TaskRunner > should clear queue
+Γ¥î [2025-12-02T01:11:44.728Z] Task failed: test-0 after 0ms TypeError: Cannot read properties of undefined (reading 'action')
+    at TaskRunner.executeTask (C:/Dev/gemDirect1/agent/core/TaskRunner.ts:116:63)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+Γ¥î [2025-12-02T01:11:44.729Z] Task failed: test-1 after 1ms TypeError: Cannot read properties of undefined (reading 'action')
+    at TaskRunner.executeTask (C:/Dev/gemDirect1/agent/core/TaskRunner.ts:116:63)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+ [32mΓ£ô[39m agent/__tests__/guardian.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 118[2mms[22m[39m
+ [32mΓ£ô[39m components/__tests__/VisualBibleLinkModal.test.tsx [2m([22m[2m18 tests[22m[2m)[22m[32m 71[2mms[22m[39m
+ [32mΓ£ô[39m components/__tests__/E2EQACard.test.tsx [2m([22m[2m16 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+[90mstdout[2m | services/__tests__/lmStudioModelManager.test.ts[2m > [22m[2mlmStudioModelManager[2m > [22m[2munloadAllModels[2m > [22m[2mshould return success with 0 count when no models loaded
+[22m[39m[CORR] {"corr":"b566686b","src":"lmstudio","msg":"unload-models-start","data":{"baseUrl":"http://192.168.50.192:1234"}}
+
+[90mstdout[2m | services/__tests__/lmStudioModelManager.test.ts[2m > [22m[2mlmStudioModelManager[2m > [22m[2munloadAllModels[2m > [22m[2mshould attempt to unload each loaded model
+[22m[39m[CORR] {"corr":"3dca8bba","src":"lmstudio","msg":"unload-models-start","data":{"baseUrl":"http://192.168.50.192:1234"}}
+
+[90mstdout[2m | services/__tests__/lmStudioModelManager.test.ts[2m > [22m[2mlmStudioModelManager[2m > [22m[2munloadAllModels[2m > [22m[2mshould attempt to unload each loaded model
+[22m[39m[LMStudioManager] Unloading 2 models for VRAM...
+
+[90mstdout[2m | services/__tests__/lmStudioModelManager.test.ts[2m > [22m[2mlmStudioModelManager[2m > [22m[2munloadAllModels[2m > [22m[2mshould attempt to unload each loaded model
+[22m[39m[CORR] {"corr":"3dca8bba","src":"lmstudio","msg":"unload-models-success","data":{"unloadedCount":2,"durationMs":12}}
+[LMStudioManager] Γ£ô Models unloaded in 12ms
+
+[90mstdout[2m | services/__tests__/lmStudioModelManager.test.ts[2m > [22m[2mlmStudioModelManager[2m > [22m[2mensureModelsUnloaded[2m > [22m[2mshould unload models and return true on success
+[22m[39m[LMStudioManager] Models loaded (model), unloading for ComfyUI...
+[CORR] {"corr":"43ec4e5f","src":"lmstudio","msg":"unload-models-start","data":{"baseUrl":"http://192.168.50.192:1234"}}
+
+[90mstdout[2m | services/__tests__/lmStudioModelManager.test.ts[2m > [22m[2mlmStudioModelManager[2m > [22m[2mensureModelsUnloaded[2m > [22m[2mshould unload models and return true on success
+[22m[39m[LMStudioManager] Unloading 1 models for VRAM...
+
+[90mstdout[2m | services/__tests__/lmStudioModelManager.test.ts[2m > [22m[2mlmStudioModelManager[2m > [22m[2mensureModelsUnloaded[2m > [22m[2mshould unload models and return true on success
+[22m[39m[CORR] {"corr":"43ec4e5f","src":"lmstudio","msg":"unload-models-success","data":{"unloadedCount":1,"durationMs":15}}
+[LMStudioManager] Γ£ô Models unloaded in 15ms
+
+ [32mΓ£ô[39m services/__tests__/lmStudioModelManager.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+[90mstdout[2m | components/__tests__/SceneNavigator.test.tsx[2m > [22m[2mSceneNavigator[2m > [22m[2mkeyframe indicators[2m > [22m[2mrenders scene with keyframe data
+[22m[39m≡ƒöä [SceneNavigator] Re-render #1: Images changed from 0 to 1 (via props)
+   Current image IDs: [scene-1]
+   Γ₧ò New images added: [scene-1]
+
+[90mstdout[2m | components/__tests__/SceneNavigator.test.tsx[2m > [22m[2mSceneNavigator[2m > [22m[2mkeyframe indicators[2m > [22m[2mrenders scene with bookend keyframes
+[22m[39m≡ƒöä [SceneNavigator] Re-render #1: Images changed from 0 to 1 (via props)
+   Current image IDs: [scene-1]
+   Γ₧ò New images added: [scene-1]
+
+ [32mΓ£ô[39m components/__tests__/SceneNavigator.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+stderr | services/__tests__/videoGenerationService.test.ts > queueComfyUIPrompt > should handle connection errors gracefully
+Error processing ComfyUI request: TypeError: fetch failed
+    at C:/Dev/gemDirect1/services/__tests__/videoGenerationService.test.ts:387:41
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:157:11
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:26
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1636:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1602:10)
+    at runTest (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1309:12)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runSuite (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1468:8)
+    at runSuite (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1468:8)
+
+stderr | services/__tests__/videoGenerationService.test.ts > queueComfyUIPrompt > should handle server error responses
+Error processing ComfyUI request: Error: ComfyUI server responded with status: 500 - Internal error
+    at Module.queueComfyUIPrompt (C:/Dev/gemDirect1/services/videoGenerationService.ts:249:19)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at C:/Dev/gemDirect1/services/__tests__/videoGenerationService.test.ts:405:9
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:20
+
+stderr | services/__tests__/videoGenerationService.test.ts > SceneVideoManager > regenerateScene > should handle endpoint failures gracefully
+[SceneVideoManager] regenerateScene("scene-1") failed: HTTP 500 Server Error
+
+stderr | services/__tests__/videoGenerationService.test.ts > SceneVideoManager > regenerateScene > should handle network errors gracefully
+[SceneVideoManager] regenerateScene("scene-1") error: Network error
+
+[90mstdout[2m | services/__tests__/videoGenerationService.test.ts[2m > [22m[2mqueueVideoGeneration[2m > [22m[2mshould validate FastVideo config before routing
+[22m[39m[VideoGen] Using provider: fastvideo-local info
+
+[90mstdout[2m | services/__tests__/videoGenerationService.test.ts[2m > [22m[2mqueueVideoGenerationWithQueue[2m > [22m[2mshould pass progress and status callbacks to queue task
+[22m[39m[VideoGen] GenerationQueue enabled, queueing video generation task info
+
+ [32mΓ£ô[39m services/__tests__/videoGenerationService.test.ts [2m([22m[2m42 tests[22m[2m)[22m[32m 43[2mms[22m[39m
+stderr | services/__tests__/generationQueue.test.ts > GenerationQueue > circuit breaker > should open circuit after 3 consecutive failures
+[GenerationQueue] Circuit breaker opened after 3 consecutive failures. Retry in 30s
+
+stderr | services/__tests__/generationQueue.test.ts > GenerationQueue > circuit breaker > should not process tasks when circuit is open
+[GenerationQueue] Circuit breaker opened after 3 consecutive failures. Retry in 30s
+
+stderr | services/__tests__/generationQueue.test.ts > GenerationQueue > circuit breaker > should close circuit after reset time
+[GenerationQueue] Circuit breaker opened after 3 consecutive failures. Retry in 30s
+
+stderr | services/__tests__/generationQueue.test.ts > GenerationQueue > circuit breaker > should allow manual circuit breaker reset
+[GenerationQueue] Circuit breaker opened after 3 consecutive failures. Retry in 30s
+
+stderr | services/__tests__/generationQueue.test.ts > GenerationQueue > error handling > should not crash on listener errors
+[GenerationQueue] Listener error: Error: Listener error
+    at C:/Dev/gemDirect1/services/__tests__/generationQueue.test.ts:869:27
+    at Mock (file:///C:/Dev/gemDirect1/node_modules/@vitest/spy/dist/index.js:280:34)
+    at GenerationQueue.notifyListeners (C:/Dev/gemDirect1/services/generationQueue.ts:520:17)
+    at GenerationQueue.enqueue (C:/Dev/gemDirect1/services/generationQueue.ts:199:14)
+    at trackEnqueue (C:/Dev/gemDirect1/services/__tests__/generationQueue.test.ts:79:31)
+    at C:/Dev/gemDirect1/services/__tests__/generationQueue.test.ts:876:26
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:157:11
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:26
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1636:20
+    at new Promise (<anonymous>)
+[GenerationQueue] Listener error: Error: Listener error
+    at C:/Dev/gemDirect1/services/__tests__/generationQueue.test.ts:869:27
+    at Mock (file:///C:/Dev/gemDirect1/node_modules/@vitest/spy/dist/index.js:280:34)
+    at GenerationQueue.notifyListeners (C:/Dev/gemDirect1/services/generationQueue.ts:520:17)
+    at GenerationQueue.processQueue (C:/Dev/gemDirect1/services/generationQueue.ts:438:14)
+    at GenerationQueue.enqueue (C:/Dev/gemDirect1/services/generationQueue.ts:200:14)
+    at trackEnqueue (C:/Dev/gemDirect1/services/__tests__/generationQueue.test.ts:79:31)
+    at C:/Dev/gemDirect1/services/__tests__/generationQueue.test.ts:876:26
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:157:11
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:26
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1636:20
+
+stderr | services/__tests__/generationQueue.test.ts > GenerationQueue > error handling > should not crash on listener errors
+[GenerationQueue] Listener error: Error: Listener error
+    at C:/Dev/gemDirect1/services/__tests__/generationQueue.test.ts:869:27
+    at Mock (file:///C:/Dev/gemDirect1/node_modules/@vitest/spy/dist/index.js:280:34)
+    at GenerationQueue.notifyListeners (C:/Dev/gemDirect1/services/generationQueue.ts:520:17)
+    at GenerationQueue.processQueue (C:/Dev/gemDirect1/services/generationQueue.ts:499:14)
+
+stderr | services/__tests__/generationQueue.test.ts > GenerationQueue > error handling > should not crash on listener errors
+[GenerationQueue] Listener error: Error: Listener error
+    at C:/Dev/gemDirect1/services/__tests__/generationQueue.test.ts:869:27
+    at Mock (file:///C:/Dev/gemDirect1/node_modules/@vitest/spy/dist/index.js:280:34)
+    at GenerationQueue.notifyListeners (C:/Dev/gemDirect1/services/generationQueue.ts:520:17)
+    at GenerationQueue.clear (C:/Dev/gemDirect1/services/generationQueue.ts:343:14)
+    at C:/Dev/gemDirect1/services/__tests__/generationQueue.test.ts:96:15
+
+ [32mΓ£ô[39m services/__tests__/generationQueue.test.ts [2m([22m[2m44 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should return a StoryBibleV2 with version 2.0
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Detective" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Uncovers" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should generate character profiles array
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (6 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 6,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Young" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Wizard" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should include protagonist character
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (7 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 7,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "The" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Knight" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should include antagonist character
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (6 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 6,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Hero" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Battles" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should generate plot scenes array
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (6 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 6,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (35 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 35,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Space" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Explorer" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should have plot scenes covering all three acts
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (6 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 6,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Rebellion" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Rises" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should calculate token metadata
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Hacker" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Infiltrates" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should detect themes from idea
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (6 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 6,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Tale" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Of" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should default to transformation theme
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Story" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Without" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should maintain backward compatible markdown fields
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Explorer" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Discovers" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should include genre in output
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Love" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Story" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should default to sci-fi genre
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (35 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 35,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Mysterious" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Signal" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should detect space setting
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (35 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 35,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Journey" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Through" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should detect city setting
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (7 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 7,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (32 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 32,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Chase" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Through" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should character profiles have visual descriptors
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (4 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 4,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Prepare" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "For" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should plot scenes have visual cues
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Heist" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Begins" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should handle empty idea gracefully
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (1 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 1,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "The Opposition" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "The Guide" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'LOGLINE_VERBATIM_REPEATED',
+    message: 'Logline appears verbatim in characters section',
+    section: 'characters',
+    severity: 'error',
+    suggestion: 'Remove the repeated logline from characters'
+  },
+  {
+    code: 'LOGLINE_VERBATIM_REPEATED',
+    message: 'Logline appears verbatim in setting section',
+    section: 'setting',
+    severity: 'error',
+    suggestion: 'Remove the repeated logline from setting'
+  },
+  {
+    code: 'LOGLINE_VERBATIM_REPEATED',
+    message: 'Logline appears verbatim in plot outline',
+    section: 'plotOutline',
+    severity: 'warning',
+    suggestion: 'Avoid repeating the full logline in plot outline'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should handle very long ideas
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_LONG',
+    message: 'Logline is too long (508 words)',
+    section: 'logline',
+    severity: 'warning',
+    currentValue: 508,
+    expectedValue: '10-100 words',
+    suggestion: 'Condense to essential conflict and stakes'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "A" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "A" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > generateStoryBible > should include hero arcs for backward compatibility
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Hero" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Begins" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > character profile structure > should have complete appearance data
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Warrior" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Trains" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > character profile structure > should have personality traits
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (6 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 6,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Cunning" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Spy" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > character profile structure > should have motivations
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (7 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 7,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (33 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 33,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Parent" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Searches" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > character profile structure > should have character IDs
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (6 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 6,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Team" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Assembles" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > character profile structure > should antagonist reference protagonist in relationships
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Villain" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Hunts" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > plot scene structure > should have act and scene numbers
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (3 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 3,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Rebellion" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Begins" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > plot scene structure > should have pacing values
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (3 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 3,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Chase" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Intensifies" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > plot scene structure > should have emotional tones
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (4 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 4,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Journey" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Of" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > plot scene structure > should have character arcs
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (3 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 3,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Hero" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Transforms" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > plot scene structure > should have summaries
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (3 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 3,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Story" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Unfolds" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > suggestDirectorsVisions > should return visions based on story bible
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (3 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 3,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Cyberpunk" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Thriller" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > suggestDirectorsVisions > should reference the setting
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (3 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 3,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Underwater" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Adventure" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > getPrunedContextForShotGeneration > should return combined context string
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (3 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 3,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Mystery" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Unfolds" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > theme detection > should detect love theme
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Love" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Story" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > theme detection > should detect power theme
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Quest" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "For" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > theme detection > should detect freedom theme
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (4 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 4,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Free" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "From" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > theme detection > should detect identity theme
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Who" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "I" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > theme detection > should detect survival theme
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (4 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 4,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (34 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 34,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "The" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Harsh" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > theme detection > should detect justice theme
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (7 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 7,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "For" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "What" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+stderr | services/__tests__/localFallbackService.test.ts > localFallbackService > theme detection > should detect multiple themes
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (7 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 7,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Love" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Story" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+ [32mΓ£ô[39m services/__tests__/localFallbackService.test.ts [2m([22m[2m45 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+ [32mΓ£ô[39m components/__tests__/Toast.test.tsx [2m([22m[2m17 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/storyGenerator.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/generationMetrics.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+stderr | services/__tests__/storyIdeaEnhancer.test.ts > storyIdeaEnhancer > parseEnhancementResponse > should return original if cleaned response is too short
+[parseEnhancementResponse] Cleaned response too short, returning original idea
+
+ [32mΓ£ô[39m services/__tests__/storyIdeaEnhancer.test.ts [2m([22m[2m54 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould analyze keyframe and return structured result
+[22m[39m[CORR] {"corr":"8120772d","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"test-vision-model"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould analyze keyframe and return structured result
+[22m[39m[CORR] {"corr":"8120772d","src":"vision-llm","msg":"vision-analysis-complete","data":{"responseTimeMs":0,"contentLength":538}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould send correct request format to vision LLM
+[22m[39m[CORR] {"corr":"fa58d538","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"test-model"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould send correct request format to vision LLM
+[22m[39m[CORR] {"corr":"fa58d538","src":"vision-llm","msg":"vision-analysis-complete","data":{"responseTimeMs":0,"contentLength":538}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould include correlation ID in request headers
+[22m[39m[CORR] {"corr":"17264d6c","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould include correlation ID in request headers
+[22m[39m[CORR] {"corr":"17264d6c","src":"vision-llm","msg":"vision-analysis-complete","data":{"responseTimeMs":0,"contentLength":538}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle HTTP error responses gracefully
+[22m[39m[CORR] {"corr":"00d07993","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle HTTP error responses gracefully
+[22m[39m[CORR] {"corr":"00d07993","src":"vision-llm","msg":"vision-analysis-error","data":{"error":"Vision LLM request failed: 500 Internal Server Error","userMessage":"Vision LLM request failed: 500 Internal Server Error"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle network errors gracefully
+[22m[39m[CORR] {"corr":"f3876733","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle network errors gracefully
+[22m[39m[CORR] {"corr":"f3876733","src":"vision-llm","msg":"vision-analysis-error","data":{"error":"Network error","userMessage":"Cannot connect to vision server. Check that LM Studio is running."}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle timeout errors
+[22m[39m[CORR] {"corr":"95e67cbc","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle timeout errors
+[22m[39m[CORR] {"corr":"95e67cbc","src":"vision-llm","msg":"vision-analysis-error","data":{"error":"The operation was aborted","userMessage":"Request timed out. The model may be overloaded or the image too complex."}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould parse GPU memory errors into user-friendly messages
+[22m[39m[CORR] {"corr":"95fd8270","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould parse GPU memory errors into user-friendly messages
+[22m[39m[CORR] {"corr":"95fd8270","src":"vision-llm","msg":"vision-analysis-error","data":{"error":"CUDA out of memory. Tried to allocate 2.00 GiB","userMessage":"GPU ran out of memory. Try: (1) Close other GPU-using apps, (2) Use a smaller image, or (3) Restart LM Studio."}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle JSON response wrapped in markdown fences
+[22m[39m[CORR] {"corr":"bc6f2314","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle JSON response wrapped in markdown fences
+[22m[39m[CORR] {"corr":"bc6f2314","src":"vision-llm","msg":"vision-analysis-complete","data":{"responseTimeMs":1,"contentLength":148}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle response with thinking blocks
+[22m[39m[CORR] {"corr":"c62addb7","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle response with thinking blocks
+[22m[39m[CORR] {"corr":"c62addb7","src":"vision-llm","msg":"vision-analysis-complete","data":{"responseTimeMs":0,"contentLength":191}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould return partial result when JSON parsing fails
+[22m[39m[CORR] {"corr":"2d6e323b","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould return partial result when JSON parsing fails
+[22m[39m[CORR] {"corr":"2d6e323b","src":"vision-llm","msg":"vision-analysis-complete","data":{"responseTimeMs":0,"contentLength":29}}
+
+stderr | services/__tests__/visionFeedbackService.test.ts > analyzeKeyframe > should return partial result when JSON parsing fails
+[visionFeedbackService] Failed to parse vision response: SyntaxError: Unexpected token 'T', "This is no"... is not valid JSON
+    at JSON.parse (<anonymous>)
+    at parseVisionResponse (C:/Dev/gemDirect1/services/visionFeedbackService.ts:356:29)
+    at analyzeKeyframe (C:/Dev/gemDirect1/services/visionFeedbackService.ts:271:24)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at C:/Dev/gemDirect1/services/__tests__/visionFeedbackService.test.ts:361:24
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:20
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle empty response content
+[22m[39m[CORR] {"corr":"de8f3e31","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould handle empty response content
+[22m[39m[CORR] {"corr":"de8f3e31","src":"vision-llm","msg":"vision-analysis-complete","data":{"responseTimeMs":0,"contentLength":0}}
+
+stderr | services/__tests__/visionFeedbackService.test.ts > analyzeKeyframe > should handle empty response content
+[visionFeedbackService] Failed to parse vision response: SyntaxError: Unexpected end of JSON input
+    at JSON.parse (<anonymous>)
+    at parseVisionResponse (C:/Dev/gemDirect1/services/visionFeedbackService.ts:356:29)
+    at analyzeKeyframe (C:/Dev/gemDirect1/services/visionFeedbackService.ts:271:24)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at C:/Dev/gemDirect1/services/__tests__/visionFeedbackService.test.ts:384:24
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:20
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould generate suggestions from high-severity issues
+[22m[39m[CORR] {"corr":"e561675f","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2manalyzeKeyframe[2m > [22m[2mshould generate suggestions from high-severity issues
+[22m[39m[CORR] {"corr":"e561675f","src":"vision-llm","msg":"vision-analysis-complete","data":{"responseTimeMs":0,"contentLength":381}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould parse CUDA OOM errors
+[22m[39m[CORR] {"corr":"a496b458","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould parse CUDA OOM errors
+[22m[39m[CORR] {"corr":"a496b458","src":"vision-llm","msg":"vision-analysis-error","data":{"error":"CUDA error: out of memory","userMessage":"GPU ran out of memory. Try: (1) Close other GPU-using apps, (2) Use a smaller image, or (3) Restart LM Studio."}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould parse general OOM errors
+[22m[39m[CORR] {"corr":"a07aa361","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould parse general OOM errors
+[22m[39m[CORR] {"corr":"a07aa361","src":"vision-llm","msg":"vision-analysis-error","data":{"error":"Memory allocation failed","userMessage":"System ran out of memory. Try closing other applications or using a smaller image."}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould parse cuDNN errors
+[22m[39m[CORR] {"corr":"8e704e90","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould parse cuDNN errors
+[22m[39m[CORR] {"corr":"8e704e90","src":"vision-llm","msg":"vision-analysis-error","data":{"error":"cuDNN error: initialization failed","userMessage":"GPU error occurred. Try restarting LM Studio or your computer."}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould parse model loading errors
+[22m[39m[CORR] {"corr":"cca378ac","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould parse model loading errors
+[22m[39m[CORR] {"corr":"cca378ac","src":"vision-llm","msg":"vision-analysis-error","data":{"error":"Failed to load model: file not found","userMessage":"Vision model failed to load. Check that a vision-capable model is selected in LM Studio."}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould parse connection errors
+[22m[39m[CORR] {"corr":"04175cd2","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould parse connection errors
+[22m[39m[CORR] {"corr":"04175cd2","src":"vision-llm","msg":"vision-analysis-error","data":{"error":"ECONNREFUSED","userMessage":"Cannot connect to vision server. Check that LM Studio is running."}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould truncate very long error messages
+[22m[39m[CORR] {"corr":"887c952e","src":"vision-llm","msg":"vision-analysis-start","data":{"sceneId":"scene-1","model":"huihui-qwen3-vl-32b-instruct-abliterated"}}
+
+[90mstdout[2m | services/__tests__/visionFeedbackService.test.ts[2m > [22m[2mGPU Error Parsing (via analyzeKeyframe)[2m > [22m[2mshould truncate very long error messages
+[22m[39m[CORR] {"corr":"887c952e","src":"vision-llm","msg":"vision-analysis-error","data":{"error":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","userMessage":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA..."}}
+
+ [32mΓ£ô[39m services/__tests__/visionFeedbackService.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/storyBibleConverter.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32mΓ£ô[39m hooks/__tests__/useProviderHealth.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mbuildShotPrompt[2m > [22m[2mreturns the shot description when no enhancers or vision are provided
+[22m[39m[CORR] {"corr":"d48d71de","src":"comfyui","msg":"shot-prompt-components","data":{"shotId":"shot-1","hasCharacterCues":false,"hasStyleCues":false,"target":"shotImage"}}
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mbuildShotPrompt[2m > [22m[2mappends creative enhancers in a readable format
+[22m[39m[CORR] {"corr":"c3a3ff96","src":"comfyui","msg":"shot-prompt-components","data":{"shotId":"shot-1","hasCharacterCues":false,"hasStyleCues":false,"target":"shotImage"}}
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mbuildShotPrompt[2m > [22m[2mappends the director's vision at the end
+[22m[39m[CORR] {"corr":"0ea276d9","src":"comfyui","msg":"shot-prompt-components","data":{"shotId":"shot-1","hasCharacterCues":false,"hasStyleCues":false,"target":"shotImage"}}
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mbuildShotPrompt[2m > [22m[2morders description, enhancers, then director vision
+[22m[39m[CORR] {"corr":"ba0c7eb5","src":"comfyui","msg":"shot-prompt-components","data":{"shotId":"shot-1","hasCharacterCues":false,"hasStyleCues":false,"target":"shotImage"}}
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mbuildShotPrompt[2m > [22m[2mincludes transition context when provided
+[22m[39m[CORR] {"corr":"1c2670dc","src":"comfyui","msg":"shot-prompt-components","data":{"shotId":"shot-1","hasCharacterCues":false,"hasStyleCues":false,"target":"shotImage"}}
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mbuildShotPrompt[2m > [22m[2mdoes not include transition context when null
+[22m[39m[CORR] {"corr":"f9bb8458","src":"comfyui","msg":"shot-prompt-components","data":{"shotId":"shot-1","hasCharacterCues":false,"hasStyleCues":false,"target":"shotImage"}}
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mgenerateVideoFromShot[2m > [22m[2mqueues a prompt and resolves with frame metadata
+[22m[39m[Video Generation] Building video generation prompt...
+[CORR] {"corr":"8f7a641c","src":"comfyui","msg":"shot-prompt-components","data":{"shotId":"shot-42","hasCharacterCues":false,"hasStyleCues":false,"target":"sceneVideo"}}
+[CORR] {"corr":"a87b82e6","src":"comfyui","msg":"shot-video-prompt","data":{"shotId":"shot-42","hasKeyframe":true,"directorsVisionLength":53,"promptPreview":"SINGLE CONTINUOUS WIDE-ANGLE SHOT: Generate EXACTLY ONE UNIFIED CINEMATIC SCENE showing a SINGLE MOMENT across the ENTIRE 16:9 frame WITHOUT ANY DIVISIONS, REFL"}}
+[Video Generation] Prompt: SINGLE CONTINUOUS WIDE-ANGLE SHOT: Generate EXACTLY ONE UNIFIED CINEMATIC SCENE ...
+[Video Generation] Queuing prompt in ComfyUI...
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mgenerateVideoFromShot[2m > [22m[2mqueues a prompt and resolves with frame metadata
+[22m[39m[Video Generation] Queued with ID: prompt-123
+[Video Generation] Executing: Save Frames
+[Video Generation] Generation complete!
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mgenerateVideoFromShot[2m > [22m[2mallows overriding the negative prompt per shot
+[22m[39m[Video Generation] Building video generation prompt...
+[CORR] {"corr":"a50c3fb8","src":"comfyui","msg":"shot-prompt-components","data":{"shotId":"shot-42","hasCharacterCues":false,"hasStyleCues":false,"target":"sceneVideo"}}
+[CORR] {"corr":"41330a5a","src":"comfyui","msg":"shot-video-prompt","data":{"shotId":"shot-42","hasKeyframe":true,"directorsVisionLength":53,"promptPreview":"SINGLE CONTINUOUS WIDE-ANGLE SHOT: Generate EXACTLY ONE UNIFIED CINEMATIC SCENE showing a SINGLE MOMENT across the ENTIRE 16:9 frame WITHOUT ANY DIVISIONS, REFL"}}
+[Video Generation] Prompt: SINGLE CONTINUOUS WIDE-ANGLE SHOT: Generate EXACTLY ONE UNIFIED CINEMATIC SCENE ...
+[Video Generation] Queuing prompt in ComfyUI...
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mgenerateVideoFromShot[2m > [22m[2mallows overriding the negative prompt per shot
+[22m[39m[Video Generation] Queued with ID: shot-override
+[Video Generation] done
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mgenerateVideoFromShot[2m > [22m[2mpropagates queueing errors and reports failure
+[22m[39m[Video Generation] Building video generation prompt...
+[CORR] {"corr":"f8f69ea8","src":"comfyui","msg":"shot-prompt-components","data":{"shotId":"shot-42","hasCharacterCues":false,"hasStyleCues":false,"target":"sceneVideo"}}
+[CORR] {"corr":"e18bbdd6","src":"comfyui","msg":"shot-video-prompt","data":{"shotId":"shot-42","hasKeyframe":false,"directorsVisionLength":53,"promptPreview":"SINGLE CONTINUOUS WIDE-ANGLE SHOT: Generate EXACTLY ONE UNIFIED CINEMATIC SCENE showing a SINGLE MOMENT across the ENTIRE 16:9 frame WITHOUT ANY DIVISIONS, REFL"}}
+[Video Generation] Prompt: SINGLE CONTINUOUS WIDE-ANGLE SHOT: Generate EXACTLY ONE UNIFIED CINEMATIC SCENE ...
+[Video Generation] Scene shot-42 video generation failed: Scene shot-42 requires a keyframe image for this workflow but none was provided.
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mgenerateTimelineVideos[2m > [22m[2mprocesses each shot sequentially and returns results
+[22m[39m[Timeline Batch] Video coherence features status: {
+  shotLevelContinuity: [90mundefined[39m,
+  ipAdapter: [33mfalse[39m,
+  narrativeTracking: [90mundefined[39m,
+  hasScene: [33mfalse[39m,
+  hasSceneKeyframe: [33mfalse[39m,
+  hasStoryBible: [33mfalse[39m,
+  hasVisualBible: [33mfalse[39m,
+  hasCharacterRefs: [33m0[39m,
+  keyframeCount: [33m2[39m,
+  shotCount: [33m2[39m,
+  warnings: [
+    [32m'No scene context - shot continuity disabled'[39m,
+    [32m'No scene keyframe - visual continuity may be reduced'[39m,
+    [32m'No story bible - narrative tracking disabled'[39m
+  ]
+}
+[Timeline Batch] GenerationQueue enabled - shots will be queued serially to prevent VRAM exhaustion
+[Timeline Batch] Processing shot 1/2: shot-a
+[Timeline Batch] Queueing shot shot-a via GenerationQueue
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mgenerateTimelineVideos[2m > [22m[2mprocesses each shot sequentially and returns results
+[22m[39m[Timeline Batch] Processing shot 2/2: shot-b
+[Timeline Batch] Queueing shot shot-b via GenerationQueue
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mgenerateTimelineVideos[2m > [22m[2mcontinues after a shot fails and records an error placeholder
+[22m[39m[Timeline Batch] Video coherence features status: {
+  shotLevelContinuity: [90mundefined[39m,
+  ipAdapter: [33mfalse[39m,
+  narrativeTracking: [90mundefined[39m,
+  hasScene: [33mfalse[39m,
+  hasSceneKeyframe: [33mfalse[39m,
+  hasStoryBible: [33mfalse[39m,
+  hasVisualBible: [33mfalse[39m,
+  hasCharacterRefs: [33m0[39m,
+  keyframeCount: [33m2[39m,
+  shotCount: [33m2[39m,
+  warnings: [
+    [32m'No scene context - shot continuity disabled'[39m,
+    [32m'No scene keyframe - visual continuity may be reduced'[39m,
+    [32m'No story bible - narrative tracking disabled'[39m
+  ]
+}
+[Timeline Batch] GenerationQueue enabled - shots will be queued serially to prevent VRAM exhaustion
+[Timeline Batch] Processing shot 1/2: shot-a
+[Timeline Batch] Queueing shot shot-a via GenerationQueue
+
+[90mstdout[2m | services/comfyUIService.test.ts[2m > [22m[2mgenerateTimelineVideos[2m > [22m[2mcontinues after a shot fails and records an error placeholder
+[22m[39m[Timeline Batch] Processing shot 2/2: shot-b
+[Timeline Batch] Queueing shot shot-b via GenerationQueue
+
+stderr | services/comfyUIService.test.ts > generateTimelineVideos > continues after a shot fails and records an error placeholder
+[Timeline Batch] Failed to generate shot shot-a: Timeout while rendering
+
+ [32mΓ£ô[39m services/comfyUIService.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/promptPipeline.test.ts [2m([22m[2m43 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+[90mstdout[2m | utils/__tests__/useVisualBible.test.ts[2m > [22m[2museVisualBible[2m > [22m[2mhandleStoryBibleSave[2m > [22m[2mshould sync characters and show toast
+[22m[39m[useVisualBible] Synced character descriptors: [ [32m'Alice'[39m ]
+[useVisualBible] Manual sync complete: { synced: [ [32m'Alice'[39m ], skipped: [] }
+
+[90mstdout[2m | utils/__tests__/useVisualBible.test.ts[2m > [22m[2museVisualBible[2m > [22m[2mhandleStoryBibleSave[2m > [22m[2mshould skip user-edited characters
+[22m[39m[useVisualBible] Synced character descriptors: [ [32m'Alice'[39m ]
+[useVisualBible] Manual sync complete: { synced: [ [32m'Alice'[39m ], skipped: [ [32m'Bob'[39m ] }
+
+[90mstdout[2m | utils/__tests__/useVisualBible.test.ts[2m > [22m[2museVisualBible[2m > [22m[2mhandleResyncAll[2m > [22m[2mshould reset all characters to storyBible source
+[22m[39m[useVisualBible] Force resync complete: { synced: [33m2[39m }
+
+[90mstdout[2m | utils/__tests__/useVisualBible.test.ts[2m > [22m[2museVisualBible[2m > [22m[2mclearSyncToast[2m > [22m[2mshould clear the sync toast
+[22m[39m[useVisualBible] Synced character descriptors: [ [32m'Alice'[39m ]
+[useVisualBible] Manual sync complete: { synced: [ [32m'Alice'[39m ], skipped: [] }
+
+ [32mΓ£ô[39m utils/__tests__/useVisualBible.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+[90mstdout[2m | services/__tests__/sceneStateStore.test.ts
+[22m[39m[SceneStateStore] Hydrated from storage
+
+ [32mΓ£ô[39m services/__tests__/sceneStateStore.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32mΓ£ô[39m utils/__tests__/featureFlags.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+[90mstdout[2m | services/__tests__/preflight.test.ts[2m > [22m[2mcheckServerConnection[2m > [22m[2mresolves when server returns valid stats
+[22m[39m[fetchWithTimeout] Fetching /api/comfyui/system_stats with options: {"signal":"[Signal]","mode":"cors","credentials":"omit"}
+
+[90mstdout[2m | services/__tests__/preflight.test.ts[2m > [22m[2mcheckServerConnection[2m > [22m[2mthrows when server responds with non-ok status
+[22m[39m[fetchWithTimeout] Fetching /api/comfyui/system_stats with options: {"signal":"[Signal]","mode":"cors","credentials":"omit"}
+
+stderr | services/__tests__/preflight.test.ts > checkServerConnection > throws when server responds with non-ok status
+Connection check error: Error: Server responded with status 500.
+    at checkServerConnection (C:/Dev/gemDirect1/services/comfyUIService.ts:304:19)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at C:/Dev/gemDirect1/services/__tests__/preflight.test.ts:33:5
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:20
+
+[90mstdout[2m | services/__tests__/preflight.test.ts[2m > [22m[2mcheckServerConnection[2m > [22m[2mthrows timeout errors specially
+[22m[39m[fetchWithTimeout] Fetching /api/comfyui/system_stats with options: {"signal":"[Signal]","mode":"cors","credentials":"omit"}
+
+stderr | services/__tests__/preflight.test.ts > checkServerConnection > throws timeout errors specially
+Connection check error: Error [AbortError]: aborted
+    at C:/Dev/gemDirect1/services/__tests__/preflight.test.ts:40:21
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:157:11
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:26
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1636:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1602:10)
+    at runTest (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1309:12)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runSuite (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1468:8)
+    at runSuite (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1468:8)
+
+[90mstdout[2m | services/__tests__/preflight.test.ts[2m > [22m[2mcheckSystemResources[2m > [22m[2mreturns GPU stats when device exists
+[22m[39m[fetchWithTimeout] Fetching /api/comfyui/system_stats with options: {"signal":"[Signal]","mode":"cors","credentials":"omit"}
+
+[90mstdout[2m | services/__tests__/preflight.test.ts[2m > [22m[2mcheckSystemResources[2m > [22m[2mwarns when VRAM is low
+[22m[39m[fetchWithTimeout] Fetching /api/comfyui/system_stats with options: {"signal":"[Signal]","mode":"cors","credentials":"omit"}
+
+[90mstdout[2m | services/__tests__/preflight.test.ts[2m > [22m[2mcheckSystemResources[2m > [22m[2mwarns when no GPU is listed
+[22m[39m[fetchWithTimeout] Fetching /api/comfyui/system_stats with options: {"signal":"[Signal]","mode":"cors","credentials":"omit"}
+
+[90mstdout[2m | services/__tests__/preflight.test.ts[2m > [22m[2mcheckSystemResources[2m > [22m[2mreports timeout as a failure message
+[22m[39m[fetchWithTimeout] Fetching /api/comfyui/system_stats with options: {"signal":"[Signal]","mode":"cors","credentials":"omit"}
+
+[90mstdout[2m | services/__tests__/preflight.test.ts[2m > [22m[2mcheckSystemResources[2m > [22m[2mhandles HTTP errors gracefully
+[22m[39m[fetchWithTimeout] Fetching /api/comfyui/system_stats with options: {"signal":"[Signal]","mode":"cors","credentials":"omit"}
+
+ [32mΓ£ô[39m services/__tests__/preflight.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/queueMetrics.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/sceneTransitionService.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+[90mstdout[2m | services/__tests__/comfyUIEventManager.test.ts[2m > [22m[2mComfyUIEventManager[2m > [22m[2mEvent Subscription API[2m > [22m[2mshould allow subscribing to job events
+[22m[39m[ComfyUIEventManager] Subscribed to job: job-123
+
+[90mstdout[2m | services/__tests__/comfyUIEventManager.test.ts[2m > [22m[2mComfyUIEventManager[2m > [22m[2mEvent Subscription API[2m > [22m[2mshould allow multiple subscriptions to different jobs
+[22m[39m[ComfyUIEventManager] Subscribed to job: job-1
+[ComfyUIEventManager] Subscribed to job: job-2
+
+[90mstdout[2m | services/__tests__/comfyUIEventManager.test.ts[2m > [22m[2mComfyUIEventManager[2m > [22m[2mEvent Subscription API[2m > [22m[2mshould allow multiple handlers for same job
+[22m[39m[ComfyUIEventManager] Subscribed to job: job-1
+[ComfyUIEventManager] Subscribed to job: job-1
+
+[90mstdout[2m | services/__tests__/comfyUIEventManager.test.ts[2m > [22m[2mComfyUIEventManager[2m > [22m[2mEvent Subscription API[2m > [22m[2mshould decrease count when unsubscribing
+[22m[39m[ComfyUIEventManager] Subscribed to job: job-123
+[ComfyUIEventManager] Unsubscribed from job: job-123
+
+[90mstdout[2m | services/__tests__/comfyUIEventManager.test.ts[2m > [22m[2mComfyUIEventManager[2m > [22m[2mEvent Subscription API[2m > [22m[2mshould handle unsubscribing multiple times gracefully
+[22m[39m[ComfyUIEventManager] Subscribed to job: job-123
+[ComfyUIEventManager] Unsubscribed from job: job-123
+[ComfyUIEventManager] Unsubscribed from job: job-123
+
+[90mstdout[2m | services/__tests__/comfyUIEventManager.test.ts[2m > [22m[2mComfyUIEventManager[2m > [22m[2mGlobal Subscription API[2m > [22m[2mshould track both job and global subscriptions
+[22m[39m[ComfyUIEventManager] Subscribed to job: job-1
+[ComfyUIEventManager] Subscribed to job: job-2
+
+stderr | services/__tests__/comfyUIEventManager.test.ts > ComfyUIEventManager > Invalid Settings Handling > should set error status with missing URL
+[ComfyUIEventManager] Cannot connect: missing URL or clientId
+
+stderr | services/__tests__/comfyUIEventManager.test.ts > ComfyUIEventManager > Invalid Settings Handling > should set error status with missing clientId
+[ComfyUIEventManager] Cannot connect: missing URL or clientId
+
+stderr | services/__tests__/comfyUIEventManager.test.ts > ComfyUIEventManager > Invalid Settings Handling > should remain disconnected with completely invalid settings
+[ComfyUIEventManager] Cannot connect: missing URL or clientId
+
+ [32mΓ£ô[39m services/__tests__/comfyUIEventManager.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/setVisionValidator.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/promptVersionManager.test.ts [2m([22m[2m50 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/ipAdapterService.test.ts [2m([22m[2m41 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32mΓ£ô[39m utils/__tests__/browserVideoValidation.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+[90mstdout[2m | utils/__tests__/storeConsistencyValidator.test.ts[2m > [22m[2mstoreConsistencyValidator[2m > [22m[2mlogConsistencyResult[2m > [22m[2mshould group warnings when inconsistent
+[22m[39mConsistency: 90%
+Items compared: 10
+Differences: 1 (0 critical, 1 warnings)
+
+stderr | utils/__tests__/storeConsistencyValidator.test.ts > storeConsistencyValidator > logConsistencyResult > should group warnings when inconsistent
+  test.path: Test difference
+
+ [32mΓ£ô[39m utils/__tests__/storeConsistencyValidator.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/promptConstants.test.ts [2m([22m[2m33 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/narrativeCoherenceService.test.ts [2m([22m[2m40 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32mΓ£ô[39m hooks/__tests__/useSceneStore.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/storyBibleValidator.test.ts [2m([22m[2m40 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32mΓ£ô[39m utils/__tests__/qualityNotifications.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/characterTracker.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+[90mstdout[2m | utils/__tests__/migrations.test.ts[2m > [22m[2mmigrations[2m > [22m[2mmigrateProject[2m > [22m[2mshould migrate v1 to v2 successfully
+[22m[39m[Migration] Applying add-feature-flags-and-enhanced-profiles (v2)
+[Migration] Successfully migrated from v1 to v2
+[Migration] Applied: add-feature-flags-and-enhanced-profiles
+
+[90mstdout[2m | utils/__tests__/migrations.test.ts[2m > [22m[2mmigrations[2m > [22m[2mmigrateProject[2m > [22m[2mshould add featureFlags during v1ΓåÆv2 migration
+[22m[39m[Migration] Applying add-feature-flags-and-enhanced-profiles (v2)
+[Migration] Successfully migrated from v1 to v2
+[Migration] Applied: add-feature-flags-and-enhanced-profiles
+
+[90mstdout[2m | utils/__tests__/migrations.test.ts[2m > [22m[2mmigrations[2m > [22m[2mmigrateProject[2m > [22m[2mshould add healthCheckIntervalMs during migration
+[22m[39m[Migration] Applying add-feature-flags-and-enhanced-profiles (v2)
+[Migration] Successfully migrated from v1 to v2
+[Migration] Applied: add-feature-flags-and-enhanced-profiles
+
+[90mstdout[2m | utils/__tests__/migrations.test.ts[2m > [22m[2mmigrations[2m > [22m[2mmigrateProject[2m > [22m[2mshould add category to workflow profiles
+[22m[39m[Migration] Applying add-feature-flags-and-enhanced-profiles (v2)
+[Migration] Successfully migrated from v1 to v2
+[Migration] Applied: add-feature-flags-and-enhanced-profiles
+
+[90mstdout[2m | utils/__tests__/migrations.test.ts[2m > [22m[2mmigrations[2m > [22m[2mmigrateProject[2m > [22m[2mshould add autoGenerateSuggestions to continuityData
+[22m[39m[Migration] Applying add-feature-flags-and-enhanced-profiles (v2)
+[Migration] Successfully migrated from v1 to v2
+[Migration] Applied: add-feature-flags-and-enhanced-profiles
+
+[90mstdout[2m | utils/__tests__/migrations.test.ts[2m > [22m[2mmigrations[2m > [22m[2mmigrateProject[2m > [22m[2mshould add keyframeMode to scenes
+[22m[39m[Migration] Applying add-feature-flags-and-enhanced-profiles (v2)
+[Migration] Successfully migrated from v1 to v2
+[Migration] Applied: add-feature-flags-and-enhanced-profiles
+
+[90mstdout[2m | utils/__tests__/migrations.test.ts[2m > [22m[2mmigrations[2m > [22m[2mmigrateProject[2m > [22m[2mshould set version to target version
+[22m[39m[Migration] Applying add-feature-flags-and-enhanced-profiles (v2)
+[Migration] Successfully migrated from v1 to v2
+[Migration] Applied: add-feature-flags-and-enhanced-profiles
+
+[90mstdout[2m | utils/__tests__/migrations.test.ts[2m > [22m[2mmigrations[2m > [22m[2mmigrateProject[2m > [22m[2mshould preserve existing data during migration
+[22m[39m[Migration] Applying add-feature-flags-and-enhanced-profiles (v2)
+[Migration] Successfully migrated from v1 to v2
+[Migration] Applied: add-feature-flags-and-enhanced-profiles
+
+ [32mΓ£ô[39m utils/__tests__/migrations.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32mΓ£ô[39m types/__tests__/validation.test.ts [2m([22m[2m44 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/promptRegistry.test.ts [2m([22m[2m36 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32mΓ£ô[39m hooks/__tests__/useQualityGate.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/promptPipelineIntegration.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32mΓ£ô[39m utils/__tests__/advancedWorkflowProfiles.test.ts [2m([22m[2m37 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/continuityPrerequisites.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/styleExtractor.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/validateWorkflowAndMappings.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+stderr | utils/__tests__/pipelineErrors.test.ts > pipelineErrors > handleTokenOverflow > should warn and continue when guard is warn
+[TokenGuard] Token budget exceeded: 700/600 tokens
+
+stderr | utils/__tests__/pipelineErrors.test.ts > pipelineErrors > handleValidationError > should warn when validation mode is warn
+[Validation] Validation failed: Scene too complex
+
+ [32mΓ£ô[39m utils/__tests__/pipelineErrors.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/characterTrackingService.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32mΓ£ô[39m services/e2e.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/geminiService.storyBible.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+[90mstdout[2m | services/__tests__/trackPromptExecution.test.ts[2m > [22m[2mtrackPromptExecution[2m > [22m[2mhandles execution errors
+[22m[39mComfyUI WebSocket connection closed.
+
+stderr | services/__tests__/trackPromptExecution.test.ts > trackPromptExecution > handles execution errors
+[trackPromptExecution] Execution error: {
+  prompt_id: 'prompt-1',
+  node_id: 'node-5',
+  exception_message: 'something broke'
+}
+
+[90mstdout[2m | services/__tests__/trackPromptExecution.test.ts[2m > [22m[2mtrackPromptExecution[2m > [22m[2mreports completion without outputs
+[22m[39m[trackPromptExecution] Γ£ô Execution complete for promptId=prompt-1...
+[trackPromptExecution] ΓÜá∩╕Å No output entries for promptId=prompt-1...
+ComfyUI WebSocket connection closed.
+
+stderr | services/__tests__/trackPromptExecution.test.ts > trackPromptExecution > reports websocket connection errors
+ComfyUI WebSocket error: Error: connection lost
+    at C:/Dev/gemDirect1/services/__tests__/trackPromptExecution.test.ts:123:18
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:157:11
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:26
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1636:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1602:10)
+    at runTest (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1309:12)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runSuite (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1468:8)
+    at runSuite (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1468:8)
+
+ [32mΓ£ô[39m services/__tests__/trackPromptExecution.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32mΓ£ô[39m services/geminiService.context.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+stderr | services/__tests__/tokenValidator.test.ts > tokenValidator > countTokensWithFallback > should fall back to heuristic on API error
+[TokenValidator] countTokens unavailable, using heuristic: Network error
+
+ [32mΓ£ô[39m services/__tests__/tokenValidator.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32mΓ£ô[39m utils/__tests__/keyframeHelpers.test.ts [2m([22m[2m40 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32mΓ£ô[39m services/geminiService.repetition.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/promptValidator.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/sceneProgressionValidator.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+stderr | services/__tests__/localStoryService.test.ts > localStoryService.generateStoryBlueprint > falls back to deterministic blueprint when fetch fails
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Hero" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Finds" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+[90mstdout[2m | services/__tests__/localStoryService.test.ts[2m > [22m[2mlocalStoryService.generateStoryBlueprint[2m > [22m[2mfalls back to deterministic blueprint when fetch fails
+[22m[39m[CORR] {"corr":"017c8ec5","src":"lm-studio","msg":"story-generation-request","data":{"providerUrl":"/api/local-llm","model":"mistralai/mistral-7b-instruct-v0.3"}}
+
+stderr | services/__tests__/localStoryService.test.ts > localStoryService.generateStoryBlueprint > falls back to deterministic blueprint when fetch fails
+[localStoryService] Falling back to deterministic blueprint: Error: Network error
+    at C:/Dev/gemDirect1/services/__tests__/localStoryService.test.ts:24:53
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:157:11
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:753:26
+    at file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1636:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1602:10)
+    at runTest (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1309:12)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at runSuite (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1468:8)
+    at runSuite (file:///C:/Dev/gemDirect1/node_modules/@vitest/runner/dist/index.js:1468:8)
+
+stderr | services/__tests__/localStoryService.test.ts > localStoryService.generateStoryBlueprint > parses well-formed JSON from provider and normalizes to 12 hero arcs
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (5 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 5,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Hero" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "Finds" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'SECTION_REPETITION',
+    message: 'Characters section repeats 100% of logline content',
+    section: 'characters',
+    severity: 'error',
+    currentValue: '100%',
+    expectedValue: '<60%',
+    suggestion: 'Characters should add NEW information about roles and motivations'
+  }
+]
+
+[90mstdout[2m | services/__tests__/localStoryService.test.ts[2m > [22m[2mlocalStoryService.generateStoryBlueprint[2m > [22m[2mparses well-formed JSON from provider and normalizes to 12 hero arcs
+[22m[39m[CORR] {"corr":"54ff6ed4","src":"lm-studio","msg":"story-generation-request","data":{"providerUrl":"/api/local-llm","model":"mistralai/mistral-7b-instruct-v0.3"}}
+
+stderr | services/__tests__/localStoryService.test.ts > localStoryService.generateStoryBlueprint > handles malformed provider output and returns fallback blueprint
+[localFallbackService] Generated Story Bible has validation issues: [
+  {
+    code: 'LOGLINE_TOO_SHORT',
+    message: 'Logline is too short (1 words)',
+    section: 'logline',
+    severity: 'error',
+    currentValue: 1,
+    expectedValue: '10-100 words',
+    suggestion: 'Expand to include protagonist, goal, and conflict'
+  },
+  {
+    code: 'LOGLINE_MISSING_CONFLICT',
+    message: 'Logline may lack clear conflict indicator',
+    section: 'logline',
+    severity: 'warning',
+    suggestion: 'Include words that establish tension (e.g., "must", "but", "against")'
+  },
+  {
+    code: 'SETTING_TOO_SHORT',
+    message: 'Setting is too brief (36 words)',
+    section: 'setting',
+    severity: 'error',
+    currentValue: 36,
+    expectedValue: '50-300 words',
+    suggestion: 'Expand with visual details, atmosphere, and sensory elements'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "The Opposition" has incomplete appearance data',
+    section: 'characterProfiles.char-2',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'CHARACTER_INCOMPLETE_APPEARANCE',
+    message: 'Character "The Guide" has incomplete appearance data',
+    section: 'characterProfiles.char-3',
+    severity: 'warning',
+    suggestion: 'Add hair, eyes, and height/build to appearance'
+  },
+  {
+    code: 'LOGLINE_VERBATIM_REPEATED',
+    message: 'Logline appears verbatim in plot outline',
+    section: 'plotOutline',
+    severity: 'warning',
+    suggestion: 'Avoid repeating the full logline in plot outline'
+  }
+]
+
+[90mstdout[2m | services/__tests__/localStoryService.test.ts[2m > [22m[2mlocalStoryService.generateStoryBlueprint[2m > [22m[2mhandles malformed provider output and returns fallback blueprint
+[22m[39m[CORR] {"corr":"0b8478bb","src":"lm-studio","msg":"story-generation-request","data":{"providerUrl":"/api/local-llm","model":"mistralai/mistral-7b-instruct-v0.3"}}
+
+stderr | services/__tests__/localStoryService.test.ts > localStoryService.generateStoryBlueprint > handles malformed provider output and returns fallback blueprint
+[localStoryService] Provider returned non-JSON; using fallback. Snippet: not json
+
+ [32mΓ£ô[39m services/__tests__/localStoryService.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/promptOptimization.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/payloadService.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/storyIdeaValidator.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m tests/validation/story-bible-field-validation.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+stderr | services/__tests__/promptWeighting.test.ts > promptWeighting > applyWeight > should clamp weights to safe range [0.1, 2.0]
+[promptWeighting] Weight 0.05 outside safe range [0.1, 2], clamping
+[promptWeighting] Weight 3 outside safe range [0.1, 2], clamping
+
+ [32mΓ£ô[39m services/__tests__/promptWeighting.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+[90mstdout[2m | tests/integration/fastvideo.test.ts[2m > [22m[2mFastVideo Service[2m > [22m[2mHealth Check[2m > [22m[2mshould check server health
+[22m[39mΓèÿ Skipping live FastVideo health check (set RUN_FASTVIDEO_TESTS=true to run)
+
+[90mstdout[2m | tests/integration/fastvideo.test.ts[2m > [22m[2mFastVideo Service[2m > [22m[2mHealth Check[2m > [22m[2mshould handle connection failure gracefully
+[22m[39mΓèÿ FastVideo server not responding - test gracefully handled
+
+[90mstdout[2m | tests/integration/fastvideo.test.ts[2m > [22m[2mFastVideo Service[2m > [22m[2mVideo Generation[2m > [22m[2mshould queue minimal generation request
+[22m[39mΓèÿ Skipping live FastVideo generation test (set RUN_FASTVIDEO_TESTS=true to run)
+
+[90mstdout[2m | tests/integration/fastvideo.test.ts[2m > [22m[2mFastVideo Service[2m > [22m[2mTelemetry[2m > [22m[2mshould track request metadata
+[22m[39mΓèÿ Skipping telemetry test (set RUN_FASTVIDEO_TESTS=true to run)
+
+ [32mΓ£ô[39m tests/integration/fastvideo.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m utils/__tests__/typeGuards.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/videoUpscalingService.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/promptTemplates.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/storyToVideoPipeline.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 2[2mms[22m[39m
+stderr | services/__tests__/sceneGenerationPipeline.test.ts > sceneGenerationPipeline > runs the full pipeline, merges keyframes, and calls timeline generation
+[SceneGenerationPipeline] Prompt warnings: [
+  'Shot 1: Prompt too short (22 words). Minimum: 50 words for adequate detail.',
+  'Shot 1: Prompt lacks camera/framing direction. Add shot types for better cinematography.',
+  'Shot 1: Prompt lacks lighting direction. Add lighting terms for visual consistency.',
+  'Shot 1: Prompt lacks mood/atmosphere direction. Add emotional tone for narrative coherence.',
+  'Shot 2: Prompt too short (18 words). Minimum: 50 words for adequate detail.',
+  'Shot 2: Prompt lacks lighting direction. Add lighting terms for visual consistency.',
+  'Shot 2: Prompt lacks mood/atmosphere direction. Add emotional tone for narrative coherence.'
+]
+
+ [32mΓ£ô[39m services/__tests__/sceneGenerationPipeline.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/telemetry-shape.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/promptPipeline.parity.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+ [32mΓ£ô[39m utils/__tests__/coherenceGate.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/telemetry-fallback.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/workflowPatcher.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/telemetry-negative-fields.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/localStoryService.cors.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 1[2mms[22m[39m
+[90mstdout[2m | services/__tests__/comfyGuardrails.test.ts[2m > [22m[2mWAN guardrails[2m > [22m[2mbuilds prompts with the single-frame instruction and guardrail guidance
+[22m[39m[CORR] {"corr":"d1d7b0dd","src":"comfyui","msg":"shot-prompt-components","data":{"shotId":"s1","hasCharacterCues":false,"hasStyleCues":false,"target":"shotImage"}}
+
+ [32mΓ£ô[39m services/__tests__/comfyGuardrails.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/stopProcessGuard.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 1[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/queueFrameSelection.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/telemetryContractFields.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m scripts/__tests__/frameStability.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 0[2mms[22m[39m
+ [32mΓ£ô[39m services/__tests__/videoValidationService.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 139[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m93 passed[39m[22m[90m (93)[39m
+[2m      Tests [22m [1m[32m1838 passed[39m[22m[2m | [22m[33m1 skipped[39m[90m (1839)[39m
+[2m   Start at [22m 20:11:32
+[2m   Duration [22m 16.63s[2m (transform 1.96s, setup 501ms, collect 4.86s, tests 9.68s, environment 405ms, prepare 29ms)[22m
+

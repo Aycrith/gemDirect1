@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-004-motion",
+  "name": "Person Walking Motion",
+  "type": "motion",
+  "description": "Tests motion coherence with a person walking across frame - moderate complexity to validate temporal consistency",
+  
+  "sceneContext": {
+    "sceneId": "golden-004",
+    "summary": "Single person walking slowly across a simple outdoor path",
+    "environment": "Concrete park path with single wooden bench on right, single oak tree on left, soft overcast natural lighting",
+    "mood": "Calm, natural, everyday"
+  },
+  
+  "startKeyframe": {
+    "prompt": "A young woman in a red sweater, dark jeans, and white sneakers walking slowly on a concrete park path, positioned on the left side of frame, single wooden bench visible on right, single oak tree on left, overcast sky, soft diffused natural lighting, medium wide shot from the side, static camera, clean minimal composition, cinematic photography, 4K resolution, full body visible, simple background",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, multiple people, complex background, night, indoor, close-up face, changing clothes, extra limbs, duplicated limbs, motion blur, abstract shapes"
+  },
+  
+  "endKeyframe": {
+    "prompt": "A young woman in a red sweater, dark jeans, and white sneakers walking slowly on a concrete park path, positioned on the right side of frame, single wooden bench visible on right, single oak tree on left, overcast sky, soft diffused natural lighting, medium wide shot from the side, static camera, clean minimal composition, cinematic photography, 4K resolution, full body visible, simple background",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, multiple people, complex background, night, indoor, close-up face, changing clothes, extra limbs, duplicated limbs, motion blur, abstract shapes"
+  },
+  
+  "videoContext": {
+    "motionDescription": "Woman walks slowly and steadily from left to right across the frame over 3 seconds, maintaining consistent pose and stride",
+    "cameraMotion": "Completely static camera locked in place, only the person moves through the scene",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "Person maintains consistent appearance (red sweater, dark jeans, white sneakers) throughout walk",
+    "secondary": "Walking motion is slow, natural and smooth, no frame skipping or teleportation, background stays completely stable",
+    "challenges": "Human body articulation, clothing consistency, natural gait cycle, footwear consistency"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

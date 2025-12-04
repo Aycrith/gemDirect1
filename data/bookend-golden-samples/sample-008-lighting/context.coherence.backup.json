@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-008-lighting",
+  "name": "Lighting Transition Test",
+  "type": "lighting",
+  "description": "Tests stability under dramatic but plausible lighting transition - daylight to lamp light",
+  
+  "sceneContext": {
+    "sceneId": "golden-008",
+    "summary": "A person sitting at a desk by a window as daylight gradually fades and warm desk lamp becomes the dominant light source. Static camera, same person and objects throughout, only lighting changes.",
+    "environment": "Home office with large window on left, wooden desk, desk lamp, bookshelf with books, potted plant",
+    "mood": "Cozy, transitional, evening"
+  },
+  
+  "startKeyframe": {
+    "prompt": "A young woman with dark hair in a ponytail sitting at a wooden desk by a large window, wearing a cream colored sweater, window light dominant from left side, desk lamp off on right side of desk, laptop open on desk, small stack of books, small potted succulent plant, bookshelf with books in background, neutral pose looking at laptop, soft natural daylight, professional interior photography, 4K resolution, static camera, clean composition",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, multiple people, outdoor, night scene at start, lamp on at start, changing clothes, extra people, teleporting objects, camera movement, flickering, light strobing, morphing face"
+  },
+  
+  "endKeyframe": {
+    "prompt": "The same young woman with dark hair in a ponytail sitting at a wooden desk by a large window, wearing the same cream colored sweater, window now showing dusk/evening sky, warm desk lamp now on casting golden light from right side, same laptop open on desk, same small stack of books, same small potted succulent plant, same bookshelf with books in background, same neutral pose looking at laptop, warm lamp lighting dominant, professional interior photography, 4K resolution, static camera, clean composition",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, multiple people, outdoor, bright daylight at end, lamp off at end, changing clothes, extra people, teleporting objects, camera movement, flickering, light strobing, morphing face, different person"
+  },
+  
+  "videoContext": {
+    "motionDescription": "Static camera, fixed composition. The only change is lighting: window light gradually fades as outside darkens, desk lamp gradually brightens to become the dominant warm light source. Person remains in same pose, all objects stay in exact same positions. Subtle ambient transition, no sudden changes.",
+    "cameraMotion": "Completely static camera, no movement, no panning, no zooming",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "Person and all objects maintain exact same positions throughout lighting transition",
+    "secondary": "Lighting shift is gradual and natural - daylight fades, lamp brightens, no sudden jumps",
+    "challenges": "Maintaining identity under changing lighting conditions, avoiding flickering or strobing"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

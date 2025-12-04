@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-006-multichar",
+  "name": "Depth Motion with Foreground/Background",
+  "type": "depth-motion",
+  "description": "Tests depth motion coherence with foreground subject and background activity - validates multi-plane temporal consistency",
+  
+  "sceneContext": {
+    "sceneId": "golden-006",
+    "summary": "Coffee cup in sharp focus with barista working in blurred background",
+    "environment": "Warm coffee shop interior with wooden counter, steam rising from cup, shallow depth of field",
+    "mood": "Cozy, warm, atmospheric"
+  },
+  
+  "startKeyframe": {
+    "prompt": "A steaming ceramic coffee cup in sharp focus on a wooden counter, cream colored cup with latte art, warm ambient lighting, shallow depth of field, blurred background shows barista in black apron at espresso machine, coffee shop interior, cozy atmosphere, professional photography, 4K resolution, static camera, clean composition",
+    "negativePrompt": "blurry foreground, deep focus, multiple cups, text, watermark, outdoor, night, cold lighting, abstract shapes, close-up face"
+  },
+  
+  "endKeyframe": {
+    "prompt": "A steaming ceramic coffee cup in sharp focus on a wooden counter, cream colored cup with latte art, warm ambient lighting, shallow depth of field, blurred background shows barista in black apron reaching for cup on shelf, coffee shop interior, cozy atmosphere, professional photography, 4K resolution, static camera, clean composition",
+    "negativePrompt": "blurry foreground, deep focus, multiple cups, text, watermark, outdoor, night, cold lighting, abstract shapes, close-up face"
+  },
+  
+  "videoContext": {
+    "motionDescription": "Foreground coffee cup remains perfectly still with rising steam, background barista moves subtly reaching for a cup on the shelf, maintaining depth separation",
+    "cameraMotion": "Completely static camera locked in place, no camera movement",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "Foreground cup maintains exact position and appearance, steam rises naturally",
+    "secondary": "Background barista moves naturally while staying in soft focus, depth of field preserved",
+    "challenges": "Maintaining depth separation, natural steam motion, background subject consistency in blur"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

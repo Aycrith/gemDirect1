@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-005-complex",
+  "name": "Complex Scene Transition",
+  "type": "complex",
+  "description": "Tests handling of complex scenes with multiple elements and subtle changes - gentle kitchen transition with soft lighting",
+  
+  "sceneContext": {
+    "sceneId": "golden-005",
+    "summary": "A clean modern kitchen with stable soft lighting. Objects remain fixed throughout. Only change is fruit on cutting board becomes sliced. Static camera, gentle lighting with no harsh transitions.",
+    "environment": "Modern minimalist kitchen with soft diffused natural lighting, white marble countertop, stainless steel appliances",
+    "mood": "Calm, domestic, stable"
+  },
+  
+  "startKeyframe": {
+    "prompt": "Modern minimalist kitchen interior, soft diffused natural lighting through window, white marble countertop, blue ceramic coffee mug on counter, small potted green succulent on windowsill, stainless steel refrigerator, wooden cutting board with whole red apple and whole orange, clean simple composition, static camera, professional interior photography, 4K resolution, soft natural lighting, no harsh shadows, no lens flare, no people",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, people, faces, hands, outdoor, night, messy, cluttered, dirty, multiple mugs, extra plants, camera movement, jump cuts, flickering, duplicated objects, warping appliances, lens flare, glare, bloom, harsh lighting, strong shadows, dramatic lighting"
+  },
+  
+  "endKeyframe": {
+    "prompt": "Modern minimalist kitchen interior, soft diffused natural lighting through window with slightly warmer tone, same white marble countertop, same blue ceramic coffee mug on counter in same position, same small potted green succulent on windowsill, same stainless steel refrigerator, same wooden cutting board now with neatly sliced red apple pieces and sliced orange segments, clean simple composition, static camera, professional interior photography, 4K resolution, soft warm natural lighting, no harsh shadows, no lens flare, no people",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, people, faces, hands, outdoor, night, messy, cluttered, dirty, multiple mugs, extra plants, camera movement, jump cuts, flickering, duplicated objects, warping appliances, lens flare, glare, bloom, harsh lighting, strong shadows, dramatic lighting, new objects appearing, objects disappearing, changed layout"
+  },
+  
+  "videoContext": {
+    "motionDescription": "Static camera with completely fixed composition. Very gentle, subtle lighting shift - no dramatic transitions. The only object change is the fruit on cutting board becomes sliced. All other objects (mug, plant, appliances) remain in exact same positions. Lighting stays soft and diffused throughout with no flares or glares.",
+    "cameraMotion": "Completely static camera, no movement, no panning, no zooming",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "All major objects maintain exact identity and position: blue mug, green succulent, refrigerator, cutting board",
+    "secondary": "Gentle lighting warmth change is subtle and natural, fruit transitions smoothly to sliced state",
+    "challenges": "Multiple objects to track, soft lighting throughout to avoid lens flare artifacts"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

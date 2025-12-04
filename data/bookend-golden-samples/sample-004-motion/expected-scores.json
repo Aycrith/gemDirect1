@@ -1,0 +1,42 @@
+{
+  "sampleId": "sample-004-motion",
+  "version": "1.0.0",
+  "createdAt": "2025-12-02T00:00:00Z",
+  
+  "thresholds": {
+    "pass": {
+      "overallContinuity": 70,
+      "characterMatch": 75,
+      "environmentMatch": 80,
+      "startFrameMatch": 35,
+      "endFrameMatch": 35,
+      "motionQuality": 70
+    },
+    "warn": {
+      "overallContinuity": 60,
+      "characterMatch": 65,
+      "environmentMatch": 70,
+      "startFrameMatch": 25,
+      "endFrameMatch": 25,
+      "motionQuality": 60
+    },
+    "fail": {
+      "overallContinuity": 50,
+      "characterMatch": 55,
+      "environmentMatch": 60,
+      "startFrameMatch": 20,
+      "endFrameMatch": 20,
+      "motionQuality": 50
+    }
+  },
+  
+  "notes": "Motion samples are expected to score lower on frame match due to subject movement. Focus is on temporal consistency and natural motion.",
+  
+  "criticalMetrics": ["characterMatch", "motionQuality", "overallContinuity"],
+  
+  "expectedResults": {
+    "description": "Motion sample should prioritize coherent movement over pixel similarity",
+    "primaryConcern": "Person identity maintained throughout - clothing and proportions stable",
+    "secondaryConcern": "Walking gait appears natural without teleportation or jittering"
+  }
+}

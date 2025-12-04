@@ -1,12 +1,20 @@
 # Project Status - Consolidated (Single Source of Truth)
 
-**Last Updated**: November 29, 2025 (TypeScript Cleanup Session - Continued)  
-**Version**: 1.0.0-rc6  
+**Last Updated**: December 2, 2025 (Bookend QA Infrastructure Validation)  
+**Version**: 1.0.0-rc7  
 **Status**: ✅ Production-Ready (100% Complete)
 
 > **Note**: This document consolidates information from `CURRENT_STATUS.md`, `START_HERE.md`, and recent session summaries into a single authoritative reference. For detailed history, see `Development_History/Sessions/`.
 
-> **Latest Session**: TypeScript Cleanup - Continued (2025-11-29) - **✅ MAJOR PROGRESS** - Reduced TypeScript strict-mode errors from 779 to 624 (155 fixed, **20% reduction**). TS6133 (unused declarations) reduced from 80 to 27 (66% reduction). Cleaned up: services/ (geminiService, comfyUIService, localFallbackService, planExpansionService, storyBibleConverter, etc.), components/ (BayesianAnalyticsPanel, ContinuityCard, GenerationControls, TimelineEditor, TelemetryBadges, StoryBibleEditor), utils/ (hooks, videoSplicer, wanProfileReadiness), tests/e2e/ (15+ spec files). Build verified ✅, Unit tests 1,487/1,489 passing ✅ (1 skipped, 1 pre-existing flaky test).
+> **Latest Session**: Bookend QA Infrastructure Validation (2025-12-02) - **✅ COMPLETE** - Validated and fixed all 4 bookend npm scripts. Fixed video output detection (images array + animated flag), similarity JSON parsing, image upload to ComfyUI input. Calibrated thresholds (fail=25%, warn=35%) to match actual FLF2V model behavior (~35-40% pixel similarity). Parameter sweep now includes frame similarity metrics. Wired `bookendQAMode` flag to TimelineEditor and videoQualityGateService. Unit tests **1908 passed**, 1 skipped ✅. TypeScript: **Zero build errors** ✅.
+
+> **Previous Session**: Bookend QA Implementation (2025-12-02) - Fixed TypeScript TS2532 blocker via nullish coalescing. Added `bookendQAMode` feature flag with `getEffectiveFlagsForQAMode()` helper. All 97 test files pass. Corrected prior audit findings (all services exist).
+
+> **Previous Session**: Phase 1D State Management Migration (2025-11-30) - **✅ COMPLETE** - Migrated TimelineEditor and ContinuityDirector to use `generationStatusStore` via adapter pattern. Fixed critical bugs: `partialize` serialization and selector stability. Both `useSettingsStore` and `useGenerationStatusStore` feature flags now ENABLED. Browser validated via Playwright MCP - zero console errors, no infinite loops. Unit tests **1522 passed**, 1 skipped ✅. TypeScript: **Zero build errors** ✅.
+
+> **Previous Session**: UX Remediation + Bug Fixes (2025-11-30) - **✅ 6 UX TASKS COMPLETE** - Implemented GlobalProgressIndicator, input field responsiveness (local state + onBlur), CUDA/OOM error parsing, batch progress messages, CoDirector markdown fix. Fixed 3 of 4 critical bugs: MediaGenerationProvider infinite loop, toast spam, App.tsx sync loop. Zustand serialization issue remains.
+
+> **Previous Session**: TypeScript Cleanup - Continued (2025-11-29) - **✅ MAJOR PROGRESS** - Reduced TypeScript strict-mode errors from 779 to 624 (155 fixed, **20% reduction**). TS6133 (unused declarations) reduced from 80 to 27 (66% reduction). Cleaned up: services/ (geminiService, comfyUIService, localFallbackService, planExpansionService, storyBibleConverter, etc.), components/ (BayesianAnalyticsPanel, ContinuityCard, GenerationControls, TimelineEditor, TelemetryBadges, StoryBibleEditor), utils/ (hooks, videoSplicer, wanProfileReadiness), tests/e2e/ (15+ spec files). Build verified ✅.
 
 > **Previous Session**: TypeScript Cleanup (2025-11-29) - **✅ PROGRESS** - Reduced TypeScript strict-mode errors from 779 to 676 (103 fixed, 13% reduction). Focused on TS6133 (unused declarations) - removed unused imports, prefixed unused parameters. Build and tests verified: Vite builds successfully, 1,488/1,489 unit tests passing. Remaining errors are mostly TS18048/TS2532 (possibly undefined) in test files.
 
@@ -94,8 +102,14 @@
 - **E2E Tests**: 117/168 passing (100% of runnable tests) ✅
   - 51 properly skipped (manual, real-service, feature-gaps)
   - Fixed bookend-sequential.spec.ts (modal timing + confirmation dialog)
-- **Unit Tests**: 1,488/1,489 passing (99.9%) ✅
+- **Unit Tests**: 1,908/1,909 passing (99.9%) ✅
+- **Bookend Scripts**: 4/4 validated and working ✅
+  - `bookend:similarity` - Frame similarity CLI (35-40% typical)
+  - `bookend:e2e` - Full pipeline validation
+  - `bookend:regression` - Threshold-based pass/warn/fail
+  - `bookend:sweep` - Parameter sweep with similarity metrics
   - 1 skipped (intentional)
+  - NEW (2025-11-30): Phase 1D Zustand migration - 34 new tests
   - NEW (2025-11-29): TypeScript cleanup - 103 errors fixed
   - NEW (2025-11-28): Component tests: 67/67 tests
     - SceneNavigator: 13/13 tests
@@ -120,22 +134,30 @@
 - **TypeScript Strict Errors**: 624 remaining (down from 779, 20% reduction) 
   - TS6133 (unused): 27 remaining (down from 80, 66% reduction)
   - TS18048/TS2532 (possibly undefined): ~229 remaining
-  - Build passes ✅, tests pass ✅ - these are strict-mode warnings only
-- **Test Execution**: ~12 seconds (1,350 tests)
+  - **Build passes ✅** - these are strict-mode warnings only, not blocking
+- **Test Execution**: ~12 seconds (1,522 tests)
 - **Code Coverage**: High (>85%)
 - **Root Directory**: Cleaned (4 essential files, 177 docs archived to `docs/archived/root-docs-2025-11/`)
-- **Latest Improvement**: TypeScript Cleanup Session (2025-11-29) - 155 errors fixed, 66% TS6133 reduction
+- **Latest Improvement**: Phase 1D State Management (2025-11-30) - Zustand stores deployed and validated
 
-### Feature Flag Status (2025-11-28) ✅
+### Feature Flag Status (2025-11-30) ✅
 | Category | Implemented | Coming Soon | Total |
 |----------|-------------|-------------|-------|
 | Quality | 8 | 0 | 8 |
 | Workflow | 6 | 0 | 6 |
 | Continuity | 6 | 0 | 6 |
 | Experimental | 3 | 0 | 3 |
-| **Total** | **23** | **0** | **23** |
+| **State Management** | **3** | 0 | 3 |
+| **Total** | **26** | **0** | **26** |
 
-**All 23 feature flags now implemented** (2025-11-28):
+**All 26 feature flags now implemented** (2025-11-30):
+
+**State Management Flags (NEW - Phase 1D)**:
+- `useSettingsStore: true` - ✅ ENABLED - Zustand store for LocalGenerationSettings
+- `useGenerationStatusStore: true` - ✅ ENABLED - Zustand store for LocalGenerationStatus  
+- `useUnifiedSceneStore: true` - ✅ ENABLED - Unified scene state management
+
+**Verification**: Browser validated via Playwright MCP - both stores hydrating correctly, zero console errors, no infinite loops.
 - `narrativeStateTracking` - ✅ Full service in `narrativeCoherenceService.ts` (550+ lines, 41 tests)
 - `promptABTesting` - ✅ Full Bayesian framework in `generationMetrics.ts` + `BayesianAnalyticsPanel.tsx`
 
@@ -250,6 +272,7 @@
   - 11 validation tests (scripts/test-bookend-workflow.ps1) - **11/11 PASSING**
 - **Prerequisites**: ffmpeg installed and in PATH
 - **Documentation**: 
+  - **Guides/BOOKEND_QA_WORKFLOW_DEVELOPER_GUIDE.md** (v1.0 - Dec 2, 2025) ⭐ **Three-level QA system** for bookend video production (pre-flight keyframe consistency, mid-flight parameter tuning, post-flight video analysis)
   - BOOKEND_WORKFLOW_PROPOSAL.md (WAN2 research findings)
   - WAN2_RESEARCH_SUMMARY.md (quick reference)
   - SESSION_COMPLETE_BOOKEND_IMPLEMENTATION_20251124.md (implementation summary)
@@ -330,10 +353,17 @@ All external API calls route through service layer:
 **Critical Rule**: Never call APIs directly from components.
 
 ### State Management
-- **Persistent data**: `usePersistentState` (auto-syncs IndexedDB)
+- **Zustand Stores** (NEW - Phase 1D 2025-11-30):
+  - `settingsStore` - LocalGenerationSettings with IndexedDB persistence
+  - `generationStatusStore` - LocalGenerationStatus per scene
+  - `useSceneStateStore` - Unified scene state
+- **Adapter Pattern**: Components check feature flag, route to store or legacy props
+- **Persistent data**: `usePersistentState` (auto-syncs IndexedDB) - legacy, being replaced
 - **Workflow orchestration**: `useProjectData` hook
 - **Cross-cutting**: React Context (8 nested providers)
 - **UI-only state**: Standard `useState`
+
+**Migration Status**: TimelineEditor and ContinuityDirector migrated. After 1 sprint validation, remove legacy props.
 
 ### Video Generation Providers
 

@@ -25,7 +25,7 @@ vi.mock('fs', async (importOriginal) => {
     };
 });
 
-import { spliceVideos, checkFfmpegAvailable, getVideoDuration } from '../videoSplicer';
+import { spliceVideos, checkFfmpegAvailable, getVideoDuration, extractLastFrame, extractFrame, getVideoFrameCount } from '../videoSplicer';
 
 describe('videoSplicer', () => {
     beforeEach(() => {
@@ -228,6 +228,278 @@ describe('videoSplicer', () => {
             const duration = await getVideoDuration('video.mp4');
 
             expect(duration).toBeCloseTo(2.041667, 5);
+        });
+    });
+
+    describe('getVideoFrameCount', () => {
+        it('should throw error if video file does not exist', async () => {
+            mocks.existsSync.mockReturnValue(false);
+
+            await expect(getVideoFrameCount('nonexistent.mp4')).rejects.toThrow('Video not found');
+        });
+
+        it('should parse frame count from ffprobe output', async () => {
+            mocks.existsSync.mockReturnValue(true);
+            
+            const mockProcess = {
+                stdout: {
+                    on: vi.fn((event, callback) => {
+                        if (event === 'data') {
+                            callback(Buffer.from('240\n'));
+                        }
+                    })
+                },
+                stderr: { on: vi.fn() },
+                on: vi.fn((event, callback) => {
+                    if (event === 'close') setTimeout(() => callback(0), 10);
+                })
+            };
+            
+            mocks.spawn.mockReturnValue(mockProcess as any);
+
+            const frameCount = await getVideoFrameCount('video.mp4');
+
+            expect(frameCount).toBe(240);
+        });
+
+        it('should reject if ffprobe fails', async () => {
+            mocks.existsSync.mockReturnValue(true);
+            
+            const mockProcess = {
+                stdout: { on: vi.fn() },
+                stderr: { 
+                    on: vi.fn((event, callback) => {
+                        if (event === 'data') callback(Buffer.from('Error reading file'));
+                    }) 
+                },
+                on: vi.fn((event, callback) => {
+                    if (event === 'close') setTimeout(() => callback(1), 10);
+                })
+            };
+            
+            mocks.spawn.mockReturnValue(mockProcess as any);
+
+            await expect(getVideoFrameCount('video.mp4')).rejects.toThrow('ffprobe frame count failed');
+        });
+    });
+
+    describe('extractLastFrame', () => {
+        it('should return error if video file does not exist', async () => {
+            mocks.existsSync.mockReturnValue(false);
+
+            const result = await extractLastFrame('nonexistent.mp4');
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('Video not found');
+        });
+
+        it('should extract last frame and return base64 PNG', async () => {
+            mocks.existsSync.mockReturnValue(true);
+            
+            // Mock ffprobe for frame count (first call)
+            const mockFfprobeProcess = {
+                stdout: {
+                    on: vi.fn((event, callback) => {
+                        if (event === 'data') callback(Buffer.from('49\n'));  // 49 frames = last frame at index 48
+                    })
+                },
+                stderr: { on: vi.fn() },
+                on: vi.fn((event, callback) => {
+                    if (event === 'close') setTimeout(() => callback(0), 5);
+                })
+            };
+            
+            // Mock ffmpeg for frame extraction (second call)
+            const mockFfmpegProcess = {
+                stdout: {
+                    on: vi.fn((event, callback) => {
+                        if (event === 'data') {
+                            // Simulate PNG image data
+                            callback(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
+                        }
+                    })
+                },
+                stderr: { on: vi.fn() },
+                on: vi.fn((event, callback) => {
+                    if (event === 'close') setTimeout(() => callback(0), 10);
+                })
+            };
+            
+            // First call is ffprobe, second is ffmpeg
+            mocks.spawn
+                .mockReturnValueOnce(mockFfprobeProcess as any)
+                .mockReturnValueOnce(mockFfmpegProcess as any);
+
+            const result = await extractLastFrame('video.mp4');
+
+            expect(result.success).toBe(true);
+            expect(result.base64Image).toContain('data:image/png;base64,');
+            expect(result.frameNumber).toBe(48);  // Last frame index (49 - 1)
+        });
+
+        it('should support JPEG output format', async () => {
+            mocks.existsSync.mockReturnValue(true);
+            
+            const mockFfprobeProcess = {
+                stdout: {
+                    on: vi.fn((event, callback) => {
+                        if (event === 'data') callback(Buffer.from('100\n'));
+                    })
+                },
+                stderr: { on: vi.fn() },
+                on: vi.fn((event, callback) => {
+                    if (event === 'close') setTimeout(() => callback(0), 5);
+                })
+            };
+            
+            const mockFfmpegProcess = {
+                stdout: {
+                    on: vi.fn((event, callback) => {
+                        if (event === 'data') {
+                            callback(Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));  // JPEG magic bytes
+                        }
+                    })
+                },
+                stderr: { on: vi.fn() },
+                on: vi.fn((event, callback) => {
+                    if (event === 'close') setTimeout(() => callback(0), 10);
+                })
+            };
+            
+            mocks.spawn
+                .mockReturnValueOnce(mockFfprobeProcess as any)
+                .mockReturnValueOnce(mockFfmpegProcess as any);
+
+            const result = await extractLastFrame('video.mp4', 'jpg');
+
+            expect(result.success).toBe(true);
+            expect(result.base64Image).toContain('data:image/jpeg;base64,');
+        });
+
+        it('should handle ffmpeg extraction failure', async () => {
+            mocks.existsSync.mockReturnValue(true);
+            
+            const mockFfprobeProcess = {
+                stdout: {
+                    on: vi.fn((event, callback) => {
+                        if (event === 'data') callback(Buffer.from('100\n'));
+                    })
+                },
+                stderr: { on: vi.fn() },
+                on: vi.fn((event, callback) => {
+                    if (event === 'close') setTimeout(() => callback(0), 5);
+                })
+            };
+            
+            const mockFfmpegProcess = {
+                stdout: { on: vi.fn() },  // No output
+                stderr: { 
+                    on: vi.fn((event, callback) => {
+                        if (event === 'data') callback(Buffer.from('Error: Invalid video format'));
+                    })
+                },
+                on: vi.fn((event, callback) => {
+                    if (event === 'close') setTimeout(() => callback(1), 10);  // Error exit code
+                })
+            };
+            
+            mocks.spawn
+                .mockReturnValueOnce(mockFfprobeProcess as any)
+                .mockReturnValueOnce(mockFfmpegProcess as any);
+
+            const result = await extractLastFrame('corrupt.mp4');
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('ffmpeg frame extraction failed');
+        });
+    });
+
+    describe('extractFrame', () => {
+        it('should return error if video file does not exist', async () => {
+            mocks.existsSync.mockReturnValue(false);
+
+            const result = await extractFrame('nonexistent.mp4', 0);
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('Video not found');
+        });
+
+        it('should extract specific frame by number', async () => {
+            mocks.existsSync.mockReturnValue(true);
+            
+            const mockProcess = {
+                stdout: {
+                    on: vi.fn((event, callback) => {
+                        if (event === 'data') {
+                            callback(Buffer.from([0x89, 0x50, 0x4E, 0x47]));
+                        }
+                    })
+                },
+                stderr: { on: vi.fn() },
+                on: vi.fn((event, callback) => {
+                    if (event === 'close') setTimeout(() => callback(0), 10);
+                })
+            };
+            
+            mocks.spawn.mockReturnValue(mockProcess as any);
+
+            const result = await extractFrame('video.mp4', 24);
+
+            expect(result.success).toBe(true);
+            expect(result.base64Image).toBeDefined();
+            expect(result.frameNumber).toBe(24);
+            
+            // Verify ffmpeg was called with correct timestamp (24 frames / 24 fps = 1 second)
+            const spawnCall = mocks.spawn.mock.calls[0];
+            const args = spawnCall ? spawnCall[1] as string[] : [];
+            expect(args).toContain('-ss');
+            expect(args[args.indexOf('-ss') + 1]).toBe('1.0000');
+        });
+
+        it('should calculate correct timestamp for arbitrary frame', async () => {
+            mocks.existsSync.mockReturnValue(true);
+            
+            const mockProcess = {
+                stdout: {
+                    on: vi.fn((event, callback) => {
+                        if (event === 'data') callback(Buffer.from([0x89]));
+                    })
+                },
+                stderr: { on: vi.fn() },
+                on: vi.fn((event, callback) => {
+                    if (event === 'close') setTimeout(() => callback(0), 10);
+                })
+            };
+            
+            mocks.spawn.mockReturnValue(mockProcess as any);
+
+            await extractFrame('video.mp4', 12);
+
+            // 12 frames / 24 fps = 0.5 seconds
+            const spawnCall = mocks.spawn.mock.calls[0];
+            const args = spawnCall ? spawnCall[1] as string[] : [];
+            expect(args[args.indexOf('-ss') + 1]).toBe('0.5000');
+        });
+
+        it('should handle frame extraction error gracefully', async () => {
+            mocks.existsSync.mockReturnValue(true);
+            
+            const mockProcess = {
+                stdout: { on: vi.fn() },
+                stderr: { on: vi.fn() },
+                on: vi.fn((event, callback) => {
+                    if (event === 'error') {
+                        setTimeout(() => callback(new Error('ffmpeg not found')), 10);
+                    }
+                })
+            };
+            
+            mocks.spawn.mockReturnValue(mockProcess as any);
+
+            const result = await extractFrame('video.mp4', 0);
+
+            expect(result.success).toBe(false);
+            expect(result.error).toContain('ffmpeg spawn error');
         });
     });
 });

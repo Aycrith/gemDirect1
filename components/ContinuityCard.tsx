@@ -1,5 +1,5 @@
 import React from 'react';
-import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion, KeyframeData, LocalGenerationStatus } from '../types';
+import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion, KeyframeData, LocalGenerationStatus, isBookendKeyframe, getActiveKeyframeImage, isVersionedKeyframe } from '../types';
 import { extractFramesFromVideo } from '../utils/videoUtils';
 import { extractVideoFromLocalStatus } from '../utils/videoValidation';
 
@@ -12,6 +12,7 @@ import ImageIcon from './icons/ImageIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
 import BookOpenIcon from './icons/BookOpenIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
+import KeyframeVersionSelector from './KeyframeVersionSelector';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 import { useVisualBible } from '../utils/hooks';
 import { getSceneVisualBibleContext, computeSceneContinuityScore, CharacterContinuityIssue } from '../services/continuityVisualContext';
@@ -39,6 +40,8 @@ interface ContinuityCardProps {
   characterContinuityIssues?: CharacterContinuityIssue[];
   /** Optional: Local generation status for this scene (for displaying generated videos) */
   localGenStatus?: LocalGenerationStatus;
+  /** Optional: Callback for selecting a keyframe version from history */
+  onSelectKeyframeVersion?: (sceneId: string, versionIndex: number) => void;
 }
 
 const ScoreCircle: React.FC<{ score: number; label: string }> = ({ score, label }) => {
@@ -93,7 +96,8 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   allScenes,
   onRerunScene,
   characterContinuityIssues = [],
-  localGenStatus
+  localGenStatus,
+  onSelectKeyframeVersion
 }) => {
     const { analyzeVideoFrames, getPrunedContextForContinuity, scoreContinuity } = usePlanExpansionActions();
     const { visualBible } = useVisualBible();
@@ -195,9 +199,15 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                 {generatedImage && (
                     <div className="mb-4">
                         <h4 className="text-sm font-semibold text-gray-300 mb-2 flex items-center"><ImageIcon className="w-4 h-4 mr-2 text-amber-400" />Scene Keyframe</h4>
-                        {typeof generatedImage === 'string' ? (
-                            <img src={`data:image/jpeg;base64,${generatedImage}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover border border-gray-600"/>
-                        ) : (
+                        {/* Version selector (only shown for versioned keyframes with history) */}
+                        {onSelectKeyframeVersion && isVersionedKeyframe(generatedImage) && (
+                            <KeyframeVersionSelector
+                                sceneId={scene.id}
+                                keyframeData={generatedImage}
+                                onSelectVersion={onSelectKeyframeVersion}
+                            />
+                        )}
+                        {isBookendKeyframe(generatedImage) ? (
                             <div className="flex gap-1">
                                 <div className="relative flex-1">
                                     <img src={`data:image/jpeg;base64,${generatedImage.start}`} alt={`Start Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover border border-gray-600"/>
@@ -208,6 +218,8 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                                     <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs text-center py-1 rounded-b-lg">End</div>
                                 </div>
                             </div>
+                        ) : (
+                            <img src={`data:image/jpeg;base64,${getActiveKeyframeImage(generatedImage)}`} alt={`Keyframe for ${scene.title}`} className="rounded-lg w-full aspect-video object-cover border border-gray-600"/>
                         )}
                     </div>
                 )}

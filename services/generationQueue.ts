@@ -440,10 +440,12 @@ export class GenerationQueue {
         // Execute with timeout
         const timeoutMs = nextTask.timeoutMs ?? DEFAULT_GENERATION_TIMEOUT_MS;
         
+        const timeout = this.createTimeout(timeoutMs);
+
         try {
             const result = await Promise.race([
                 nextTask.execute(),
-                this.createTimeout(timeoutMs),
+                timeout.promise,
             ]);
 
             // Success
@@ -487,6 +489,8 @@ export class GenerationQueue {
                 this.circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_RESET_MS;
                 console.warn(`[GenerationQueue] Circuit breaker opened after ${this.consecutiveFailures} consecutive failures. Retry in ${CIRCUIT_BREAKER_RESET_MS / 1000}s`);
             }
+        } finally {
+            timeout.cancel();
         }
 
         // Remove task from queue and continue processing
@@ -502,15 +506,26 @@ export class GenerationQueue {
         this.processQueue();
     }
 
-    private createTimeout(ms: number): Promise<never> {
-        return new Promise((_, reject) => {
-            setTimeout(() => {
+    private createTimeout(ms: number): { promise: Promise<never>; cancel: () => void } {
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+        const promise = new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => {
                 reject(new CSGError(ErrorCodes.COMFYUI_TIMEOUT_GENERATION, {
                     timeoutMs: ms,
                     message: `Operation timed out after ${ms}ms`,
                 }));
             }, ms);
         });
+
+        return {
+            promise,
+            cancel: () => {
+                if (timeoutId !== undefined) {
+                    clearTimeout(timeoutId);
+                }
+            },
+        };
     }
 
     private notifyListeners(): void {
@@ -625,6 +640,37 @@ export function createVideoTask<T>(
             sceneId: options.sceneId,
             shotId: options.shotId,
             description: `Video for ${options.shotId ? `shot ${options.shotId}` : `scene ${options.sceneId}`}`,
+        },
+        onProgress: options.onProgress,
+        onStatusChange: options.onStatusChange,
+    };
+}
+
+/**
+ * Create a task for image generation (shot images, auxiliary images)
+ */
+export function createImageTask<T>(
+    execute: () => Promise<T>,
+    options: {
+        sceneId: string;
+        shotId?: string;
+        description?: string;
+        priority?: GenerationPriority;
+        timeoutMs?: number;
+        onProgress?: (progress: number, message?: string) => void;
+        onStatusChange?: (status: GenerationStatus) => void;
+    }
+): GenerationTask<T> {
+    return {
+        id: generateTaskId('image', options.shotId ?? options.sceneId),
+        type: 'image',
+        priority: options.priority ?? 'normal',
+        execute,
+        timeoutMs: options.timeoutMs ?? 5 * 60 * 1000, // Images get 5 min timeout
+        metadata: {
+            sceneId: options.sceneId,
+            shotId: options.shotId,
+            description: options.description ?? `Image for ${options.shotId ? `shot ${options.shotId}` : `scene ${options.sceneId}`}`,
         },
         onProgress: options.onProgress,
         onStatusChange: options.onStatusChange,

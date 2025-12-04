@@ -242,6 +242,8 @@ function parseCharacterEntry(entry: string, index: number): CharacterProfile | n
  * - **Name**: Description
  * - - Name: Description
  * - # Name\n Description
+ * - Name, description; Name, description (semicolon-separated)
+ * - NAME CAPS, description; NAME CAPS, description
  * 
  * @param markdownCharacters - Markdown-formatted character descriptions
  * @returns Array of parsed CharacterProfile objects
@@ -253,7 +255,25 @@ export function parseMarkdownToProfiles(markdownCharacters: string): CharacterPr
     
     const profiles: CharacterProfile[] = [];
     
-    // Split by common character delimiters
+    // Check if this is semicolon-separated format (common from LLM outputs)
+    // Pattern: "NAME ROLE, description; NAME ROLE, description"
+    // Example: "Detective EVELYN 'EVA' RHODES, a relentless investigator; DR. LUCIUS GRAHAM, a brilliant scientist"
+    const semicolonEntries = markdownCharacters.split(/;\s*/);
+    if (semicolonEntries.length >= 2 && !markdownCharacters.includes('**') && !markdownCharacters.includes('\n-')) {
+        // Parse semicolon-separated format
+        for (let i = 0; i < semicolonEntries.length; i++) {
+            const entry = semicolonEntries[i]?.trim();
+            if (!entry || entry.length < 5) continue;
+            
+            const profile = parseSemicolonEntry(entry, i);
+            if (profile) {
+                profiles.push(profile);
+            }
+        }
+        return profiles;
+    }
+    
+    // Split by common character delimiters (original markdown formats)
     const entries = markdownCharacters
         .split(/(?=\*\*[^*]+\*\*:|^-\s+[A-Z]|^#+\s+)/m)
         .map(e => e.trim())
@@ -269,6 +289,69 @@ export function parseMarkdownToProfiles(markdownCharacters: string): CharacterPr
     }
     
     return profiles;
+}
+
+/**
+ * Parses a semicolon-separated character entry.
+ * Format: "NAME ROLE, description text" or "TITLE NAME, description"
+ */
+function parseSemicolonEntry(entry: string, index: number): CharacterProfile | null {
+    // Pattern: Look for name (often in CAPS or with title like "Detective", "Dr.")
+    // followed by a comma and description
+    const commaIndex = entry.indexOf(',');
+    if (commaIndex === -1) {
+        // No comma - try to extract name from first few words
+        const words = entry.split(/\s+/);
+        const name = words.slice(0, Math.min(3, words.length)).join(' ');
+        const description = entry;
+        return buildProfileFromNameDescription(name, description, index);
+    }
+    
+    const namePart = entry.slice(0, commaIndex).trim();
+    const description = entry.slice(commaIndex + 1).trim();
+    
+    // Clean up name (remove quotes, normalize)
+    const cleanName = namePart
+        .replace(/['"]/g, '')  // Remove quotes
+        .replace(/\s+/g, ' ')  // Normalize whitespace
+        .trim();
+    
+    return buildProfileFromNameDescription(cleanName, description, index);
+}
+
+/**
+ * Builds a CharacterProfile from name and description.
+ */
+function buildProfileFromNameDescription(name: string, description: string, index: number): CharacterProfile | null {
+    if (!name || name.length < 2) return null;
+    
+    const appearance = extractAppearanceHints(description);
+    const personality = extractPersonality(description);
+    const motivations = extractMotivations(description);
+    const role = detectRole(description + ' ' + name);
+    
+    // Build visual descriptor
+    const visualParts: string[] = [];
+    if (appearance.hair) visualParts.push(appearance.hair);
+    if (appearance.eyes) visualParts.push(appearance.eyes);
+    if (appearance.build) visualParts.push(appearance.build);
+    if (appearance.height) visualParts.push(appearance.height);
+    
+    const visualDescriptor = visualParts.length > 0
+        ? `${name}, ${visualParts.join(', ')}`
+        : `${name}, distinctive appearance`;
+    
+    return {
+        id: `char-${index + 1}`,
+        name,
+        appearance,
+        personality: personality.length > 0 ? personality : ['complex'],
+        backstory: description.slice(0, 200),
+        motivations: motivations.length > 0 ? motivations : ['driven by purpose'],
+        relationships: [],
+        visualDescriptor,
+        role,
+    };
 }
 
 // ============================================================================

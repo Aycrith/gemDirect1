@@ -1,0 +1,100 @@
+[
+  {
+    "issueId": "ts-agent-core-Guardian.ts-8-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T06:21:00.192Z"
+  },
+  {
+    "issueId": "ts-agent-core-Guardian.ts-9-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T06:21:00.199Z"
+  },
+  {
+    "issueId": "ts-agent-index.ts-179-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T06:21:00.215Z"
+  },
+  {
+    "issueId": "ts-agent-index.ts-225-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T06:21:00.550Z"
+  },
+  {
+    "issueId": "ts-agent-index.ts-239-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T06:21:00.551Z"
+  },
+  {
+    "issueId": "ts-agent-watchers-GapAnalyzer.ts-228-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T06:21:00.551Z"
+  },
+  {
+    "issueId": "ts-agent-watchers-GapAnalyzer.ts-246-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T06:21:00.572Z"
+  },
+  {
+    "issueId": "ts-agent-watchers-GapAnalyzer.ts-230-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T06:23:00.196Z"
+  },
+  {
+    "issueId": "ts-agent-watchers-GapAnalyzer.ts-248-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T06:23:00.206Z"
+  },
+  {
+    "issueId": "ts-services-__tests__-lmStudioModelManager.test.ts-14-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T07:31:08.070Z"
+  },
+  {
+    "issueId": "ts-services-__tests__-lmStudioModelManager.test.ts-15-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T07:31:08.079Z"
+  },
+  {
+    "issueId": "ts-services-__tests__-lmStudioModelManager.test.ts-128-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T07:31:08.088Z"
+  },
+  {
+    "issueId": "ts-components-TimelineEditor.tsx-396-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T20:55:43.006Z"
+  },
+  {
+    "issueId": "ts-components-TimelineEditor.tsx-401-TS6133",
+    "success": false,
+    "action": "queued",
+    "message": "Remove unused variable or prefix with underscore",
+    "timestamp": "2025-11-30T20:55:43.016Z"
+  }
+]

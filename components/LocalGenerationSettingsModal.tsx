@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LocalGenerationSettings, WorkflowProfile } from '../types';
+import { LocalGenerationSettings, WorkflowProfile, WorkflowPostProcessingOptions } from '../types';
 import { 
     validateWorkflows, 
     parseError, 
@@ -14,6 +14,12 @@ import {
     checkFlagDependencies,
     validateFlagCombination,
 } from '../utils/featureFlags';
+import {
+    validateActiveModelsWithEnforcement,
+    formatEnforcementResult,
+    type EnforcementResult,
+} from '../utils/modelSanityCheck';
+import { testLLMConnection, testComfyUIConnection } from '../services/comfyUIService';
 
 interface LocalGenerationSettingsModalProps {
     isOpen: boolean;
@@ -26,6 +32,12 @@ interface LocalGenerationSettingsModalProps {
 interface ConnectionStatus {
     llm: { 
         status: 'idle' | 'testing' | 'success' | 'error'; 
+        message: string;
+        models?: string[];
+        details?: string;
+    };
+    visionLlm: {
+        status: 'idle' | 'testing' | 'success' | 'error';
         message: string;
         models?: string[];
         details?: string;
@@ -61,6 +73,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
     });
     const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
         llm: { status: 'idle', message: '' },
+        visionLlm: { status: 'idle', message: '' },
         comfyui: { status: 'idle', message: '' }
     });
     const [validationState, setValidationState] = useState<ValidationState>({
@@ -71,6 +84,8 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
     });
     const [hasChanges, setHasChanges] = useState(false);
     const [showValidationPanel, setShowValidationPanel] = useState(false);
+    const [modelSanityResult, setModelSanityResult] = useState<EnforcementResult | null>(null);
+    const [isRunningModelCheck, setIsRunningModelCheck] = useState(false);
 
     // Sync form data when settings prop changes, ensuring defaults are set
     useEffect(() => {
@@ -132,104 +147,110 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
         }
     };
 
+    // Helper to update post-processing options for the selected bookend workflow profile
+    const handlePostProcessingChange = (field: keyof WorkflowPostProcessingOptions, value: any) => {
+        const profileId = formData.sceneBookendWorkflowProfile || 'wan-flf2v';
+        setFormData(prev => {
+            const currentProfile = prev.workflowProfiles?.[profileId];
+            if (!currentProfile) return prev;
+            
+            return {
+                ...prev,
+                workflowProfiles: {
+                    ...prev.workflowProfiles,
+                    [profileId]: {
+                        ...currentProfile,
+                        postProcessing: {
+                            ...(currentProfile.postProcessing || {}),
+                            [field]: value
+                        }
+                    }
+                }
+            };
+        });
+        setHasChanges(true);
+    };
+
+    // Get current post-processing settings for the selected bookend workflow
+    const getPostProcessingSettings = (): WorkflowPostProcessingOptions => {
+        const profileId = formData.sceneBookendWorkflowProfile || 'wan-flf2v';
+        const profile = formData.workflowProfiles?.[profileId];
+        return profile?.postProcessing || {
+            snapEndpointsToKeyframes: true,
+            startFrameCount: 1,
+            endFrameCount: 1,
+            blendMode: 'hard',
+            fadeFrames: 3
+        };
+    };
+
     const handleTestLLMConnection = async () => {
         setConnectionStatus(prev => ({ ...prev, llm: { status: 'testing', message: 'Connecting...' } }));
         
         try {
             // Use proxy in DEV mode to avoid CORS issues (same as localStoryService)
-            let testUrl: string;
+            let providerUrl: string;
             if (import.meta.env.DEV) {
                 // In development, use Vite proxy endpoint for /v1/models
-                testUrl = '/api/local-llm-models';
+                providerUrl = '/api/local-llm-models';
             } else {
-                // In production, construct /v1/models endpoint properly
-                const url = formData.llmProviderUrl || 
+                // In production, use the configured URL or default
+                providerUrl = formData.llmProviderUrl || 
                            import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL || 
                            (typeof window !== 'undefined' && (window as any).LOCAL_STORY_PROVIDER_URL) || 
                            'http://192.168.50.192:1234/v1/chat/completions';
-                
-                // Robust URL normalization: handle varied input formats
-                // Accept: http://host:port, http://host:port/, http://host:port/v1, http://host:port/v1/chat/completions
-                // Output: Always http://host:port/v1/models (never /v1/chat/completions-models)
-                let baseUrl = url.trim();
-                
-                // Strip trailing slash
-                if (baseUrl.endsWith('/')) {
-                    baseUrl = baseUrl.slice(0, -1);
-                }
-                
-                // Remove any existing /v1/* path segments
-                if (baseUrl.includes('/v1/')) {
-                    baseUrl = baseUrl.substring(0, baseUrl.indexOf('/v1'));
-                } else if (baseUrl.endsWith('/v1')) {
-                    baseUrl = baseUrl.slice(0, -3);
-                }
-                
-                // Construct the /v1/models endpoint
-                testUrl = `${baseUrl}/v1/models`;
             }
             
-            const response = await fetch(testUrl, { 
-                method: 'GET',
-                signal: AbortSignal.timeout(5000)
-            });
+            // Use service layer for connection testing
+            const result = await testLLMConnection(providerUrl);
             
-            if (response.ok) {
-                const data = await response.json();
-                const models = data.data || [];
-                const modelCount = models.length;
-                const modelNames = models.slice(0, 3).map((m: any) => m.id || m.name).filter(Boolean);
-                
-                if (modelCount === 0) {
-                    // Connected but no models - ALLOW SAVING with warning
-                    setConnectionStatus(prev => ({ 
-                        ...prev, 
-                        llm: { 
-                            status: 'success',
-                            message: 'Connection successful, but no models detected. You can save settings and load models later.',
-                            models: [],
-                            details: 'Load a model in LM Studio before generating stories'
-                        } 
-                    }));
-                    setValidationState(prev => ({
-                        ...prev,
-                        llm: {
-                            valid: true,
-                            message: 'Connected (no models loaded)',
-                            warnings: ['No models currently loaded - load a model before generating'],
-                            fixes: [
-                                'Load a model in LM Studio (File → Load Model)',
-                                'Verify model download completed successfully',
-                            ],
-                            helpUrl: HELP_DOCS.LLM_NO_MODELS
-                        }
-                    }));
-                    addToast('LM Studio connected (no models loaded yet)', 'info');
-                } else {
-                    // Success with models
-                    const modelList = modelNames.length > 0 
-                        ? ` (${modelNames.join(', ')}${modelCount > 3 ? ` +${modelCount - 3} more` : ''})` 
-                        : '';
-                    setConnectionStatus(prev => ({ 
-                        ...prev, 
-                        llm: { 
-                            status: 'success', 
-                            message: `Connection successful. Found ${modelCount} model(s)${modelList}. Ready to proceed.`,
-                            models: modelNames,
-                            details: `Available models: ${modelCount}`
-                        } 
-                    }));
-                    setValidationState(prev => ({
-                        ...prev,
-                        llm: {
-                            valid: true,
-                            message: `${modelCount} model(s) available`
-                        }
-                    }));
-                    addToast(`LM Studio connected: ${modelCount} model(s) ready`, 'success');
-                }
+            if (result.modelCount === 0) {
+                // Connected but no models - ALLOW SAVING with warning
+                setConnectionStatus(prev => ({ 
+                    ...prev, 
+                    llm: { 
+                        status: 'success',
+                        message: 'Connection successful, but no models detected. You can save settings and load models later.',
+                        models: [],
+                        details: 'Load a model in LM Studio before generating stories'
+                    } 
+                }));
+                setValidationState(prev => ({
+                    ...prev,
+                    llm: {
+                        valid: true,
+                        message: 'Connected (no models loaded)',
+                        warnings: ['No models currently loaded - load a model before generating'],
+                        fixes: [
+                            'Load a model in LM Studio (File → Load Model)',
+                            'Verify model download completed successfully',
+                        ],
+                        helpUrl: HELP_DOCS.LLM_NO_MODELS
+                    }
+                }));
+                addToast('LM Studio connected (no models loaded yet)', 'info');
             } else {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                // Success with models
+                const modelList = result.models.length > 0 
+                    ? ` (${result.models.join(', ')}${result.modelCount > 3 ? ` +${result.modelCount - 3} more` : ''})` 
+                    : '';
+                setConnectionStatus(prev => ({ 
+                    ...prev, 
+                    llm: { 
+                        status: 'success', 
+                        message: `Connection successful. Found ${result.modelCount} model(s)${modelList}. Ready to proceed.`,
+                        models: result.models,
+                        details: `Available models: ${result.modelCount}`
+                    } 
+                }));
+                setValidationState(prev => ({
+                    ...prev,
+                    llm: {
+                        valid: true,
+                        message: `${result.modelCount} model(s) available`
+                    }
+                }));
+                addToast(`LM Studio connected: ${result.modelCount} model(s) ready`, 'success');
             }
         } catch (error: any) {
             const errorInfo = parseError(error);
@@ -255,50 +276,112 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
         }
     };
 
+    const handleTestVisionLLMConnection = async () => {
+        setConnectionStatus(prev => ({ ...prev, visionLlm: { status: 'testing', message: 'Connecting to Vision LLM...' } }));
+        
+        try {
+            // Determine which URL to use: vision-specific or fall back to main LLM
+            const useUnified = formData.useUnifiedVisionModel ?? true;
+            const providerUrl = useUnified 
+                ? (formData.llmProviderUrl || import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL || 'http://192.168.50.192:1234/v1/chat/completions')
+                : (formData.visionLLMProviderUrl || formData.llmProviderUrl || 'http://192.168.50.192:1234/v1/chat/completions');
+            
+            // Use dev proxy URL or the actual URL
+            const testUrl = import.meta.env.DEV ? '/api/local-llm-models' : providerUrl;
+            
+            // Use service layer for connection testing
+            const result = await testLLMConnection(testUrl);
+            
+            const expectedModel = useUnified
+                ? (formData.llmModel || import.meta.env.VITE_LOCAL_LLM_MODEL || '')
+                : (formData.visionLLMModel || '');
+            
+            // Check if the expected model is loaded
+            const modelLoaded = expectedModel && result.models.some(modelName => 
+                modelName.toLowerCase().includes(expectedModel.toLowerCase().split('/').pop() || '')
+            );
+            
+            if (result.modelCount === 0) {
+                setConnectionStatus(prev => ({
+                    ...prev,
+                    visionLlm: {
+                        status: 'success',
+                        message: 'Connected, but no models loaded. Load a vision model (e.g., Qwen3-VL) in LM Studio.',
+                        models: [],
+                        details: 'Vision analysis will not work without a loaded model'
+                    }
+                }));
+                addToast('Vision LLM connected (no models loaded)', 'info');
+            } else if (modelLoaded) {
+                setConnectionStatus(prev => ({
+                    ...prev,
+                    visionLlm: {
+                        status: 'success',
+                        message: `✓ Vision model ready: ${expectedModel.split('/').pop()}`,
+                        models: result.models,
+                        details: `Found ${result.modelCount} model(s)`
+                    }
+                }));
+                addToast('Vision LLM connected and model loaded', 'success');
+            } else {
+                const loadedNames = result.models.slice(0, 2);
+                setConnectionStatus(prev => ({
+                    ...prev,
+                    visionLlm: {
+                        status: 'success',
+                        message: `Connected. Models available: ${loadedNames.join(', ')}${result.modelCount > 2 ? '...' : ''}`,
+                        models: loadedNames,
+                        details: expectedModel ? `Expected model "${expectedModel}" not found` : 'Configure a vision model name'
+                    }
+                }));
+                addToast(`Vision LLM connected (${result.modelCount} models)`, 'success');
+            }
+        } catch (error: any) {
+            const errorInfo = parseError(error);
+            setConnectionStatus(prev => ({
+                ...prev,
+                visionLlm: {
+                    status: 'error',
+                    message: `Vision LLM connection failed: ${errorInfo.title}`,
+                    details: errorInfo.description
+                }
+            }));
+            addToast(`Vision LLM error: ${errorInfo.title}`, 'error');
+        }
+    };
+
     const handleTestComfyUIConnection = async () => {
         setConnectionStatus(prev => ({ ...prev, comfyui: { status: 'testing', message: 'Connecting...' } }));
         
         try {
             // Use proxy in DEV mode to avoid CORS issues
-            let testUrl: string;
+            let comfyUIUrl: string;
             if (import.meta.env.DEV) {
-                testUrl = '/api/comfyui-test';
+                comfyUIUrl = 'http://127.0.0.1:8188';  // Will route through Vite proxy
             } else {
-                const url = formData.comfyUIUrl || 'http://127.0.0.1:8188';
-                testUrl = `${url}/system_stats`;
+                comfyUIUrl = formData.comfyUIUrl || 'http://127.0.0.1:8188';
             }
             
-            const response = await fetch(testUrl, { 
-                method: 'GET',
-                signal: AbortSignal.timeout(5000)
-            });
+            // Use service layer for connection testing
+            const result = await testComfyUIConnection(comfyUIUrl);
             
-            if (response.ok) {
-                const data = await response.json();
-                const device = data.devices?.[0];
-                const deviceInfo = device?.name || 'Unknown GPU';
-                const vramTotal = device?.vram_total ? ` (${(device.vram_total / 1024 / 1024 / 1024).toFixed(1)} GB VRAM)` : '';
-                
-                setConnectionStatus(prev => ({ 
-                    ...prev, 
-                    comfyui: { 
-                        status: 'success', 
-                        message: `Connection successful. GPU: ${deviceInfo}${vramTotal}. Ready to proceed.`,
-                        gpu: deviceInfo,
-                        details: `System ready for workflow execution`
-                    } 
-                }));
-                setValidationState(prev => ({
-                    ...prev,
-                    comfyui: {
-                        valid: true,
-                        message: `Connected (GPU: ${deviceInfo})`
-                    }
-                }));
-                addToast(`ComfyUI connected: ${deviceInfo}`, 'success');
-            } else {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
+            setConnectionStatus(prev => ({ 
+                ...prev, 
+                comfyui: { 
+                    status: 'success', 
+                    message: `Connection successful. GPU: ${result.gpu}. Ready to proceed.`,
+                    gpu: result.gpu,
+                    details: `System ready for workflow execution`
+                } 
+            }));
+            setValidationState(prev => ({
+                ...prev,
+                comfyui: {
+                    valid: true,
+                    message: `Connected (GPU: ${result.gpu})`
+                }
+            }));
+            addToast(`ComfyUI connected: ${result.gpu}`, 'success');
         } catch (error: any) {
             const errorInfo = parseError(error);
             setConnectionStatus(prev => ({ 
@@ -774,6 +857,126 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                     )}
                                 </div>
                             </div>
+
+                            {/* Vision LLM Configuration Section */}
+                            <div className="mt-8 pt-6 border-t border-gray-700">
+                                <div className="bg-purple-900/20 border border-purple-700/30 rounded-lg p-4 mb-4">
+                                    <h4 className="text-sm font-medium text-purple-300 mb-2">👁️ Vision LLM (Image Analysis)</h4>
+                                    <p className="text-xs text-gray-400">
+                                        Vision-enabled LLM for analyzing generated keyframes and providing prompt feedback. 
+                                        Used to improve image quality through iterative refinement.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {/* Unified Model Toggle */}
+                                    <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg">
+                                        <input
+                                            type="checkbox"
+                                            id="useUnifiedVisionModel"
+                                            checked={formData.useUnifiedVisionModel ?? true}
+                                            onChange={(e) => handleInputChange('useUnifiedVisionModel', e.target.checked)}
+                                            className="w-4 h-4 rounded bg-gray-700 border-gray-600 text-purple-500 focus:ring-purple-500"
+                                        />
+                                        <label htmlFor="useUnifiedVisionModel" className="text-sm text-gray-300">
+                                            <span className="font-medium">Use same model for text and vision</span>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                Recommended for abliterated vision models like Qwen3-VL that handle both tasks
+                                            </p>
+                                        </label>
+                                    </div>
+
+                                    {/* Separate Vision LLM Config (only shown when not unified) */}
+                                    {!(formData.useUnifiedVisionModel ?? true) && (
+                                        <div className="space-y-4 border-l-4 border-purple-500 pl-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                    Vision LLM Provider URL
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={formData.visionLLMProviderUrl || formData.llmProviderUrl || ''}
+                                                    onChange={(e) => handleInputChange('visionLLMProviderUrl', e.target.value)}
+                                                    placeholder="http://192.168.50.192:1234/v1/chat/completions"
+                                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                                />
+                                                <p className="text-xs text-gray-500 mt-1">Leave empty to use main LLM URL</p>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                    Vision Model Name
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={formData.visionLLMModel || ''}
+                                                    onChange={(e) => handleInputChange('visionLLMModel', e.target.value)}
+                                                    placeholder="huihui-qwen3-vl-32b-instruct-abliterated"
+                                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                                />
+                                                <p className="text-xs text-gray-500 mt-1">Vision-capable model for image analysis</p>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-300 mb-2">
+                                                    Vision Temperature: {(formData.visionLLMTemperature ?? 0.3).toFixed(2)}
+                                                </label>
+                                                <input
+                                                    type="range"
+                                                    min="0"
+                                                    max="1"
+                                                    step="0.05"
+                                                    value={formData.visionLLMTemperature ?? 0.3}
+                                                    onChange={(e) => handleInputChange('visionLLMTemperature', Number(e.target.value))}
+                                                    className="w-full"
+                                                />
+                                                <p className="text-xs text-gray-500 mt-1">Lower = more precise analysis</p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Test Vision Connection Button */}
+                                    <div className="pt-2">
+                                        <button
+                                            onClick={handleTestVisionLLMConnection}
+                                            disabled={connectionStatus.visionLlm.status === 'testing'}
+                                            className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            {connectionStatus.visionLlm.status === 'testing' ? 'Testing...' : '👁️ Test Vision LLM Connection'}
+                                        </button>
+                                        {connectionStatus.visionLlm.message && (
+                                            <div className={`mt-3 p-3 rounded-lg border ${
+                                                connectionStatus.visionLlm.status === 'success'
+                                                    ? 'bg-green-900/20 border-green-700/30'
+                                                    : connectionStatus.visionLlm.status === 'error'
+                                                    ? 'bg-red-900/20 border-red-700/30'
+                                                    : 'bg-purple-900/20 border-purple-700/30'
+                                            }`}>
+                                                <div className={`flex items-start gap-2 text-sm ${getStatusColor(connectionStatus.visionLlm.status)}`}>
+                                                    <span className="text-lg">{getStatusIcon(connectionStatus.visionLlm.status)}</span>
+                                                    <div className="flex-1">
+                                                        <p className="font-medium">{connectionStatus.visionLlm.message}</p>
+                                                        {connectionStatus.visionLlm.details && (
+                                                            <p className="text-xs mt-1 text-gray-400">{connectionStatus.visionLlm.details}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Vision Feature Info */}
+                                    <div className="bg-gray-800/30 rounded-lg p-3 text-xs text-gray-400">
+                                        <p className="font-medium text-gray-300 mb-1">📋 How Vision Analysis Works:</p>
+                                        <ul className="list-disc list-inside space-y-0.5">
+                                            <li>After keyframe generation, analyze the image for quality issues</li>
+                                            <li>Get composition, lighting, and coherence scores</li>
+                                            <li>Receive refined prompts to improve regeneration</li>
+                                            <li>Enable auto-analysis in Features tab for automatic feedback</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -1128,9 +1331,13 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                             // Also import profile selections if present
                                             ...(data.imageWorkflowProfile && { imageWorkflowProfile: data.imageWorkflowProfile }),
                                             ...(data.videoWorkflowProfile && { videoWorkflowProfile: data.videoWorkflowProfile }),
+                                            ...(data.sceneChainedWorkflowProfile && { sceneChainedWorkflowProfile: data.sceneChainedWorkflowProfile }),
+                                            ...(data.sceneBookendWorkflowProfile && { sceneBookendWorkflowProfile: data.sceneBookendWorkflowProfile }),
                                         };
                                         console.log('[Workflow Import] imageWorkflowProfile:', updatedFormData.imageWorkflowProfile);
                                         console.log('[Workflow Import] videoWorkflowProfile:', updatedFormData.videoWorkflowProfile);
+                                        console.log('[Workflow Import] sceneChainedWorkflowProfile:', updatedFormData.sceneChainedWorkflowProfile);
+                                        console.log('[Workflow Import] sceneBookendWorkflowProfile:', updatedFormData.sceneBookendWorkflowProfile);
                                         setFormData(updatedFormData);
                                         
                                         // Auto-persist imported workflows immediately
@@ -1424,6 +1631,141 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                     </div>
                                 )}
                             </div>
+
+                            {/* Workflow Profile Selection */}
+                            <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
+                                <h4 className="text-sm font-semibold text-gray-300 mb-3">Workflow Profile Selection</h4>
+                                <p className="text-xs text-gray-500 mb-4">
+                                    Select which workflow profiles to use for different generation tasks.
+                                </p>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                                            Bookend Video Workflow
+                                        </label>
+                                        <select
+                                            value={formData.sceneBookendWorkflowProfile || 'wan-flf2v'}
+                                            onChange={(e) => handleInputChange('sceneBookendWorkflowProfile', e.target.value)}
+                                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        >
+                                            {Object.keys(formData.workflowProfiles || {}).length > 0 ? (
+                                                Object.entries(formData.workflowProfiles || {}).map(([id, profile]) => (
+                                                    <option key={id} value={id}>{profile.label || id}</option>
+                                                ))
+                                            ) : (
+                                                <>
+                                                    <option value="wan-flf2v">WAN 2.2 First-Last-Frame (wan-flf2v)</option>
+                                                    <option value="wan-fun-inpaint">WAN 2.2 Fun Inpaint (wan-fun-inpaint)</option>
+                                                </>
+                                            )}
+                                        </select>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Used when generating videos with start/end keyframes. <code className="px-1 bg-gray-800 rounded">wan-flf2v</code> is recommended for bookend mode.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Video Post-Processing Options */}
+                            <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4">
+                                <h4 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                                    🎬 Video Post-Processing
+                                    <span className="px-2 py-0.5 text-xs bg-purple-900/50 text-purple-300 border border-purple-700 rounded">QA Pipeline</span>
+                                </h4>
+                                <p className="text-xs text-gray-500 mb-4">
+                                    Post-processing applied after video generation to improve endpoint consistency.
+                                </p>
+                                
+                                <div className="space-y-4">
+                                    {/* Endpoint Snapping Toggle */}
+                                    <label className="flex items-start gap-3 p-3 bg-gray-800/50 border border-gray-700 rounded-lg cursor-pointer hover:border-amber-500/50 transition-colors">
+                                        <input
+                                            type="checkbox"
+                                            checked={getPostProcessingSettings().snapEndpointsToKeyframes !== false}
+                                            onChange={(e) => handlePostProcessingChange('snapEndpointsToKeyframes', e.target.checked)}
+                                            className="mt-1 text-amber-400 focus:ring-amber-400 rounded"
+                                        />
+                                        <div className="flex-1">
+                                            <div className="font-medium text-gray-200 mb-1">Snap Endpoints to Keyframes</div>
+                                            <div className="text-xs text-gray-400">
+                                                Replace the first and last frames of generated videos with their corresponding keyframe images. 
+                                                Ensures visual consistency at video boundaries.
+                                            </div>
+                                        </div>
+                                    </label>
+
+                                    {/* Conditional: Frame count & blend options (only when snapping enabled) */}
+                                    {getPostProcessingSettings().snapEndpointsToKeyframes !== false && (
+                                        <div className="ml-6 space-y-3 border-l-2 border-gray-700 pl-4">
+                                            {/* Blend Mode */}
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-300 mb-1">Blend Mode</label>
+                                                <select
+                                                    value={getPostProcessingSettings().blendMode || 'hard'}
+                                                    onChange={(e) => handlePostProcessingChange('blendMode', e.target.value)}
+                                                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                >
+                                                    <option value="hard">Hard Replace (instant cut)</option>
+                                                    <option value="fade">Fade Blend (smooth transition)</option>
+                                                </select>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    <strong>Hard:</strong> Directly replace frames. <strong>Fade:</strong> Blend over multiple frames.
+                                                </p>
+                                            </div>
+
+                                            {/* Frame Counts */}
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-300 mb-1">Start Frames</label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        max="10"
+                                                        value={getPostProcessingSettings().startFrameCount || 1}
+                                                        onChange={(e) => handlePostProcessingChange('startFrameCount', Math.max(1, parseInt(e.target.value) || 1))}
+                                                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Frames to replace at start</p>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-300 mb-1">End Frames</label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        max="10"
+                                                        value={getPostProcessingSettings().endFrameCount || 1}
+                                                        onChange={(e) => handlePostProcessingChange('endFrameCount', Math.max(1, parseInt(e.target.value) || 1))}
+                                                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Frames to replace at end</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Fade Frames (only for fade mode) */}
+                                            {getPostProcessingSettings().blendMode === 'fade' && (
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-300 mb-1">Fade Duration (frames)</label>
+                                                    <input
+                                                        type="number"
+                                                        min="2"
+                                                        max="15"
+                                                        value={getPostProcessingSettings().fadeFrames || 3}
+                                                        onChange={(e) => handlePostProcessingChange('fadeFrames', Math.max(2, parseInt(e.target.value) || 3))}
+                                                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Number of frames over which to blend the transition</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="mt-3 pt-3 border-t border-gray-700">
+                                    <p className="text-xs text-gray-500">
+                                        💡 Post-processing settings apply to the selected bookend video workflow (<code className="px-1 bg-gray-800 rounded">{formData.sceneBookendWorkflowProfile || 'wan-flf2v'}</code>).
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -1434,6 +1776,87 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                     ⚠️ <strong>Advanced Settings:</strong> These settings are managed automatically. 
                                     Manual changes may cause unexpected behavior.
                                 </p>
+                            </div>
+
+                            {/* Model Sanity Check Section */}
+                            <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-blue-300 flex items-center gap-2">
+                                            🔍 Model Sanity Check
+                                        </h4>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            Verify that text LLM, vision LLM, and video workflow are correctly configured for bookend generation.
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setIsRunningModelCheck(true);
+                                            // Small delay to show loading state
+                                            setTimeout(() => {
+                                                const result = validateActiveModelsWithEnforcement(formData, { enforce: false });
+                                                setModelSanityResult(result);
+                                                setIsRunningModelCheck(false);
+                                            }, 100);
+                                        }}
+                                        disabled={isRunningModelCheck}
+                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-wait text-white text-sm rounded-lg transition-colors flex items-center gap-2"
+                                    >
+                                        {isRunningModelCheck ? (
+                                            <>
+                                                <span className="animate-spin">⏳</span>
+                                                Checking...
+                                            </>
+                                        ) : (
+                                            <>Run Model Sanity Check</>
+                                        )}
+                                    </button>
+                                </div>
+                                
+                                {modelSanityResult && (() => {
+                                    const formatted = formatEnforcementResult(modelSanityResult);
+                                    const bgColor = formatted.status === 'success' 
+                                        ? 'bg-green-900/30 border-green-700' 
+                                        : formatted.status === 'warning'
+                                            ? 'bg-yellow-900/30 border-yellow-700'
+                                            : 'bg-red-900/30 border-red-700';
+                                    const textColor = formatted.status === 'success'
+                                        ? 'text-green-300'
+                                        : formatted.status === 'warning'
+                                            ? 'text-yellow-300'
+                                            : 'text-red-300';
+                                    
+                                    return (
+                                        <div className={`mt-3 p-3 rounded-lg border ${bgColor}`}>
+                                            <div className={`text-sm font-medium ${textColor} mb-2`}>
+                                                {formatted.title}
+                                            </div>
+                                            <ul className="text-xs text-gray-300 space-y-1">
+                                                {formatted.details.map((detail, idx) => (
+                                                    <li key={idx} className="flex items-start gap-2">
+                                                        <span className="text-gray-500">•</span>
+                                                        <span>{detail}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                            {modelSanityResult.blocked && (
+                                                <div className="mt-2 text-xs text-red-400 font-medium">
+                                                    ⛔ Video generation will be blocked until issues are resolved.
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+
+                                <div className="mt-3 text-xs text-gray-500">
+                                    <strong>Expected configuration:</strong>
+                                    <ul className="mt-1 space-y-1">
+                                        <li>• Text LLM: <code className="text-blue-400">qwen/qwen3-14b</code></li>
+                                        <li>• Vision LLM: <code className="text-blue-400">qwen/qwen3-vl-8b</code></li>
+                                        <li>• Bookend Profile: <code className="text-blue-400">wan-flf2v</code></li>
+                                        <li>• VAE: <code className="text-blue-400">wan2.2_vae.safetensors</code></li>
+                                    </ul>
+                                </div>
                             </div>
 
                             <div className="space-y-4">
@@ -1588,13 +2011,13 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                         const deps = checkFlagDependencies(formData.featureFlags, meta.id);
                                         
                                         // Special handling for non-boolean flags
-                                        const isDropdownFlag = ['qualityPrefixVariant', 'sceneListValidationMode', 'promptTokenGuard'].includes(meta.id);
+                                        const isDropdownFlag = ['qualityPrefixVariant', 'sceneListValidationMode', 'promptTokenGuard', 'visionFeedbackProvider'].includes(meta.id);
                                         
                                         if (isDropdownFlag) {
                                             // Render dropdown for multi-value flags
                                             return (
                                                 <div key={meta.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
-                                                    currentValue !== 'off' && currentValue !== 'legacy'
+                                                    currentValue !== 'off' && currentValue !== 'legacy' && currentValue !== 'disabled'
                                                         ? 'bg-green-900/20 border-green-700/50' 
                                                         : 'bg-gray-800/50 border-gray-700'
                                                 }`}>
@@ -1627,6 +2050,12 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                                 <>
                                                                     <option value="legacy">Legacy (original prompts)</option>
                                                                     <option value="optimized">Optimized (enhanced quality)</option>
+                                                                </>
+                                                            ) : meta.id === 'visionFeedbackProvider' ? (
+                                                                <>
+                                                                    <option value="disabled">Disabled (no vision analysis)</option>
+                                                                    <option value="local-qwen">Local Qwen3-VL (via LM Studio)</option>
+                                                                    <option value="gemini">Gemini Pro Vision (requires API key)</option>
                                                                 </>
                                                             ) : (
                                                                 <>

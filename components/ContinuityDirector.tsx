@@ -14,6 +14,9 @@ import { findCharacterContinuityIssues } from '../services/continuityVisualConte
 // Phase 1C: Unified scene store integration
 import { useUnifiedSceneStoreEnabled } from '../hooks/useSceneStore';
 import { useSceneStateStore } from '../services/sceneStateStore';
+// Phase 1D: Generation status Zustand store integration
+import { useAllGenStatuses, DEFAULT_GENERATION_STATUS } from '../services/generationStatusStore';
+import { isFeatureEnabled } from '../utils/featureFlags';
 
 interface ContinuityDirectorProps {
   scenes: Scene[];
@@ -63,12 +66,28 @@ const ContinuityDirector: React.FC<ContinuityDirectorProps> = ({
   // Phase 1C: Zustand store integration with feature flag
   // When enabled, prefer reading from the new store for consistency
   const sceneStore = useSceneStateStore.getState;
+  const selectKeyframeVersion = useSceneStateStore(state => state.selectKeyframeVersion);
   const isStoreEnabled = useUnifiedSceneStoreEnabled(localGenSettings);
+  
+  // Phase 1D: Generation status store integration with feature flag
+  // When enabled, use Zustand store instead of prop-drilled localGenStatus
+  const isGenStatusStoreEnabled = isFeatureEnabled(localGenSettings?.featureFlags, 'useGenerationStatusStore');
+  const storeGenStatuses = useAllGenStatuses();
   
   // Use store data when enabled, otherwise use existing props (prop drilling)
   // Phase 1C: These variables now route through the unified store when flag is enabled
   const effectiveScenes = isStoreEnabled ? sceneStore().scenes : scenes;
   const effectiveGeneratedImages = isStoreEnabled ? sceneStore().generatedImages : generatedImages;
+  
+  // Phase 1D: Route to store or props based on feature flag
+  const effectiveGenStatuses: Record<string, LocalGenerationStatus> = isGenStatusStoreEnabled 
+    ? storeGenStatuses 
+    : (localGenStatus ?? {});
+
+  // Keyframe version selection handler
+  const handleSelectKeyframeVersion = useCallback((sceneId: string, versionIndex: number) => {
+    selectKeyframeVersion(sceneId, versionIndex);
+  }, [selectKeyframeVersion]);
 
   // Phase 2.2: Validate prerequisites before showing content
   const prerequisites = useMemo(() => {
@@ -277,7 +296,8 @@ CONTEXT FROM ADJACENT SCENES:
               allScenes={effectiveScenes}
               onRerunScene={onRerunScene}
               characterContinuityIssues={characterContinuityIssues.filter(issue => issue.scenes.includes(scene.id))}
-              localGenStatus={localGenStatus?.[scene.id]}
+              localGenStatus={effectiveGenStatuses[scene.id] ?? DEFAULT_GENERATION_STATUS}
+              onSelectKeyframeVersion={isStoreEnabled ? handleSelectKeyframeVersion : undefined}
             />
           </div>
         ))}

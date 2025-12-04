@@ -4,6 +4,7 @@ import { useApiStatus } from '../contexts/ApiStatusContext';
 import { useUsage } from '../contexts/UsageContext';
 import SparklesIcon from './icons/SparklesIcon';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
+import { fetchLatestWorkflowHistory } from '../services/comfyUIService';
 
 interface AiConfiguratorProps {
     settings: LocalGenerationSettings;
@@ -24,21 +25,14 @@ const AiConfigurator: React.FC<AiConfiguratorProps> = ({ settings, onUpdateSetti
         }
         setIsLoading(true);
         try {
-            // Step 1: Fetch workflow from server (using history endpoint)
+            // Step 1: Fetch workflow from server (using service layer)
             updateApiStatus('loading', 'Syncing workflow from server...');
             const baseUrl = settings.comfyUIUrl.replace(/\/+$/, '');
-            const historyUrl = `${baseUrl}/history`;
-            const response = await fetch(historyUrl);
-            if (!response.ok) throw new Error(`Server responded with status ${response.status}`);
+            const workflowJson = await fetchLatestWorkflowHistory(baseUrl);
             
-            const history = await response.json();
-            const historyEntries = Object.values(history);
-            if (historyEntries.length === 0) {
+            if (!workflowJson) {
                 throw new Error("No workflow history found. Please execute a workflow in ComfyUI first.");
             }
-            
-            const latestEntry: any = historyEntries[historyEntries.length - 1];
-            const workflowJson = JSON.stringify(latestEntry.prompt[2], null, 2);
 
             onUpdateSettings(prev => ({ ...prev, workflowJson }));
 

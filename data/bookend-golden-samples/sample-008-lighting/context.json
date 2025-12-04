@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-008-lighting",
+  "name": "Lighting Transition Test",
+  "type": "lighting",
+  "description": "Tests stability under dramatic but plausible lighting transition - daylight to lamp light. HARDENED 2025-12-03 to prevent flicker and artifacts.",
+  
+  "sceneContext": {
+    "sceneId": "golden-008",
+    "summary": "A single woman (same person throughout) sitting at a wooden desk by a window. The scene is completely static except for the gradual lighting change. The woman maintains the SAME pose, SAME position, SAME appearance. No sudden movements, no flickering, no black frames, no distortion.",
+    "environment": "Home office with large window on left, wooden desk, desk lamp on right side, bookshelf with books, potted plant. All objects stay in EXACT same positions throughout.",
+    "mood": "Cozy, transitional, evening"
+  },
+  
+  "startKeyframe": {
+    "prompt": "A young woman with dark hair in a ponytail sitting at a wooden desk by a large window, wearing a cream colored sweater, looking at laptop screen, bright natural daylight from window on left, desk lamp OFF on right side of desk, laptop open on desk, small stack of books, small potted succulent plant, bookshelf in background, neutral calm pose, soft natural lighting, professional interior photography, 4K resolution, completely static camera, clean stable composition, single consistent person",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, multiple people, outdoor, night scene at start, lamp on at start, changing clothes, extra people, teleporting objects, camera movement, flickering, light strobing, morphing face, black frames, dark frames, glitch, distortion, horror style, Ring style flashes, sudden brightness changes, choppy motion"
+  },
+  
+  "endKeyframe": {
+    "prompt": "The SAME young woman with dark hair in a ponytail still sitting at the SAME wooden desk by the SAME large window, wearing the SAME cream colored sweater, still looking at laptop screen, window now showing dusk evening sky, warm desk lamp now ON casting golden light from right side, SAME laptop open on desk, SAME small stack of books, SAME small potted succulent plant, SAME bookshelf in background, SAME neutral calm pose, warm lamp lighting dominant, professional interior photography, 4K resolution, completely static camera, clean stable composition, single consistent person",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, multiple people, outdoor, bright daylight at end, lamp off at end, changing clothes, extra people, teleporting objects, camera movement, flickering, light strobing, morphing face, black frames, dark frames, glitch, distortion, horror style, Ring style flashes, different person, different pose, sudden changes"
+  },
+  
+  "videoContext": {
+    "motionDescription": "Completely static scene with gradual lighting transition ONLY. The woman does NOT move - she maintains the SAME pose throughout. The ONLY change is lighting: window light slowly dims as sky darkens, desk lamp slowly brightens. The transition is smooth and continuous with NO sudden changes, NO flickering, NO black frames, NO distortion. All objects remain in exactly the same positions.",
+    "cameraMotion": "Absolutely static camera, no movement whatsoever, no pan, no zoom, no shake",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "Person and all objects maintain EXACT same positions throughout. No movement, no teleporting, no flicker.",
+    "secondary": "Lighting shift is gradual, smooth, and natural - no sudden jumps, no strobing, no black frames",
+    "challenges": "Maintaining identity under changing lighting, preventing any form of visual artifacts (flicker, black frames, distortion)"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

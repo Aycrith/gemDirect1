@@ -1,0 +1,41 @@
+{
+  "sampleId": "sample-007-occlusion",
+  "name": "Person Occlusion Test",
+  "type": "occlusion",
+  "description": "Tests identity consistency through occlusion",
+  
+  "thresholds": {
+    "pass": {
+      "overallContinuity": 70,
+      "characterMatch": 80,
+      "environmentMatch": 70,
+      "startFrameMatch": 35,
+      "endFrameMatch": 35,
+      "motionQuality": 70
+    },
+    "warn": {
+      "overallContinuity": 60,
+      "characterMatch": 70,
+      "environmentMatch": 60,
+      "startFrameMatch": 25,
+      "endFrameMatch": 25,
+      "motionQuality": 60
+    },
+    "fail": {
+      "overallContinuity": 50,
+      "characterMatch": 55,
+      "environmentMatch": 50,
+      "startFrameMatch": 20,
+      "endFrameMatch": 20,
+      "motionQuality": 50
+    }
+  },
+  
+  "criticalMetrics": [
+    "characterMatch",
+    "motionQuality",
+    "overallContinuity"
+  ],
+  
+  "notes": "Character identity through occlusion is the primary challenge. Character should look identical before and after passing behind lamppost."
+}

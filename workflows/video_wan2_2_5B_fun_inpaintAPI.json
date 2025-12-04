@@ -3,7 +3,7 @@
     "inputs": {
       "seed": 115716327295867,
       "steps": 20,
-      "cfg": 6,
+      "cfg": 4.5,
       "sampler_name": "uni_pc",
       "scheduler": "simple",
       "denoise": 1,
@@ -153,8 +153,8 @@
   },
   "73": {
     "inputs": {
-      "width": 640,
-      "height": 640,
+      "width": 832,
+      "height": 480,
       "length": 81,
       "batch_size": 1,
       "positive": [

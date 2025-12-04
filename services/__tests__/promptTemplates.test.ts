@@ -25,6 +25,21 @@ describe('promptTemplates', () => {
             const config = getPromptConfigForModel('wan2-i2v', 'sceneVideo');
             expect(config.includeVisualBible).toBe(false);
             expect(config.maxTokens).toBe(300);
+            expect(config.prefix).toContain('cinematic video');
+        });
+
+        it('should return WAN keyframe config with prefix/suffix', () => {
+            const config = getPromptConfigForModel('wan2-5B', 'sceneKeyframe');
+            expect(config.includeVisualBible).toBe(true);
+            expect(config.maxTokens).toBe(450);
+            expect(config.prefix).toContain('cinematic keyframe');
+            expect(config.suffix).toContain('filmic lighting');
+        });
+
+        it('should return WAN shotImage config with single frame suffix', () => {
+            const config = getPromptConfigForModel('wan-flf2v', 'shotImage');
+            expect(config.prefix).toContain('cinematic still frame');
+            expect(config.suffix).toContain('single coherent frame');
         });
 
         it('should return default config for unknown model', () => {
@@ -98,6 +113,9 @@ describe('promptTemplates', () => {
         it('should return WAN-specific negative prompt', () => {
             const negative = getDefaultNegativePromptForModel('wan2-2.5B');
             expect(negative).toContain('multi-panel');
+            expect(negative).toContain('flicker');
+            expect(negative).toContain('grid layout');
+            expect(negative).toContain('duplicated frames');
         });
 
         it('should return default negative prompt for unknown model', () => {
@@ -120,7 +138,7 @@ describe('promptTemplates', () => {
         it('should return different tokens for different targets', () => {
             const shotTokens = getMaxTokensForModel('wan', 'shotImage');
             const videoTokens = getMaxTokensForModel('wan', 'sceneVideo');
-            expect(shotTokens).toBe(500);
+            expect(shotTokens).toBe(450);
             expect(videoTokens).toBe(300);
         });
     });

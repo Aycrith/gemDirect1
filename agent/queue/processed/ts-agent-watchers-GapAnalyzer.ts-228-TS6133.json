@@ -1,0 +1,19 @@
+{
+  "issue": {
+    "id": "ts-agent-watchers-GapAnalyzer.ts-228-TS6133",
+    "type": "error",
+    "severity": "medium",
+    "category": "typescript",
+    "file": "agent/watchers/GapAnalyzer.ts",
+    "line": 228,
+    "column": 34,
+    "message": "TS6133: 'reject' is declared but its value is never read.",
+    "autoFixable": true,
+    "timestamp": "2025-11-30T06:20:43.133Z"
+  },
+  "requestedAt": "2025-11-30T06:21:00.553Z",
+  "prompt": "You are an expert TypeScript/React developer. Please fix the following issue in this project.\n\n## Issue Details\n- **Type**: error\n- **Severity**: medium\n- **Category**: typescript\n- **File**: agent/watchers/GapAnalyzer.ts\n- **Line**: 228\n\n## Problem\nTS6133: 'reject' is declared but its value is never read.\n\n\n\n## Relevant Code Context\n```typescript\n/**\r\n * GapAnalyzer - Identifies gaps in the codebase\r\n * Checks for missing tests, TODO comments, incomplete implementations\r\n */\r\n\r\nimport * as fs from 'fs';\r\nimport * as path from 'path';\r\nimport { spawn } from 'child_process';\r\nimport type { Issue, ScanResult, AgentConfig } from '../core/types.js';\r\nimport { getLogger } from '../core/Logger.js';\r\n\r\nexport class GapAnalyzer {\r\n  constructor(private config: AgentConfig) {}\r\n\r\n  async scan(): Promise<ScanResult> {\r\n    const logger = getLogger();\r\n    const startTime = Date.now();\r\n    const issues: Issue[] = [];\r\n\r\n    logger.info('Running gap analysis...');\r\n\r\n    // Run all checks in parallel\r\n    const [\r\n      todoIssues,\r\n      missingTestIssues,\r\n      incompleteIssues,\r\n      serviceViolationIssues,\r\n    ] = await Promise.all([\r\n      this.findTodoComments(),\r\n      this.findMissingTests(),\r\n      this.findIncompleteImplementations(),\r\n      this.findServiceLayerViolations(),\r\n    ]);\r\n\r\n    issues.push(...todoIssues, ...missingTestIssues, ...incompleteIssues, ...serviceViolationIssues);\r\n\r\n    const duration = Date.now() - startTime;\r\n\r\n    if (issues.length > 0) {\r\n      logger.warn(`Gap analysis: Found ${issues.length} issues`);\r\n    } else {\r\n      logger.success('Gap analysis: No issues');\r\n    }\r\n\r\n    return {\r\n      scanner: 'gap-analysis',\r\n      timestamp: new Date(),\r\n      duration,\r\n      issuesFound: issues,\r\n    };\r\n// ... (truncated)\n```\n\n## Project Conventions\n- All API calls go through the service layer (services/*.ts)\n- Use `withRetry` wrapper for Gemini API calls\n- Use `usePersistentState` hook for data that should persist\n- Follow TypeScript strict mode requirements\n- Add JSDoc comments for public APIs\n\n## Your Task\nProvide a complete fix for this issue. Include:\n1. The exact code changes needed\n2. Any new files that need to be created\n3. Any imports that need to be added\n4. A brief explanation of the fix\n\nIf this requires multiple files, provide all changes.",
+  "processed": true,
+  "processedAt": "2025-11-30T06:35:53.521Z",
+  "result": "\nThe gh-copilot extension has been deprecated in favor of the newer GitHub Copilot CLI.\n\nFor more information, visit:\n- Copilot CLI: https://github.com/github/copilot-cli\n- Deprecation announcement: https://github.blog/changelog/2025-09-25-upcoming-deprecation-of-gh-copilot-cli-extension\n\nNo commands will be executed.\n\n"
+}

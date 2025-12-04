@@ -206,6 +206,8 @@ const COMFYUI_BASE_NEGATIVES = [
 /**
  * Create enhanced negative set by merging base negatives with all ENHANCED_NEGATIVE_SET categories.
  * Uses Set for deduplication (first occurrence wins, preserves base negatives priority).
+ * 
+ * IMPORTANT: Motion artifacts are included by default for video pipeline quality.
  */
 const makeEnhanced = (base: string[]): string[] => {
     const merged = [
@@ -215,7 +217,7 @@ const makeEnhanced = (base: string[]): string[] => {
         ...ENHANCED_NEGATIVE_SET.composition,
         ...ENHANCED_NEGATIVE_SET.text_artifacts,
         ...ENHANCED_NEGATIVE_SET.depth,
-        ...ENHANCED_NEGATIVE_SET.motion,
+        ...ENHANCED_NEGATIVE_SET.motion, // CRITICAL: Always include motion artifacts for video quality
         // Note: style_contamination excluded by default (may conflict with desired styles)
         // Note: quality_tiers has overlap with quality category (deduplicated below)
         ...ENHANCED_NEGATIVE_SET.quality_tiers,

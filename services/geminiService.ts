@@ -463,14 +463,15 @@ ${template.content}`;
     
     const prompt = `You are a master storyteller and screenwriter with a deep understanding of multiple narrative structures. Your task is to analyze a user's idea and generate a "Story Bible" using the most fitting narrative framework.
 
-    **CRITICAL TOKEN BUDGET RULES (HARD LIMITS):**
-    1. **Logline**: 50-100 words MAX (single compelling sentence)
-    2. **Characters**: 3-5 character profiles, 80 words each MAX
-    3. **Setting**: 200-300 words MAX
-    4. **Plot Outline**: 8-12 scenes per act MAX
+    **CRITICAL WORD COUNT LIMITS (ENFORCED BY VALIDATOR):**
+    These limits are enforced by validation. Content exceeding limits will be rejected.
+    1. **Logline**: 10-100 words (1-2 punchy sentences capturing protagonist, conflict, stakes)
+    2. **Characters**: 200-600 words total (3-5 profiles, ~80 words each with visual descriptors)
+    3. **Setting**: 200-300 words (vivid atmosphere, time period, location - NO character names)
+    4. **Plot Outline**: 150-600 words (three-act structure with clear beats)
     
     **CRITICAL RULES FOR SECTION UNIQUENESS:**
-    1. **Logline**: Extract ONLY the core concept, protagonist goal, and conflict. Max 100 words. DO NOT repeat the full story idea verbatim.
+    1. **Logline**: Extract ONLY the core concept, protagonist goal, and conflict. DO NOT repeat the full story idea verbatim.
     2. **Characters**: Focus ONLY on roles, motivations, and relationships. DO NOT include plot events or setting descriptions.
     3. **Setting**: Describe ONLY the world, time period, and atmosphere. DO NOT mention character names or plot points.
     4. **Plot Outline**: Structure the narrative beats. DO NOT rehash the logline or character descriptions.
@@ -498,8 +499,8 @@ ${template.content}`;
     2.  Select the **single most appropriate framework** from the list above that best serves the idea.
     3.  **If none of the frameworks fit well** (e.g., for experimental concepts, character studies, or very short stories), create a logical, **custom plot structure** with a clear beginning, middle, and end. Do not force a framework where it doesn't belong.
     4.  Generate a JSON object with DISTINCT, NON-REPETITIVE sections:
-        a. **logline**: A single, concise sentence capturing the story's essence (protagonist, goal, conflict). 50-100 words MAX.
-        b. **characters**: Markdown summary of key characters for backward compatibility.
+        a. **logline**: A single, concise sentence capturing the story's essence (protagonist, goal, conflict). 10-100 words.
+        b. **characters**: Markdown summary of key characters for backward compatibility. 200-600 words total.
         c. **characterProfiles**: Array of 3-5 structured character profiles with:
            - id: Unique identifier (e.g., "char-1")
            - name: Full character name
@@ -510,8 +511,8 @@ ${template.content}`;
            - motivations: Array of 2-3 primary goals
            - role: One of "protagonist", "antagonist", "supporting", or "background"
            - visualDescriptor: Compact visual description for AI image generation (max 50 words)
-        d. **setting**: A paragraph describing the world's visual/atmospheric identity (200-300 words). Do NOT mention character names.
-        e. **plotOutline**: Markdown-formatted three-act structure for backward compatibility.
+        d. **setting**: A paragraph describing the world's visual/atmospheric identity. 200-300 words. Do NOT mention character names.
+        e. **plotOutline**: Markdown-formatted three-act structure for backward compatibility. 150-600 words.
         f. **plotScenes**: Array of 8-12 structured scene objects per act with:
            - actNumber: 1, 2, or 3
            - sceneNumber: Sequential number within act
@@ -1050,6 +1051,41 @@ export const refineDirectorsVision = async (
     return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
 };
 
+/**
+ * Enhance a story idea using Gemini.
+ * This is a pass-through function that sends the prompt directly to the LLM
+ * without any section-specific wrapping (unlike refineStoryBibleSection).
+ * 
+ * @param prompt - The complete prompt from refineField/buildRefinementPrompt
+ * @param logApiCall - API logging callback
+ * @param onStateChange - State change callback
+ * @returns The enhanced story idea text from Gemini
+ */
+export const enhanceStoryIdea = async (
+    prompt: string,
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<string> => {
+    const context = 'enhance story idea';
+    
+    const apiCall = async () => {
+        const response = await getAI().models.generateContent({
+            model: proModel,
+            contents: prompt,
+            config: { temperature: 0.5 },
+        });
+        const text = response.text;
+        if (!text) {
+            throw new Error(`The model returned an empty response for ${context}.`);
+        }
+        const result = text.trim();
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        return { result, tokens };
+    };
+
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
+};
+
 export const refineStoryBibleSection = async (
     section: 'characters' | 'plotOutline' | 'logline' | 'setting',
     content: string,
@@ -1204,9 +1240,11 @@ export const getCoDirectorSuggestions = async (prunedContext: string, timelineSu
     2.  **reasoning**: A markdown-formatted paragraph. For each suggestion you make, you must explicitly state **why** it helps achieve the user's objective. Explain your creative choices clearly.
     3.  **suggested_changes**: A JSON array of 2-4 diverse, actionable suggestions. **Aim for variety: suggest changes to cinematography (lighting, framing), add a new story beat (like a plot twist or foreshadowing), or alter the pacing and transitions.** Each suggestion object must have:
         *   **type**: (string) One of 'UPDATE_SHOT', 'ADD_SHOT_AFTER', or 'UPDATE_TRANSITION'.
-        *   **shot_id** or **after_shot_id** or **transition_index**: The identifier for where the change should occur.
+        *   **shot_id** or **after_shot_id** or **transition_index**: **CRITICAL: You MUST use the EXACT shot ID from the timeline above. Each shot is listed as "Shot N (ID: shot_XXXX_X.XXX): description". You must use the full ID string (e.g., "shot_1733056789123_0.123"), NOT the shot number (1, 2, 3). Using numeric IDs will cause the suggestion to fail.**
         *   **payload**: (object) The data for the change.
         *   **description**: (string) A user-friendly summary of your proposed change.
+    
+    **IMPORTANT:** The shot IDs in the timeline are UUIDs like "shot_1733056789123_0.456789". You must copy these EXACTLY. Do not use "1", "2", "Shot 1", or any simplified form.
     `;
     
     const responseSchema = {

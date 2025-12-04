@@ -28,12 +28,26 @@ import type {
     Scene,
     TimelineData,
     KeyframeData,
+    KeyframeVersion,
+    KeyframeVersionedData,
     GenerationJob,
     GenerationJobStatus,
     VideoData,
     SceneImageGenerationStatus,
 } from '../types';
+import type { VideoFeedbackResult } from './videoFeedbackService';
+import { isVersionedKeyframe, isSingleKeyframe, isBookendKeyframe } from '../types';
 import { createIndexedDBStorage } from '../utils/zustandIndexedDBStorage';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * Maximum number of keyframe versions to store per scene.
+ * Older versions are removed when this limit is exceeded.
+ */
+export const MAX_KEYFRAME_VERSIONS = 5;
 
 // ============================================================================
 // Store State Interface
@@ -65,6 +79,9 @@ export interface SceneStateStoreState {
     
     /** Generated videos keyed by scene/shot ID */
     generatedVideos: Record<string, VideoData>;
+    
+    /** Video feedback/analysis results keyed by scene ID */
+    videoFeedbackResults: Record<string, VideoFeedbackResult>;
     
     // ========================================================================
     // Generation State
@@ -137,11 +154,57 @@ export interface SceneStateStoreActions {
     /** Set keyframe image for a scene */
     setGeneratedImage: (sceneId: string, image: KeyframeData) => void;
     
+    /** 
+     * Push a new keyframe version to history, preserving previous versions.
+     * Automatically limits to MAX_KEYFRAME_VERSIONS (default: 5).
+     * @param sceneId - Scene ID
+     * @param image - Base64 image data
+     * @param score - Optional vision analysis score
+     * @param prompt - Optional prompt used for generation
+     */
+    pushKeyframeVersion: (
+        sceneId: string, 
+        image: string, 
+        score?: KeyframeVersion['score'],
+        prompt?: string
+    ) => void;
+    
+    /**
+     * Select a specific version from history as the current keyframe.
+     * @param sceneId - Scene ID
+     * @param versionIndex - Index in the versions array to select
+     */
+    selectKeyframeVersion: (sceneId: string, versionIndex: number) => void;
+    
+    /**
+     * Get the version history for a scene's keyframe.
+     * @param sceneId - Scene ID
+     * @returns Array of KeyframeVersion objects (most recent first)
+     */
+    getKeyframeVersions: (sceneId: string) => KeyframeVersion[];
+    
+    /**
+     * Update the score for the currently selected (most recent) keyframe version.
+     * Used to add vision analysis scores after initial generation.
+     * @param sceneId - Scene ID
+     * @param score - Vision analysis score to apply
+     */
+    updateKeyframeVersionScore: (sceneId: string, score: KeyframeVersion['score']) => void;
+    
     /** Set shot image */
     setShotImage: (shotId: string, image: string) => void;
     
     /** Set video data */
     setVideo: (key: string, video: VideoData) => void;
+    
+    /** Set video feedback result for a scene */
+    setVideoFeedbackResult: (sceneId: string, result: VideoFeedbackResult) => void;
+    
+    /** Get video feedback result for a scene */
+    getVideoFeedbackResult: (sceneId: string) => VideoFeedbackResult | undefined;
+    
+    /** Clear video feedback result for a scene */
+    clearVideoFeedbackResult: (sceneId: string) => void;
     
     /** Clear all generated assets for a scene */
     clearSceneAssets: (sceneId: string) => void;
@@ -220,6 +283,7 @@ const INITIAL_STATE: SceneStateStoreState = {
     generatedImages: {},
     generatedShotImages: {},
     generatedVideos: {},
+    videoFeedbackResults: {},
     generationJobs: {},
     sceneImageStatuses: {},
     selectedSceneId: null,
@@ -368,6 +432,159 @@ export const useSceneStateStore = create<SceneStateStore>()(
                     }));
                 },
                 
+                pushKeyframeVersion: (sceneId, image, score, prompt) => {
+                    set((state) => {
+                        const existing = state.generatedImages[sceneId];
+                        const newVersion: KeyframeVersion = {
+                            image,
+                            timestamp: Date.now(),
+                            score,
+                            prompt,
+                            isSelected: true, // New version is selected by default
+                        };
+                        
+                        let newData: KeyframeVersionedData;
+                        
+                        // Handle case where existing is undefined or check each type
+                        if (!existing) {
+                            // No existing data - create new versioned structure
+                            newData = {
+                                current: image,
+                                versions: [newVersion],
+                                selectedVersionIndex: 0,
+                            };
+                        } else if (isVersionedKeyframe(existing)) {
+                            // Already versioned - add to versions, limit to MAX
+                            const updatedVersions = existing.versions.map(v => ({
+                                ...v,
+                                isSelected: false, // Deselect previous
+                            }));
+                            const allVersions = [newVersion, ...updatedVersions].slice(0, MAX_KEYFRAME_VERSIONS);
+                            newData = {
+                                current: image,
+                                versions: allVersions,
+                                selectedVersionIndex: 0,
+                            };
+                        } else if (isSingleKeyframe(existing)) {
+                            // Convert single keyframe to versioned format
+                            const previousVersion: KeyframeVersion = {
+                                image: existing,
+                                timestamp: Date.now() - 1, // Slightly earlier
+                                isSelected: false,
+                            };
+                            newData = {
+                                current: image,
+                                versions: [newVersion, previousVersion],
+                                selectedVersionIndex: 0,
+                            };
+                        } else if (isBookendKeyframe(existing)) {
+                            // Bookend mode doesn't support versioning - just set new image
+                            // For bookend, caller should use setGeneratedImage instead
+                            console.warn('[SceneStateStore] pushKeyframeVersion called on bookend keyframe - use setGeneratedImage for bookend mode');
+                            return state;
+                        } else {
+                            // Shouldn't reach here, but create new data as fallback
+                            newData = {
+                                current: image,
+                                versions: [newVersion],
+                                selectedVersionIndex: 0,
+                            };
+                        }
+                        
+                        return {
+                            generatedImages: { ...state.generatedImages, [sceneId]: newData },
+                            lastSyncTimestamp: Date.now(),
+                        };
+                    });
+                },
+                
+                selectKeyframeVersion: (sceneId, versionIndex) => {
+                    set((state) => {
+                        const existing = state.generatedImages[sceneId];
+                        
+                        if (!existing || !isVersionedKeyframe(existing)) {
+                            console.warn('[SceneStateStore] selectKeyframeVersion called on non-versioned keyframe');
+                            return state;
+                        }
+                        
+                        if (versionIndex < 0 || versionIndex >= existing.versions.length) {
+                            console.warn(`[SceneStateStore] Invalid version index: ${versionIndex}`);
+                            return state;
+                        }
+                        
+                        const selectedVersion = existing.versions[versionIndex];
+                        if (!selectedVersion) return state;
+                        
+                        const updatedVersions = existing.versions.map((v, i) => ({
+                            ...v,
+                            isSelected: i === versionIndex,
+                        }));
+                        
+                        const newData: KeyframeVersionedData = {
+                            current: selectedVersion.image,
+                            versions: updatedVersions,
+                            selectedVersionIndex: versionIndex,
+                        };
+                        
+                        return {
+                            generatedImages: { ...state.generatedImages, [sceneId]: newData },
+                            lastSyncTimestamp: Date.now(),
+                        };
+                    });
+                },
+                
+                getKeyframeVersions: (sceneId) => {
+                    const existing = get().generatedImages[sceneId];
+                    if (!existing) {
+                        return [];
+                    }
+                    if (isVersionedKeyframe(existing)) {
+                        return existing.versions;
+                    }
+                    if (isSingleKeyframe(existing)) {
+                        // Convert single to version array for consistent API
+                        return [{
+                            image: existing,
+                            timestamp: Date.now(),
+                            isSelected: true,
+                        }];
+                    }
+                    return [];
+                },
+                
+                updateKeyframeVersionScore: (sceneId, score) => {
+                    set((state) => {
+                        const existing = state.generatedImages[sceneId];
+                        
+                        if (!existing || !isVersionedKeyframe(existing)) {
+                            console.warn('[SceneStateStore] updateKeyframeVersionScore called on non-versioned keyframe');
+                            return state;
+                        }
+                        
+                        // Update the currently selected version (or first if none selected)
+                        const targetIndex = existing.selectedVersionIndex ?? 0;
+                        
+                        const updatedVersions = existing.versions.map((v, i) => {
+                            if (i === targetIndex) {
+                                return { ...v, score };
+                            }
+                            return v;
+                        });
+                        
+                        const newData: KeyframeVersionedData = {
+                            ...existing,
+                            versions: updatedVersions,
+                        };
+                        
+                        console.log(`[SceneStateStore] Updated score for scene ${sceneId}, version ${targetIndex}:`, score);
+                        
+                        return {
+                            generatedImages: { ...state.generatedImages, [sceneId]: newData },
+                            lastSyncTimestamp: Date.now(),
+                        };
+                    });
+                },
+                
                 setShotImage: (shotId, image) => {
                     set((state) => ({
                         generatedShotImages: { ...state.generatedShotImages, [shotId]: image },
@@ -382,6 +599,28 @@ export const useSceneStateStore = create<SceneStateStore>()(
                     }));
                 },
                 
+                setVideoFeedbackResult: (sceneId, result) => {
+                    set((state) => ({
+                        videoFeedbackResults: { ...state.videoFeedbackResults, [sceneId]: result },
+                        lastSyncTimestamp: Date.now(),
+                    }));
+                },
+                
+                getVideoFeedbackResult: (sceneId) => {
+                    return get().videoFeedbackResults[sceneId];
+                },
+                
+                clearVideoFeedbackResult: (sceneId) => {
+                    set((state) => {
+                        const newResults = { ...state.videoFeedbackResults };
+                        delete newResults[sceneId];
+                        return {
+                            videoFeedbackResults: newResults,
+                            lastSyncTimestamp: Date.now(),
+                        };
+                    });
+                },
+                
                 clearSceneAssets: (sceneId) => {
                     set((state) => {
                         const newImages = { ...state.generatedImages };
@@ -389,6 +628,9 @@ export const useSceneStateStore = create<SceneStateStore>()(
                         
                         const newStatuses = { ...state.sceneImageStatuses };
                         delete newStatuses[sceneId];
+                        
+                        const newFeedbackResults = { ...state.videoFeedbackResults };
+                        delete newFeedbackResults[sceneId];
                         
                         // Clear shot images for this scene
                         const scene = state.scenes.find((s) => s.id === sceneId);
@@ -403,6 +645,7 @@ export const useSceneStateStore = create<SceneStateStore>()(
                             generatedImages: newImages,
                             generatedShotImages: newShotImages,
                             sceneImageStatuses: newStatuses,
+                            videoFeedbackResults: newFeedbackResults,
                             lastSyncTimestamp: Date.now(),
                         };
                     });

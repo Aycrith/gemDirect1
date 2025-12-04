@@ -140,6 +140,26 @@ describe('parseMarkdownToProfiles', () => {
         expect(parseMarkdownToProfiles('   ')).toEqual([]);
     });
 
+    it('parses semicolon-separated format from LLM outputs', () => {
+        const semicolonFormat = `Detective EVELYN 'EVA' RHODES, a relentless investigator; DR. LUCIUS GRAHAM, a brilliant but enigmatic scientist; AGENT JASON KANE, an ambitious temporal agent`;
+        const profiles = parseMarkdownToProfiles(semicolonFormat);
+        
+        expect(profiles.length).toBe(3);
+        expect(profiles[0]?.name).toBe("Detective EVELYN EVA RHODES");
+        expect(profiles[1]?.name).toBe("DR. LUCIUS GRAHAM");
+        expect(profiles[2]?.name).toBe("AGENT JASON KANE");
+    });
+
+    it('parses semicolon format with role detection', () => {
+        const semicolonFormat = `John, the protagonist seeking redemption; Evil Lord, an antagonist with dark goals; Helper Sam, a loyal ally`;
+        const profiles = parseMarkdownToProfiles(semicolonFormat);
+        
+        expect(profiles.length).toBe(3);
+        expect(profiles[0]?.role).toBe('protagonist');
+        expect(profiles[1]?.role).toBe('antagonist');
+        expect(profiles[2]?.role).toBe('supporting');
+    });
+
     it('parses bullet list format', () => {
         const bulletFormat = `
 - Detective John: A veteran cop with grey hair

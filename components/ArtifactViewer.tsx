@@ -8,6 +8,7 @@ import TelemetryComparisonChart from './TelemetryComparisonChart';
 import ScenePlayer from './ScenePlayer';
 import { RecommendationEngine, type TelemetrySnapshot, type Recommendation } from '../services/recommendationEngine';
 import { getSceneVideoManager } from '../services/videoGenerationService';
+import { getGlobalStats, getHistory, type GlobalPipelineStats, type PipelineMetrics } from '../services/pipelineMetrics';
 import type { ToastMessage } from '../types';
 
 type ArtifactScene = ArtifactSceneMetadata;
@@ -125,6 +126,19 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
     const [_comparison, setComparison] = useState<any>(null);
     const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
     const [regeneratingScenes, setRegeneratingScenes] = useState<Set<string>>(new Set());
+    const [pipelineStats, setPipelineStats] = useState<GlobalPipelineStats | null>(null);
+    const [pipelineHistory, setPipelineHistory] = useState<PipelineMetrics[]>([]);
+
+    // Load pipeline metrics on mount and periodically refresh
+    useEffect(() => {
+        const loadPipelineMetrics = () => {
+            setPipelineStats(getGlobalStats());
+            setPipelineHistory(getHistory());
+        };
+        loadPipelineMetrics();
+        const interval = setInterval(loadPipelineMetrics, 5000); // Refresh every 5s
+        return () => clearInterval(interval);
+    }, []);
 
     // Generate recommendations from artifact telemetry (aggregated from scenes)
     useEffect(() => {
@@ -816,6 +830,120 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                                 </p>
                             </div>
                         ))}
+                    </div>
+                </details>
+            )}
+
+            {/* Pipeline Performance Metrics Section (Collapsible) */}
+            {pipelineStats && pipelineStats.totalRuns > 0 && (
+                <details className="bg-gray-950/40 border border-gray-700 rounded-lg">
+                    <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-300 hover:text-gray-100 flex items-center justify-between">
+                        <span>⚡ Pipeline Performance ({pipelineStats.totalRuns} runs)</span>
+                        <span className="text-xs text-gray-500">Click to expand</span>
+                    </summary>
+                    <div className="px-4 pb-4 space-y-4">
+                        {/* Global Stats Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                                <div className="text-gray-500 text-[10px] uppercase tracking-wide">Total Runs</div>
+                                <div className="text-xl font-semibold text-gray-200">{pipelineStats.totalRuns}</div>
+                            </div>
+                            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                                <div className="text-gray-500 text-[10px] uppercase tracking-wide">Success Rate</div>
+                                <div className={`text-xl font-semibold ${pipelineStats.overallSuccessRate >= 0.9 ? 'text-emerald-400' : pipelineStats.overallSuccessRate >= 0.7 ? 'text-amber-400' : 'text-red-400'}`}>
+                                    {(pipelineStats.overallSuccessRate * 100).toFixed(1)}%
+                                </div>
+                            </div>
+                            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                                <div className="text-gray-500 text-[10px] uppercase tracking-wide">Avg Duration</div>
+                                <div className="text-xl font-semibold text-gray-200">
+                                    {(pipelineStats.avgPipelineDurationMs / 1000).toFixed(1)}s
+                                </div>
+                            </div>
+                            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                                <div className="text-gray-500 text-[10px] uppercase tracking-wide">Total Shots</div>
+                                <div className="text-xl font-semibold text-gray-200">{pipelineStats.totalShots}</div>
+                            </div>
+                        </div>
+
+                        {/* Latency Percentiles */}
+                        <div className="bg-gray-800/40 rounded-lg p-3 border border-gray-700/50">
+                            <div className="text-gray-500 text-[10px] uppercase tracking-wide mb-2">Shot Latency Percentiles</div>
+                            <div className="flex items-center gap-6">
+                                <div>
+                                    <span className="text-gray-400 text-xs">P50:</span>
+                                    <span className="text-gray-200 text-sm ml-1">{(pipelineStats.p50ShotDurationMs / 1000).toFixed(2)}s</span>
+                                </div>
+                                <div>
+                                    <span className="text-gray-400 text-xs">P95:</span>
+                                    <span className="text-gray-200 text-sm ml-1">{(pipelineStats.p95ShotDurationMs / 1000).toFixed(2)}s</span>
+                                </div>
+                                <div>
+                                    <span className="text-gray-400 text-xs">Avg Shot:</span>
+                                    <span className="text-gray-200 text-sm ml-1">{(pipelineStats.avgShotDurationMs / 1000).toFixed(2)}s</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Recent Pipeline Runs */}
+                        {pipelineHistory.length > 0 && (
+                            <div>
+                                <div className="text-gray-500 text-[10px] uppercase tracking-wide mb-2">Recent Pipelines</div>
+                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                    {pipelineHistory.slice(-5).reverse().map((run) => {
+                                        // Derive status from pipeline state
+                                        const status = run.completedAt 
+                                            ? (run.failedShots > 0 ? 'failed' : 'completed')
+                                            : 'in-progress';
+                                        // Calculate VRAM from shots if available
+                                        const shotsWithVram = run.shots.filter(s => s.vramBeforeBytes !== undefined);
+                                        const gpuVramBeforeMb = shotsWithVram.length > 0 
+                                            ? (shotsWithVram[0]?.vramBeforeBytes ?? 0) / (1024 * 1024) 
+                                            : undefined;
+                                        const gpuVramAfterMb = shotsWithVram.length > 0 
+                                            ? (shotsWithVram[shotsWithVram.length - 1]?.vramAfterBytes ?? 0) / (1024 * 1024) 
+                                            : undefined;
+                                        
+                                        return (
+                                        <div
+                                            key={run.runId}
+                                            className={`p-2 rounded-lg border text-xs ${
+                                                status === 'completed'
+                                                    ? 'bg-emerald-500/10 border-emerald-400/30'
+                                                    : status === 'failed'
+                                                      ? 'bg-red-500/10 border-red-400/30'
+                                                      : 'bg-blue-500/10 border-blue-400/30'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-gray-300 font-medium">
+                                                    Scene: {run.sceneId.slice(0, 8)}...
+                                                </span>
+                                                <span className={`px-2 py-0.5 rounded text-[10px] ${
+                                                    status === 'completed'
+                                                        ? 'bg-emerald-500/20 text-emerald-300'
+                                                        : status === 'failed'
+                                                          ? 'bg-red-500/20 text-red-300'
+                                                          : 'bg-blue-500/20 text-blue-300'
+                                                }`}>
+                                                    {status}
+                                                </span>
+                                            </div>
+                                            <div className="text-gray-500 mt-1">
+                                                {run.shots.length} shots • 
+                                                {run.totalDurationMs ? ` ${(run.totalDurationMs / 1000).toFixed(1)}s total` : ' in progress'}
+                                                {gpuVramBeforeMb !== undefined && gpuVramAfterMb !== undefined && (
+                                                    <span className="ml-2">
+                                                        • VRAM: {gpuVramBeforeMb.toFixed(0)}→{gpuVramAfterMb.toFixed(0)} MB
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </details>
             )}

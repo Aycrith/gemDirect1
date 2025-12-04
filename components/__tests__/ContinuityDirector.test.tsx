@@ -26,12 +26,24 @@ vi.mock('../../hooks/useSceneStore', () => ({
 }));
 
 vi.mock('../../services/sceneStateStore', () => ({
-    useSceneStateStore: {
-        getState: vi.fn(() => ({
-            scenes: [],
-            generatedImages: {},
-        })),
-    },
+    useSceneStateStore: Object.assign(
+        vi.fn((selector: (state: unknown) => unknown) => {
+            // Return selectKeyframeVersion function when requested
+            const mockState = {
+                scenes: [],
+                generatedImages: {},
+                selectKeyframeVersion: vi.fn(),
+            };
+            return selector(mockState);
+        }),
+        {
+            getState: vi.fn(() => ({
+                scenes: [],
+                generatedImages: {},
+                selectKeyframeVersion: vi.fn(),
+            })),
+        }
+    ),
 }));
 
 vi.mock('../../services/continuityPrerequisites', () => ({

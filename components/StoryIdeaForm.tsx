@@ -114,7 +114,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
                 currentValue: idea,
                 validationIssues: originalValidation.issues.map(i => `${i.code}: ${i.message}`),
                 validationSuggestions: originalValidation.issues.map(i => i.suggestion || '').filter(Boolean),
-                callLLM: (prompt) => planActions.refineStoryBibleSection('plotOutline', prompt, '', onApiLog, onApiStateChange),
+                callLLM: (prompt) => planActions.enhanceStoryIdea(prompt, onApiLog, onApiStateChange),
             });
             
             // Parse and clean the response

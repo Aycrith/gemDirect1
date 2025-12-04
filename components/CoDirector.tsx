@@ -1,11 +1,14 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { CoDirectorResult, Suggestion, StoryBible, Scene, ToastMessage } from '../types';
 import type { ApiStateChangeCallback, ApiLogCallback } from '../services/planExpansionService';
 import LightbulbIcon from './icons/LightbulbIcon';
 import SparklesIcon from './icons/SparklesIcon';
-import { marked } from 'marked';
+import { Marked } from 'marked';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 import { suggestionHistoryStore } from '../store/suggestionHistoryStore';
+
+// Create a synchronous parser instance to avoid Promise issues in render
+const syncMarked = new Marked({ async: false });
 
 interface CoDirectorProps {
   onGetSuggestions: (objective: string) => Promise<void>;
@@ -33,10 +36,15 @@ const SuggestionModal: React.FC<{
         setAppliedIndices(prev => [...prev, index]);
     }, [onApply]);
     
-    const createMarkup = (markdown: string) => {
-        const rawMarkup = marked.parse(markdown);
-        return { __html: rawMarkup };
-    };
+    // Use memoized synchronous markdown parsing to avoid re-parsing on each render
+    const reasoningHtml = useMemo(() => {
+        try {
+            return syncMarked.parse(result.reasoning) as string;
+        } catch (e) {
+            console.error('[CoDirector] Markdown parsing error:', e);
+            return result.reasoning; // Fall back to raw text
+        }
+    }, [result.reasoning]);
 
     return (
         <div 
@@ -64,7 +72,7 @@ const SuggestionModal: React.FC<{
                     )}
 
                     <div className="prose prose-invert prose-sm sm:prose-base max-w-none text-gray-300 mb-4 border-b border-gray-700 pb-4">
-                        <div dangerouslySetInnerHTML={createMarkup(result.reasoning)} />
+                        <div dangerouslySetInnerHTML={{ __html: reasoningHtml }} />
                     </div>
 
                     <div className="space-y-3">

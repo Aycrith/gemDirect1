@@ -461,6 +461,31 @@ describe('supportsNativeDualKeyframe', () => {
     expect(comfyUIService.supportsNativeDualKeyframe(settings, 'wan-fun-inpaint')).toBe(true);
   });
 
+  it('returns true when profile has Wan22FirstLastFrameToVideoLatentTiledVAE node (5B custom)', () => {
+    const settings = createValidTestSettings();
+    const workflowWithNode = {
+      '12': {
+        class_type: 'Wan22FirstLastFrameToVideoLatentTiledVAE',
+        inputs: {},
+      },
+    };
+    
+    settings.workflowProfiles = {
+      'wan-flf2v': {
+        id: 'wan-flf2v',
+        label: 'WAN FLF2V 5B',
+        workflowJson: JSON.stringify(workflowWithNode),
+        mapping: {
+          '10:image': 'start_image',
+          '11:image': 'end_image',
+          '5:text': 'human_readable_prompt',
+        },
+      },
+    };
+    
+    expect(comfyUIService.supportsNativeDualKeyframe(settings, 'wan-flf2v')).toBe(true);
+  });
+
   it('returns false when profile does not exist', () => {
     const settings = createValidTestSettings();
     expect(comfyUIService.supportsNativeDualKeyframe(settings, 'nonexistent')).toBe(false);

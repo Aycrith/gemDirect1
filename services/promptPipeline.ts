@@ -10,6 +10,7 @@
  * - Synchronize character visual descriptors across scenes
  * - Validate entire prompt chain before execution
  * - Apply token truncation with priority preservation
+ * - Enforce cinematic grammar structure for high-quality outputs
  */
 
 import { 
@@ -50,6 +51,194 @@ import {
     type TokenCountApi,
     type ApiLogCallback,
 } from './tokenValidator';
+
+// ============================================================================
+// Cinematic Grammar & Quality Enforcement
+// ============================================================================
+
+/**
+ * Cinematic grammar structure for high-quality prompts.
+ * Each prompt should contain these elements in order of priority.
+ */
+export interface CinematicGrammar {
+    /** Who/what is the focus (required) */
+    subject: string;
+    /** What is happening - verbs, movement (required) */
+    action: string;
+    /** Where and when - location, time of day */
+    setting?: string;
+    /** Emotional tone */
+    mood?: string;
+    /** Shot type, angle, movement */
+    camera?: string;
+    /** Quality, direction, color of light */
+    lighting?: string;
+}
+
+/**
+ * Result of prompt quality validation.
+ */
+export interface PromptQualityResult {
+    /** Whether the prompt meets quality standards */
+    valid: boolean;
+    /** Word count of the prompt */
+    wordCount: number;
+    /** Issues found (non-blocking warnings) */
+    warnings: string[];
+    /** Critical issues that should block generation */
+    errors: string[];
+    /** Quality score 0-100 */
+    score: number;
+}
+
+/**
+ * Common negative language patterns that should be avoided.
+ * These patterns reduce generation quality because models struggle with negation.
+ */
+const NEGATIVE_LANGUAGE_PATTERNS = [
+    /\bavoid\b/i,
+    /\bdon'?t\b/i,
+    /\bnot?\b/i,
+    /\bnever\b/i,
+    /\bwithout\b/i,
+    /\bno\s+\w+/i,
+    /\bexclude\b/i,
+];
+
+/**
+ * Transforms negative phrasing to positive alternatives.
+ * Models generate better results with positive language.
+ * 
+ * @example
+ * "avoid busy backgrounds" → "clean minimal background"
+ * "don't show violence" → "peaceful calm interaction"
+ */
+export function transformToPositiveLanguage(text: string): { text: string; transformed: boolean } {
+    const transformations: Array<[RegExp, string]> = [
+        [/\bavoid busy backgrounds?\b/gi, 'clean minimal background'],
+        [/\bavoid clutter\b/gi, 'clean organized space'],
+        [/\bdon'?t show violence\b/gi, 'peaceful calm interaction'],
+        [/\bnever use harsh lighting\b/gi, 'soft diffused lighting'],
+        [/\bno text overlay\b/gi, 'clean image without overlays'],
+        [/\bavoid dark\b/gi, 'well-lit'],
+        [/\bno blur\b/gi, 'sharp focus'],
+        [/\bwithout distractions\b/gi, 'focused composition'],
+    ];
+    
+    let result = text;
+    let transformed = false;
+    
+    for (const [pattern, replacement] of transformations) {
+        if (pattern.test(result)) {
+            result = result.replace(pattern, replacement);
+            transformed = true;
+        }
+    }
+    
+    return { text: result, transformed };
+}
+
+/**
+ * Validates prompt quality for cinematic video generation.
+ * 
+ * Quality criteria:
+ * - Word count: 100-180 words (optimal for attention)
+ * - Positive language only (no negations)
+ * - Contains subject, action, and at least 2 other elements
+ */
+export function validatePromptQuality(prompt: string): PromptQualityResult {
+    const warnings: string[] = [];
+    const errors: string[] = [];
+    let score = 100;
+    
+    // Count words
+    const words = prompt.trim().split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
+    
+    // Word count validation
+    if (wordCount < 50) {
+        errors.push(`Prompt too short (${wordCount} words). Minimum: 50 words for adequate detail.`);
+        score -= 40;
+    } else if (wordCount < 80) {
+        warnings.push(`Prompt is brief (${wordCount} words). Recommended: 100-180 words for optimal quality.`);
+        score -= 15;
+    } else if (wordCount > 200) {
+        warnings.push(`Prompt may be too long (${wordCount} words). Key details may be lost. Target: 100-180 words.`);
+        score -= 10;
+    }
+    
+    // Negative language detection
+    for (const pattern of NEGATIVE_LANGUAGE_PATTERNS) {
+        if (pattern.test(prompt)) {
+            warnings.push(`Prompt contains negative language (matches: ${pattern}). Use positive phrasing for better results.`);
+            score -= 5;
+            break; // Only warn once
+        }
+    }
+    
+    // Check for cinematic elements (heuristic)
+    const hasCameraTerms = /\b(shot|angle|close-up|wide|medium|tracking|pan|dolly|crane|handheld|steady)\b/i.test(prompt);
+    const hasLightingTerms = /\b(light|lighting|backlight|shadow|chiaroscuro|diffused|golden hour|harsh|soft|ambient)\b/i.test(prompt);
+    const hasMoodTerms = /\b(mood|tone|atmosphere|emotion|tension|calm|dramatic|peaceful|intense)\b/i.test(prompt);
+    
+    if (!hasCameraTerms) {
+        warnings.push('Prompt lacks camera/framing direction. Add shot types for better cinematography.');
+        score -= 10;
+    }
+    
+    if (!hasLightingTerms) {
+        warnings.push('Prompt lacks lighting direction. Add lighting terms for visual consistency.');
+        score -= 10;
+    }
+    
+    if (!hasMoodTerms) {
+        warnings.push('Prompt lacks mood/atmosphere direction. Add emotional tone for narrative coherence.');
+        score -= 5;
+    }
+    
+    return {
+        valid: errors.length === 0,
+        wordCount,
+        warnings,
+        errors,
+        score: Math.max(0, score),
+    };
+}
+
+/**
+ * Builds a structured cinematic prompt from grammar components.
+ * Ensures proper ordering and formatting for optimal generation.
+ */
+export function buildCinematicPrompt(grammar: CinematicGrammar): string {
+    const segments: string[] = [];
+    
+    // Priority order: Subject > Action > Setting > Camera > Lighting > Mood
+    if (grammar.subject) {
+        segments.push(grammar.subject);
+    }
+    
+    if (grammar.action) {
+        segments.push(grammar.action);
+    }
+    
+    if (grammar.setting) {
+        segments.push(grammar.setting);
+    }
+    
+    if (grammar.camera) {
+        segments.push(grammar.camera);
+    }
+    
+    if (grammar.lighting) {
+        segments.push(grammar.lighting);
+    }
+    
+    if (grammar.mood) {
+        segments.push(grammar.mood);
+    }
+    
+    return segments.filter(Boolean).join(', ');
+}
 
 /**
  * Prompt components used to build the final ComfyUI prompt
@@ -190,6 +379,20 @@ export function buildComfyUIPrompt(
     
     let positivePrompt = positiveSegments.join(', ');
     
+    // Transform any negative language to positive alternatives
+    const { text: positivizedPrompt, transformed } = transformToPositiveLanguage(positivePrompt);
+    if (transformed) {
+        warnings.push('Negative language was automatically transformed to positive phrasing for better generation quality.');
+    }
+    positivePrompt = positivizedPrompt;
+    
+    // Validate prompt quality and add warnings
+    const qualityResult = validatePromptQuality(positivePrompt);
+    if (!qualityResult.valid) {
+        warnings.push(...qualityResult.errors);
+    }
+    warnings.push(...qualityResult.warnings);
+    
     // Check token budget and truncate if needed
     const positiveTokens = estimateTokens(positivePrompt);
     if (positiveTokens > maxTokens) {
@@ -266,13 +469,25 @@ function buildPromptComponents(
     );
     const styleDirectives = styleResult.text;
     
-    // Add default negative prompts if none provided
+    // Enhanced default negatives including motion artifacts for video quality
+    // These are critical for preventing common generation issues
     const defaultNegatives = [
+        // Quality issues
         'blurry',
         'low quality',
         'distorted',
         'watermark',
         'text overlay',
+        // Anatomy issues
+        'bad anatomy',
+        'deformed',
+        'extra limbs',
+        // Motion artifacts (critical for video)
+        'static pose',
+        'frozen movement',
+        'motion blur artifacts',
+        'temporal inconsistency',
+        'flickering',
     ];
     const finalNegatives = negativePrompts.length > 0 
         ? negativePrompts 

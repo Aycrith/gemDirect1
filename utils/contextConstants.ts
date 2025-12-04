@@ -64,10 +64,16 @@ export const DEFAULT_LOCAL_GENERATION_SETTINGS: LocalGenerationSettings = {
     mapping: {},
     workflowProfiles: createDefaultWorkflowProfiles(),
     llmProviderUrl: 'http://192.168.50.192:1234/v1/chat/completions',
-    llmModel: 'mistralai/mistral-nemo-instruct-2407',
+    llmModel: 'qwen/qwen3-14b',
     llmTemperature: 0.35,
     llmTimeoutMs: 120000,
     llmRequestFormat: 'openai-chat',
+    // Vision LLM settings (separate model for image/video analysis)
+    visionLLMProviderUrl: 'http://192.168.50.192:1234/v1/chat/completions',
+    visionLLMModel: 'qwen/qwen3-vl-8b',
+    visionLLMTemperature: 0.3,
+    visionLLMTimeoutMs: 300000, // 5 minutes for vision analysis
+    useUnifiedVisionModel: false, // Use separate vision model by default
     keyframeMode: 'single', // Explicit default for keyframe generation mode
 };
 

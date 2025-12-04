@@ -536,8 +536,20 @@ export const getCoDirectorSuggestions = async (
     objective: string
 ): Promise<CoDirectorResult> => {
     const shots = timelineSummary.split('\n').filter(Boolean);
-    const firstShot = shots[0] || 'Shot 1: establish the central tension.';
-    const suggestionShotId = /Shot\s(\d+)/.exec(firstShot)?.[1] || '1';
+    const firstShot = shots[0] || 'Shot 1 (ID: shot_default): establish the central tension.';
+    
+    // FIX (2025-12-01): Extract actual shot UUID from timeline summary format
+    // Timeline summary format: "Shot 1 (ID: shot_1733056789123_0.123456): description..."
+    // Previously we extracted "1" from "Shot 1", but applySuggestions expects the full UUID
+    const shotIdMatch = /\(ID:\s*([^)]+)\)/.exec(firstShot);
+    const suggestionShotId = shotIdMatch?.[1]?.trim() || 'shot_fallback_1';
+    
+    // Log for debugging shot ID extraction
+    console.log('[localFallbackService] getCoDirectorSuggestions shot ID extraction:', {
+        firstShotPreview: firstShot.substring(0, 80),
+        extractedId: suggestionShotId,
+        regexMatched: !!shotIdMatch
+    });
 
     return {
         thematic_concept: 'Local Creative Pass',
@@ -547,7 +559,7 @@ export const getCoDirectorSuggestions = async (
                 type: 'UPDATE_SHOT',
                 shot_id: suggestionShotId,
                 payload: {
-                    description: enhanceSentence(`Reframe ${firstShot.replace(/Shot\s\d+:\s*/, '')} with a bolder emotional beat to satisfy the objective.`),
+                    description: enhanceSentence(`Reframe ${firstShot.replace(/Shot\s\d+\s*\(ID:[^)]+\):\s*/, '')} with a bolder emotional beat to satisfy the objective.`),
                     enhancers: fallbackEnhancers
                 },
                 description: 'Intensify opening shot to mirror stated objective.'

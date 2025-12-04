@@ -5,6 +5,7 @@ import {
     generateLocalSceneList,
     generateStoryBlueprint,
     suggestStoryIdeas as llmSuggestStoryIdeas,
+    enhanceStoryIdea as llmEnhanceStoryIdea,
     suggestDirectorsVisions as llmSuggestDirectorsVisions,
     refineDirectorsVision as llmRefineDirectorsVision,
     suggestCoDirectorObjectives as llmSuggestCoDirectorObjectives,
@@ -58,6 +59,11 @@ export type PlanExpansionActions = {
         logApiCall: ApiLogCallback,
         onStateChange?: ApiStateChangeCallback
     ) => Promise<string[]>;
+    enhanceStoryIdea: (
+        prompt: string,
+        logApiCall: ApiLogCallback,
+        onStateChange?: ApiStateChangeCallback
+    ) => Promise<string>;
     suggestDirectorsVisions: (
         storyBible: StoryBible,
         logApiCall: ApiLogCallback,
@@ -205,13 +211,14 @@ const runLocal = async <T>(
  * @param onStateChange - State change callback for UI updates
  */
 const generateStoryBibleWithValidation = async (
-    generator: (idea: string, genre: string) => Promise<StoryBible>,
+    generator: (idea: string, genre: string, feedback?: string) => Promise<StoryBible>,
     idea: string,
     genre: string,
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<StoryBibleV2> => {
     let lastBible: StoryBible | undefined;
+    let lastFeedback: string | undefined;
     
     for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
         notify(onStateChange, 'loading', 
@@ -221,7 +228,8 @@ const generateStoryBibleWithValidation = async (
         );
         
         try {
-            const bible = await generator(idea, genre);
+            // Pass feedback from previous failed attempt
+            const bible = await generator(idea, genre, lastFeedback);
             lastBible = bible;
             
             // If it's already V2, use it directly; otherwise convert using proper parser
@@ -250,13 +258,11 @@ const generateStoryBibleWithValidation = async (
             // If we have hard errors and more attempts, retry with feedback
             const hardErrors = validation.issues.filter(i => i.severity === 'error');
             if (hardErrors.length > 0 && attempt < MAX_RETRY_ATTEMPTS) {
-                const feedback = buildRegenerationFeedback(validation, 'logline');
-                console.warn(`[planExpansionService] Story Bible validation failed, retrying with feedback:`, feedback);
+                lastFeedback = buildRegenerationFeedback(validation, 'logline');
+                console.warn(`[planExpansionService] Story Bible validation failed, retrying with feedback:`, lastFeedback);
                 notify(onStateChange, 'retrying', 
                     `Story Bible has ${hardErrors.length} issues. Regenerating with corrections...`
                 );
-                // Note: In a full implementation, we'd pass feedback to the generator
-                // For now, we just retry and hope for better output
                 continue;
             }
             
@@ -287,9 +293,10 @@ const generateStoryBibleWithValidation = async (
     // If we get here, we exhausted retries with validation failures
     // Return the last result anyway with a warning
     if (lastBible) {
+        // Always use proper conversion to populate characterProfiles and plotScenes from markdown
         const bibleV2: StoryBibleV2 = isStoryBibleV2(lastBible) 
             ? lastBible 
-            : { ...lastBible, version: '2.0', characterProfiles: [], plotScenes: [] };
+            : convertToStoryBibleV2(lastBible);
         
         console.warn(`[planExpansionService] Story Bible validation failed after ${MAX_RETRY_ATTEMPTS + 1} attempts. Returning best effort result.`);
         logSuccess(logApiCall, 'generate Story Bible (validation failed)', LOCAL_STRATEGY_ID);
@@ -323,7 +330,7 @@ const localActions: PlanExpansionActions = {
     },
     generateStoryBible: (idea, genre = 'sci-fi', logApiCall, onStateChange) => 
         generateStoryBibleWithValidation(
-            (i, g) => generateStoryBlueprint(i, g),
+            (i, g, feedback) => generateStoryBlueprint(i, g, feedback),
             idea,
             genre,
             logApiCall!,
@@ -332,6 +339,7 @@ const localActions: PlanExpansionActions = {
     generateSceneList: (plotOutline, directorsVision, logApiCall, onStateChange) => runLocal('generate scene list', () => generateLocalSceneList(plotOutline, directorsVision), logApiCall, onStateChange),
     generateAndDetailInitialShots: (prunedContext, logApiCall, onStateChange) => runLocal('generate and detail initial shots', () => localFallback.generateAndDetailInitialShots(prunedContext), logApiCall, onStateChange),
     suggestStoryIdeas: (logApiCall, onStateChange) => runLocal('suggest ideas', () => llmSuggestStoryIdeas(), logApiCall, onStateChange),
+    enhanceStoryIdea: (prompt, logApiCall, onStateChange) => runLocal('enhance story idea', () => llmEnhanceStoryIdea(prompt), logApiCall, onStateChange),
     suggestDirectorsVisions: (storyBible, logApiCall, onStateChange) => runLocal('suggest visions', () => llmSuggestDirectorsVisions(storyBible), logApiCall, onStateChange),
     suggestNegativePrompts: (_directorsVision, _sceneSummary, logApiCall, onStateChange) => runLocal('suggest negative prompts', () => localFallback.suggestNegativePrompts(), logApiCall, onStateChange),
     refineDirectorsVision: (vision, storyBible, logApiCall, onStateChange) => runLocal('refine director vision', () => llmRefineDirectorsVision(vision, storyBible), logApiCall, onStateChange),
@@ -360,6 +368,7 @@ const geminiActions: PlanExpansionActions = {
     generateSceneList: geminiService.generateSceneList,
     generateAndDetailInitialShots: geminiService.generateAndDetailInitialShots,
     suggestStoryIdeas: geminiService.suggestStoryIdeas,
+    enhanceStoryIdea: geminiService.enhanceStoryIdea,
     suggestDirectorsVisions: geminiService.suggestDirectorsVisions,
     suggestNegativePrompts: geminiService.suggestNegativePrompts,
     refineDirectorsVision: geminiService.refineDirectorsVision,
@@ -451,6 +460,11 @@ export const createPlanExpansionActions = (strategyId: string): PlanExpansionAct
             localActions.suggestStoryIdeas,
             'suggestStoryIdeas'
         ),
+        enhanceStoryIdea: createFallbackAction(
+            geminiActions.enhanceStoryIdea,
+            localActions.enhanceStoryIdea,
+            'enhanceStoryIdea'
+        ),
         suggestDirectorsVisions: createFallbackAction(
             geminiActions.suggestDirectorsVisions,
             localActions.suggestDirectorsVisions,
@@ -520,6 +534,7 @@ export const createPlanExpansionActions = (strategyId: string): PlanExpansionAct
 
     const LOCAL_ONLY_ACTIONS: Array<keyof PlanExpansionActions> = [
         'suggestStoryIdeas',
+        'enhanceStoryIdea',
         'suggestDirectorsVisions',
         'refineDirectorsVision',
         'suggestCoDirectorObjectives',

@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-005-complex",
+  "name": "Complex Scene Transition",
+  "type": "complex",
+  "description": "Tests handling of complex scenes with multiple elements and subtle changes - time-lapse style kitchen transition",
+  
+  "sceneContext": {
+    "sceneId": "golden-005",
+    "summary": "A single clean modern kitchen with fixed layout: same white marble counter, same blue ceramic mug, same small potted succulent on windowsill, same stainless steel refrigerator, same wooden cutting board with fruit. Static camera, fixed composition throughout. Time-lapse style transition from morning to afternoon.",
+    "environment": "Modern minimalist kitchen with large window, white marble countertop, stainless steel appliances",
+    "mood": "Domestic, warm, inviting, calm"
+  },
+  
+  "startKeyframe": {
+    "prompt": "Modern minimalist kitchen interior, bright morning sunlight streaming through large window on left, white marble countertop in center, blue ceramic coffee mug positioned on counter center-left, small potted green succulent plant on windowsill, stainless steel refrigerator on right side, wooden cutting board with whole red apple and whole orange on counter center-right, clean simple composition, static camera, professional interior photography, 4K resolution, warm natural lighting, no people",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, people, faces, hands, outdoor, night, messy, cluttered, dirty, multiple mugs, extra plants, camera movement, jump cuts, flickering, duplicated objects, warping appliances, changing layout, different room"
+  },
+  
+  "endKeyframe": {
+    "prompt": "Modern minimalist kitchen interior, warm golden afternoon sunlight streaming through large window on left at lower angle, same white marble countertop in center, same blue ceramic coffee mug positioned on counter center-left, same small potted green succulent plant on windowsill, same stainless steel refrigerator on right side, same wooden cutting board now with sliced red apple pieces and sliced orange segments on counter center-right, clean simple composition, static camera, professional interior photography, 4K resolution, warm afternoon golden hour lighting, no people",
+    "negativePrompt": "blurry, noisy, artifacts, text, watermark, people, faces, hands, outdoor, night, messy, cluttered, dirty, multiple mugs, extra plants, camera movement, jump cuts, flickering, duplicated objects, warping appliances, changing layout, different room, new objects appearing, objects disappearing"
+  },
+  
+  "videoContext": {
+    "motionDescription": "Static camera with fixed composition. Time-lapse style transition: sunlight angle gradually shifts from morning (high, bright white) to afternoon (lower, golden warm). The only object change is fruit on cutting board becomes sliced. All other objects (mug, plant, appliances) remain in exact same positions. No camera movement, no new objects, no disappearing objects.",
+    "cameraMotion": "Completely static camera, no movement, no panning, no zooming",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "All major objects maintain exact identity and position: blue mug, green succulent, refrigerator, cutting board",
+    "secondary": "Light direction change is gradual and natural from morning to afternoon, fruit transitions smoothly to sliced state",
+    "challenges": "Multiple objects to track, subtle lighting changes, maintaining spatial relationships without introducing new elements"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

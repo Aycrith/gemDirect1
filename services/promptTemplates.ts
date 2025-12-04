@@ -79,24 +79,34 @@ const MODEL_CONFIGS: Record<string, Partial<ModelPromptConfig>> = {
         negativePrompt: 'blurry, low quality, watermark, text, bad anatomy, distorted, split screen, multi-panel, grid layout, comic style',
     },
     
-    // WAN2 model configuration
+    // WAN 2.2 model configuration (keyframes + video)
+    // Pattern: subject/composition → environment → motion/time → style/quality + strong negatives
     'wan': {
         shotImage: {
             template: '{prompt}',
             includeVisualBible: true,
-            maxTokens: 500,
+            prefix: 'cinematic still frame, high quality, ',
+            suffix: ', detailed, single coherent frame',
+            maxTokens: 450,
         },
         sceneKeyframe: {
             template: '{prompt}',
             includeVisualBible: true,
-            maxTokens: 500,
+            prefix: 'cinematic keyframe, consistent character and environment, ',
+            suffix: ', filmic lighting, single cohesive scene',
+            maxTokens: 450,
         },
         sceneVideo: {
             template: '{prompt}',
             includeVisualBible: false, // Video models often have shorter context
+            prefix: 'cinematic video, smooth motion, ',
+            suffix: ', coherent start and end frames, no jump cuts, no split screen',
             maxTokens: 300,
         },
-        negativePrompt: 'blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, split-screen, multi-panel',
+        negativePrompt: 
+            'lowres, worst quality, low quality, blurry, jpeg artifacts, watermark, text, logo, ' +
+            'split-screen, multi-panel, grid layout, duplicated frames, severe motion blur, flicker, ' +
+            'distorted anatomy, morphing face, inconsistent lighting',
     },
     
     // Lumina/NetaYume configuration (legacy, may produce comic-style)

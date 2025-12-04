@@ -1,0 +1,43 @@
+{
+  "sampleId": "sample-006-multichar",
+  "name": "Depth Motion with Foreground/Background",
+  "type": "depth-motion",
+  "description": "Tests depth motion coherence with foreground subject and background activity - validates multi-plane temporal consistency. HARDENED 2025-12-03 for object consistency.",
+  
+  "sceneContext": {
+    "sceneId": "golden-006",
+    "summary": "A single cream-colored ceramic coffee mug with latte art sits in sharp focus on a warm wooden counter. The primary focus is this one mug - it never moves, never multiplies, never changes. In the blurred background, a single barista in a black apron pours from one consistent stainless steel pitcher (not a flask, not a coffee pot - always the same single pitcher).",
+    "environment": "Warm coffee shop interior with wooden counter, steam rising from the single mug, shallow depth of field separating foreground and background",
+    "mood": "Cozy, warm, atmospheric"
+  },
+  
+  "startKeyframe": {
+    "prompt": "A single cream-colored ceramic coffee mug with latte art in sharp focus, centered on a warm wooden counter, gentle steam rising, warm ambient lighting, shallow depth of field, blurred background shows one barista in black apron holding one stainless steel pitcher at espresso machine, coffee shop interior, cozy atmosphere, professional photography, 4K resolution, static camera, clean composition, only one mug visible, only one pitcher visible",
+    "negativePrompt": "blurry foreground, deep focus, multiple cups, two mugs, extra cups appearing, multiple pitchers, flask, coffee pot, glass carafe, text, watermark, outdoor, night, cold lighting, abstract shapes, close-up face, changing container, switching vessels, empty frames, black flicker, glitch"
+  },
+  
+  "endKeyframe": {
+    "prompt": "The same single cream-colored ceramic coffee mug with latte art in sharp focus, still centered on the same warm wooden counter, gentle steam rising, warm ambient lighting, shallow depth of field, blurred background shows the same barista in black apron pouring from the same stainless steel pitcher into the mug, coffee shop interior, cozy atmosphere, professional photography, 4K resolution, static camera, clean composition, same single mug, same single pitcher",
+    "negativePrompt": "blurry foreground, deep focus, multiple cups, two mugs, extra cups appearing, multiple pitchers, flask, coffee pot, glass carafe, text, watermark, outdoor, night, cold lighting, abstract shapes, close-up face, changing container, switching vessels, different pitcher type, empty frames, black flicker, glitch"
+  },
+  
+  "videoContext": {
+    "motionDescription": "The foreground mug remains absolutely still in place - it never moves, never multiplies. Steam rises naturally from the same mug. The barista's motion is smooth and continuous: starts at espresso machine, reaches toward the counter, pours from the SAME stainless steel pitcher into the SAME mug. The pitcher type never changes. No additional cups appear.",
+    "cameraMotion": "Completely static camera locked in place, no camera movement, no zoom, no pan",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "The single foreground mug maintains exact position and appearance throughout. No extra mugs appear.",
+    "secondary": "Background barista moves naturally with one consistent pitcher - no vessel changes (no flask-to-pot transitions)",
+    "challenges": "Maintaining object count (always 1 mug, 1 pitcher), preventing vessel type changes, natural steam motion"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 960, "height": 540 },
+    "workflowProfile": "wan-flf2v",
+    "cfg": 5.5,
+    "steps": 24
+  }
+}

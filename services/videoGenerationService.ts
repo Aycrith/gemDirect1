@@ -1,8 +1,16 @@
-import { TimelineData, LocalGenerationSettings } from '../types';
+import { TimelineData, LocalGenerationSettings, Shot } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 import type { ArtifactSceneMetadata, SceneVideoMetadata } from '../utils/hooks';
 import { isFeatureEnabled, FeatureFlags } from '../utils/featureFlags';
 import { getGenerationQueue, createVideoTask, GenerationStatus } from './generationQueue';
+import {
+    startPipeline,
+    recordShotQueued,
+    recordShotCompleted,
+    completePipeline,
+    type PipelineMetrics,
+} from './pipelineMetrics';
+import { checkSystemResources } from './comfyUIService';
 
 /**
  * Generates a structured JSON payload and a human-readable text prompt from timeline data.
@@ -535,4 +543,564 @@ export const queueVideoGenerationWithQueue = async (
     );
     
     return await queue.enqueue(task);
+};
+
+// ============================================================================
+// Chain-of-Frames Scene Video Generation
+// ============================================================================
+
+export interface ChainedVideoGenerationOptions {
+    /** Scene ID for task tracking */
+    sceneId: string;
+    /** Director's vision for consistent styling */
+    directorsVision: string;
+    /** Scene summary for context */
+    sceneSummary: string;
+    /** Scene keyframe image (base64) - used as start frame for first shot */
+    sceneKeyframe: string;
+    /** Feature flags */
+    featureFlags?: FeatureFlags;
+    /** Logging callback */
+    logCallback?: (message: string, level?: 'info' | 'warn' | 'error') => void;
+    /** Progress callback */
+    onProgress?: (shotIndex: number, totalShots: number, message?: string) => void;
+    /** Enable VRAM gating - waits for sufficient VRAM before each shot (default: false) */
+    enableVramGating?: boolean;
+    /** Minimum free VRAM in MB required before starting a shot (default: 4096) */
+    minVramMb?: number;
+    /** Maximum time to wait for VRAM to be available in ms (default: 60000) */
+    vramWaitTimeoutMs?: number;
+    /** Enable circuit breaker - stops after consecutive failures (default: true) */
+    enableCircuitBreaker?: boolean;
+    /** Number of consecutive failures before stopping (default: 3) */
+    circuitBreakerThreshold?: number;
+}
+
+export interface ChainedVideoResult {
+    /** Shot ID */
+    shotId: string;
+    /** Video data (base64) */
+    videoData?: string;
+    /** Video path (if saved to disk) */
+    videoPath?: string;
+    /** Error message if generation failed */
+    error?: string;
+    /** Last frame of this video (base64) - used as start frame for next shot */
+    lastFrame?: string;
+    /** Time from queue to completion (ms) */
+    durationMs?: number;
+    /** Time spent waiting in queue (ms) */
+    queueWaitMs?: number;
+}
+
+/** Extended result including pipeline metrics */
+export interface ChainedVideoGenerationResult {
+    results: ChainedVideoResult[];
+    metrics: PipelineMetrics;
+}
+
+/** Default VRAM gating configuration */
+const DEFAULT_MIN_VRAM_MB = 4096;
+const DEFAULT_VRAM_WAIT_TIMEOUT_MS = 60000;
+const DEFAULT_VRAM_POLL_INTERVAL_MS = 5000;
+const DEFAULT_CIRCUIT_BREAKER_THRESHOLD = 3;
+
+/**
+ * Waits for sufficient VRAM to be available before proceeding.
+ * @param comfyUIUrl ComfyUI server URL
+ * @param minVramMb Minimum free VRAM required in MB
+ * @param timeoutMs Maximum time to wait
+ * @param logCallback Logging callback
+ * @returns Object with success status and current free VRAM
+ */
+async function waitForVramAvailable(
+    comfyUIUrl: string,
+    minVramMb: number,
+    timeoutMs: number,
+    logCallback?: (message: string, level?: 'info' | 'warn' | 'error') => void
+): Promise<{ available: boolean; freeVramMb: number }> {
+    const log = logCallback || console.log;
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeoutMs) {
+        try {
+            const resourceStatus = await checkSystemResources(comfyUIUrl);
+            const vramMatch = resourceStatus.match(/Free VRAM:\s*([\d.]+)\s*GB/);
+            
+            if (vramMatch && vramMatch[1]) {
+                const freeVramMb = parseFloat(vramMatch[1]) * 1024;
+                
+                if (freeVramMb >= minVramMb) {
+                    return { available: true, freeVramMb };
+                }
+                
+                log(`[VRAMGate] Waiting for VRAM: ${freeVramMb.toFixed(0)}MB free, need ${minVramMb}MB`, 'info');
+            }
+        } catch (e) {
+            log(`[VRAMGate] Could not check VRAM status: ${e}`, 'warn');
+        }
+        
+        // Wait before next check
+        await new Promise(resolve => setTimeout(resolve, DEFAULT_VRAM_POLL_INTERVAL_MS));
+    }
+    
+    log(`[VRAMGate] Timeout waiting for VRAM after ${timeoutMs}ms`, 'warn');
+    return { available: false, freeVramMb: 0 };
+}
+
+/**
+ * Generates videos for all shots in a scene using chain-of-frames approach.
+ * Each shot's video starts from the last frame of the previous shot's video,
+ * ensuring visual coherence (same characters, environments, lighting) across the scene.
+ * 
+ * Flow:
+ * 1. Shot 1: Uses scene keyframe as start_image → generates video → extracts last frame
+ * 2. Shot 2: Uses Shot 1's last frame as start_image → generates video → extracts last frame
+ * 3. Shot N: Uses Shot N-1's last frame as start_image → generates video
+ * 
+ * This eliminates the "morphing monster" problem caused by pixel-based FFmpeg concatenation.
+ * 
+ * @param settings Local generation settings (must have sceneChainedWorkflowProfile configured)
+ * @param shots Array of shots to generate videos for (in order)
+ * @param timeline Timeline data for prompt generation
+ * @param options Chained generation options
+ * @returns Array of generation results for each shot
+ */
+export const generateSceneVideoChained = async (
+    settings: LocalGenerationSettings,
+    shots: Shot[],
+    timeline: TimelineData,
+    options: ChainedVideoGenerationOptions
+): Promise<ChainedVideoResult[]> => {
+    const log = options.logCallback || ((msg, level) => console.log(`[${level || 'info'}] ${msg}`));
+    const results: ChainedVideoResult[] = [];
+    
+    // Validate configuration
+    const chainedProfileId = settings.sceneChainedWorkflowProfile || 'wan-i2v';
+    const chainedProfile = settings.workflowProfiles?.[chainedProfileId];
+    
+    if (!chainedProfile) {
+        throw new Error(
+            `Scene chained workflow profile '${chainedProfileId}' not found. ` +
+            `Please configure it in Settings > Workflow Profiles with mappings for ` +
+            `'keyframe_image' (or 'start_image') and 'human_readable_prompt'.`
+        );
+    }
+    
+    // Start pipeline metrics tracking
+    const pipelineMetrics = startPipeline(options.sceneId, shots.length, chainedProfileId);
+    const runId = pipelineMetrics.runId;
+    
+    log(`[ChainedVideo] Starting chain-of-frames generation for ${shots.length} shots (runId: ${runId})`, 'info');
+    log(`[ChainedVideo] Using workflow profile: ${chainedProfileId}`, 'info');
+    
+    // Get initial GPU VRAM status
+    let initialVramBytes: number | undefined;
+    try {
+        const resourceStatus = await checkSystemResources(settings.comfyUIUrl);
+        const vramMatch = resourceStatus.match(/Free VRAM:\s*([\d.]+)\s*GB/);
+        if (vramMatch && vramMatch[1]) {
+            initialVramBytes = parseFloat(vramMatch[1]) * 1024 * 1024 * 1024;
+            log(`[ChainedVideo] Initial free VRAM: ${vramMatch[1]} GB`, 'info');
+        }
+    } catch (e) {
+        log(`[ChainedVideo] Could not get initial VRAM status`, 'warn');
+    }
+    
+    // Track the current start frame (begins with scene keyframe)
+    let currentStartFrame = options.sceneKeyframe;
+    
+    // Circuit breaker state
+    const enableCircuitBreaker = options.enableCircuitBreaker !== false; // Default: true
+    const circuitBreakerThreshold = options.circuitBreakerThreshold ?? DEFAULT_CIRCUIT_BREAKER_THRESHOLD;
+    let consecutiveFailures = 0;
+    
+    // VRAM gating configuration
+    const enableVramGating = options.enableVramGating ?? false;
+    const minVramMb = options.minVramMb ?? DEFAULT_MIN_VRAM_MB;
+    const vramWaitTimeoutMs = options.vramWaitTimeoutMs ?? DEFAULT_VRAM_WAIT_TIMEOUT_MS;
+    
+    // Dynamic import for frame extraction (only available in Node.js/Electron)
+    type ExtractFrameFn = (videoPath: string, outputFormat?: 'png' | 'jpg') => Promise<{ success: boolean; base64Image?: string; error?: string }>;
+    let extractLastFrameFn: ExtractFrameFn | null = null;
+    try {
+        const videoSplicer = await import('../utils/videoSplicer');
+        extractLastFrameFn = videoSplicer.extractLastFrame;
+    } catch (e) {
+        log('[ChainedVideo] Frame extraction not available (browser context)', 'warn');
+    }
+    
+    for (let i = 0; i < shots.length; i++) {
+        const shot = shots[i];
+        if (!shot) {
+            log(`[ChainedVideo] Shot at index ${i} is undefined, skipping`, 'warn');
+            continue;
+        }
+        
+        // Circuit breaker check
+        if (enableCircuitBreaker && consecutiveFailures >= circuitBreakerThreshold) {
+            log(`[ChainedVideo] Circuit breaker tripped after ${consecutiveFailures} consecutive failures. Stopping pipeline.`, 'error');
+            // Record remaining shots as failed
+            for (let j = i; j < shots.length; j++) {
+                const remainingShot = shots[j];
+                if (remainingShot) {
+                    recordShotCompleted(runId, remainingShot.id, false, undefined, undefined, 'Circuit breaker tripped');
+                    results.push({
+                        shotId: remainingShot.id,
+                        error: 'Circuit breaker tripped - too many consecutive failures'
+                    });
+                }
+            }
+            break;
+        }
+        
+        // VRAM gating check (if enabled)
+        if (enableVramGating) {
+            options.onProgress?.(i + 1, shots.length, `Checking VRAM availability...`);
+            const vramStatus = await waitForVramAvailable(settings.comfyUIUrl, minVramMb, vramWaitTimeoutMs, log);
+            
+            if (!vramStatus.available) {
+                log(`[ChainedVideo] VRAM gating failed for shot ${i + 1} - insufficient memory`, 'error');
+                recordShotCompleted(runId, shot.id, false, undefined, undefined, 'Insufficient VRAM');
+                results.push({
+                    shotId: shot.id,
+                    error: `Insufficient VRAM: need ${minVramMb}MB free`
+                });
+                consecutiveFailures++;
+                continue;
+            }
+            
+            log(`[ChainedVideo] VRAM gate passed: ${vramStatus.freeVramMb.toFixed(0)}MB free`, 'info');
+        }
+        
+        options.onProgress?.(i + 1, shots.length, `Generating shot ${i + 1}/${shots.length}: ${shot.description.slice(0, 50)}...`);
+        
+        log(`[ChainedVideo] Processing shot ${i + 1}/${shots.length}: ${shot.id}`, 'info');
+        
+        // Record shot queued with initial VRAM
+        const shotQueuedAt = Date.now();
+        
+        try {
+            // Generate shot-specific prompt
+            const shotPayloads = generateShotPayload(shot, timeline, options.directorsVision, options.sceneSummary, i);
+            
+            // Prepare the chained payload with start frame
+            const chainedPayloads = {
+                json: shotPayloads.json,
+                text: shotPayloads.text,
+                structured: [],
+                negativePrompt: timeline.negativePrompt || ''
+            };
+            
+            // Queue the generation with the chain start frame
+            const response = await queueVideoGeneration(
+                settings,
+                chainedPayloads,
+                currentStartFrame, // This becomes chain_start_frame in the workflow
+                chainedProfileId,
+                log
+            );
+            
+            // Record shot queued in metrics
+            const promptId = response?.prompt_id;
+            recordShotQueued(runId, shot.id, i, promptId, initialVramBytes);
+            
+            // Calculate queue duration
+            const queueCompletedAt = Date.now();
+            const queueDurationMs = queueCompletedAt - shotQueuedAt;
+            
+            // Extract result - this depends on provider / queue format
+            const result: ChainedVideoResult = {
+                shotId: shot.id,
+                durationMs: queueDurationMs,
+                queueWaitMs: queueDurationMs, // In async mode, this is the queue time
+            };
+            
+            // Handle response based on format
+            if (response?.videoPath && typeof response.videoPath === 'string') {
+                // Synchronous completion with a real video path
+                result.videoPath = response.videoPath;
+                log(`[ChainedVideo] Shot ${i + 1} completed with videoPath: ${response.videoPath} (${queueDurationMs}ms)`, 'info');
+                
+                // Record successful completion only when we have a real result
+                recordShotCompleted(runId, shot.id, true, result.durationMs, result.queueWaitMs);
+                consecutiveFailures = 0;
+            } else if (promptId) {
+                // Async / queued completion – no real file path yet
+                result.videoPath = `pending:${promptId}`;
+                log(`[ChainedVideo] Shot ${i + 1} queued with prompt_id: ${promptId} (${queueDurationMs}ms)`, 'info');
+                // Do NOT record completion or reset the circuit breaker here, since
+                // the shot has only been queued and may still fail later.
+            }
+            
+            // If we have a video path and frame extraction is available,
+            // extract the last frame for the next shot
+            if (result.videoPath && extractLastFrameFn && !result.videoPath.startsWith('pending:')) {
+                try {
+                    const frameResult = await extractLastFrameFn(result.videoPath);
+                    if (frameResult.success && frameResult.base64Image) {
+                        result.lastFrame = frameResult.base64Image;
+                        currentStartFrame = frameResult.base64Image;
+                        log(`[ChainedVideo] Extracted last frame from shot ${i + 1} for chaining`, 'info');
+                    } else {
+                        log(`[ChainedVideo] Frame extraction returned no image for shot ${i + 1}: ${frameResult.error}`, 'warn');
+                    }
+                } catch (frameError) {
+                    log(`[ChainedVideo] Failed to extract last frame from shot ${i + 1}: ${frameError}`, 'warn');
+                    // Continue with scene keyframe if extraction fails
+                }
+            } else if (result.videoData && extractLastFrameFn) {
+                // If we have video data (base64), we'd need to save it first
+                // For now, log a warning
+                log(`[ChainedVideo] Video data available but needs temp file for frame extraction`, 'warn');
+            }
+            
+            results.push(result);
+            
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log(`[ChainedVideo] Failed to generate shot ${i + 1}: ${errorMessage}`, 'error');
+            
+            // Record failed shot in metrics
+            recordShotCompleted(runId, shot.id, false, undefined, undefined, errorMessage);
+            
+            // Increment consecutive failures for circuit breaker
+            consecutiveFailures++;
+            
+            results.push({
+                shotId: shot.id,
+                error: errorMessage
+            });
+            
+            // Continue with next shot using scene keyframe as fallback
+            // This maintains some coherence even if one shot fails
+            currentStartFrame = options.sceneKeyframe;
+        }
+    }
+    
+    // Complete pipeline and get final metrics
+    const finalMetrics = completePipeline(runId);
+    
+    const successCount = results.filter(r => !r.error).length;
+    log(`[ChainedVideo] Completed: ${successCount}/${shots.length} shots generated successfully`, 'info');
+    
+    // Log pipeline metrics summary
+    if (finalMetrics?.aggregates) {
+        log(`[ChainedVideo] Pipeline metrics: avgDuration=${finalMetrics.aggregates.avgShotDurationMs.toFixed(0)}ms, p95=${finalMetrics.aggregates.p95ShotDurationMs.toFixed(0)}ms, total=${finalMetrics.totalDurationMs}ms`, 'info');
+    }
+    
+    return results;
+};
+
+/**
+ * Generates a prompt payload for a single shot within a chained sequence.
+ * @param shot The shot to generate a prompt for
+ * @param timeline Full timeline for context
+ * @param directorsVision Visual style guide
+ * @param sceneSummary Scene context
+ * @param shotIndex Index of shot in sequence
+ * @returns JSON and text payloads for the shot
+ */
+function generateShotPayload(
+    shot: Shot,
+    timeline: TimelineData,
+    directorsVision: string,
+    sceneSummary: string,
+    shotIndex: number
+): { json: string; text: string } {
+    // Build a focused prompt for this specific shot
+    const enhancers = timeline.shotEnhancers[shot.id] || {};
+    const enhancerText = Object.entries(enhancers)
+        .map(([key, value]) => {
+            if (Array.isArray(value) && value.length > 0) {
+                return `${key}: ${value.join(', ')}`;
+            }
+            return null;
+        })
+        .filter(Boolean)
+        .join('; ');
+    
+    // Text prompt focused on the single shot
+    let text = `${shot.description}`;
+    if (enhancerText) {
+        text += ` (Style: ${enhancerText})`;
+    }
+    text += `. Visual style: ${directorsVision}. Scene context: ${sceneSummary}`;
+    
+    // Add continuity hint for shots after the first
+    if (shotIndex > 0) {
+        text += `. Continue from previous shot - maintain character consistency and environment.`;
+    }
+    
+    // JSON payload for structured workflows
+    const json = JSON.stringify({
+        shot_number: shotIndex + 1,
+        description: shot.description,
+        enhancers: enhancers,
+        directors_vision: directorsVision,
+        scene_summary: sceneSummary,
+        continuity_mode: shotIndex > 0 ? 'chain' : 'start'
+    }, null, 2);
+    
+    return { json, text };
+}
+
+/**
+ * Waits for a chained video generation to complete and retrieves results.
+ * Uses a hybrid approach: WebSocket for real-time updates + polling fallback.
+ * This mirrors the robust completion detection from comfyUIService.waitForComfyCompletion.
+ * 
+ * @param settings Local generation settings
+ * @param promptId ComfyUI prompt ID to wait for
+ * @param timeoutMs Maximum time to wait (default 5 minutes)
+ * @param logCallback Optional logging callback
+ * @param onProgress Optional progress callback for WebSocket updates
+ * @returns The completed video result
+ */
+export const waitForChainedVideoComplete = async (
+    settings: LocalGenerationSettings,
+    promptId: string,
+    timeoutMs: number = 300000,
+    logCallback?: (message: string, level?: 'info' | 'warn' | 'error') => void,
+    onProgress?: (status: string, message: string) => void
+): Promise<{ videoPath: string; videoData?: string; lastFrame?: string }> => {
+    const log = logCallback || console.log;
+    const baseUrl = settings.comfyUIUrl.endsWith('/') ? settings.comfyUIUrl : `${settings.comfyUIUrl}/`;
+    
+    return new Promise((resolve, reject) => {
+        // Mutex pattern to prevent dual resolution (WebSocket vs polling)
+        let resolutionState: 'pending' | 'resolving' | 'resolved' = 'pending';
+        let wsReceivedEvents = false;
+        
+        const tryResolve = (result: { videoPath: string; videoData?: string; lastFrame?: string }, source: 'websocket' | 'polling'): boolean => {
+            if (resolutionState !== 'pending') {
+                log(`[ChainedVideo] Ignoring ${source} resolution - already ${resolutionState} for ${promptId.slice(0,8)}...`, 'warn');
+                return false;
+            }
+            resolutionState = 'resolving';
+            log(`[ChainedVideo] Resolving via ${source} for ${promptId.slice(0,8)}...`, 'info');
+            cleanup();
+            resolve(result);
+            resolutionState = 'resolved';
+            return true;
+        };
+        
+        const tryReject = (error: Error, source: 'websocket' | 'polling' | 'timeout'): boolean => {
+            if (resolutionState !== 'pending') {
+                log(`[ChainedVideo] Ignoring ${source} rejection - already ${resolutionState} for ${promptId.slice(0,8)}...`, 'warn');
+                return false;
+            }
+            resolutionState = 'resolving';
+            log(`[ChainedVideo] Rejecting via ${source} for ${promptId.slice(0,8)}...`, 'error');
+            cleanup();
+            reject(error);
+            resolutionState = 'resolved';
+            return true;
+        };
+        
+        const cleanup = () => {
+            clearTimeout(timeout);
+            clearInterval(pollingInterval);
+        };
+        
+        // Timeout handler
+        const timeout = setTimeout(() => {
+            tryReject(new Error(`Timeout waiting for prompt ${promptId} after ${timeoutMs}ms`), 'timeout');
+        }, timeoutMs);
+        
+        log(`[ChainedVideo] Waiting for prompt ${promptId.slice(0,8)}... (timeout: ${timeoutMs}ms)`, 'info');
+        
+        // Polling fallback: Check history API every 2 seconds
+        const pollIntervalMs = 2000;
+        log(`[ChainedVideo] Starting hybrid completion detection (WebSocket + polling every ${pollIntervalMs}ms)`, 'info');
+        
+        const pollingInterval = setInterval(async () => {
+            if (resolutionState !== 'pending') {
+                clearInterval(pollingInterval);
+                return;
+            }
+            
+            try {
+                const historyResponse = await fetch(`${baseUrl}history/${promptId}`);
+                if (!historyResponse.ok) {
+                    return; // Not in history yet
+                }
+                
+                const history = await historyResponse.json();
+                const promptHistory = history[promptId];
+                
+                if (!promptHistory) {
+                    return; // No history entry yet
+                }
+                
+                // Check for status
+                const status = promptHistory.status;
+                if (status?.status_str === 'success' && status?.completed) {
+                    log(`[ChainedVideo] Polling detected completion for ${promptId.slice(0,8)}... (WebSocket events: ${wsReceivedEvents ? 'received' : 'MISSING'})`, 'info');
+                    
+                    // Extract video from outputs
+                    const outputs = promptHistory.outputs || {};
+                    for (const nodeId of Object.keys(outputs)) {
+                        const nodeOutput = outputs[nodeId];
+                        if (nodeOutput.gifs || nodeOutput.videos) {
+                            const videos = nodeOutput.gifs || nodeOutput.videos;
+                            if (videos.length > 0) {
+                                const video = videos[0];
+                                const videoPath = `${baseUrl}view?filename=${video.filename}&subfolder=${video.subfolder || ''}&type=${video.type || 'output'}`;
+                                log(`[ChainedVideo] Video complete: ${video.filename}`, 'info');
+                                tryResolve({ videoPath }, 'polling');
+                                return;
+                            }
+                        }
+                    }
+                    
+                    tryReject(new Error('Completion detected but no video output found'), 'polling');
+                } else if (status?.status_str === 'error') {
+                    const errorMsg = status.messages?.find((m: any) => m[0] === 'execution_error')?.[1]?.exception_message || 'ComfyUI execution failed';
+                    tryReject(new Error(errorMsg), 'polling');
+                }
+            } catch (error) {
+                // Polling error - continue trying
+                log(`[ChainedVideo] Poll error: ${error}`, 'warn');
+            }
+        }, pollIntervalMs);
+        
+        // WebSocket tracking for real-time updates
+        try {
+            // Dynamic import to avoid circular deps
+            import('./comfyUIService').then(({ trackPromptExecution }) => {
+                trackPromptExecution(settings, promptId, (update) => {
+                    wsReceivedEvents = true;
+                    
+                    // Forward progress updates
+                    if (update.status && update.message) {
+                        onProgress?.(update.status, update.message);
+                    }
+                    
+                    if (update.status === 'complete' && update.final_output) {
+                        const output = update.final_output;
+                        // Extract video path from output
+                        if (output.videos && output.videos.length > 0 && output.videos[0]) {
+                            tryResolve({ 
+                                videoPath: output.videos[0], 
+                                videoData: output.data 
+                            }, 'websocket');
+                        } else if (output.data) {
+                            tryResolve({ 
+                                videoPath: output.filename || 'video.mp4', 
+                                videoData: output.data 
+                            }, 'websocket');
+                        }
+                    } else if (update.status === 'error') {
+                        tryReject(new Error(update.message || 'ComfyUI generation failed'), 'websocket');
+                    }
+                });
+            }).catch(err => {
+                log(`[ChainedVideo] WebSocket tracking failed to initialize: ${err}`, 'warn');
+                // Continue with polling-only mode
+            });
+        } catch (err) {
+            log(`[ChainedVideo] WebSocket tracking unavailable, using polling only`, 'warn');
+        }
+    });
 };

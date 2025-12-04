@@ -385,3 +385,111 @@ export async function isVideoValid(
   const result = await validateVideoOutput(videoPath, thresholds);
   return result.valid;
 }
+
+// ============================================================================
+// Async Background Validation Queue
+// ============================================================================
+
+interface QueuedValidation {
+  videoPath: string;
+  runId: string;
+  shotId: string;
+  thresholds?: ValidationThresholds;
+  onComplete?: (result: VideoValidationResult) => void;
+}
+
+const validationQueue: QueuedValidation[] = [];
+let isProcessing = false;
+
+/**
+ * Queue a video for background validation (non-blocking)
+ * 
+ * @param videoPath - Path to video file
+ * @param runId - Pipeline run ID for metrics tracking
+ * @param shotId - Shot ID for metrics tracking
+ * @param thresholds - Optional custom thresholds
+ * @param onComplete - Optional callback when validation completes
+ */
+export function queueBackgroundValidation(
+  videoPath: string,
+  runId: string,
+  shotId: string,
+  thresholds?: ValidationThresholds,
+  onComplete?: (result: VideoValidationResult) => void
+): void {
+  validationQueue.push({ videoPath, runId, shotId, thresholds, onComplete });
+  console.log(`[VideoValidation] Queued background validation for ${shotId} (${videoPath})`);
+  
+  // Start processing if not already running
+  if (!isProcessing) {
+    processValidationQueue();
+  }
+}
+
+/**
+ * Process the validation queue in the background
+ */
+async function processValidationQueue(): Promise<void> {
+  if (isProcessing || validationQueue.length === 0) return;
+  
+  isProcessing = true;
+  console.log(`[VideoValidation] Starting background validation queue (${validationQueue.length} items)`);
+  
+  while (validationQueue.length > 0) {
+    const item = validationQueue.shift();
+    if (!item) break;
+    
+    try {
+      const result = await validateVideoOutput(item.videoPath, item.thresholds);
+      
+      console.log(`[VideoValidation] ${item.shotId}: ${result.valid ? 'PASSED' : 'FAILED'}`, {
+        errors: result.errors,
+        warnings: result.warnings,
+        duration: result.metadata?.duration,
+        resolution: result.metadata ? `${result.metadata.width}x${result.metadata.height}` : 'N/A',
+      });
+      
+      // Import recordShotValidation dynamically to avoid circular deps
+      try {
+        const { recordShotValidation } = await import('./pipelineMetrics');
+        recordShotValidation(item.runId, item.shotId, result.valid, result.errors, result.warnings);
+      } catch (e) {
+        // Metrics service may not be available in all contexts
+        console.debug('[VideoValidation] Could not record validation metrics:', e);
+      }
+      
+      item.onComplete?.(result);
+    } catch (error) {
+      console.error(`[VideoValidation] Error validating ${item.shotId}:`, error);
+      const errorResult: VideoValidationResult = {
+        valid: false,
+        filePath: item.videoPath,
+        errors: [`Validation error: ${error instanceof Error ? error.message : String(error)}`],
+        warnings: [],
+        metadata: null,
+        validatedAt: Date.now(),
+      };
+      item.onComplete?.(errorResult);
+    }
+    
+    // Small delay between validations to prevent overwhelming the system
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  isProcessing = false;
+  console.log('[VideoValidation] Background validation queue complete');
+}
+
+/**
+ * Get current queue size
+ */
+export function getValidationQueueSize(): number {
+  return validationQueue.length;
+}
+
+/**
+ * Check if validation is currently running
+ */
+export function isValidationRunning(): boolean {
+  return isProcessing;
+}

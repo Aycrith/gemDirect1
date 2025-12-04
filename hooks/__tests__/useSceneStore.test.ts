@@ -72,6 +72,26 @@ const createTestSettings = (useUnifiedSceneStore: boolean): LocalGenerationSetti
         // New infrastructure feature flags
         useGenerationQueue: false,
         useLLMTransportAdapter: false,
+        // Vision LLM feature flags
+        visionLLMFeedback: false,
+        visionFeedbackProvider: 'disabled',
+        autoVisionAnalysis: false,
+        // VRAM management
+        autoEjectLMStudioModels: true,
+        // Zustand store migrations (Phase 1D)
+        useSettingsStore: false,
+        useGenerationStatusStore: false,
+        // Keyframe generation enhancements
+        keyframeVersionHistory: true,
+        autoGenerateTemporalContext: true,
+        // Video analysis
+        videoAnalysisFeedback: false,
+        autoVideoAnalysis: false,
+        videoQualityGateEnabled: false,
+        videoQualityThreshold: 70,
+        // Bookend QA (Phase 8)
+        keyframePairAnalysis: false,
+        bookendQAMode: false,
     },
 });
 

@@ -1,7 +1,51 @@
 import { ReactNode } from "react";
 
+// ============================================================================
+// Keyframe Version History Support
+// ============================================================================
+
+/**
+ * Individual keyframe version with metadata.
+ * Used for version history tracking and best-of-N selection.
+ */
+export interface KeyframeVersion {
+  /** Base64 image data */
+  image: string;
+  /** Timestamp when generated */
+  timestamp: number;
+  /** Vision analysis score (if analyzed) */
+  score?: {
+    composition: number;
+    lighting: number;
+    characterAccuracy: number;
+    styleConsistency: number;
+    overall: number;
+  };
+  /** Prompt used to generate this version (for debugging/refinement) */
+  prompt?: string;
+  /** Whether this version was selected as "best" by user */
+  isSelected?: boolean;
+}
+
+/**
+ * Keyframe data with version history.
+ * Extends single/bookend mode with optional version tracking.
+ */
+export interface KeyframeVersionedData {
+  /** Currently active keyframe */
+  current: string;
+  /** Version history (most recent first, max 5 stored) */
+  versions: KeyframeVersion[];
+  /** Active selection index in versions array (if using version history) */
+  selectedVersionIndex?: number;
+}
+
 // Keyframe data types for bookend workflow support
-export type KeyframeData = string | { start: string; end: string };
+// Extended to support: single string | bookend pair | versioned with history
+export type KeyframeData = 
+  | string 
+  | { start: string; end: string }
+  | KeyframeVersionedData;
 
 // Type guard functions for KeyframeData
 export function isSingleKeyframe(data: KeyframeData): data is string {
@@ -9,7 +53,23 @@ export function isSingleKeyframe(data: KeyframeData): data is string {
 }
 
 export function isBookendKeyframe(data: KeyframeData): data is { start: string; end: string } {
-  return typeof data === 'object' && 'start' in data && 'end' in data;
+  return typeof data === 'object' && 'start' in data && 'end' in data && !('current' in data);
+}
+
+export function isVersionedKeyframe(data: KeyframeData): data is KeyframeVersionedData {
+  return typeof data === 'object' && 'current' in data && 'versions' in data;
+}
+
+/**
+ * Get the currently active image from any KeyframeData type.
+ * Utility function for consistent access across all keyframe modes.
+ */
+export function getActiveKeyframeImage(data: KeyframeData | undefined): string | undefined {
+  if (!data) return undefined;
+  if (isSingleKeyframe(data)) return data;
+  if (isBookendKeyframe(data)) return data.start; // Use start frame as preview
+  if (isVersionedKeyframe(data)) return data.current;
+  return undefined;
 }
 
 /**
@@ -104,6 +164,14 @@ export interface Scene {
         startMoment: string;   // E.g., "Explorer approaches artifact"
         endMoment: string;     // E.g., "Artifact begins glowing"
         duration?: number;     // Shot duration in seconds (optional)
+    };
+    
+    // Vision LLM feedback metadata
+    metadata?: {
+        originalSummary?: string;   // Original summary before vision refinement
+        refinedByVision?: boolean;  // Whether vision LLM refined this scene
+        refinedAt?: number;         // Timestamp of refinement
+        [key: string]: unknown;     // Allow other metadata
     };
 }
 
@@ -427,7 +495,7 @@ export interface WorkflowInput {
     inputType: string; // e.g., 'STRING', 'IMAGE'
 }
 
-export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_json' | 'keyframe_image' | 'negative_prompt' | 'start_image' | 'end_image' | 'ref_image' | 'control_video' | 'input_video';
+export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_json' | 'keyframe_image' | 'negative_prompt' | 'start_image' | 'end_image' | 'ref_image' | 'control_video' | 'input_video' | 'chain_start_frame' | 'chain_end_frame';
 
 // Key is `${nodeId}:${inputName}`
 export type WorkflowMapping = Record<string, MappableData>; 
@@ -473,6 +541,25 @@ export interface WorkflowProfile {
   displayName?: string;
   description?: string;
   status?: 'complete' | 'incomplete' | 'error';
+  
+  // Post-processing options (video workflows)
+  postProcessing?: WorkflowPostProcessingOptions;
+}
+
+/**
+ * Post-processing options applied after video generation
+ */
+export interface WorkflowPostProcessingOptions {
+  /** Enable endpoint snapping: replace first/last frames with keyframes (default: true for bookend) */
+  snapEndpointsToKeyframes?: boolean;
+  /** Number of frames to snap at video start (default: 1) */
+  startFrameCount?: number;
+  /** Number of frames to snap at video end (default: 1) */
+  endFrameCount?: number;
+  /** Blend mode: 'hard' = instant replace, 'fade' = linear blend (default: 'hard') */
+  blendMode?: 'hard' | 'fade';
+  /** For fade mode: number of frames to blend over (default: 3) */
+  fadeFrames?: number;
 }
 
 export interface ComfyUIStatusQueueSummary {
@@ -550,13 +637,22 @@ export interface LocalGenerationSettings {
         attentionBackend: string;
     };
     
-    // LLM Configuration
+    // LLM Configuration (Text Generation - Story Bible, Scenes, etc.)
     llmProviderUrl?: string;
     llmModel?: string;
     llmTemperature?: number;
     llmTimeoutMs?: number;
     llmRequestFormat?: string;
     llmSeed?: number;
+    
+    // Vision LLM Configuration (Image Analysis & Prompt Feedback)
+    // If not specified, falls back to text LLM settings (for unified vision models like Qwen3-VL)
+    visionLLMProviderUrl?: string;
+    visionLLMModel?: string;
+    visionLLMTemperature?: number;
+    visionLLMTimeoutMs?: number;
+    // Whether to use a single model for both text and vision (abliterated models like Qwen3-VL)
+    useUnifiedVisionModel?: boolean;
     
     // Feature Flags (optional for backward compatibility)
     featureFlags?: import('./utils/featureFlags').FeatureFlags;
@@ -572,6 +668,8 @@ export interface LocalGenerationSettings {
     // Quality Enhancement
     upscalerWorkflowProfile?: string;  // Profile ID for video upscaling (optional)
     characterWorkflowProfile?: string; // Profile ID for character consistency (optional)
+    sceneChainedWorkflowProfile?: string; // Profile ID for chain-of-frames scene generation (optional)
+    sceneBookendWorkflowProfile?: string; // Profile ID for bookend (first-last-frame) video generation (default: 'wan-flf2v')
     
     // ComfyUI Fetch Settings (for video/image retrieval robustness)
     comfyUIFetchMaxRetries?: number;   // Max retry attempts for fetching assets (default: 3)

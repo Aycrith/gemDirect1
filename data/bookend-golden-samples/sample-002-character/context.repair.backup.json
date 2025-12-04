@@ -1,0 +1,50 @@
+{
+  "sampleId": "sample-002-character",
+  "name": "Character Consistency Test",
+  "type": "character",
+  "description": "Single character with distinctive features to test identity preservation across frames",
+  
+  "sceneContext": {
+    "sceneId": "golden-002",
+    "summary": "A young woman with distinctive red hair turns to face the camera",
+    "environment": "Simple indoor setting with neutral background",
+    "mood": "Casual, friendly, natural"
+  },
+  
+  "startKeyframe": {
+    "prompt": "Portrait of a young woman with vibrant red wavy hair, bright green eyes, light freckles across her nose, wearing a navy blue sweater, standing in profile view looking left, soft neutral beige background, natural window lighting from the right, shallow depth of field, professional portrait photography, 4K, highly detailed face",
+    "negativePrompt": "blurry, distorted face, extra limbs, deformed, bad anatomy, low quality, jpeg artifacts, text, watermark, multiple people, cluttered background"
+  },
+  
+  "endKeyframe": {
+    "prompt": "Portrait of the same young woman with vibrant red wavy hair, bright green eyes, light freckles across her nose, wearing a navy blue sweater, now facing the camera directly with a slight smile, soft neutral beige background, natural window lighting from the right, shallow depth of field, professional portrait photography, 4K, highly detailed face",
+    "negativePrompt": "blurry, distorted face, extra limbs, deformed, bad anatomy, low quality, jpeg artifacts, text, watermark, multiple people, cluttered background, different person, changed hair color"
+  },
+  
+  "videoContext": {
+    "motionDescription": "Character smoothly turns head from profile to face camera, subtle smile forms",
+    "cameraMotion": "Static camera, no movement",
+    "duration": 2.5,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "Character identity must remain consistent - same hair color, eye color, facial features",
+    "secondary": "Clothing should remain unchanged throughout",
+    "challenges": "Face generation during turn can cause identity drift"
+  },
+  
+  "characterDetails": {
+    "hairColor": "#CC3333",
+    "eyeColor": "#228B22",
+    "distinguishingFeatures": ["freckles", "wavy hair", "green eyes"],
+    "clothing": "navy blue sweater"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 832, "height": 480 },
+    "workflowProfile": "flux-t2i",
+    "cfg": 5.5,
+    "steps": 25
+  }
+}

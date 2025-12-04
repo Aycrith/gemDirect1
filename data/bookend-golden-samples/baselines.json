@@ -1,0 +1,145 @@
+{
+  "lastUpdated": "2025-12-04T07:45:00Z",
+  "description": "Golden sample baselines for bookend video regression testing. 8 samples active. Version 2.1.0 hardens 006-multichar and 008-lighting for coherence (object consistency, artifact prevention).",
+  "thresholds": {
+    "fail": {
+      "overallContinuity": 60,
+      "characterMatch": 65,
+      "environmentMatch": 60,
+      "startFrameMatch": 25,
+      "endFrameMatch": 25,
+      "motionQuality": 60
+    },
+    "warn": {
+      "overallContinuity": 75,
+      "characterMatch": 80,
+      "environmentMatch": 75,
+      "startFrameMatch": 35,
+      "endFrameMatch": 35,
+      "motionQuality": 75
+    },
+    "regressionDelta": 10,
+    "multiRegressionDelta": 5,
+    "multiRegressionCount": 2,
+    "_notes": "startFrameMatch/endFrameMatch thresholds lowered to 25/35% based on empirical observation that FLF2V produces ~35-40% pixel similarity even with correct endpoint preservation"
+  },
+  "samples": {
+    "sample-001-geometric": {
+      "name": "Geometric Shapes Motion",
+      "type": "geometric",
+      "notes": "Simple geometric shapes - baseline simplicity test for motion quality",
+      "contextFile": "sample-001-geometric/context.json",
+      "expectedScoresFile": "sample-001-geometric/expected-scores.json",
+      "baseline": {
+        "startFrameMatch": 47.9,
+        "endFrameMatch": 51.3,
+        "avgSimilarity": 49.599999999999994,
+        "capturedAt": "2025-12-04T02:56:11Z"
+      },
+      "status": "ready"
+    },
+    "sample-002-character": {
+      "name": "Character Consistency Test",
+      "type": "character",
+      "notes": "Single character with distinctive features - tests identity preservation",
+      "contextFile": "sample-002-character/context.json",
+      "expectedScoresFile": "sample-002-character/expected-scores.json",
+      "baseline": {
+        "startFrameMatch": 50,
+        "endFrameMatch": 52.8,
+        "avgSimilarity": 51.4,
+        "capturedAt": "2025-12-02T23:34:00Z"
+      },
+      "status": "ready"
+    },
+    "sample-003-environment": {
+      "name": "Environment Stability Test",
+      "type": "environment",
+      "notes": "Detailed cafe interior with camera pan - tests background consistency",
+      "contextFile": "sample-003-environment/context.json",
+      "expectedScoresFile": "sample-003-environment/expected-scores.json",
+      "baseline": {
+        "startFrameMatch": 54.4,
+        "endFrameMatch": 54.1,
+        "avgSimilarity": 54.25,
+        "capturedAt": "2025-12-02T23:35:35Z"
+      },
+      "status": "ready"
+    },
+    "sample-004-motion": {
+      "name": "Person Walking Motion",
+      "type": "motion",
+      "notes": "Tests motion coherence with a person walking across frame - moderate complexity for temporal consistency validation",
+      "contextFile": "sample-004-motion/context.json",
+      "expectedScoresFile": "sample-004-motion/expected-scores.json",
+      "baseline": {
+        "startFrameMatch": 48.6,
+        "endFrameMatch": 51.3,
+        "avgSimilarity": 49.95,
+        "capturedAt": "2025-12-03T03:20:05Z"
+      },
+      "status": "ready"
+    },
+    "sample-005-complex": {
+      "name": "Complex Scene Transition",
+      "type": "complex",
+      "notes": "Kitchen scene with multiple objects and subtle environmental changes - tests handling of complex multi-element scenes. HARDENED 2025-12-03 with explicit object descriptions.",
+      "contextFile": "sample-005-complex/context.json",
+      "expectedScoresFile": "sample-005-complex/expected-scores.json",
+      "baseline": {
+        "startFrameMatch": 47.9,
+        "endFrameMatch": 51.2,
+        "avgSimilarity": 49.55,
+        "capturedAt": "2025-12-04T03:27:27Z"
+      },
+      "status": "ready"
+    },
+    "sample-006-multichar": {
+      "name": "Depth Motion with Foreground/Background",
+      "type": "depth-motion",
+      "notes": "Coffee cup in foreground with barista in background - tests multi-plane temporal consistency and depth of field preservation. HARDENED 2025-12-03 for object consistency (single mug, single pitcher, no vessel changes).",
+      "contextFile": "sample-006-multichar/context.json",
+      "expectedScoresFile": "sample-006-multichar/expected-scores.json",
+      "baseline": {
+        "startFrameMatch": 57.6,
+        "endFrameMatch": 56.6,
+        "avgSimilarity": 57.1,
+        "capturedAt": "2025-12-03T23:42:25Z"
+      },
+      "status": "ready"
+    },
+    "sample-007-occlusion": {
+      "name": "Person Occlusion Test",
+      "type": "occlusion",
+      "notes": "Person walks behind lamppost and re-emerges - tests identity consistency through occlusion",
+      "contextFile": "sample-007-occlusion/context.json",
+      "expectedScoresFile": "sample-007-occlusion/expected-scores.json",
+      "baseline": {
+        "startFrameMatch": 49.8,
+        "endFrameMatch": 53.2,
+        "avgSimilarity": 51.5,
+        "capturedAt": "2025-12-03T21:58:16Z"
+      },
+      "status": "ready"
+    },
+    "sample-008-lighting": {
+      "name": "Lighting Transition Test",
+      "type": "lighting",
+      "notes": "Daylight to lamp light transition - tests stability under dramatic lighting changes. HARDENED 2025-12-03 for artifact prevention (no flicker, no black frames, no distortion).",
+      "contextFile": "sample-008-lighting/context.json",
+      "expectedScoresFile": "sample-008-lighting/expected-scores.json",
+      "baseline": {
+        "startFrameMatch": 49.9,
+        "endFrameMatch": 56.5,
+        "avgSimilarity": 53.2,
+        "capturedAt": "2025-12-03T23:44:01Z"
+      },
+      "status": "ready"
+    }
+  },
+  "generationScript": "scripts/generate-golden-samples.ps1",
+  "regressionScript": "scripts/test-bookend-regression.ps1",
+  "version": "1.3.0",
+  "updatedAt": "2025-12-04T03:27:27Z",
+  "updatedBy": "UpdateBaselines run"
+}

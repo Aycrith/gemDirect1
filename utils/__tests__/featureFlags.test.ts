@@ -30,24 +30,26 @@ describe('featureFlags', () => {
             // Core workflow flags
             // Note: bookendKeyframes removed - use LocalGenerationSettings.keyframeMode instead
             expect(DEFAULT_FEATURE_FLAGS.videoUpscaling).toBe(false);
-            expect(DEFAULT_FEATURE_FLAGS.characterConsistency).toBe(false);
+            expect(DEFAULT_FEATURE_FLAGS.characterConsistency).toBe(true); // Enabled for identity preservation
             
             // Pipeline flags may be enabled for validation testing
             // Check that they have valid values (boolean or union type)
             const flagKeys = Object.keys(DEFAULT_FEATURE_FLAGS) as (keyof FeatureFlags)[];
             for (const key of flagKeys) {
                 const value = DEFAULT_FEATURE_FLAGS[key];
-                // Each flag should be a boolean or a known string value
+                // Each flag should be a boolean, number, or a known string value
                 const isValid = typeof value === 'boolean' || 
+                    typeof value === 'number' || // videoQualityThreshold
                     value === 'off' || value === 'warn' || value === 'block' ||
-                    value === 'legacy' || value === 'optimized'; // qualityPrefixVariant
+                    value === 'legacy' || value === 'optimized' || // qualityPrefixVariant
+                    value === 'disabled' || value === 'local-qwen' || value === 'gemini'; // visionFeedbackProvider
                 expect(isValid).toBe(true);
             }
         });
 
-        it('should have 26 flags defined', () => {
+        it('should have 40 flags defined', () => {
             const flagCount = Object.keys(DEFAULT_FEATURE_FLAGS).length;
-            expect(flagCount).toBe(26);
+            expect(flagCount).toBe(40);
         });
 
         it('should have metadata for every flag', () => {
@@ -187,13 +189,37 @@ describe('featureFlags', () => {
                 sceneStoreParallelValidation: true,
                 enableQuickGenerate: false,
                 // Generation queue flags
-                useGenerationQueue: false,
-                useLLMTransportAdapter: false,
+                useGenerationQueue: true,
+                useLLMTransportAdapter: true,
+                // Vision LLM feature flags
+                visionLLMFeedback: true,
+                visionFeedbackProvider: 'local-qwen',
+                autoVisionAnalysis: true,
+                // VRAM management
+                autoEjectLMStudioModels: true,
+                // Zustand store migrations (Phase 1D)
+                useSettingsStore: true,
+                useGenerationStatusStore: true,
+                // Keyframe quality improvements
+                keyframeVersionHistory: true,
+                autoGenerateTemporalContext: true,
+                // Video analysis feedback
+                videoAnalysisFeedback: true,
+                autoVideoAnalysis: true,
+                videoQualityGateEnabled: true,
+                videoQualityThreshold: 70,
+                // Bookend QA (Phase 8)
+                keyframePairAnalysis: true,
+                bookendQAMode: true,
             };
             
             const enabled = getEnabledFlags(allEnabled);
             // Count boolean flags set to true (excludes qualityPrefixVariant string and union-type 'warn' values)
-            expect(enabled.length).toBe(20);
+            // visionFeedbackProvider is 'local-qwen' not a boolean true, so it doesn't count
+            // enableQuickGenerate is false
+            // videoQualityThreshold is a number not a boolean, so it doesn't count
+            // 34 boolean flags are set to true (including keyframePairAnalysis and bookendQAMode)
+            expect(enabled.length).toBe(34);
         });
     });
 
@@ -244,7 +270,8 @@ describe('featureFlags', () => {
 
         it('should return missing dependencies when not satisfied', () => {
             // videoUpscaling depends on characterConsistency
-            const result = checkFlagDependencies({}, 'videoUpscaling');
+            // Since characterConsistency is now enabled by default, we need to explicitly disable it to test
+            const result = checkFlagDependencies({ characterConsistency: false }, 'videoUpscaling');
             
             if (FEATURE_FLAG_META.videoUpscaling.dependencies) {
                 expect(result.satisfied).toBe(false);

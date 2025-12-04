@@ -27,6 +27,8 @@ import LocalGenerationStatus from "./LocalGenerationStatus";
 import ClapperboardIcon from "./icons/ClapperboardIcon";
 import CheckCircleIcon from "./icons/CheckCircleIcon";
 import AlertTriangleIcon from "./icons/AlertTriangleIcon";
+import QueueStatusIndicator from "./QueueStatusIndicator";
+import { getFeatureFlag } from "../utils/featureFlags";
 
 interface Props {
   timeline: TimelineData;
@@ -333,6 +335,11 @@ const GenerationControls: React.FC<Props> = ({
           <ClapperboardIcon className="w-5 h-5 text-amber-500" />
           Video Generation
         </h2>
+
+        {/* Queue Status Indicator - shown when useGenerationQueue flag is enabled */}
+        {getFeatureFlag(settings.featureFlags, "useGenerationQueue") && (
+          <QueueStatusIndicator />
+        )}
 
         {/* Batch progress bar */}
         {isGeneratingAll && (

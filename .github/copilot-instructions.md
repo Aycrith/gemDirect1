@@ -1,6 +1,6 @@
 # Copilot Instructions for gemDirect1
 
-**Last Updated**: 2025-11-29  
+**Last Updated**: 2025-11-30  
 **Status**: ✅ Production-Ready  
 **WAN2 Pipeline**: ✅ WORKING (validated with evidence)
 
@@ -10,7 +10,7 @@ AI-powered cinematic story generator creating production video timelines. Integr
 
 **The WAN2 pipeline is WORKING**. If you see old documents mentioning a "WAN2 blocker", ignore them - they're outdated. Evidence:
 - Run logs: `logs/20251119-205415/` contains 3 MP4 files (0.33-8.17 MB)
-- Tests: 1488/1489 passing (99.9% - 1 skipped)
+- Tests: 1522/1523 passing (99.9% - 1 skipped)
 - Build: Zero errors
 
 **Before making ANY changes**:
@@ -18,7 +18,67 @@ AI-powered cinematic story generator creating production video timelines. Integr
 2. Read `Documentation/PROJECT_STATUS_CONSOLIDATED.md` (15 minutes) - **Single source of truth**
 3. Read `START_HERE.md` (5 minutes) - Quick context
 4. Run `npm run check:health-helper` - Validates setup
-5. Run `npm test && npx playwright test` - Validates current state
+5. Run `npm test -- --run` - Validates current state (uses single-run mode)
+
+## 🛑 MANDATORY: Agent Tool Usage Rules
+
+**THESE RULES ARE NON-NEGOTIABLE. Failure to follow them wastes time and resources.**
+
+### Starting Servers (Dev Server, ComfyUI, FastVideo)
+
+**NEVER run server commands directly in a terminal.** Servers MUST be started via VS Code tasks.
+
+| Server | ❌ WRONG (terminal) | ✅ CORRECT (task) |
+|--------|---------------------|-------------------|
+| Dev Server | `npm run dev` | Use task: `Dev Server` |
+| ComfyUI | `python main.py...` | Use task: `Start ComfyUI Server (Patched - Recommended)` |
+| FastVideo | `python fastvideo_server.py` | Use task: `Start FastVideo Server` |
+
+**Why?** Terminal commands run in shared context. When you run a follow-up command, you terminate the server. Tasks run in dedicated panels that persist.
+
+**Before starting any server**, check if it's already running:
+```powershell
+# Check dev server (port 3000)
+pwsh -File scripts/check-server-running.ps1 -Port 3000
+
+# Check ComfyUI (port 8188)  
+pwsh -File scripts/check-server-running.ps1 -Port 8188
+```
+
+### Running Tests
+
+**NEVER run tests without proper flags.** Tests MUST use single-run mode and verbose output.
+
+| Test Type | ❌ WRONG | ✅ CORRECT |
+|-----------|----------|------------|
+| Unit tests | `npm test` | `npm test -- --run --reporter=verbose` |
+| Unit tests | `vitest` | `npm test -- --run --reporter=verbose` |
+| Playwright | `npx playwright test` | `npx playwright test --reporter=list` |
+| Playwright | `npm run check:playwright-*` | Use task: `Run Playwright Tests` |
+
+**Why?** Without `--run`, vitest enters watch mode and never terminates. Without reporters, you get no logging to verify completion.
+
+**Preferred method - use wrapper scripts:**
+```powershell
+# Unit tests (enforces --run and verbose)
+pwsh -File scripts/run-tests.ps1
+
+# Playwright tests (enforces --reporter=list)
+pwsh -File scripts/run-playwright.ps1
+
+# Or use VS Code tasks:
+# - "Run Unit Tests (Single Run)"
+# - "Run Playwright Tests"
+```
+
+### Terminal Safety Checklist
+
+Before running ANY terminal command, ask yourself:
+
+1. **Is this starting a server?** → Use a VS Code task, NOT `run_in_terminal`
+2. **Is this running tests?** → Include `--run` flag (vitest) or `--reporter=list` (playwright)
+3. **Will this command terminate?** → If not, set `isBackground: true` or use a task
+4. **Am I in the right terminal?** → Never reuse a terminal running a server
 
 ## 📁 Documentation Structure (Updated 2025-11-20)
 
@@ -31,9 +91,10 @@ AI-powered cinematic story generator creating production video timelines. Integr
 
 **Essential Files**:
 - `README.md` - Quick start, commands, status badges
-- `Documentation/PROJECT_STATUS_CONSOLIDATED.md` - **Single source of truth** (updated 2025-11-22)
+- `Documentation/PROJECT_STATUS_CONSOLIDATED.md` - **Single source of truth** (updated 2025-11-30)
 - `START_HERE.md` - 5-minute context summary
-- `AGENT_HANDOFF_TEST_IMPROVEMENTS_20251122.md` - Latest session handoff (test suite improvements)
+- `AGENT_HANDOFF_CURRENT.md` - Latest consolidated handoff (Phase 1D complete)
+- `agent/.state/session-handoff.json` - Machine-readable session state
 - `Documentation/Architecture/WORKFLOW_ARCHITECTURE_REFERENCE.md` - ComfyUI node mappings
 - `Testing/E2E/STORY_TO_VIDEO_TEST_CHECKLIST.md` - Testing protocols
 
@@ -343,6 +404,88 @@ Mirror these with `VITE_LOCAL_*` variants for React UI access.
 - ✅ Use `multi_replace_string_in_file` for batch edits (efficiency)
 - ✅ Follow React hooks patterns: `usePersistentState` for data, `useState` for UI
 
+### 🚨 CRITICAL: Infinite Loop Prevention (React 18 StrictMode)
+
+React 18 StrictMode runs effects twice to catch side effects. Combined with `useEffect` dependency issues, this can cause infinite loops. **This project has fixed 6 infinite loop bugs** - follow these patterns to avoid creating new ones.
+
+#### Anti-Patterns That Cause Infinite Loops
+
+```typescript
+// ❌ WRONG: Object in dependency array - new reference on every render
+useEffect(() => {
+    console.log(settings.comfyUIUrl);
+}, [settings]);  // settings object changes reference even if values are same
+
+// ❌ WRONG: Context value directly in deps
+const { localGenStatus, setLocalGenStatus } = useContext(GenStatusContext);
+useEffect(() => {
+    // Do something with status
+}, [localGenStatus]);  // Object ref changes on every context update
+
+// ❌ WRONG: State setter that depends on its own state
+useEffect(() => {
+    setItems(prev => [...prev, newItem]);  // Creates new array → triggers effect again
+}, [items]);  // Infinite loop!
+```
+
+#### Safe Patterns to Use
+
+```typescript
+// ✅ PATTERN 1: Use refs for unstable values
+const localGenStatusRef = useRef(localGenStatus);
+localGenStatusRef.current = localGenStatus;
+
+useEffect(() => {
+    const status = localGenStatusRef.current;  // Access via ref, not dep
+    // ...
+}, [sceneId]);  // Only depends on stable primitives
+
+// ✅ PATTERN 2: Extract primitive values from objects
+const comfyUIUrl = settings.comfyUIUrl;
+const isEnabled = settings.featureFlags?.videoUpscaling;
+
+useEffect(() => {
+    console.log(comfyUIUrl);
+}, [comfyUIUrl]);  // Primitive string - stable reference
+
+// ✅ PATTERN 3: Use Zustand stores with selectors
+const comfyUIUrl = useSettingsStore(state => state.comfyUIUrl);
+const updateStatus = useGenerationStatusStore(state => state.updateSceneStatus);
+
+// ✅ PATTERN 4: One-time initialization guard
+const [isInitialized, setIsInitialized] = useState(false);
+useEffect(() => {
+    if (isInitialized) return;
+    // Run once
+    setIsInitialized(true);
+}, [isInitialized]);
+
+// ✅ PATTERN 5: Subscription guard
+const isSubscribedRef = useRef(false);
+useEffect(() => {
+    if (isSubscribedRef.current) return;
+    isSubscribedRef.current = true;
+    const unsub = subscribe();
+    return () => { isSubscribedRef.current = false; unsub(); };
+}, []);
+```
+
+#### Key Files to Reference
+
+| Store | Purpose | File |
+|-------|---------|------|
+| Settings | LocalGenerationSettings | `services/settingsStore.ts` |
+| Gen Status | LocalGenerationStatus | `services/generationStatusStore.ts` |
+| Scene State | Unified scene data | `services/sceneStateStore.ts` |
+
+#### Feature Flags for Store Migration (Updated 2025-11-30)
+
+- `useSettingsStore: true` - ✅ ENABLED - Zustand settings store with IndexedDB persistence
+- `useGenerationStatusStore: true` - ✅ ENABLED - Zustand generation status store
+- `useUnifiedSceneStore: true` - ✅ ENABLED - Unified scene state
+
+**Migration Status**: TimelineEditor and ContinuityDirector migrated via adapter pattern. After 1 sprint validation, legacy props will be removed.
+
 ### Testing Protocol
 - Unit tests: Fast, isolated, no external dependencies
 - E2E tests: Use real services (LM Studio, ComfyUI) when possible
@@ -357,19 +500,21 @@ Mirror these with `VITE_LOCAL_*` variants for React UI access.
 - Update CURRENT_STATUS.md for significant changes
 
 ### Agent Handoff Protocol
-1. Read `Documentation/PROJECT_STATUS_CONSOLIDATED.md` for current state (updated 2025-11-22)
+1. Read `Documentation/PROJECT_STATUS_CONSOLIDATED.md` for current state (updated 2025-11-30)
 2. Read `START_HERE.md` for quick context
-3. Read latest handoff: `AGENT_HANDOFF_TEST_IMPROVEMENTS_20251122.md`
-4. Create session summary in `Development_History/Sessions/`
-5. Update `Documentation/PROJECT_STATUS_CONSOLIDATED.md` with new metrics
-6. Keep root handoff docs minimal - archive old ones to `docs/archived/root-docs-2025-11/` when superseded
+3. Read latest handoff: `AGENT_HANDOFF_CURRENT.md`
+4. Check machine-readable state: `agent/.state/session-handoff.json`
+5. Create session summary in `Development_History/Sessions/`
+6. Update `Documentation/PROJECT_STATUS_CONSOLIDATED.md` with new metrics
+7. Keep root handoff docs minimal - archive old ones to `docs/archived/root-docs-2025-11/` when superseded
 
 ## Documentation Resources
-- **Current Status**: `Documentation/PROJECT_STATUS_CONSOLIDATED.md` (ALWAYS READ FIRST - updated 2025-11-22)
-- **Latest Handoff**: `AGENT_HANDOFF_TEST_IMPROVEMENTS_20251122.md` (test suite 100% pass rate achievement)
+- **Current Status**: `Documentation/PROJECT_STATUS_CONSOLIDATED.md` (ALWAYS READ FIRST - updated 2025-11-30)
+- **Latest Handoff**: `AGENT_HANDOFF_CURRENT.md` (Phase 1D state management complete)
+- **Session State**: `agent/.state/session-handoff.json` (machine-readable)
 - **Architecture**: `Documentation/Architecture/WORKFLOW_ARCHITECTURE_REFERENCE.md`
 - **Testing**: `Testing/E2E/STORY_TO_VIDEO_TEST_CHECKLIST.md`
 - **ComfyUI**: `Workflows/ComfyUI/COMFYUI_WORKFLOW_INDEX.md`
 - **Quick Start**: `START_HERE.md` (5-minute summary)
 - **Agent Guidelines**: This file (`.github/copilot-instructions.md`)
-- **Archived Docs**: `docs/archived/` (historical reference only, 44 files archived 2025-11-22)
+- **Archived Docs**: `docs/archived/` (historical reference only, 180+ files archived)

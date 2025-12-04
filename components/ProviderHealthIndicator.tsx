@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { useProviderHealth, ProviderHealthStatus } from '../hooks/useProviderHealth';
 import { useLocalGenerationSettings } from '../contexts/LocalGenerationSettingsContext';
 import { isFeatureEnabled } from '../utils/featureFlags';
@@ -33,21 +33,41 @@ const ProviderHealthIndicator: React.FC<ProviderHealthIndicatorProps> = ({
     className = '',
 }) => {
     const { settings } = useLocalGenerationSettings();
+    
+    // Track previous health status to only toast on ACTUAL transitions
+    // This prevents toast spam from repeated polling returning the same status
+    const prevHealthyRef = useRef<boolean | null>(null);
 
     // Only render if providerHealthPolling is enabled
     const isEnabled = isFeatureEnabled(settings?.featureFlags, 'providerHealthPolling');
 
     const handleHealthChange = useCallback((newStatus: ProviderHealthStatus) => {
-        // Only notify on actual health changes (transitions), not initial load
-        if (newStatus.lastCheckedAt && addToast) {
-            // Call notifyProviderHealth with the correct signature
+        // Only notify on actual health TRANSITIONS, not every poll
+        // Skip if: no previous status (initial load), or status is unchanged
+        if (!addToast) return;
+        
+        const wasHealthy = prevHealthyRef.current;
+        const isHealthy = newStatus.ready;
+        
+        // Update ref for next comparison
+        prevHealthyRef.current = isHealthy;
+        
+        // Only toast on actual transitions (not initial load, not repeated same status)
+        if (wasHealthy === null) {
+            // Initial load - don't toast, just record state
+            return;
+        }
+        
+        if (wasHealthy !== isHealthy) {
+            // Actual transition - show toast
             notifyProviderHealth(
                 addToast,
                 'ComfyUI',
-                newStatus.ready,
+                isHealthy,
                 newStatus.error || undefined
             );
         }
+        // If wasHealthy === isHealthy, no transition happened - skip toast
     }, [addToast]);
 
     const handleUnhealthy = useCallback((error: string) => {

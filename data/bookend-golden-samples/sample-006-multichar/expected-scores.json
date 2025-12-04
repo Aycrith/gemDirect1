@@ -1,0 +1,50 @@
+{
+  "sampleId": "sample-006-multichar",
+  "version": "1.0.0",
+  "createdAt": "2025-12-03T00:00:00Z",
+  
+  "thresholds": {
+    "pass": {
+      "overallContinuity": 75,
+      "characterMatch": 70,
+      "environmentMatch": 80,
+      "startFrameMatch": 75,
+      "endFrameMatch": 75,
+      "motionQuality": 70
+    },
+    "warn": {
+      "overallContinuity": 65,
+      "characterMatch": 60,
+      "environmentMatch": 70,
+      "startFrameMatch": 65,
+      "endFrameMatch": 65,
+      "motionQuality": 60
+    },
+    "fail": {
+      "overallContinuity": 55,
+      "characterMatch": 50,
+      "environmentMatch": 60,
+      "startFrameMatch": 55,
+      "endFrameMatch": 55,
+      "motionQuality": 50
+    }
+  },
+  
+  "notes": "Depth motion sample tests FLF2V's ability to handle foreground/background separation. Foreground (coffee cup) must remain perfectly stable while background (barista) has subtle motion. Thresholds are slightly lower than character sample since multi-plane motion is more challenging.",
+  
+  "criticalMetrics": ["environmentMatch", "startFrameMatch", "motionQuality"],
+  
+  "expectedResults": {
+    "description": "Foreground object maintains exact position throughout video while background subject shows subtle natural motion",
+    "primaryConcern": "Coffee cup must not move or change appearance",
+    "secondaryConcern": "Steam should rise naturally, depth of field blur should be maintained",
+    "acceptableVariance": "Minor steam pattern variation, slight background subject pose differences within blur"
+  },
+  
+  "depthValidation": {
+    "checkForegroundStability": true,
+    "checkBackgroundMotion": true,
+    "checkDepthOfFieldConsistency": true,
+    "checkSteamNaturalness": true
+  }
+}

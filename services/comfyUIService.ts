@@ -6,6 +6,8 @@ import { validatePromptGuardrails } from './promptValidator';
 import { SceneTransitionContext, ShotTransitionContext, formatTransitionContextForPrompt, formatShotTransitionContextForPrompt, buildShotTransitionContext } from './sceneTransitionService';
 import { isFeatureEnabled, FeatureFlags } from '../utils/featureFlags';
 import { ApiLogCallback } from './geminiService';
+// LM Studio model manager - ensures VRAM is freed before ComfyUI generation
+import { ensureModelsUnloaded } from './lmStudioModelManager';
 import {
     ValidationResult,
     validationSuccess,
@@ -36,6 +38,10 @@ import {
 // Phase 7: Video upscaling post-processing (imported when needed)
 // Generation Queue for serial VRAM-safe execution
 import { getGenerationQueue, createVideoTask, GenerationStatus } from './generationQueue';
+// Error types for queue error extraction
+import { CSGError } from '../types/errors';
+// Endpoint snapping post-processor for bookend video quality
+import { snapEndpointsToKeyframes, isEndpointSnappingSupported, type EndpointSnappingOptions } from '../utils/videoEndpointSnapper';
 
 // Interface for ComfyUI workflow nodes
 interface WorkflowNode {
@@ -176,6 +182,46 @@ const GRACE_PERIOD_MS = COMFYUI_TIMEOUTS.QUEUE_GRACE_PERIOD;
 const POLL_INTERVAL_MS = COMFYUI_TIMEOUTS.QUEUE_POLL_INTERVAL;
 const FALLBACK_FETCH_ENABLED = true;   // If grace period expires, try fetching from history API
 const DEBUG_VIDEO_PIPELINE = false;    // Set to true for verbose pipeline debugging
+
+/**
+ * Parse ComfyUI/GPU errors into user-friendly messages
+ */
+export function parseComfyUIError(rawError: string): string {
+    const lowerError = rawError.toLowerCase();
+    
+    // CUDA Out of Memory errors
+    if (lowerError.includes('cuda') && (lowerError.includes('out of memory') || lowerError.includes('oom'))) {
+        return 'GPU ran out of memory. Try: (1) Close other GPU apps, (2) Reduce image/video size, (3) Restart ComfyUI.';
+    }
+    
+    // General OOM / Torch memory errors
+    if (lowerError.includes('out of memory') || lowerError.includes('oom') || lowerError.includes('torch.cuda.outofmemory')) {
+        return 'Out of memory. Close other applications and try again with smaller settings.';
+    }
+    
+    // CUDA device errors
+    if (lowerError.includes('cuda error') || lowerError.includes('cudnn')) {
+        return 'GPU error occurred. Try restarting ComfyUI and your GPU drivers.';
+    }
+    
+    // Model loading errors
+    if (lowerError.includes('failed to load') || lowerError.includes('model not found') || lowerError.includes('safetensors')) {
+        return 'Model failed to load. Check that required models are installed in ComfyUI.';
+    }
+    
+    // Workflow errors
+    if (lowerError.includes('required input') || lowerError.includes('missing node')) {
+        return 'Workflow error: missing required input. Check workflow configuration.';
+    }
+    
+    // NaN/tensor errors (often from bad inputs)
+    if (lowerError.includes('nan') || lowerError.includes('tensor')) {
+        return 'Invalid input caused generation to fail. Try with different settings.';
+    }
+    
+    // Return trimmed version of original for other errors
+    return rawError.length > 200 ? rawError.slice(0, 200) + '...' : rawError;
+}
 
 /**
  * Normalize ComfyUI URLs for DEV mode proxy routing.
@@ -725,6 +771,172 @@ export const validateWorkflowAndMappingsResult = (
     );
 };
 
+// ============================================================================
+// Node Dependency Pre-flight Check
+// ============================================================================
+
+export interface NodeDependencyCheckResult {
+    success: boolean;
+    availableNodes: string[];
+    missingNodes: string[];
+    errors: string[];
+}
+
+/**
+ * Cache for installed ComfyUI nodes to avoid repeated /object_info calls.
+ * The cache is invalidated after 5 minutes.
+ */
+let installedNodesCache: { nodes: Set<string>; timestamp: number } | null = null;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Fetches the list of installed ComfyUI nodes from the /object_info endpoint.
+ * Results are cached for performance.
+ * 
+ * @param baseUrl ComfyUI server URL
+ * @param forceRefresh If true, ignores cache and fetches fresh data
+ * @returns Set of installed node class_types
+ */
+export const getInstalledNodes = async (
+    baseUrl: string,
+    forceRefresh: boolean = false
+): Promise<Set<string>> => {
+    // Check cache validity
+    if (!forceRefresh && installedNodesCache) {
+        const cacheAge = Date.now() - installedNodesCache.timestamp;
+        if (cacheAge < CACHE_TTL_MS) {
+            return installedNodesCache.nodes;
+        }
+    }
+    
+    const url = baseUrl.endsWith('/') ? `${baseUrl}object_info` : `${baseUrl}/object_info`;
+    
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(getTimeout('DISCOVERY')),
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Failed to fetch object_info: ${response.status} ${response.statusText}`);
+        }
+        
+        const objectInfo = await response.json();
+        const nodes = new Set<string>(Object.keys(objectInfo));
+        
+        // Update cache
+        installedNodesCache = { nodes, timestamp: Date.now() };
+        
+        return nodes;
+    } catch (error) {
+        if (error instanceof Error && error.name === 'TimeoutError') {
+            throw new Error(`Timeout fetching ComfyUI node info from ${url}`);
+        }
+        throw error;
+    }
+};
+
+/**
+ * Clears the installed nodes cache. Call this when ComfyUI restarts or
+ * custom nodes are installed/uninstalled.
+ */
+export const clearInstalledNodesCache = (): void => {
+    installedNodesCache = null;
+};
+
+/**
+ * Checks if required ComfyUI nodes are installed before executing a workflow.
+ * This prevents cryptic runtime errors when a workflow requires nodes that
+ * are not installed in the user's ComfyUI setup.
+ * 
+ * @param settings Local generation settings containing ComfyUI URL
+ * @param requiredNodes Array of required node class_types (e.g., ['WanFirstLastFrameToVideo', 'CLIPLoader'])
+ * @returns NodeDependencyCheckResult with success status and details
+ */
+export const checkNodeDependencies = async (
+    settings: LocalGenerationSettings,
+    requiredNodes: string[]
+): Promise<NodeDependencyCheckResult> => {
+    const result: NodeDependencyCheckResult = {
+        success: true,
+        availableNodes: [],
+        missingNodes: [],
+        errors: []
+    };
+    
+    if (!requiredNodes || requiredNodes.length === 0) {
+        return result;
+    }
+    
+    if (!settings.comfyUIUrl) {
+        result.success = false;
+        result.errors.push('ComfyUI URL not configured');
+        return result;
+    }
+    
+    try {
+        const installedNodes = await getInstalledNodes(settings.comfyUIUrl);
+        
+        for (const nodeType of requiredNodes) {
+            if (installedNodes.has(nodeType)) {
+                result.availableNodes.push(nodeType);
+            } else {
+                result.missingNodes.push(nodeType);
+            }
+        }
+        
+        result.success = result.missingNodes.length === 0;
+        
+        if (!result.success) {
+            result.errors.push(
+                `Missing required ComfyUI nodes: ${result.missingNodes.join(', ')}. ` +
+                `Please install the required custom nodes in ComfyUI.`
+            );
+        }
+        
+    } catch (error) {
+        result.success = false;
+        result.errors.push(
+            `Failed to check node dependencies: ${error instanceof Error ? error.message : String(error)}`
+        );
+    }
+    
+    return result;
+};
+
+/**
+ * Pre-flight check for chained scene video generation.
+ * Validates that all required nodes for the chain-of-frames workflow are available.
+ * 
+ * @param settings Local generation settings
+ * @returns NodeDependencyCheckResult
+ */
+export const checkChainedVideoNodeDependencies = async (
+    settings: LocalGenerationSettings
+): Promise<NodeDependencyCheckResult> => {
+    const chainedProfile = settings.workflowProfiles?.[settings.sceneChainedWorkflowProfile || 'wan-i2v'];
+    
+    // Default required nodes for chained video generation
+    // Note: We don't require a specific FLF2V node since multiple variants are valid
+    // (WanFirstLastFrameToVideo for 14B, Wan22FirstLastFrameToVideoLatent* for 5B)
+    const defaultRequiredNodes = [
+        'CLIPLoader',
+        'VAELoader',
+        'UNETLoader',
+        'CLIPTextEncode',
+        'LoadImage',
+        'KSampler',
+        'VAEDecode',
+        'SaveVideo'
+    ];
+    
+    // If profile has metadata with required nodes, use those instead
+    const requiredNodes = chainedProfile?.metadata?.requiredNodes || defaultRequiredNodes;
+    
+    return await checkNodeDependencies(settings, requiredNodes);
+};
+
 
 const ensureWorkflowMappingDefaults = (workflowNodes: Record<string, any>, existingMapping: WorkflowMapping): WorkflowMapping => {
     if (!workflowNodes || typeof workflowNodes !== 'object') {
@@ -737,9 +949,12 @@ const ensureWorkflowMappingDefaults = (workflowNodes: Record<string, any>, exist
 
     const assignMapping = (nodeId: string, inputName: string, dataType: MappableData) => {
         if (mappedTypes.has(dataType)) return;
+        const key = `${nodeId}:${inputName}`;
+        // Don't overwrite existing mappings (e.g., start_image/end_image shouldn't be overwritten by keyframe_image auto-detection)
+        if (mergedMapping[key]) return;
         const node = workflowNodes[nodeId];
         if (!node || !node.inputs || typeof node.inputs[inputName] === 'undefined') return;
-        mergedMapping[`${nodeId}:${inputName}`] = dataType;
+        mergedMapping[key] = dataType;
         mappedTypes.add(dataType);
     };
 
@@ -960,6 +1175,20 @@ export const queueComfyUIPrompt = async (
         hasImage: !!base64Image && base64Image.length > 0
     });
     
+    // ========================================================================
+    // LM Studio VRAM Release - Unload LLM models to free VRAM for ComfyUI
+    // ========================================================================
+    const autoEjectEnabled = settings.featureFlags?.autoEjectLMStudioModels ?? true;
+    if (autoEjectEnabled) {
+        try {
+            await ensureModelsUnloaded();
+        } catch (lmError) {
+            // Non-blocking: Log warning but continue with generation
+            // LM Studio might not be running, which is fine
+            console.warn('[queueComfyUIPrompt] LM Studio model unload failed (non-blocking):', lmError);
+        }
+    }
+    
     // Early validation: Check if we have any workflow configured
     if (workflowProfileCount === 0 && !hasRootWorkflowJson && !profileOverride) {
         const errorMsg = 'No workflow profiles configured. Please import a workflow in Settings → ComfyUI Settings → Workflow Profiles.';
@@ -1139,6 +1368,70 @@ export const queueComfyUIPrompt = async (
             }
         }
 
+        // --- STEP 1.1: UPLOAD DUAL-KEYFRAME ASSETS (start_image / end_image) ---
+        // For profiles like wan-fun-inpaint that require both start and end images
+        let uploadedStartImageFilename: string | null = null;
+        let uploadedEndImageFilename: string | null = null;
+        
+        const startImageKey = Object.keys(runtimeSettings.mapping).find(key => runtimeSettings.mapping[key] === 'start_image');
+        const endImageKey = Object.keys(runtimeSettings.mapping).find(key => runtimeSettings.mapping[key] === 'end_image');
+        
+        if (startImageKey && base64Image) {
+            const nodeId = startImageKey.split(':')[0];
+            if (nodeId) {
+                const node = promptPayload[nodeId];
+                if (node && node.class_type === 'LoadImage') {
+                    const blob = base64ToBlob(base64Image, 'image/jpeg');
+                    const formData = new FormData();
+                    formData.append('image', blob, `csg_start_${Date.now()}.jpg`);
+                    formData.append('overwrite', 'true');
+                    
+                    const uploadResponse = await fetchWithTimeout(`${baseUrl}/upload/image`, {
+                        method: 'POST',
+                        body: formData,
+                    }, 45000);
+                    
+                    if (uploadResponse.ok) {
+                        const uploadResult = await uploadResponse.json();
+                        uploadedStartImageFilename = uploadResult.name;
+                        console.log(`[${profileId}] start_image -> ${uploadedStartImageFilename} (node ${nodeId})`);
+                    } else {
+                        console.warn(`[${profileId}] Failed to upload start_image: ${uploadResponse.status}`);
+                    }
+                }
+            }
+        }
+        
+        if (endImageKey && base64Image) {
+            const nodeId = endImageKey.split(':')[0];
+            console.log(`[${profileId}] end_image upload: nodeId=${nodeId}`);
+            if (nodeId) {
+                const node = promptPayload[nodeId];
+                console.log(`[${profileId}] end_image node check: node exists=${!!node}, class_type=${node?.class_type}`);
+                if (node && node.class_type === 'LoadImage') {
+                    // For dual-keyframe workflow: use the same image for both if only one provided
+                    // In a real dual-keyframe scenario, caller should pass both images
+                    const blob = base64ToBlob(base64Image, 'image/jpeg');
+                    const formData = new FormData();
+                    formData.append('image', blob, `csg_end_${Date.now()}.jpg`);
+                    formData.append('overwrite', 'true');
+                    
+                    const uploadResponse = await fetchWithTimeout(`${baseUrl}/upload/image`, {
+                        method: 'POST',
+                        body: formData,
+                    }, 45000);
+                    
+                    if (uploadResponse.ok) {
+                        const uploadResult = await uploadResponse.json();
+                        uploadedEndImageFilename = uploadResult.name;
+                        console.log(`[${profileId}] end_image -> ${uploadedEndImageFilename} (node ${nodeId})`);
+                    } else {
+                        console.warn(`[${profileId}] Failed to upload end_image: ${uploadResponse.status}`);
+                    }
+                }
+            }
+        }
+
         // --- STEP 1.2: IP-ADAPTER CHARACTER CONSISTENCY (if provided) ---
         let ipAdapterUploadedFilenames: Record<string, string> = {};
         if (options?.ipAdapter?.isActive && Object.keys(options.ipAdapter.uploadedImages).length > 0) {
@@ -1242,6 +1535,16 @@ export const queueComfyUIPrompt = async (
                     case 'keyframe_image':
                         if (uploadedImageFilename && node.class_type === 'LoadImage') {
                              dataToInject = uploadedImageFilename;
+                        }
+                        break;
+                    case 'start_image':
+                        if (uploadedStartImageFilename && node.class_type === 'LoadImage') {
+                            dataToInject = uploadedStartImageFilename;
+                        }
+                        break;
+                    case 'end_image':
+                        if (uploadedEndImageFilename && node.class_type === 'LoadImage') {
+                            dataToInject = uploadedEndImageFilename;
                         }
                         break;
                 }
@@ -1572,7 +1875,10 @@ export const trackPromptExecution = (
             case 'execution_error':
                 if (msg.data.prompt_id === promptId) {
                     const errorDetails = msg.data;
-                    const errorMessage = `Execution error on node ${errorDetails.node_id}: ${errorDetails.exception_message}`;
+                    const rawError = errorDetails.exception_message || 'Unknown execution error';
+                    const userFriendlyError = parseComfyUIError(rawError);
+                    const errorMessage = `ComfyUI error (node ${errorDetails.node_id}): ${userFriendlyError}`;
+                    console.error(`[trackPromptExecution] Execution error:`, errorDetails);
                     dispatchProgress({ status: 'error', message: errorMessage });
                     ws.close();
                 }
@@ -1858,9 +2164,10 @@ export const generateVideoFromShot = async (
 
         // Step 2.5: Prepare IP-Adapter payload for character consistency (if available)
         let ipAdapterPayload: IPAdapterPayload | undefined;
+        const videoProfileId = settings.videoWorkflowProfile || DEFAULT_WORKFLOW_PROFILE_ID;
         if (overrides?.visualBible && overrides?.scene && overrides?.characterReferenceImages) {
             try {
-                const workflowProfile = settings.workflowProfiles?.['wan-i2v'];
+                const workflowProfile = settings.workflowProfiles?.[videoProfileId];
                 if (workflowProfile?.workflowJson) {
                     reportProgress({ status: 'running', message: 'Preparing IP-Adapter character references...' });
                     ipAdapterPayload = await prepareIPAdapterPayload(
@@ -1893,7 +2200,7 @@ export const generateVideoFromShot = async (
                 settings, 
                 payloads, 
                 keyframeImage || '', 
-                'wan-i2v',
+                videoProfileId,
                 undefined, // profileOverride
                 ipAdapterPayload ? { ipAdapter: ipAdapterPayload } : undefined
             );
@@ -2271,14 +2578,43 @@ export const generateVideoFromShot = async (
 
 type GenerateVideoFromShotFn = typeof generateVideoFromShot;
 
+// ============================================================================
+// FLUX Prompt Templates
+// ============================================================================
 
+/**
+ * Original SINGLE_FRAME_PROMPT (500+ chars)
+ * Contains cinematography terms that FLUX doesn't understand well.
+ * Kept for backward compatibility with video models.
+ */
 const SINGLE_FRAME_PROMPT = 'SINGLE CONTINUOUS WIDE-ANGLE SHOT: Generate EXACTLY ONE UNIFIED CINEMATIC SCENE showing a SINGLE MOMENT across the ENTIRE 16:9 frame WITHOUT ANY DIVISIONS, REFLECTIONS, OR LAYERED COMPOSITIONS. PANORAMIC VIEW of ONE LOCATION with consistent lighting and unified perspective from top to bottom, left to right. The entire frame must show ONE CONTINUOUS ENVIRONMENT - no horizontal lines dividing the image, no mirrored sections, no before-after comparisons. DO NOT create character sheets, product grids, split-screens, multi-panel layouts, or storyboard panels. This is ONE UNBROKEN WIDE-ANGLE SHOT capturing the full environment with seamless unified composition. Ensure well-lit scene with visible details and balanced exposure.';
+
+/**
+ * Simplified FLUX prompt (~200 chars)
+ * Optimized for FLUX T2I model:
+ * - Removes cinematography terms (Steadicam, low-angle, etc.) that FLUX ignores
+ * - Focuses on composition and avoiding grid/split artifacts
+ * - More direct, descriptive language
+ */
+export const FLUX_SIMPLE_PROMPT = 'Single unified scene showing one continuous moment. Wide landscape composition, 16:9 aspect ratio. Natural lighting, detailed environment. One location, consistent perspective throughout the entire frame. No panels, no grid, no split-screen.';
+
+/**
+ * Get the appropriate single-frame prompt based on settings/context.
+ * Uses simplified FLUX prompt when keyframePromptPipeline flag is enabled.
+ */
+export const getSingleFramePrompt = (featureFlags?: { keyframePromptPipeline?: boolean }): string => {
+    // Use simplified prompt when the new keyframe pipeline is enabled
+    if (featureFlags?.keyframePromptPipeline) {
+        return FLUX_SIMPLE_PROMPT;
+    }
+    return SINGLE_FRAME_PROMPT;
+};
 
 // ORIGINAL (900+ chars) - kept for fallback/comparison
 export const NEGATIVE_GUIDANCE_VERBOSE = 'AVOID AT ALL COSTS: split-screen, multi-panel layout, divided frame, panel borders, storyboard panels, multiple scenes in one image, comic strip layout, triptych, diptych, before and after comparison, side by side shots, top and bottom split, left and right split, grid layout, mosaic, composite image, collage, multiple perspectives, repeated subjects, duplicated elements, mirrored composition, reflection symmetry, tiled pattern, sequential images, montage, multiple time periods, multiple locations, frame divisions, panel separators, white borders, black borders, frame-within-frame, picture-in-picture, multiple lighting setups, discontinuous composition, fragmented scene, segmented layout, partitioned image, multiple narratives, split composition, dual scene, multiple shots combined, storyboard format, comic panel style, sequence of events, time progression, location changes, speech bubbles, UI overlays, interface elements, textual callouts';
 
-// OPTIMIZED v4 (360 chars) - added reflection/symmetry terms to eliminate split-screen artifacts
-export const NEGATIVE_GUIDANCE = 'split-screen, multi-panel, grid layout, character sheet, product catalog, symmetrical array, repeated elements, duplicated subjects, storyboard, comic layout, collage, multiple scenes, side-by-side, tiled images, panel borders, manga style, separated frames, before-after comparison, sequence panels, dual perspective, fragmented scene, picture-in-picture, montage, reflection, mirrored composition, horizontal symmetry, vertical symmetry, above-below division, sky-ground split';
+// OPTIMIZED v5 (520 chars) - added identity preservation terms to prevent character morphing and face degradation
+export const NEGATIVE_GUIDANCE = 'split-screen, multi-panel, grid layout, character sheet, product catalog, symmetrical array, repeated elements, duplicated subjects, storyboard, comic layout, collage, multiple scenes, side-by-side, tiled images, panel borders, manga style, separated frames, before-after comparison, sequence panels, dual perspective, fragmented scene, picture-in-picture, montage, reflection, mirrored composition, horizontal symmetry, vertical symmetry, above-below division, sky-ground split, morphing face, identity shift, changing features, inconsistent appearance, face distortion, melting features, blurry face, smudged details, warped anatomy, drifting identity';
 
 export const extendNegativePrompt = (base: string): string => (base && base.trim().length > 0 ? `${base}, ${NEGATIVE_GUIDANCE}` : NEGATIVE_GUIDANCE);
 
@@ -2463,6 +2799,11 @@ export interface TimelineGenerationOptions {
     // Phase 7: IP-Adapter character consistency
     /** Character reference images for IP-Adapter injection (characterId -> base64) */
     characterReferenceImages?: Record<string, string>;
+    // Bookend video endpoint snapping (post-processing)
+    /** Start keyframe image for endpoint snapping (base64 or data URL) */
+    startKeyframe?: string;
+    /** End keyframe image for endpoint snapping (base64 or data URL) */
+    endKeyframe?: string;
 }
 
 
@@ -2504,6 +2845,27 @@ export const generateTimelineVideos = async (
     
     // Phase 7: Narrative state tracking - track story elements across generations
     const useNarrativeTracking = isFeatureEnabled(featureFlags, 'narrativeStateTracking') && options?.storyBible;
+    
+    // Log coherence feature status for debugging incoherent video issues
+    console.log('[Timeline Batch] Video coherence features status:', {
+        shotLevelContinuity: useShotLevelContinuity,
+        ipAdapter: useIpAdapter,
+        narrativeTracking: useNarrativeTracking,
+        hasScene: !!scene,
+        hasSceneKeyframe: !!sceneKeyframe,
+        hasStoryBible: !!options?.storyBible,
+        hasVisualBible: !!options?.visualBible,
+        hasCharacterRefs: Object.keys(options?.characterReferenceImages || {}).length,
+        keyframeCount: Object.keys(keyframeImages).length,
+        shotCount: timeline.shots.length,
+        // Flag potential coherence issues
+        warnings: [
+            !scene && 'No scene context - shot continuity disabled',
+            !sceneKeyframe && 'No scene keyframe - visual continuity may be reduced',
+            !options?.storyBible && 'No story bible - narrative tracking disabled',
+            Object.keys(keyframeImages).length < timeline.shots.length && 'Some shots missing keyframes',
+        ].filter(Boolean)
+    });
     let narrativeState = options?.narrativeState;
     
     // Check if GenerationQueue is enabled for VRAM-safe serial execution
@@ -2634,6 +2996,63 @@ export const generateTimelineVideos = async (
                 result = await executeShotGeneration();
             }
 
+            // ============================================================================
+            // POST-PROCESSING: Endpoint Snapping (if enabled and supported)
+            // ============================================================================
+            const videoProfileId = settings.videoWorkflowProfile || 'wan-i2v';
+            const workflowProfile = settings.workflowProfiles?.[videoProfileId];
+            const postProcessing = workflowProfile?.postProcessing;
+            
+            // Check if endpoint snapping is enabled (default true for bookend workflows like wan-flf2v)
+            const isBookendWorkflow = videoProfileId.includes('flf2v') || videoProfileId.includes('bookend');
+            const snapEnabled = postProcessing?.snapEndpointsToKeyframes ?? isBookendWorkflow;
+            
+            // Get start and end keyframes for snapping
+            const startKeyframe = options?.startKeyframe || sceneKeyframe;
+            const endKeyframe = options?.endKeyframe;
+            
+            if (snapEnabled && result.videoPath && startKeyframe && endKeyframe && isEndpointSnappingSupported()) {
+                try {
+                    console.log(`[Timeline Batch] Applying endpoint snapping for shot ${shot.id}...`);
+                    onProgress?.(shot.id, { status: 'running', message: 'Applying endpoint snapping...' });
+                    
+                    // Convert data URL to blob
+                    const videoBlob = base64ToBlob(
+                        result.videoPath.replace(/^data:video\/[^;]+;base64,/, ''),
+                        'video/mp4'
+                    );
+                    
+                    const snappingOptions: EndpointSnappingOptions = {
+                        startFrameCount: postProcessing?.startFrameCount ?? 1,
+                        endFrameCount: postProcessing?.endFrameCount ?? 1,
+                        blendMode: postProcessing?.blendMode ?? 'hard',
+                        fadeFrames: postProcessing?.fadeFrames ?? 3,
+                    };
+                    
+                    const snapResult = await snapEndpointsToKeyframes(
+                        videoBlob,
+                        startKeyframe,
+                        endKeyframe,
+                        snappingOptions
+                    );
+                    
+                    if (snapResult.success && snapResult.snappedVideoUrl) {
+                        // Replace the video path with the snapped version
+                        result.videoPath = snapResult.snappedVideoUrl;
+                        console.log(`[Timeline Batch] ✅ Endpoint snapping applied: ${snapResult.startFramesReplaced} start, ${snapResult.endFramesReplaced} end frames replaced (${snapResult.processingTimeMs.toFixed(0)}ms)`);
+                    } else {
+                        console.warn(`[Timeline Batch] ⚠️ Endpoint snapping failed: ${snapResult.error}`);
+                        // Continue with original video - snapping failure is non-fatal
+                    }
+                } catch (snapError) {
+                    const msg = snapError instanceof Error ? snapError.message : String(snapError);
+                    console.warn(`[Timeline Batch] ⚠️ Endpoint snapping error (non-fatal): ${msg}`);
+                    // Continue with original video
+                }
+            } else if (snapEnabled && (!startKeyframe || !endKeyframe)) {
+                console.log(`[Timeline Batch] ⏭️ Skipping endpoint snapping: missing ${!startKeyframe ? 'start' : 'end'} keyframe`);
+            }
+
             results[shot.id] = result;
             
             if (onProgress) {
@@ -2647,7 +3066,15 @@ export const generateTimelineVideos = async (
             await new Promise(resolve => setTimeout(resolve, 1000));
 
         } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
+            // Extract original error message - CSGError wraps the original in context
+            let errorMsg: string;
+            if (error instanceof CSGError && error.context?.originalError) {
+                errorMsg = String(error.context.originalError);
+            } else if (error instanceof Error) {
+                errorMsg = error.message;
+            } else {
+                errorMsg = String(error);
+            }
             console.error(`[Timeline Batch] Failed to generate shot ${shot.id}:`, errorMsg);
             
             if (onProgress) {
@@ -2845,8 +3272,9 @@ const waitForComfyCompletion = (
                         tryReject(new Error('Generation completed but no output files found.'), 'polling');
                     }
                 } else if (status?.status_str === 'error') {
-                    const errorMessage = status.messages?.find((m: any) => m[0] === 'execution_error')?.[1]?.exception_message || 'ComfyUI generation failed.';
-                    tryReject(new Error(errorMessage), 'polling');
+                    const rawError = status.messages?.find((m: any) => m[0] === 'execution_error')?.[1]?.exception_message || 'ComfyUI generation failed.';
+                    const userFriendlyError = parseComfyUIError(rawError);
+                    tryReject(new Error(userFriendlyError), 'polling');
                 }
             } catch (error) {
                 // Polling error - continue trying (don't fail the whole operation)
@@ -2880,12 +3308,13 @@ export const generateSceneKeyframeLocally = async (
     sceneId?: string,
     onProgress?: (statusUpdate: Partial<LocalGenerationStatus>) => void
 ): Promise<string> => {
+    // Get the appropriate single-frame prompt based on feature flags
+    const singleFramePrompt = getSingleFramePrompt(settings.featureFlags);
+    
     const basePromptParts = [
-        SINGLE_FRAME_PROMPT,
-        'SINGLE ESTABLISHING SHOT ONLY: Cinematic establishing frame, high fidelity, 4K resolution. ONE unified composition with consistent lighting and perspective throughout the entire frame.',
-        `Scene content: ${sceneSummary}`,
+        singleFramePrompt,
+        `Scene: ${sceneSummary}`,
         // Note: Director's vision is already embedded in sceneSummary, so we don't duplicate it here
-        'Generate ONE CONTINUOUS IMAGE capturing this single moment. Do not divide the frame. Do not show multiple time periods or locations. This is a single unified scene, not a sequence or comparison.'
     ];
     const heroArcInfo = sceneId ? `Hero arc reference: ${sceneId}` : '';
     if (heroArcInfo) {
@@ -3352,7 +3781,8 @@ export async function generateVideoFromBookendsSequential(
     );
     
     // Phase 1: Generate video from start keyframe
-    console.log(`[Sequential Bookend] Phase 1: Generating video from START keyframe`);
+    const videoProfileId = settings.videoWorkflowProfile || DEFAULT_WORKFLOW_PROFILE_ID;
+    console.log(`[Sequential Bookend] Phase 1: Generating video from START keyframe using profile: ${videoProfileId}`);
     onStateChange({ 
         phase: 'bookend-start-video',
         status: 'running', 
@@ -3364,7 +3794,7 @@ export async function generateVideoFromBookendsSequential(
         settings,
         payloads,
         bookends.start,
-        'wan-i2v'
+        videoProfileId
     );
 
     if (!startPromptResponse?.prompt_id) {
@@ -3407,7 +3837,7 @@ export async function generateVideoFromBookendsSequential(
         settings,
         payloads,
         bookends.end,
-        'wan-i2v'
+        videoProfileId
     );
 
     if (!endPromptResponse?.prompt_id) {
@@ -3508,13 +3938,13 @@ export async function generateVideoFromBookendsSequential(
 }
 
 /**
- * Native Bookend Workflow: Generate video using WanFirstLastFrameToVideo or WanFunInpaintToVideo nodes
+ * Native Bookend Workflow: Generate video using FLF2V or FunInpaint nodes
  * 
  * This is the preferred method for bookend video generation as it uses ComfyUI's native
  * dual-keyframe interpolation without requiring FFmpeg post-processing.
  * 
- * Supports two workflow types:
- * - wan-flf2v: Uses WanFirstLastFrameToVideo for frame interpolation
+ * Supports multiple workflow variants:
+ * - wan-flf2v: Uses WanFirstLastFrameToVideo (14B) or Wan22FirstLastFrameToVideoLatent* (5B)
  * - wan-fun-inpaint: Uses WanFunInpaintToVideo for smoother motion
  * 
  * @param settings ComfyUI configuration
@@ -3607,7 +4037,8 @@ export async function generateVideoFromBookendsNative(
 
 /**
  * Queue a ComfyUI prompt with dual image support (start and end keyframes).
- * This is specifically designed for WanFirstLastFrameToVideo and WanFunInpaintToVideo workflows.
+ * This is designed for FLF2V workflows (WanFirstLastFrameToVideo, Wan22FirstLastFrameToVideoLatent*)
+ * and WanFunInpaintToVideo workflows.
  * 
  * @param settings ComfyUI configuration
  * @param payloads Text/JSON payloads for prompt injection
@@ -3622,6 +4053,19 @@ export const queueComfyUIPromptDualImage = async (
     profileId: string = 'wan-flf2v'
 ): Promise<any> => {
     console.log(`[${profileId}] Queueing dual-image workflow with start and end keyframes`);
+    
+    // ========================================================================
+    // LM Studio VRAM Release - Unload LLM models to free VRAM for ComfyUI
+    // ========================================================================
+    const autoEjectEnabled = settings.featureFlags?.autoEjectLMStudioModels ?? true;
+    if (autoEjectEnabled) {
+        try {
+            await ensureModelsUnloaded();
+        } catch (lmError) {
+            // Non-blocking: Log warning but continue with generation
+            console.warn('[queueComfyUIPromptDualImage] LM Studio model unload failed (non-blocking):', lmError);
+        }
+    }
     
     const modelId = resolveModelIdFromSettings(settings);
     const profile = resolveWorkflowProfile(settings, modelId, undefined, profileId);
@@ -3845,7 +4289,11 @@ export const queueComfyUIPromptDualImage = async (
 
 /**
  * Detects if a workflow profile supports native dual-keyframe generation.
- * Checks for WanFirstLastFrameToVideo or WanFunInpaintToVideo nodes in the workflow.
+ * Checks for FLF2V or FunInpaint nodes in the workflow:
+ * - WanFirstLastFrameToVideo (14B model)
+ * - Wan22FirstLastFrameToVideoLatent (5B custom node)
+ * - Wan22FirstLastFrameToVideoLatentTiledVAE (5B custom node with tiled VAE)
+ * - WanFunInpaintToVideo
  * 
  * @param settings ComfyUI settings
  * @param profileId Workflow profile ID to check
@@ -3878,8 +4326,10 @@ export function supportsNativeDualKeyframe(
         
         const nodes = workflow.nodes || workflow.prompt || workflow;
         const dualKeyframeNodeTypes = [
-            'WanFirstLastFrameToVideo',
-            'WanFunInpaintToVideo'
+            'WanFirstLastFrameToVideo',           // 14B model node
+            'WanFunInpaintToVideo',
+            'Wan22FirstLastFrameToVideoLatent',   // 5B model node (custom)
+            'Wan22FirstLastFrameToVideoLatentTiledVAE', // 5B model node with tiled VAE (custom)
         ];
         
         for (const [_nodeId, node] of Object.entries(nodes)) {
@@ -4074,3 +4524,104 @@ export const getTokenBudgetInfo = () => ({
     setting: DEFAULT_TOKEN_BUDGETS.setting,
     characterProfile: DEFAULT_TOKEN_BUDGETS.characterProfile,
 });
+
+/**
+ * Fetches the latest workflow history from ComfyUI server.
+ * Used for AI-assisted workflow configuration.
+ * 
+ * @param baseUrl - ComfyUI server base URL
+ * @returns The latest workflow JSON, or null if none exists
+ * @throws Error if server is unreachable or response is invalid
+ */
+export const fetchLatestWorkflowHistory = async (baseUrl: string): Promise<string | null> => {
+    const url = baseUrl.replace(/\/+$/, '') + '/history';
+    const response = await fetchWithTimeout(url, {}, 10000);
+    
+    if (!response.ok) {
+        throw new Error(`Server responded with status ${response.status}`);
+    }
+    
+    const history = await response.json() as Record<string, any>;
+    const historyEntries = Object.values(history);
+    
+    if (historyEntries.length === 0) {
+        return null;
+    }
+    
+    const latestEntry = historyEntries[historyEntries.length - 1] as any;
+    return JSON.stringify(latestEntry.prompt?.[2], null, 2) ?? null;
+};
+
+/**
+ * Tests LLM provider connection and retrieves available models.
+ * Used for validating LM Studio or OpenAI-compatible endpoints.
+ * 
+ * @param providerUrl - The LLM provider URL (e.g., http://host:port/v1/chat/completions)
+ * @returns Object with connection status, model count, and model names
+ * @throws Error if connection fails
+ */
+export const testLLMConnection = async (providerUrl: string): Promise<{ success: boolean; models: string[]; modelCount: number }> => {
+    // Normalize the URL to extract base and construct /v1/models endpoint
+    let baseUrl = (providerUrl || '').trim();
+    
+    // Strip trailing slash
+    if (baseUrl.endsWith('/')) {
+        baseUrl = baseUrl.slice(0, -1);
+    }
+    
+    // Remove any existing /v1/* path segments
+    if (baseUrl.includes('/v1/')) {
+        baseUrl = baseUrl.substring(0, baseUrl.indexOf('/v1'));
+    } else if (baseUrl.endsWith('/v1')) {
+        baseUrl = baseUrl.slice(0, -3);
+    }
+    
+    // Construct the /v1/models endpoint
+    const modelsUrl = `${baseUrl}/v1/models`;
+    
+    const response = await fetchWithTimeout(modelsUrl, { method: 'GET' }, 5000);
+    
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json() as { data?: Array<{ id: string; name?: string }> };
+    const models = data.data || [];
+    const modelNames = models.slice(0, 3).map(m => m.id || m.name || '').filter(Boolean);
+    
+    return {
+        success: true,
+        models: modelNames,
+        modelCount: models.length,
+    };
+};
+
+/**
+ * Tests ComfyUI connection and retrieves system info.
+ * Used for validating ComfyUI server availability.
+ * 
+ * @param comfyUIUrl - The ComfyUI server URL
+ * @returns Object with connection status and GPU info
+ * @throws Error if connection fails
+ */
+export const testComfyUIConnection = async (comfyUIUrl: string): Promise<{ success: boolean; gpu: string }> => {
+    const baseUrl = getComfyUIBaseUrl(comfyUIUrl);
+    const response = await fetchWithTimeout(`${baseUrl}/system_stats`, {}, 3000);
+    
+    if (!response.ok) {
+        throw new Error(`Server responded with status ${response.status}`);
+    }
+    
+    const data = await response.json() as { system?: { os?: string }; devices?: Array<{ name?: string }> };
+    
+    if (!data || !data.system || !data.devices) {
+        throw new Error("Connected, but the response doesn't look like a valid ComfyUI server");
+    }
+    
+    const gpuName = data.devices?.[0]?.name || 'Unknown GPU';
+    
+    return {
+        success: true,
+        gpu: gpuName,
+    };
+};

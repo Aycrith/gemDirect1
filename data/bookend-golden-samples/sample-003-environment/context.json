@@ -1,0 +1,49 @@
+{
+  "sampleId": "sample-003-environment",
+  "name": "Environment Stability Test",
+  "type": "environment",
+  "description": "Detailed environment with minimal foreground movement to test background consistency",
+  
+  "sceneContext": {
+    "sceneId": "golden-003",
+    "summary": "Camera slowly pans across a cozy cafe interior",
+    "environment": "Warm coffee shop with exposed brick, wooden furniture, hanging plants",
+    "mood": "Cozy, inviting, warm afternoon light"
+  },
+  
+  "startKeyframe": {
+    "prompt": "Interior of a cozy artisan coffee shop, exposed red brick wall on the left, large windows with afternoon sunlight streaming in, vintage wooden tables and chairs, hanging pothos plants from the ceiling, espresso machine on marble counter in background, warm amber lighting, a single empty leather armchair in foreground left, professional interior photography, 4K, soft natural lighting",
+    "negativePrompt": "people, customers, barista, blurry, dark, overexposed, modern minimalist, sterile, clinical, text, signs, watermark"
+  },
+  
+  "endKeyframe": {
+    "prompt": "Interior of the same cozy artisan coffee shop, camera has panned right to show more of the seating area, exposed red brick wall now on far left edge, large windows with afternoon sunlight, vintage wooden tables and chairs, hanging pothos plants from the ceiling, espresso machine on marble counter now centered, warm amber lighting, different leather armchair visible in foreground right, professional interior photography, 4K, soft natural lighting",
+    "negativePrompt": "people, customers, barista, blurry, dark, overexposed, modern minimalist, sterile, clinical, text, signs, watermark, different location, changed decor"
+  },
+  
+  "videoContext": {
+    "motionDescription": "Smooth horizontal camera pan from left to right, revealing more of the cafe interior",
+    "cameraMotion": "Slow right pan, approximately 30 degrees over 3 seconds",
+    "duration": 3.0,
+    "fps": 16
+  },
+  
+  "expectedBehavior": {
+    "primary": "Environment elements must remain consistent as they move through frame",
+    "secondary": "Lighting quality and color temperature should stay stable",
+    "challenges": "Objects entering/exiting frame edges, maintaining brick texture consistency"
+  },
+  
+  "environmentDetails": {
+    "keyElements": ["exposed brick wall", "wooden furniture", "hanging plants", "espresso machine", "windows"],
+    "colorPalette": ["warm amber", "brick red", "wood brown", "plant green"],
+    "lightingDirection": "Natural light from windows on right side"
+  },
+  
+  "generationSettings": {
+    "resolution": { "width": 832, "height": 480 },
+    "workflowProfile": "flux-t2i",
+    "cfg": 5.5,
+    "steps": 25
+  }
+}

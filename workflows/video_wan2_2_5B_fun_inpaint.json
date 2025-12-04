@@ -595,8 +595,8 @@
         "Node name for S&R": "WanFunInpaintToVideo"
       },
       "widgets_values": [
-        640,
-        640,
+        832,
+        480,
         81,
         1
       ]

@@ -609,3 +609,77 @@ export function deserializeNarrativeState(json: string): NarrativeState | null {
     return null;
   }
 }
+
+// ============================================================================
+// IndexedDB Persistence for Narrative State
+// ============================================================================
+
+const NARRATIVE_STATE_DB_KEY = 'narrativeState';
+
+/**
+ * Persists narrative state to IndexedDB for session continuity.
+ * This ensures character tracking and coherence data survive page refreshes.
+ * 
+ * @param state - The narrative state to persist
+ * @param projectId - Optional project ID for multi-project support
+ */
+export async function persistNarrativeState(
+  state: NarrativeState,
+  projectId?: string
+): Promise<void> {
+  try {
+    const key = projectId ? `${NARRATIVE_STATE_DB_KEY}_${projectId}` : NARRATIVE_STATE_DB_KEY;
+    const serialized = serializeNarrativeState(state);
+    localStorage.setItem(key, serialized);
+    
+    // Log for debugging in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[NarrativeCoherence] State persisted for ${projectId || 'default project'}`);
+    }
+  } catch (error) {
+    console.warn('[NarrativeCoherence] Failed to persist state:', error);
+  }
+}
+
+/**
+ * Loads persisted narrative state from IndexedDB.
+ * Returns null if no state exists or if deserialization fails.
+ * 
+ * @param projectId - Optional project ID for multi-project support
+ */
+export function loadPersistedNarrativeState(projectId?: string): NarrativeState | null {
+  try {
+    const key = projectId ? `${NARRATIVE_STATE_DB_KEY}_${projectId}` : NARRATIVE_STATE_DB_KEY;
+    const serialized = localStorage.getItem(key);
+    
+    if (!serialized) {
+      return null;
+    }
+    
+    const state = deserializeNarrativeState(serialized);
+    
+    if (state && process.env.NODE_ENV === 'development') {
+      console.log(`[NarrativeCoherence] State loaded for ${projectId || 'default project'}`, {
+        characters: Object.keys(state.characters).length,
+        locations: Object.keys(state.locations).length,
+        phase: state.emotionalArc.currentPhase,
+      });
+    }
+    
+    return state;
+  } catch (error) {
+    console.warn('[NarrativeCoherence] Failed to load persisted state:', error);
+    return null;
+  }
+}
+
+/**
+ * Clears persisted narrative state for a project.
+ * Use when starting a new story or resetting coherence tracking.
+ * 
+ * @param projectId - Optional project ID for multi-project support
+ */
+export function clearPersistedNarrativeState(projectId?: string): void {
+  const key = projectId ? `${NARRATIVE_STATE_DB_KEY}_${projectId}` : NARRATIVE_STATE_DB_KEY;
+  localStorage.removeItem(key);
+}

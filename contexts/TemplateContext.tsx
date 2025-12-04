@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useMemo, useRef } from 'react';
 import { TemplateMetadata } from '../services/templateLoader';
 
 export interface TemplateContextValue {
@@ -23,6 +23,12 @@ export const TemplateContextProvider: React.FC<TemplateContextProviderProps> = (
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateMetadata | null>(null);
   const [coveredElements, setCoveredElements] = useState<Set<string>>(new Set());
   
+  // FIX (2025-11-30): Use a ref to track coveredElements for comparison in updateCoveredElements.
+  // This makes the callback reference stable (doesn't change when coveredElements changes),
+  // preventing infinite loops when updateCoveredElements is called from a useEffect.
+  const coveredElementsRef = useRef(coveredElements);
+  coveredElementsRef.current = coveredElements;
+  
   const mandatoryElements = useMemo(() => {
     return selectedTemplate?.mandatory_elements ?? [];
   }, [selectedTemplate]);
@@ -41,8 +47,11 @@ export const TemplateContextProvider: React.FC<TemplateContextProviderProps> = (
     return Math.round((covered / mandatoryElements.length) * 100);
   }, [mandatoryElements, coveredElements]);
   
+  // FIX (2025-11-30): Removed coveredElements from dependencies to make callback stable.
+  // Use ref to access current coveredElements without triggering callback recreation.
+  // This prevents infinite loops when this callback is used as a useEffect dependency.
   const updateCoveredElements = useCallback((sceneContent: string) => {
-    const newCovered = new Set(coveredElements);
+    const newCovered = new Set(coveredElementsRef.current);
     
     mandatoryElements.forEach(element => {
       // Check if element keywords appear in scene content
@@ -62,8 +71,16 @@ export const TemplateContextProvider: React.FC<TemplateContextProviderProps> = (
       }
     });
     
-    setCoveredElements(newCovered);
-  }, [mandatoryElements, coveredElements]);
+    // Only update if there's an actual change (compare Set contents)
+    const currentCovered = coveredElementsRef.current;
+    const hasChanges = newCovered.size !== currentCovered.size ||
+      [...newCovered].some(elem => !currentCovered.has(elem)) ||
+      [...currentCovered].some(elem => !newCovered.has(elem));
+    
+    if (hasChanges) {
+      setCoveredElements(newCovered);
+    }
+  }, [mandatoryElements]);
   
   const resetCoverage = useCallback(() => {
     setCoveredElements(new Set());

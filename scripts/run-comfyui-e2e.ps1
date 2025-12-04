@@ -1,13 +1,21 @@
 # run-comfyui-e2e.ps1
 # End-to-end test: Story → WAN T2I Keyframes → WAN I2V Videos
 # This script orchestrates the complete pipeline using ONLY WAN workflows (no SVD)
+#
+# FEATURES:
+# - Playwright lock file prevents concurrent runs (multi-agent safety)
+# - LM Studio auto-unload between LLM and ComfyUI phases (VRAM management)
+# - Dynamic queue monitoring instead of static timeouts
+# - Proper cleanup in finally block
 
 param(
     [string]$ProjectRoot = $PSScriptRoot,
     [switch]$FastIteration,
     [int]$SceneRetryBudget = 1,
     [int]$MaxWaitSeconds = 600,
-    [int]$PollIntervalSeconds = 2
+    [int]$PollIntervalSeconds = 2,
+    [string]$LMStudioEndpoint = 'http://192.168.50.192:1234',
+    [switch]$SkipLMStudioUnload
 )
 
 $ErrorActionPreference = 'Continue'
@@ -17,6 +25,223 @@ if ($ProjectRoot -eq $PSScriptRoot) {
     $ProjectRoot = Split-Path -Parent $PSScriptRoot
 }
 
+# ============================================================================
+# PLAYWRIGHT LOCK FILE MECHANISM
+# Prevents concurrent runs when multiple agents try to execute simultaneously
+# ============================================================================
+
+$lockFile = Join-Path $ProjectRoot '.playwright-lock'
+$lockAcquired = $false
+
+function Acquire-PlaywrightLock {
+    param(
+        [int]$MaxWaitSeconds = 60,
+        [int]$PollIntervalSeconds = 2
+    )
+    
+    $startTime = Get-Date
+    $currentPID = $PID
+    
+    while ((Get-Date) - $startTime -lt [TimeSpan]::FromSeconds($MaxWaitSeconds)) {
+        if (Test-Path $lockFile) {
+            # Check if the process holding the lock is still running
+            $lockContent = Get-Content $lockFile -Raw -ErrorAction SilentlyContinue
+            if ($lockContent -match 'PID=(\d+)') {
+                $lockerPID = [int]$Matches[1]
+                $lockerProcess = Get-Process -Id $lockerPID -ErrorAction SilentlyContinue
+                
+                if (-not $lockerProcess) {
+                    # Process that held the lock is dead, remove stale lock
+                    Write-Host "[LOCK] Removing stale lock from dead process PID=$lockerPID" -ForegroundColor Yellow
+                    Remove-Item $lockFile -Force -ErrorAction SilentlyContinue
+                } else {
+                    # Lock is held by running process, wait
+                    $elapsed = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 0)
+                    Write-Host "[LOCK] Waiting for lock (held by PID=$lockerPID, waited ${elapsed}s)..." -ForegroundColor Yellow
+                    Start-Sleep -Seconds $PollIntervalSeconds
+                    continue
+                }
+            }
+        }
+        
+        # Try to acquire lock
+        try {
+            $lockContent = @"
+PID=$currentPID
+Acquired=$(Get-Date -Format 'o')
+Script=run-comfyui-e2e.ps1
+"@
+            $lockContent | Set-Content $lockFile -Force -ErrorAction Stop
+            
+            # Verify we got the lock (race condition check)
+            Start-Sleep -Milliseconds 100
+            $verifyContent = Get-Content $lockFile -Raw -ErrorAction SilentlyContinue
+            if ($verifyContent -match "PID=$currentPID") {
+                Write-Host "[LOCK] Acquired Playwright lock (PID=$currentPID)" -ForegroundColor Green
+                return $true
+            }
+        } catch {
+            # Another process may have grabbed it
+            Start-Sleep -Seconds $PollIntervalSeconds
+        }
+    }
+    
+    Write-Host "[LOCK] Failed to acquire lock after ${MaxWaitSeconds}s" -ForegroundColor Red
+    return $false
+}
+
+function Release-PlaywrightLock {
+    if (Test-Path $lockFile) {
+        $lockContent = Get-Content $lockFile -Raw -ErrorAction SilentlyContinue
+        if ($lockContent -match "PID=$PID") {
+            Remove-Item $lockFile -Force -ErrorAction SilentlyContinue
+            Write-Host "[LOCK] Released Playwright lock (PID=$PID)" -ForegroundColor Green
+        } else {
+            Write-Host "[LOCK] Lock not owned by this process, not releasing" -ForegroundColor Yellow
+        }
+    }
+}
+
+# ============================================================================
+# LM STUDIO MODEL MANAGEMENT
+# Unloads models between LLM and ComfyUI phases to free VRAM
+# Uses CLI (lms) with REST API fallback
+# ============================================================================
+
+function Get-LMStudioModelState {
+    param([string]$Endpoint = $LMStudioEndpoint)
+    
+    try {
+        # Try LM Studio REST API v0 first (more detailed)
+        $response = Invoke-RestMethod -Uri "$Endpoint/api/v0/models" -TimeoutSec 5 -ErrorAction Stop
+        $loadedModels = $response.data | Where-Object { $_.state -eq 'loaded' }
+        return @{
+            Available = $true
+            LoadedModels = $loadedModels
+            LoadedCount = ($loadedModels | Measure-Object).Count
+            TotalModels = ($response.data | Measure-Object).Count
+        }
+    } catch {
+        try {
+            # Fallback to OpenAI-compatible endpoint
+            $response = Invoke-RestMethod -Uri "$Endpoint/v1/models" -TimeoutSec 5 -ErrorAction Stop
+            return @{
+                Available = $true
+                LoadedModels = $response.data
+                LoadedCount = ($response.data | Measure-Object).Count
+                TotalModels = ($response.data | Measure-Object).Count
+            }
+        } catch {
+            return @{
+                Available = $false
+                LoadedModels = @()
+                LoadedCount = 0
+                TotalModels = 0
+                Error = $_.Exception.Message
+            }
+        }
+    }
+}
+
+function Unload-LMStudioModels {
+    <#
+    .SYNOPSIS
+    Unloads all models from LM Studio to free VRAM for ComfyUI.
+    
+    .DESCRIPTION
+    Uses LM Studio CLI (lms) if available, with REST API state verification.
+    Falls back to documentation/manual guidance if CLI unavailable.
+    
+    .NOTES
+    LM Studio CLI must be in PATH. Install via: https://lmstudio.ai/docs/cli
+    CLI command: lms unload --all
+    #>
+    param(
+        [string]$Endpoint = $LMStudioEndpoint,
+        [int]$VerifyWaitSeconds = 30,
+        [int]$PollIntervalSeconds = 2
+    )
+    
+    Write-Host "[LM Studio] Checking model state before unload..." -ForegroundColor Cyan
+    $stateBefore = Get-LMStudioModelState -Endpoint $Endpoint
+    
+    if (-not $stateBefore.Available) {
+        Write-Host "[LM Studio] Server not available at $Endpoint - skipping unload" -ForegroundColor Yellow
+        return @{ Success = $true; Skipped = $true; Reason = 'Server not available' }
+    }
+    
+    if ($stateBefore.LoadedCount -eq 0) {
+        Write-Host "[LM Studio] No models loaded - nothing to unload" -ForegroundColor Green
+        return @{ Success = $true; Skipped = $true; Reason = 'No models loaded' }
+    }
+    
+    Write-Host "[LM Studio] Found $($stateBefore.LoadedCount) loaded model(s)" -ForegroundColor Cyan
+    
+    # Method 1: Try LM Studio CLI (lms unload --all)
+    $lmsPath = Get-Command 'lms' -ErrorAction SilentlyContinue
+    if ($lmsPath) {
+        Write-Host "[LM Studio] Using CLI: lms unload --all" -ForegroundColor Cyan
+        try {
+            $unloadResult = & lms unload --all 2>&1
+            Write-Host "[LM Studio] CLI output: $unloadResult" -ForegroundColor Gray
+        } catch {
+            Write-Host "[LM Studio] CLI failed: $_" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[LM Studio] CLI 'lms' not in PATH" -ForegroundColor Yellow
+        Write-Host "[LM Studio] Install: https://lmstudio.ai/docs/cli" -ForegroundColor Yellow
+        Write-Host "[LM Studio] Or add to PATH: C:\Users\<user>\.lmstudio\bin" -ForegroundColor Yellow
+        
+        # Provide manual instructions
+        Write-Host "" -ForegroundColor Yellow
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Yellow
+        Write-Host "  MANUAL ACTION REQUIRED: Unload LM Studio Model" -ForegroundColor Yellow
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Yellow
+        Write-Host "  1. Open LM Studio application" -ForegroundColor Yellow
+        Write-Host "  2. Click 'Eject' button next to loaded model" -ForegroundColor Yellow
+        Write-Host "  3. Or: Settings → Server → Stop Server" -ForegroundColor Yellow
+        Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Yellow
+        Write-Host "" -ForegroundColor Yellow
+    }
+    
+    # Wait and verify unload via REST API state polling
+    Write-Host "[LM Studio] Waiting for model unload (polling state)..." -ForegroundColor Cyan
+    $startTime = Get-Date
+    $unloaded = $false
+    
+    while ((Get-Date) - $startTime -lt [TimeSpan]::FromSeconds($VerifyWaitSeconds)) {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        $stateAfter = Get-LMStudioModelState -Endpoint $Endpoint
+        
+        if (-not $stateAfter.Available) {
+            # Server stopped = models unloaded
+            Write-Host "[LM Studio] Server stopped - models unloaded" -ForegroundColor Green
+            $unloaded = $true
+            break
+        }
+        
+        if ($stateAfter.LoadedCount -eq 0) {
+            Write-Host "[LM Studio] All models unloaded successfully" -ForegroundColor Green
+            $unloaded = $true
+            break
+        }
+        
+        $elapsed = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 0)
+        Write-Host "[LM Studio] Still loaded: $($stateAfter.LoadedCount) model(s) (waited ${elapsed}s)" -ForegroundColor Yellow
+    }
+    
+    if (-not $unloaded) {
+        Write-Host "[LM Studio] WARNING: Models may still be loaded after ${VerifyWaitSeconds}s" -ForegroundColor Red
+        Write-Host "[LM Studio] ComfyUI may have reduced VRAM available" -ForegroundColor Red
+        return @{ Success = $false; Reason = 'Timeout waiting for unload' }
+    }
+    
+    # Additional wait for VRAM to be fully released
+    Write-Host "[LM Studio] Waiting 10s for VRAM release..." -ForegroundColor Cyan
+    Start-Sleep -Seconds 10
+    
+    return @{ Success = $true; Skipped = $false }
+
 # Create timestamped run directory
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $runDir = Join-Path $ProjectRoot "logs\$timestamp"
@@ -25,6 +250,26 @@ New-Item -ItemType Directory -Path $runDir -Force | Out-Null
 $summaryPath = Join-Path $runDir 'run-summary.txt'
 $storyDir = Join-Path $runDir 'story'
 $videoDir = Join-Path $runDir 'video'
+
+# ============================================================================
+# ACQUIRE PLAYWRIGHT LOCK (prevents concurrent runs)
+# ============================================================================
+$lockAcquired = Acquire-PlaywrightLock -MaxWaitSeconds 60 -PollIntervalSeconds 2
+if (-not $lockAcquired) {
+    Write-Host "ERROR: Could not acquire Playwright lock. Another E2E test may be running." -ForegroundColor Red
+    Write-Host "If no other test is running, remove the stale lock file: $lockFile" -ForegroundColor Yellow
+    exit 1
+}
+
+# Ensure cleanup on exit (release lock, stop jobs)
+$cleanupBlock = {
+    Release-PlaywrightLock
+    if ($vramMonitorJob) {
+        Stop-Job $vramMonitorJob -ErrorAction SilentlyContinue
+        Remove-Job $vramMonitorJob -Force -ErrorAction SilentlyContinue
+    }
+}
+Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action $cleanupBlock | Out-Null
 
 function Write-Summary {
     param([string]$Message)
@@ -175,7 +420,40 @@ try {
     
 } catch {
     Write-Summary "ERROR: Story generation exception: $_"
+    Release-PlaywrightLock
     exit 1
+}
+
+# ============================================================================
+# STEP 1.5: Unload LM Studio Model (Free VRAM for ComfyUI)
+# ============================================================================
+Write-Header "STEP 1.5: Unload LM Studio Model"
+
+if ($SkipLMStudioUnload) {
+    Write-Summary "Skipping LM Studio unload (--SkipLMStudioUnload flag)"
+} else {
+    Write-Summary "Unloading LM Studio model to free VRAM for ComfyUI..."
+    $unloadResult = Unload-LMStudioModels -Endpoint $LMStudioEndpoint -VerifyWaitSeconds 30 -PollIntervalSeconds 2
+    
+    if ($unloadResult.Skipped) {
+        Write-Summary "LM Studio unload skipped: $($unloadResult.Reason)"
+    } elseif ($unloadResult.Success) {
+        Write-Summary "✓ LM Studio model unloaded - VRAM available for ComfyUI"
+        
+        # Verify ComfyUI VRAM state after unload
+        $postUnloadVRAM = Get-VRAMUsage
+        if ($postUnloadVRAM) {
+            Write-Summary "Post-unload VRAM: Free=$($postUnloadVRAM.Free)MB Total=$($postUnloadVRAM.Total)MB"
+            if ($postUnloadVRAM.Free -lt 4096) {
+                Write-Summary "⚠ WARNING: Free VRAM < 4GB - video generation may be slow"
+            }
+        }
+    } else {
+        Write-Summary "⚠ LM Studio unload failed: $($unloadResult.Reason)"
+        Write-Summary "Continuing anyway - ComfyUI may have reduced VRAM"
+    }
+    
+    Log-VRAMSample
 }
 
 # ============================================================================
@@ -431,6 +709,9 @@ Write-Summary "Run directory: $runDir"
 Write-Summary "Archive: $archivePath"
 Write-Summary "Videos: $videoCount/$expectedScenes"
 Write-Summary ""
+
+# Release the Playwright lock
+Release-PlaywrightLock
 
 # Exit with appropriate code
 if ($videoCount -eq $expectedScenes) {

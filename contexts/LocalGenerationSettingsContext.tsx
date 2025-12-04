@@ -1,12 +1,17 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { LocalGenerationSettings } from '../types';
 import { usePersistentState } from '../utils/hooks';
+import { getFeatureFlag } from '../utils/featureFlags';
 import { 
     WORKFLOW_PROFILE_DEFINITIONS, 
     PRIMARY_WORKFLOW_PROFILE_ID, 
     normalizeWorkflowProfiles, 
     DEFAULT_LOCAL_GENERATION_SETTINGS 
 } from '../utils/contextConstants';
+import { 
+    useSettingsStore, 
+    useSettingsHydrated 
+} from '../services/settingsStore';
 
 type LocalGenerationSettingsContextValue = {
     settings: LocalGenerationSettings;
@@ -15,8 +20,81 @@ type LocalGenerationSettingsContextValue = {
 
 const LocalGenerationSettingsContext = createContext<LocalGenerationSettingsContextValue | undefined>(undefined);
 
-export const LocalGenerationSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [settings, setSettings] = usePersistentState<LocalGenerationSettings>('localGenSettings', DEFAULT_LOCAL_GENERATION_SETTINGS);
+/**
+ * Settings Provider with Zustand backing store (new implementation)
+ * 
+ * This version uses the Zustand settingsStore as the source of truth,
+ * providing the same API for backward compatibility.
+ */
+const ZustandBackedProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const isHydrated = useSettingsHydrated();
+    
+    // Get stable action references from store
+    const getSettings = useSettingsStore(state => state.getSettings);
+    const setStoreSettings = useSettingsStore(state => state.setSettings);
+    
+    // Subscribe to timestamp to trigger re-render on state changes
+    const lastSync = useSettingsStore(state => state._lastSyncTimestamp);
+    
+    // Memoize settings object - recompute only when store changes
+    const settings = useMemo(() => {
+        return isHydrated ? getSettings() : DEFAULT_LOCAL_GENERATION_SETTINGS;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lastSync, isHydrated, getSettings]);
+    
+    // Create a setState-compatible setter for backward compatibility
+    const setSettings: React.Dispatch<React.SetStateAction<LocalGenerationSettings>> = useCallback(
+        (action) => {
+            if (typeof action === 'function') {
+                // Handle functional updates
+                const currentSettings = useSettingsStore.getState().getSettings();
+                const newSettings = action(currentSettings);
+                setStoreSettings(newSettings);
+            } else {
+                // Handle direct value updates
+                setStoreSettings(action);
+            }
+        },
+        [setStoreSettings]
+    );
+    
+    // Make settings globally available for services (backward compat)
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            (window as any).__localGenSettings = settings;
+        }
+    }, [settings]);
+    
+    // Memoize context value
+    const contextValue = useMemo(
+        () => ({ settings, setSettings }), 
+        [settings, setSettings]
+    );
+    
+    // Wait for hydration before rendering children
+    if (!isHydrated) {
+        return null;
+    }
+    
+    return (
+        <LocalGenerationSettingsContext.Provider value={contextValue}>
+            {children}
+        </LocalGenerationSettingsContext.Provider>
+    );
+};
+
+interface LegacyProviderProps {
+    children: React.ReactNode;
+    settings: LocalGenerationSettings;
+    setSettings: React.Dispatch<React.SetStateAction<LocalGenerationSettings>>;
+}
+
+/**
+ * Legacy Settings Provider (uses usePersistentState via parent)
+ * 
+ * Kept for feature flag rollback capability.
+ */
+const LegacyProvider: React.FC<LegacyProviderProps> = ({ children, settings, setSettings }) => {
     const [isInitialized, setIsInitialized] = useState(false);
 
     // ONE-TIME normalization on mount (Phase 1 Fix: 2025-11-23)
@@ -67,7 +145,7 @@ export const LocalGenerationSettingsProvider: React.FC<{ children: React.ReactNo
         }
         
         setIsInitialized(true);
-    }, [isInitialized]); // CRITICAL FIX: Only depends on init flag, not settings
+    }, [isInitialized, settings, setSettings]);
 
     // Make settings globally available for services
     useEffect(() => {
@@ -83,6 +161,39 @@ export const LocalGenerationSettingsProvider: React.FC<{ children: React.ReactNo
         <LocalGenerationSettingsContext.Provider value={contextValue}>
             {children}
         </LocalGenerationSettingsContext.Provider>
+    );
+};
+
+/**
+ * Main Provider - selects implementation based on runtime feature flag
+ * 
+ * Feature flag 'useSettingsStore' controls which implementation to use:
+ * - true: Use Zustand-backed store (new, stable)
+ * - false: Use legacy usePersistentState (old, fragile)
+ */
+export const LocalGenerationSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    // Legacy settings (IndexedDB / sessionStorage) for rollback path and flag source
+    const [legacySettings, setLegacySettings] = usePersistentState<LocalGenerationSettings>(
+        'localGenSettings',
+        DEFAULT_LOCAL_GENERATION_SETTINGS
+    );
+
+    // Runtime feature flags from Zustand settings store (if it has been used)
+    const storeFeatureFlags = useSettingsStore(state => state.featureFlags);
+
+    // Prefer flags from settings store when present, otherwise fall back to legacy-persisted flags
+    const flagSource = storeFeatureFlags ?? legacySettings.featureFlags;
+
+    const useZustandStore = getFeatureFlag(flagSource, 'useSettingsStore');
+    
+    if (useZustandStore) {
+        return <ZustandBackedProvider>{children}</ZustandBackedProvider>;
+    }
+    
+    return (
+        <LegacyProvider settings={legacySettings} setSettings={setLegacySettings}>
+            {children}
+        </LegacyProvider>
     );
 };
 

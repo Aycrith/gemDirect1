@@ -1,0 +1,19 @@
+{
+  "issue": {
+    "id": "ts-agent-core-Guardian.ts-9-TS6133",
+    "type": "error",
+    "severity": "medium",
+    "category": "typescript",
+    "file": "agent/core/Guardian.ts",
+    "line": 9,
+    "column": 30,
+    "message": "TS6133: 'getLogger' is declared but its value is never read.",
+    "autoFixable": true,
+    "timestamp": "2025-11-30T06:20:43.133Z"
+  },
+  "requestedAt": "2025-11-30T06:21:00.532Z",
+  "prompt": "You are an expert TypeScript/React developer. Please fix the following issue in this project.\n\n## Issue Details\n- **Type**: error\n- **Severity**: medium\n- **Category**: typescript\n- **File**: agent/core/Guardian.ts\n- **Line**: 9\n\n## Problem\nTS6133: 'getLogger' is declared but its value is never read.\n\n\n\n## Relevant Code Context\n```typescript\n/**\r\n * Guardian - Main orchestrator for Project Guardian autonomous agent\r\n * Coordinates watchers, task runners, and reporting\r\n */\r\n\r\nimport { EventEmitter } from 'events';\r\nimport type { AgentConfig, AgentState, Issue, ScanResult, GuardianEvents } from './types.js';\r\nimport { DEFAULT_CONFIG, SEVERITY_ORDER } from './types.js';\r\nimport { Logger, initLogger, getLogger } from './Logger.js';\r\nimport { StateManager } from './StateManager.js';\r\nimport { TaskRunner } from './TaskRunner.js';\r\nimport { TypeScriptWatcher } from '../watchers/TypeScriptWatcher.js';\r\nimport { TestWatcher } from '../watchers/TestWatcher.js';\r\nimport { FileWatcher, type FileChangeEvent } from '../watchers/FileWatcher.js';\r\nimport { GapAnalyzer } from '../watchers/GapAnalyzer.js';\r\nimport { AutoFix } from '../tasks/AutoFix.js';\r\nimport { CopilotQueue } from '../tasks/CopilotQueue.js';\r\nimport { ReportGenerator } from '../tasks/ReportGenerator.js';\r\n\r\nexport class Guardian extends EventEmitter {\r\n  private config: AgentConfig;\r\n  private state: AgentState;\r\n  private logger: Logger;\r\n  private stateManager: StateManager;\r\n  private taskRunner: TaskRunner;\r\n\r\n  // Watchers\r\n  private tsWatcher: TypeScriptWatcher;\r\n  private testWatcher: TestWatcher;\r\n  private fileWatcher: FileWatcher;\r\n  private gapAnalyzer: GapAnalyzer;\r\n\r\n  // Tasks\r\n  private autoFix: AutoFix;\r\n  private copilotQueue: CopilotQueue;\r\n  private reportGenerator: ReportGenerator;\r\n\r\n  // Timers\r\n  private scanTimer: NodeJS.Timeout | null = null;\r\n  private reportTimer: NodeJS.Timeout | null = null;\r\n\r\n  constructor(config: Partial<AgentConfig> = {}) {\r\n    super();\r\n    \r\n    this.config = { ...DEFAULT_CONFIG, ...config };\r\n    this.state = {\r\n      isRunning: false,\r\n      issueCount: 0,\r\n      fixedCount: 0,\r\n    };\r\n// ... (truncated)\n```\n\n## Project Conventions\n- All API calls go through the service layer (services/*.ts)\n- Use `withRetry` wrapper for Gemini API calls\n- Use `usePersistentState` hook for data that should persist\n- Follow TypeScript strict mode requirements\n- Add JSDoc comments for public APIs\n\n## Your Task\nProvide a complete fix for this issue. Include:\n1. The exact code changes needed\n2. Any new files that need to be created\n3. Any imports that need to be added\n4. A brief explanation of the fix\n\nIf this requires multiple files, provide all changes.",
+  "processed": true,
+  "processedAt": "2025-11-30T06:35:53.061Z",
+  "result": "\nThe gh-copilot extension has been deprecated in favor of the newer GitHub Copilot CLI.\n\nFor more information, visit:\n- Copilot CLI: https://github.com/github/copilot-cli\n- Deprecation announcement: https://github.blog/changelog/2025-09-25-upcoming-deprecation-of-gh-copilot-cli-extension\n\nNo commands will be executed.\n\n"
+}

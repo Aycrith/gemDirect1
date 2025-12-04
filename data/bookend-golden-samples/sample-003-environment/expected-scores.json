@@ -1,0 +1,51 @@
+{
+  "sampleId": "sample-003-environment",
+  "version": "1.0.0",
+  "createdAt": "2025-12-02T00:00:00Z",
+  
+  "thresholds": {
+    "pass": {
+      "overallContinuity": 80,
+      "characterMatch": 70,
+      "environmentMatch": 90,
+      "startFrameMatch": 85,
+      "endFrameMatch": 85,
+      "motionQuality": 80
+    },
+    "warn": {
+      "overallContinuity": 70,
+      "characterMatch": 60,
+      "environmentMatch": 80,
+      "startFrameMatch": 75,
+      "endFrameMatch": 75,
+      "motionQuality": 70
+    },
+    "fail": {
+      "overallContinuity": 60,
+      "characterMatch": 50,
+      "environmentMatch": 70,
+      "startFrameMatch": 65,
+      "endFrameMatch": 65,
+      "motionQuality": 60
+    }
+  },
+  
+  "notes": "Environment consistency is critical for this sample. Character match is less important since there are no people. Focus on architectural elements, furniture positions, and lighting stability.",
+  
+  "criticalMetrics": ["environmentMatch", "motionQuality"],
+  
+  "expectedResults": {
+    "description": "Environment should remain completely stable and consistent throughout camera pan",
+    "primaryConcern": "Brick wall texture and color must not shift",
+    "secondaryConcern": "Furniture positions relative to background must remain geometrically consistent",
+    "acceptableVariance": "Minor lighting variations as camera pans across different window angles"
+  },
+  
+  "environmentValidation": {
+    "checkBrickWall": true,
+    "checkFurniturePositions": true,
+    "checkPlantPositions": true,
+    "checkLightingConsistency": true,
+    "checkPerspectiveAccuracy": true
+  }
+}

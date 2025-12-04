@@ -3,6 +3,7 @@ import { Scene, ToastMessage, WorkflowStage, Suggestion, LocalGenerationStatus, 
 import { useProjectData, usePersistentState, useSceneGenerationWatcher } from './utils/hooks';
 import { ApiStatusProvider, useApiStatus } from './contexts/ApiStatusContext';
 import { UsageProvider, useUsage } from './contexts/UsageContext';
+import { ProgressProvider, useApiStatusProgressBridge } from './contexts/ProgressContext';
 import { TemplateContextProvider } from './contexts/TemplateContext';
 import { saveProjectToFile, loadProjectFromFile } from './utils/projectUtils';
 import { PlanExpansionStrategyProvider, usePlanExpansionActions } from './contexts/PlanExpansionStrategyContext';
@@ -22,6 +23,12 @@ import {
     createOldStoreSnapshot, 
     createNewStoreSnapshot 
 } from './utils/storeConsistencyValidator';
+
+// Phase 1D: Generation status Zustand store for localGenStatus migration
+import { 
+    useGenerationStatusStore, 
+    useGenerationStatusHydrated 
+} from './services/generationStatusStore';
 
 // Phase 6: Global ComfyUI WebSocket manager
 import { comfyEventManager } from './services/comfyUIEventManager';
@@ -66,6 +73,7 @@ import SaveIcon from './components/icons/SaveIcon';
 import UploadCloudIcon from './components/icons/UploadCloudIcon';
 import BookOpenIcon from './components/icons/BookOpenIcon';
 import ProgressBar from './components/ProgressBar';
+import GlobalProgressIndicator from './components/GlobalProgressIndicator';
 import ComfyUICallbackProvider from './components/ComfyUICallbackProvider.clean';
 import { clearProjectData } from './utils/database';
 
@@ -80,6 +88,20 @@ const LoadingFallback: React.FC<{ message?: string }> = ({ message = 'Loading...
 );
 
 const AppContent: React.FC = () => {
+
+    const stableStringify = (value: unknown): string => {
+        if (value === null || typeof value !== 'object') {
+            return JSON.stringify(value);
+        }
+        if (Array.isArray(value)) {
+            return `[${value.map(item => stableStringify(item)).join(',')}]`;
+        }
+        const entries = Object.keys(value as Record<string, unknown>)
+            .sort()
+            .map(key => `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`);
+        return `{${entries.join(',')}}`;
+    };
+
     // UI Refresh feature flag - enables new presentation layer improvements
     const uiRefreshEnabled = import.meta.env.VITE_UI_REFRESH_ENABLED === 'true';
     
@@ -113,9 +135,12 @@ const AppContent: React.FC = () => {
     const [localGenStatus, setLocalGenStatus] = usePersistentState<Record<string, LocalGenerationStatus>>('localGenStatus', {});
     
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { updateApiStatus } = useApiStatus();
+    const { apiStatus, updateApiStatus } = useApiStatus();
     const { logApiCall } = useUsage();
     const planActions = usePlanExpansionActions();
+    
+    // Bridge existing ApiStatus updates to new GlobalProgressIndicator
+    useApiStatusProgressBridge(apiStatus);
 
     // ========================================================================
     // Phase 1 State Management: Unified Scene Store
@@ -134,25 +159,40 @@ const AppContent: React.FC = () => {
     const storeSetShotImage = useSceneStateStore((state) => state.setShotImage);
     const storeSetSelectedSceneId = useSceneStateStore((state) => state.setSelectedSceneId);
     
+    // Refs to track last synced values and prevent redundant syncs
+    // This breaks infinite loops caused by sync -> store update -> re-render -> sync
+    // FIX (2025-12-01): All refs now store string hashes instead of object references
+    const lastSyncedScenesRef = useRef<string | null>(null);
+    const lastSyncedSceneIdRef = useRef<string | null>(null);
+    const lastSyncedImagesRef = useRef<string | null>(null);
+    const lastSyncedShotImagesRef = useRef<string | null>(null);
+    
     // Sync legacy state to new store when flag is enabled (for parallel operation)
     // This keeps both stores in sync during the migration period
+    // FIX (2025-12-01): Use hash-based comparison instead of reference comparison
+    // Reference comparison always fails because scenes is a new array on every render
     useEffect(() => {
         if (!useUnifiedStore || !storeHydrated) return;
+        if (scenes.length === 0) return;
         
-        // Sync scenes from legacy to new store
-        if (scenes.length > 0) {
-            console.log('[App] Syncing scenes to unified store:', scenes.length);
-            storeSetScenes(scenes);
-        }
+        // Create a stable hash by serializing the full scene data so any field edits count
+        const scenesHash = stableStringify(scenes);
+        
+        if (scenesHash === lastSyncedScenesRef.current) return;
+        
+        console.log('[App] Syncing scenes to unified store:', scenes.length);
+        storeSetScenes(scenes);
+        lastSyncedScenesRef.current = scenesHash;
     }, [useUnifiedStore, storeHydrated, scenes, storeSetScenes]);
     
     // Sync selected scene ID
     useEffect(() => {
         if (!useUnifiedStore || !storeHydrated) return;
         
-        if (activeSceneId !== null) {
+        if (activeSceneId !== null && activeSceneId !== lastSyncedSceneIdRef.current) {
             console.log('[App] Syncing selected scene to unified store:', activeSceneId);
             storeSetSelectedSceneId(activeSceneId);
+            lastSyncedSceneIdRef.current = activeSceneId;
         }
     }, [useUnifiedStore, storeHydrated, activeSceneId, storeSetSelectedSceneId]);
     
@@ -160,20 +200,35 @@ const AppContent: React.FC = () => {
     useEffect(() => {
         if (!useUnifiedStore || !storeHydrated) return;
         
+        // Use a hash of keys + serialized payload so regenerated frames with the same IDs still trigger sync
+        const imagesHash = Object.entries(generatedImages)
+            .sort(([idA], [idB]) => idA.localeCompare(idB))
+            .map(([sceneId, imageData]) => `${sceneId}:${JSON.stringify(imageData)}`)
+            .join('|');
+        if (imagesHash === lastSyncedImagesRef.current) return;
+        
         // Sync each generated image to the store
         Object.entries(generatedImages).forEach(([sceneId, imageData]) => {
             console.log('[App] Syncing generated image to unified store:', sceneId);
             storeSetGeneratedImages(sceneId, imageData);
         });
+        lastSyncedImagesRef.current = imagesHash;
     }, [useUnifiedStore, storeHydrated, generatedImages, storeSetGeneratedImages]);
     
     // Sync generated shot images to store (Phase 1C: ensures store has shot keyframes)
     useEffect(() => {
         if (!useUnifiedStore || !storeHydrated) return;
         
+        const shotImagesHash = Object.entries(generatedShotImages)
+            .sort(([idA], [idB]) => idA.localeCompare(idB))
+            .map(([shotId, imageData]) => `${shotId}:${JSON.stringify(imageData)}`)
+            .join('|');
+        if (shotImagesHash === lastSyncedShotImagesRef.current) return;
+        
         Object.entries(generatedShotImages).forEach(([shotId, imageData]) => {
             storeSetShotImage(shotId, imageData);
         });
+        lastSyncedShotImagesRef.current = shotImagesHash;
     }, [useUnifiedStore, storeHydrated, generatedShotImages, storeSetShotImage]);
     
     // Log store status on mount (for debugging)
@@ -183,6 +238,46 @@ const AppContent: React.FC = () => {
             hydrated: storeHydrated,
         });
     }, [useUnifiedStore, storeHydrated]);
+    
+    // ========================================================================
+    // Phase 1D: Generation Status Store Migration
+    // ========================================================================
+    
+    // Check if generation status store feature flag is enabled
+    const useGenStatusStore = getFeatureFlag(localGenSettings?.featureFlags, 'useGenerationStatusStore');
+    const genStatusStoreHydrated = useGenerationStatusHydrated();
+    
+    // Ref to track if we've already performed the one-time migration
+    const genStatusMigratedRef = useRef(false);
+    
+    // One-time migration: Copy legacy localGenStatus data to new Zustand store
+    // This runs once when the flag is first enabled, syncing any existing status data
+    useEffect(() => {
+        if (!useGenStatusStore || !genStatusStoreHydrated) return;
+        if (genStatusMigratedRef.current) return;
+        
+        // Check if there's legacy data to migrate
+        const hasLegacyData = Object.keys(localGenStatus).length > 0;
+        if (!hasLegacyData) {
+            genStatusMigratedRef.current = true;
+            console.log('[App] Generation status store: No legacy data to migrate');
+            return;
+        }
+        
+        // Migrate legacy data to new store
+        console.log('[App] Migrating generation status to Zustand store:', Object.keys(localGenStatus));
+        useGenerationStatusStore.getState().setAllStatuses(localGenStatus);
+        genStatusMigratedRef.current = true;
+        console.log('[App] Generation status migration complete');
+    }, [useGenStatusStore, genStatusStoreHydrated, localGenStatus]);
+    
+    // Log generation status store status on mount (for debugging)
+    useEffect(() => {
+        console.log('[App] Generation status store status:', {
+            enabled: useGenStatusStore,
+            hydrated: genStatusStoreHydrated,
+        });
+    }, [useGenStatusStore, genStatusStoreHydrated]);
     
     // ========================================================================
     // Phase 1B: Parallel Store Consistency Validation
@@ -198,7 +293,12 @@ const AppContent: React.FC = () => {
     // Check if parallel validation should run
     const runParallelValidation = getFeatureFlag(localGenSettings?.featureFlags, 'sceneStoreParallelValidation');
     
+    // Refs for debouncing store validation
+    const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastValidationTimeRef = useRef<number>(0);
+    
     // Run consistency validation when both stores are active and validation is enabled
+    // DEBOUNCED: To prevent console spam during rapid state changes
     useEffect(() => {
         // Only run when both stores are in use and validation is enabled
         if (!useUnifiedStore || !storeHydrated || !runParallelValidation) {
@@ -210,38 +310,63 @@ const AppContent: React.FC = () => {
             return;
         }
         
-        // Create snapshots of both stores
-        const oldSnapshot = createOldStoreSnapshot({
-            scenes,
-            activeSceneId,
-            generatedImages,
-            generatedShotImages,
-            sceneImageStatuses,
-        });
-        
-        const newSnapshot = createNewStoreSnapshot({
-            scenes: newStoreScenes,
-            selectedSceneId: newStoreSelectedSceneId,
-            generatedImages: newStoreGeneratedImages,
-            generatedShotImages: newStoreGeneratedShotImages,
-            sceneImageStatuses: newStoreSceneImageStatuses,
-        });
-        
-        // Run validation
-        const result = validateStoreConsistency(oldSnapshot, newSnapshot, {
-            logToConsole: true,
-            trackMetrics: true,
-        });
-        
-        // Alert on critical inconsistencies (data loss scenarios)
-        if (result.criticalCount > 0) {
-            console.error('[App] CRITICAL: Store consistency violation detected!', {
-                criticalCount: result.criticalCount,
-                differences: result.differences.filter(d => d.severity === 'critical'),
-            });
-            // Could add a toast here if desired
+        // Clear any pending validation
+        if (validationTimeoutRef.current) {
+            clearTimeout(validationTimeoutRef.current);
         }
         
+        // Debounce: Wait 2 seconds after last state change before validating
+        const DEBOUNCE_MS = 2000;
+        // Minimum interval: Don't validate more often than every 5 seconds
+        const MIN_INTERVAL_MS = 5000;
+        
+        validationTimeoutRef.current = setTimeout(() => {
+            const now = Date.now();
+            if (now - lastValidationTimeRef.current < MIN_INTERVAL_MS) {
+                // Too soon since last validation, skip
+                return;
+            }
+            lastValidationTimeRef.current = now;
+            
+            // Create snapshots of both stores
+            const oldSnapshot = createOldStoreSnapshot({
+                scenes,
+                activeSceneId,
+                generatedImages,
+                generatedShotImages,
+                sceneImageStatuses,
+            });
+            
+            const newSnapshot = createNewStoreSnapshot({
+                scenes: newStoreScenes,
+                selectedSceneId: newStoreSelectedSceneId,
+                generatedImages: newStoreGeneratedImages,
+                generatedShotImages: newStoreGeneratedShotImages,
+                sceneImageStatuses: newStoreSceneImageStatuses,
+            });
+            
+            // Run validation
+            const result = validateStoreConsistency(oldSnapshot, newSnapshot, {
+                logToConsole: true,
+                trackMetrics: true,
+            });
+            
+            // Alert on critical inconsistencies (data loss scenarios)
+            if (result.criticalCount > 0) {
+                console.error('[App] CRITICAL: Store consistency violation detected!', {
+                    criticalCount: result.criticalCount,
+                    differences: result.differences.filter(d => d.severity === 'critical'),
+                });
+                // Could add a toast here if desired
+            }
+        }, DEBOUNCE_MS);
+        
+        // Cleanup timeout on unmount or dependency change
+        return () => {
+            if (validationTimeoutRef.current) {
+                clearTimeout(validationTimeoutRef.current);
+            }
+        };
     }, [
         useUnifiedStore, 
         storeHydrated, 
@@ -409,7 +534,16 @@ const AppContent: React.FC = () => {
     };
 
     const handleSceneKeyframeGenerated = useCallback((sceneId: string, data: KeyframeData) => {
-        const length = typeof data === 'string' ? data.length : (data.start.length + data.end.length);
+        let length = 0;
+        if (typeof data === 'string') {
+            length = data.length;
+        } else if ('start' in data && 'end' in data && !('current' in data)) {
+            // Bookend type
+            length = (data as { start: string; end: string }).start.length + (data as { start: string; end: string }).end.length;
+        } else if ('current' in data) {
+            // Versioned type
+            length = (data as { current: string }).current.length;
+        }
         console.log(`✅ [Image Sync - handleSceneKeyframeGenerated] Scene ${sceneId}: image updated, length: ${length}`);
         setGeneratedImages(prev => ({ ...prev, [sceneId]: data }));
     }, [setGeneratedImages]);
@@ -971,25 +1105,28 @@ const App: React.FC = () => (
     <HydrationProvider>
         <UsageProvider>
             <ApiStatusProvider>
-                <PipelineProvider>
-                    <PlanExpansionStrategyProvider>
-                        <LocalGenerationSettingsProvider>
-                            <MediaGenerationProviderProvider>
-                                <LocalGenerationProvider>
-                                    <GenerationMetricsProvider>
-                                        <TemplateContextProvider>
-                                            <ComfyUICallbackProvider>
-                                                <HydrationGate>
-                                                    <AppContent />
-                                                </HydrationGate>
-                                            </ComfyUICallbackProvider>
-                                        </TemplateContextProvider>
-                                    </GenerationMetricsProvider>
-                                </LocalGenerationProvider>
-                            </MediaGenerationProviderProvider>
-                        </LocalGenerationSettingsProvider>
-                    </PlanExpansionStrategyProvider>
-                </PipelineProvider>
+                <ProgressProvider>
+                    <PipelineProvider>
+                        <PlanExpansionStrategyProvider>
+                            <LocalGenerationSettingsProvider>
+                                <MediaGenerationProviderProvider>
+                                    <LocalGenerationProvider>
+                                        <GenerationMetricsProvider>
+                                            <TemplateContextProvider>
+                                                <ComfyUICallbackProvider>
+                                                    <HydrationGate>
+                                                        <GlobalProgressIndicator />
+                                                        <AppContent />
+                                                    </HydrationGate>
+                                                </ComfyUICallbackProvider>
+                                            </TemplateContextProvider>
+                                        </GenerationMetricsProvider>
+                                    </LocalGenerationProvider>
+                                </MediaGenerationProviderProvider>
+                            </LocalGenerationSettingsProvider>
+                        </PlanExpansionStrategyProvider>
+                    </PipelineProvider>
+                </ProgressProvider>
             </ApiStatusProvider>
         </UsageProvider>
     </HydrationProvider>

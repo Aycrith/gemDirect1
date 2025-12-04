@@ -1,0 +1,140 @@
+/**
+ * Queue Status Indicator Styles
+ */
+
+.queue-status-container {
+    background: var(--panel-bg, #1e1e1e);
+    border: 1px solid var(--border-color, #3c3c3c);
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 13px;
+    min-width: 200px;
+}
+
+.queue-status-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color, #3c3c3c);
+}
+
+.queue-status-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: white;
+}
+
+.queue-status-title {
+    font-weight: 500;
+    color: var(--text-primary, #e0e0e0);
+}
+
+.queue-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.queue-status-label {
+    color: var(--text-secondary, #a0a0a0);
+}
+
+.queue-status-value {
+    color: var(--text-primary, #e0e0e0);
+    font-weight: 500;
+}
+
+.queue-status-warning {
+    color: #f59e0b;
+}
+
+.queue-status-warning .queue-status-label,
+.queue-status-warning .queue-status-value {
+    color: #f59e0b;
+}
+
+.queue-running-dot {
+    display: inline-block;
+    color: #22c55e;
+    animation: pulse 1.5s ease-in-out infinite;
+    margin-right: 4px;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.queue-status-details {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color, #3c3c3c);
+}
+
+.queue-status-actions {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color, #3c3c3c);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.queue-action-btn {
+    background: var(--button-bg, #3c3c3c);
+    border: 1px solid var(--border-color, #4c4c4c);
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: var(--text-primary, #e0e0e0);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.queue-action-btn:hover {
+    background: var(--button-hover-bg, #4c4c4c);
+}
+
+.queue-action-danger {
+    background: #7f1d1d;
+    border-color: #991b1b;
+}
+
+.queue-action-danger:hover {
+    background: #991b1b;
+}
+
+/* Compact indicator mode */
+.queue-indicator-compact {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.queue-indicator-icon {
+    font-size: 10px;
+}
+
+.queue-indicator-count {
+    background: currentColor;
+    color: white;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+}
