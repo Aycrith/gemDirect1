@@ -1,0 +1,97 @@
+{
+  "version": "1.0.0",
+  "description": "Historical tracking of vision QA runs for trend analysis",
+  "entries": [
+    {
+      "samples": {
+        "sample-001-geometric": {
+          "isAggregated": false,
+          "objectConsistency": 100,
+          "focusStability": 95,
+          "overall": 97,
+          "artifactSeverity": 0
+        },
+        "sample-006-multichar": {
+          "isAggregated": false,
+          "objectConsistency": 98,
+          "focusStability": 95,
+          "overall": 94,
+          "artifactSeverity": 0
+        },
+        "sample-002-character": {
+          "isAggregated": false,
+          "objectConsistency": 98,
+          "focusStability": 95,
+          "overall": 94,
+          "artifactSeverity": 0
+        },
+        "sample-004-motion": {
+          "isAggregated": false,
+          "objectConsistency": 100,
+          "focusStability": 100,
+          "overall": 100,
+          "artifactSeverity": 0
+        },
+        "sample-008-lighting": {
+          "isAggregated": false,
+          "objectConsistency": 95,
+          "focusStability": 95,
+          "overall": 94,
+          "artifactSeverity": 0
+        },
+        "sample-003-environment": {
+          "isAggregated": false,
+          "objectConsistency": 95,
+          "focusStability": 85,
+          "overall": 88,
+          "artifactSeverity": 10
+        },
+        "sample-007-occlusion": {
+          "isAggregated": false,
+          "objectConsistency": 95,
+          "focusStability": 90,
+          "overall": 90,
+          "artifactSeverity": 10
+        },
+        "sample-005-complex": {
+          "isAggregated": false,
+          "objectConsistency": 95,
+          "focusStability": 90,
+          "overall": 90,
+          "artifactSeverity": 10
+        }
+      },
+      "thresholdVersion": "3.2.1",
+      "aggregates": {
+        "objectConsistency": {
+          "min": 95,
+          "mean": 97.0,
+          "max": 100
+        },
+        "focusStability": {
+          "min": 85,
+          "mean": 93.12,
+          "max": 100
+        },
+        "overall": {
+          "min": 88,
+          "mean": 93.38,
+          "max": 100
+        },
+        "artifactSeverity": {
+          "min": 0,
+          "mean": 3.75,
+          "max": 10
+        }
+      },
+      "verdicts": {
+        "WARN": 1,
+        "FAIL": 0,
+        "PASS": 7
+      },
+      "runId": "20251204-140145",
+      "timestamp": "2025-12-04T19:01:45.3654693Z",
+      "sampleCount": 8
+    }
+  ]
+}

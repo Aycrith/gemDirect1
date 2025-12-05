@@ -387,6 +387,110 @@ export interface FeatureFlags {
      * @stability beta
      */
     autoGenerateTemporalContext: boolean;
+
+    // ============================================================================
+    // Temporal Coherence Enhancement Flags (Phase 5)
+    // ============================================================================
+
+    /**
+     * Enable deflicker post-processing step after video generation.
+     * Applies frame blending to reduce temporal flicker and improve smoothness.
+     * Uses configurable window size and blend strength.
+     * @default false
+     * @stability experimental
+     */
+    videoDeflicker: boolean;
+
+    /**
+     * Deflicker blend strength (0.0-1.0).
+     * Higher values = stronger smoothing but may reduce sharpness.
+     * Recommended range: 0.3-0.5
+     * @default 0.35
+     * @stability experimental
+     */
+    deflickerStrength: number;
+
+    /**
+     * Deflicker temporal window size in frames.
+     * Larger windows = more smoothing but higher latency.
+     * Recommended: 3-5 frames.
+     * @default 3
+     * @stability experimental
+     */
+    deflickerWindowSize: number;
+
+    /**
+     * Enable IP-Adapter reference conditioning for style/identity stability.
+     * Uses a reference image to guide video generation and reduce drift.
+     * Works with Visual Bible character references when available.
+     * @default false
+     * @stability experimental
+     */
+    ipAdapterReferenceConditioning: boolean;
+
+    /**
+     * IP-Adapter reference weight (0.0-1.0).
+     * Higher values = stronger adherence to reference but may reduce prompt responsiveness.
+     * Recommended range: 0.3-0.6
+     * @default 0.4
+     * @stability experimental
+     */
+    ipAdapterWeight: number;
+
+    /**
+     * Enable prompt scheduling for smooth scene transitions.
+     * Allows gradual prompt blending over a sequence of frames.
+     * @default false
+     * @stability experimental
+     */
+    promptScheduling: boolean;
+
+    /**
+     * Prompt transition blend duration in frames.
+     * Number of frames over which to blend from one prompt to another.
+     * @default 8
+     * @stability experimental
+     */
+    promptTransitionFrames: number;
+
+    // ============================================================================
+    // Anti-Flicker Enhancement Flags (Phase 6 - Video Quality)
+    // ============================================================================
+
+    /**
+     * Enable Enhance-A-Video (FETA) for temporal consistency.
+     * Requires WanVideoSampler workflow (not compatible with standard KSampler).
+     * Applies cross-frame attention during diffusion for smoother motion.
+     * @default false
+     * @stability experimental
+     */
+    enhanceAVideoEnabled: boolean;
+
+    /**
+     * FETA weight for temporal consistency (0.0-100.0).
+     * Higher values = stronger temporal coherence but may reduce prompt adherence.
+     * Recommended range: 1.5-3.0
+     * @default 2.0
+     * @stability experimental
+     */
+    fetaWeight: number;
+
+    /**
+     * Enable frame interpolation post-processing.
+     * Uses TopazVideoEnhance or similar to smooth frame transitions.
+     * Helps reduce visible frame jumps and temporal artifacts.
+     * @default false
+     * @stability experimental
+     */
+    frameInterpolationEnabled: boolean;
+
+    /**
+     * Target frame rate for interpolation.
+     * Higher values = smoother motion but larger output files.
+     * @default 60
+     * @stability experimental
+     */
+    interpolationTargetFps: number;
 }
 
 /**
@@ -445,6 +549,20 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
     // Keyframe Generation Enhancements
     keyframeVersionHistory: true,        // Enable keyframe version history
     autoGenerateTemporalContext: true,   // Auto-generate bookend temporal context from scene
+    // Temporal Coherence Enhancement (Phase 5) - STANDARD PROFILE DEFAULTS (Phase 8)
+    // Changed in Phase 8: Default is now "Standard" stability profile with deflicker ON
+    videoDeflicker: true,                // Deflicker post-processing (ON by default - Standard profile)
+    deflickerStrength: 0.35,             // Deflicker blend strength (Standard profile)
+    deflickerWindowSize: 3,              // Deflicker temporal window size (Standard profile)
+    ipAdapterReferenceConditioning: false, // IP-Adapter reference conditioning (off - requires character ref images)
+    ipAdapterWeight: 0.4,                // IP-Adapter reference weight
+    promptScheduling: false,             // Prompt scheduling for transitions (off - Standard profile)
+    promptTransitionFrames: 8,           // Prompt transition blend duration
+    // Anti-Flicker Enhancement (Phase 6)
+    enhanceAVideoEnabled: false,         // FETA enhancement (off by default - requires WanVideoSampler)
+    fetaWeight: 2.0,                     // FETA weight for temporal consistency
+    frameInterpolationEnabled: false,    // Frame interpolation post-processing
+    interpolationTargetFps: 60,          // Target FPS for interpolation
 };
 
 /**
@@ -770,6 +888,95 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         category: 'workflow',
         stability: 'beta',
         dependencies: [],
+    },
+    // Temporal Coherence Enhancement (Phase 5)
+    videoDeflicker: {
+        id: 'videoDeflicker',
+        label: 'Video Deflicker',
+        description: 'Apply temporal deflicker post-processing to reduce flicker and improve video smoothness.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: [],
+    },
+    deflickerStrength: {
+        id: 'deflickerStrength',
+        label: 'Deflicker Strength',
+        description: 'Blend strength for deflicker processing (0.0-1.0). Higher = smoother but may reduce sharpness.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['videoDeflicker'],
+    },
+    deflickerWindowSize: {
+        id: 'deflickerWindowSize',
+        label: 'Deflicker Window Size',
+        description: 'Temporal window size in frames for deflicker. Larger = smoother but higher latency.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['videoDeflicker'],
+    },
+    ipAdapterReferenceConditioning: {
+        id: 'ipAdapterReferenceConditioning',
+        label: 'IP-Adapter Reference Conditioning',
+        description: 'Use reference image (from Visual Bible) to guide video generation for style/identity stability.',
+        category: 'continuity',
+        stability: 'experimental',
+        dependencies: ['characterConsistency'],
+    },
+    ipAdapterWeight: {
+        id: 'ipAdapterWeight',
+        label: 'IP-Adapter Weight',
+        description: 'Reference image influence strength (0.0-1.0). Higher = more adherence to reference.',
+        category: 'continuity',
+        stability: 'experimental',
+        dependencies: ['ipAdapterReferenceConditioning'],
+    },
+    promptScheduling: {
+        id: 'promptScheduling',
+        label: 'Prompt Scheduling',
+        description: 'Enable gradual prompt blending for smooth scene transitions over multiple frames.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: [],
+    },
+    promptTransitionFrames: {
+        id: 'promptTransitionFrames',
+        label: 'Prompt Transition Frames',
+        description: 'Number of frames to blend prompts during transitions.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['promptScheduling'],
+    },
+    enhanceAVideoEnabled: {
+        id: 'enhanceAVideoEnabled',
+        label: 'Enhance-A-Video (FETA)',
+        description: 'Enable FETA temporal consistency enhancement. Requires WanVideoSampler workflow (not compatible with KSampler).',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: [],
+    },
+    fetaWeight: {
+        id: 'fetaWeight',
+        label: 'FETA Weight',
+        description: 'Weight for temporal consistency (1.5-3.0 recommended). Higher = smoother but less prompt-adherent.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['enhanceAVideoEnabled'],
+    },
+    frameInterpolationEnabled: {
+        id: 'frameInterpolationEnabled',
+        label: 'Frame Interpolation',
+        description: 'Enable post-processing frame interpolation to smooth temporal artifacts.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: [],
+    },
+    interpolationTargetFps: {
+        id: 'interpolationTargetFps',
+        label: 'Interpolation Target FPS',
+        description: 'Target frame rate for interpolation (60 recommended for smooth motion).',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['frameInterpolationEnabled'],
     },
 };
 

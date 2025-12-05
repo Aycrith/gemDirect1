@@ -257,6 +257,91 @@ Consolidate all WebSocket usage through `comfyEventManager` and add connection s
 
 ---
 
+### 6. Vision LLM CORS Workaround (Interim Solution)
+
+**Issue**: Browser-based Vision LLM calls fail due to CORS when using LM Studio or local LLM endpoints.
+
+**Current Behavior**:
+- `keyframePairAnalysisService.ts` uses 15s timeout (reduced from 120s) for fail-fast
+- CORS/network errors are detected with clear user-facing messages
+- Analysis is non-blocking: graceful fallback continues video generation
+- Feature flag `keyframePairAnalysis` defaults to `true`
+
+**Impact**:
+- Keyframe pair analysis may be skipped when using browser-based vision LLM
+- Video generation continues without pre-flight quality gate
+- No visual continuity validation between START and END frames
+
+**Root Cause**:
+LM Studio and similar local LLM servers don't return CORS headers (`Access-Control-Allow-Origin`) by default. Browser fetch requests are blocked at the preflight stage.
+
+**Current Workaround** (Implemented 2025-12-04):
+```typescript
+// keyframePairAnalysisService.ts
+const VISION_LLM_TIMEOUT_MS = 15_000; // Fail-fast for optional preflight
+
+// Detect CORS/network errors
+if (error.message.includes('NetworkError') || error.message.includes('CORS')) {
+    return { passed: true, reason: 'Vision LLM unavailable - skipping analysis' };
+}
+```
+
+**Long-term Solutions** (Choose One):
+1. **Reverse Proxy**: Add nginx or caddy reverse proxy with CORS headers
+   - Pros: No LM Studio changes needed
+   - Cons: Additional infrastructure
+2. **Server-side LLM calls**: Route vision analysis through backend/serverless function
+   - Pros: Clean architecture, no browser limitations
+   - Cons: Requires backend infrastructure
+3. **LM Studio CORS config**: Configure LM Studio to return CORS headers (if supported)
+   - Pros: Simple if supported
+   - Cons: May not be configurable
+
+**Timeline & Priority**:
+- **Target**: Post-1.0 (current workaround is acceptable for MVP)
+- **Priority Score**: MEDIUM - Feature works with graceful degradation
+- **Prerequisite**: Decide on LLM infrastructure strategy (local vs cloud)
+
+**Tracking**: Workaround implemented 2025-12-04, timeout reduced to 15s
+
+---
+
+### 7. Deflicker Node Graceful Degradation (Implemented)
+
+**Issue**: Video deflicker feature requires optional ComfyUI custom node.
+
+**Current Behavior** (Implemented 2025-12-04):
+- `deflickerService.ts` queries ComfyUI `/object_info` before node injection
+- If no compatible node found, deflicker is silently skipped (graceful degradation)
+- Supported nodes checked in order: `TemporalSmoothing`, `VHS_VideoDeflicker`, `VideoDeflicker`
+- Feature flag `videoDeflicker` controls whether injection is attempted
+
+**Impact**:
+- Videos generate successfully even without deflicker nodes installed
+- No more 400 Bad Request errors from missing nodes
+- Deflicker is optional enhancement, not a blocker
+
+**Implementation**:
+```typescript
+// deflickerService.ts - getAvailableDeflickerNode()
+const installedNodes = await getInstalledNodes(comfyUIUrl);
+for (const nodeType of KNOWN_DEFLICKER_NODES) {
+    if (installedNodes.has(nodeType)) return nodeType;
+}
+return null; // Graceful degradation - skip injection
+```
+
+**To Enable Deflicker**:
+1. Install a ComfyUI custom node that provides temporal smoothing:
+   - `TemporalSmoothing` (recommended)
+   - `VideoHelperSuite` (provides `VHS_VideoDeflicker`)
+   - `VideoDeflicker` (generic)
+2. Set `featureFlags.videoDeflicker: true` in settings
+
+**Status**: ✅ RESOLVED - Graceful degradation implemented 2025-12-04
+
+---
+
 ## 🟢 Low Priority - Nice to Have
 
 ### 6. Parallel Validation Mode

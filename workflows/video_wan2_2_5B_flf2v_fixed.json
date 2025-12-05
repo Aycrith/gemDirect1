@@ -4,10 +4,10 @@
   "last_node_id": 16,
   "last_link_id": 14,
   "_meta": {
-    "title": "WAN 2.2 5B First-Last-Frame to Video (Fixed)",
-    "description": "Native dual-keyframe video generation using Wan22FirstLastFrameToVideoLatentTiledVAE custom node. Optimized for 24GB VRAM with 5B model and tiled VAE encoding.",
+    "title": "WAN 2.2 5B First-Last-Frame to Video (Anti-Flicker)",
+    "description": "Native dual-keyframe video generation with anti-flicker tuning. Shift 5, CFG 4.5, 30 steps for temporal stability.",
     "author": "gemDirect",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "nodes": {
     "1": {
@@ -42,7 +42,7 @@
     },
     "4": {
       "inputs": {
-        "shift": 8,
+        "shift": 5,
         "model": [
           "3",
           0
@@ -55,7 +55,7 @@
     },
     "5": {
       "inputs": {
-        "text": "A cinematic video scene with smooth motion and natural transitions between the start and end frames.",
+        "text": "A cinematic video scene with smooth motion and natural transitions between the start and end frames. Fluid camera movement, stable footage, no jitter.",
         "clip": [
           "1",
           0
@@ -68,7 +68,7 @@
     },
     "6": {
       "inputs": {
-        "text": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走, static, no motion, frozen, split screen, multiple panels, comic panels, manga style, grid layout",
+        "text": "flickering, shaking, jittering, unstable, vibrating, strobing, pulsating, frame jumping, temporal noise, color banding, aliasing, 色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，倒着走, static, no motion, frozen, split screen, multiple panels, comic panels, manga style, grid layout, wobbly camera, unstable shot",
         "clip": [
           "1",
           0
@@ -128,8 +128,8 @@
     "13": {
       "inputs": {
         "seed": 123456789,
-        "steps": 20,
-        "cfg": 5,
+        "steps": 30,
+        "cfg": 4.5,
         "sampler_name": "uni_pc",
         "scheduler": "simple",
         "denoise": 1,

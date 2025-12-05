@@ -36,8 +36,13 @@
     "bookend:vision": "pwsh -File scripts/analyze-bookend-vision.ps1",
     "bookend:vision-regression": "npm run bookend:vision && pwsh -File scripts/test-bookend-vision-regression.ps1",
     "bookend:vision-last": "pwsh -File scripts/analyze-last-video.ps1",
+    "bookend:vision-qa": "pwsh -File scripts/run-bookend-vision-qa.ps1",
+    "bookend:vision-qa:quick": "pwsh -File scripts/run-bookend-vision-qa.ps1 -Runs 1",
+    "bookend:vision-qa:publish": "pwsh -File scripts/publish-vision-qa-results.ps1",
+    "bookend:vision-qa:check-schema": "pwsh -File scripts/check-vision-qa-schema.ps1",
+    "bookend:vision-qa:trend": "pwsh -File scripts/vision-qa-trend-report.ps1",
     "bookend:ci:core": "npx tsc --noEmit && npx vitest run --reporter=verbose && npm run bookend:regression",
-    "bookend:ci:vision": "npm run bookend:vision-regression"
+    "bookend:ci:vision": "pwsh -File scripts/run-bookend-vision-qa.ps1 -Runs 3"
   },
   "dependencies": {
     "@google/genai": "^1.28.0",

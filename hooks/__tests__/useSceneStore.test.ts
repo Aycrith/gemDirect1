@@ -92,6 +92,19 @@ const createTestSettings = (useUnifiedSceneStore: boolean): LocalGenerationSetti
         // Bookend QA (Phase 8)
         keyframePairAnalysis: false,
         bookendQAMode: false,
+        // Temporal Coherence Enhancement (Phase 5)
+        videoDeflicker: false,
+        deflickerStrength: 0.35,
+        deflickerWindowSize: 3,
+        ipAdapterReferenceConditioning: false,
+        ipAdapterWeight: 0.4,
+        promptScheduling: false,
+        promptTransitionFrames: 8,
+        // Anti-Flicker Enhancement (Phase 6)
+        enhanceAVideoEnabled: false,
+        fetaWeight: 2.0,
+        frameInterpolationEnabled: false,
+        interpolationTargetFps: 60,
     },
 });
 

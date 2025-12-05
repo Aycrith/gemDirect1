@@ -35,6 +35,12 @@ import {
     applyUploadedImagesToWorkflow,
     type IPAdapterPayload,
 } from './ipAdapterService';
+// Phase 5: Deflicker post-processing for temporal coherence
+import {
+    getDeflickerConfig,
+    applyDeflickerToWorkflow,
+    logDeflickerStatus,
+} from './deflickerService';
 // Phase 7: Video upscaling post-processing (imported when needed)
 // Generation Queue for serial VRAM-safe execution
 import { getGenerationQueue, createVideoTask, GenerationStatus } from './generationQueue';
@@ -1510,6 +1516,41 @@ export const queueComfyUIPrompt = async (
             }
         }
 
+        // --- STEP 1.6: APPLY DEFLICKER POST-PROCESSING (Phase 5 Temporal Coherence) ---
+        const deflickerConfig = getDeflickerConfig(settings);
+        logDeflickerStatus(deflickerConfig, profileId);
+        
+        if (deflickerConfig.enabled) {
+            // Note: This modifies the workflow to inject a deflicker node between 
+            // VAEDecode and CreateVideo. The actual node availability depends on
+            // installed ComfyUI custom nodes (e.g., TemporalSmoothing, VHS_VideoCombine).
+            // The function now queries /object_info to verify node availability before injection.
+            const workflowWithDeflicker = await applyDeflickerToWorkflow(
+                { nodes: promptPayload } as Record<string, unknown>,
+                deflickerConfig,
+                settings.comfyUIUrl
+            );
+            
+            // If deflicker was successfully applied, update the prompt payload
+            if (workflowWithDeflicker !== promptPayload && workflowWithDeflicker.nodes) {
+                const deflickerNodes = workflowWithDeflicker.nodes as Record<string, unknown>;
+                // Merge deflicker nodes into promptPayload
+                for (const [nodeId, node] of Object.entries(deflickerNodes)) {
+                    if (nodeId.includes('deflicker_')) {
+                        promptPayload[nodeId] = node;
+                        console.log(`[${profileId}] Added deflicker node: ${nodeId}`);
+                    }
+                }
+            }
+            
+            pushDiagnostic({ 
+                profileId, 
+                action: 'deflicker:applied', 
+                strength: deflickerConfig.strength,
+                windowSize: deflickerConfig.windowSize
+            });
+        }
+
         // --- STEP 2: INJECT DATA INTO WORKFLOW BASED ON MAPPING ---
         for (const [key, dataType] of Object.entries(runtimeSettings.mapping)) {
             if (dataType === 'none') continue;
@@ -1546,6 +1587,19 @@ export const queueComfyUIPrompt = async (
                         if (uploadedEndImageFilename && node.class_type === 'LoadImage') {
                             dataToInject = uploadedEndImageFilename;
                         }
+                        break;
+                    case 'character_reference_image':
+                        // Character reference images are handled via IP-Adapter service (options.ipAdapter)
+                        // The uploaded filename is injected by applyUploadedImagesToWorkflow
+                        // This case is a fallback for direct mapping without IP-Adapter preprocessing
+                        break;
+                    case 'ipadapter_weight':
+                        // IP-Adapter weight can be configured at runtime via settings
+                        // Default is preserved from workflow JSON, but can be overridden
+                        break;
+                    case 'feta_weight':
+                        // FETA (Enhance-A-Video) weight for temporal coherence
+                        // Default is preserved from workflow JSON
                         break;
                 }
                 if (dataToInject !== null) {
@@ -2613,8 +2667,8 @@ export const getSingleFramePrompt = (featureFlags?: { keyframePromptPipeline?: b
 // ORIGINAL (900+ chars) - kept for fallback/comparison
 export const NEGATIVE_GUIDANCE_VERBOSE = 'AVOID AT ALL COSTS: split-screen, multi-panel layout, divided frame, panel borders, storyboard panels, multiple scenes in one image, comic strip layout, triptych, diptych, before and after comparison, side by side shots, top and bottom split, left and right split, grid layout, mosaic, composite image, collage, multiple perspectives, repeated subjects, duplicated elements, mirrored composition, reflection symmetry, tiled pattern, sequential images, montage, multiple time periods, multiple locations, frame divisions, panel separators, white borders, black borders, frame-within-frame, picture-in-picture, multiple lighting setups, discontinuous composition, fragmented scene, segmented layout, partitioned image, multiple narratives, split composition, dual scene, multiple shots combined, storyboard format, comic panel style, sequence of events, time progression, location changes, speech bubbles, UI overlays, interface elements, textual callouts';
 
-// OPTIMIZED v5 (520 chars) - added identity preservation terms to prevent character morphing and face degradation
-export const NEGATIVE_GUIDANCE = 'split-screen, multi-panel, grid layout, character sheet, product catalog, symmetrical array, repeated elements, duplicated subjects, storyboard, comic layout, collage, multiple scenes, side-by-side, tiled images, panel borders, manga style, separated frames, before-after comparison, sequence panels, dual perspective, fragmented scene, picture-in-picture, montage, reflection, mirrored composition, horizontal symmetry, vertical symmetry, above-below division, sky-ground split, morphing face, identity shift, changing features, inconsistent appearance, face distortion, melting features, blurry face, smudged details, warped anatomy, drifting identity';
+// OPTIMIZED v6 (680 chars) - added anti-flicker/shaking terms for temporal stability in video generation
+export const NEGATIVE_GUIDANCE = 'split-screen, multi-panel, grid layout, character sheet, product catalog, symmetrical array, repeated elements, duplicated subjects, storyboard, comic layout, collage, multiple scenes, side-by-side, tiled images, panel borders, manga style, separated frames, before-after comparison, sequence panels, dual perspective, fragmented scene, picture-in-picture, montage, reflection, mirrored composition, horizontal symmetry, vertical symmetry, above-below division, sky-ground split, morphing face, identity shift, changing features, inconsistent appearance, face distortion, melting features, blurry face, smudged details, warped anatomy, drifting identity, flickering, shaking, jittering, unstable, vibrating, strobing, pulsating, frame jumping, temporal noise, wobbly camera';
 
 export const extendNegativePrompt = (base: string): string => (base && base.trim().length > 0 ? `${base}, ${NEGATIVE_GUIDANCE}` : NEGATIVE_GUIDANCE);
 
@@ -3953,7 +4007,7 @@ export async function generateVideoFromBookendsSequential(
  * @param bookends Start and end keyframe images (base64)
  * @param logApiCall API call logging function
  * @param onStateChange State change callback with phase tracking
- * @param profileId Workflow profile ID ('wan-flf2v' or 'wan-fun-inpaint')
+ * @param profileId Workflow profile ID (e.g., 'wan-flf2v', 'wan-fun-inpaint', 'wan-flf2v-feta', 'wan-ipadapter')
  * @returns Promise<string> - Video data URL
  */
 export async function generateVideoFromBookendsNative(
@@ -3964,7 +4018,7 @@ export async function generateVideoFromBookendsNative(
     directorsVision: string,
     _logApiCall: ApiLogCallback,
     onStateChange: (state: any) => void,
-    profileId: 'wan-flf2v' | 'wan-fun-inpaint' = 'wan-fun-inpaint'
+    profileId: string = 'wan-fun-inpaint'
 ): Promise<string> {
     console.log(`[Native Bookend] Starting native dual-keyframe generation for scene ${scene.id} using ${profileId}`);
     
@@ -4001,12 +4055,20 @@ export async function generateVideoFromBookendsNative(
         message: `Generating native dual-keyframe video using ${profileId}...`
     });
     
+    // Extract temporal context for prompt scheduling (Phase 5 enhancement)
+    const temporalContext = scene.temporalContext ? {
+        startMoment: scene.temporalContext.startMoment,
+        endMoment: scene.temporalContext.endMoment,
+        motionDescription: scene.summary // Use scene summary as motion description
+    } : undefined;
+    
     // Queue the dual-keyframe prompt
     const response = await queueComfyUIPromptDualImage(
         settings,
         payloads,
         { start: bookends.start, end: bookends.end },
-        profileId
+        profileId,
+        temporalContext
     );
     
     if (!response?.prompt_id) {
@@ -4044,15 +4106,55 @@ export async function generateVideoFromBookendsNative(
  * @param payloads Text/JSON payloads for prompt injection
  * @param images Start and end keyframe images (base64)
  * @param profileId Workflow profile ID with dual image mapping
+ * @param temporalContext Optional temporal context for prompt scheduling (startMoment, endMoment)
  * @returns ComfyUI queue response
  */
 export const queueComfyUIPromptDualImage = async (
     settings: LocalGenerationSettings,
     payloads: { json: string; text: string; structured: any[]; negativePrompt: string },
     images: { start: string; end: string },
-    profileId: string = 'wan-flf2v'
+    profileId: string = 'wan-flf2v',
+    temporalContext?: { startMoment?: string; endMoment?: string; motionDescription?: string }
 ): Promise<any> => {
     console.log(`[${profileId}] Queueing dual-image workflow with start and end keyframes`);
+    
+    // ========================================================================
+    // Prompt Scheduling (Phase 5 Enhancement)
+    // ========================================================================
+    let effectiveTextPrompt = payloads.text;
+    
+    try {
+        const { isPromptSchedulingEnabled, getScheduleConfig, createBookendSchedule, formatAsScheduledPrompt } = 
+            await import('./promptSchedulingService');
+        
+        if (isPromptSchedulingEnabled(settings) && temporalContext?.startMoment && temporalContext?.endMoment) {
+            const scheduleConfig = getScheduleConfig(settings);
+            
+            // Default frame count for FLF2V videos (typical: 49 frames at 16fps = ~3s)
+            const totalFrames = 49; // TODO: Extract from workflow if available
+            
+            const schedule = createBookendSchedule(
+                temporalContext.startMoment,
+                temporalContext.endMoment,
+                temporalContext.motionDescription || 'smooth motion transition',
+                totalFrames,
+                scheduleConfig
+            );
+            
+            effectiveTextPrompt = formatAsScheduledPrompt(schedule);
+            console.log(`[${profileId}] Prompt scheduling ENABLED - using scheduled prompt format`);
+            console.log(`[${profileId}] Schedule: ${schedule.segments.length} segments over ${totalFrames} frames`);
+        }
+    } catch (err) {
+        // Prompt scheduling is optional - continue with original prompt if it fails
+        console.warn(`[${profileId}] Prompt scheduling failed (using original prompt):`, err);
+    }
+    
+    // Create modified payloads with potentially scheduled prompt
+    const effectivePayloads = {
+        ...payloads,
+        text: effectiveTextPrompt,
+    };
     
     // ========================================================================
     // LM Studio VRAM Release - Unload LLM models to free VRAM for ComfyUI
@@ -4225,6 +4327,34 @@ export const queueComfyUIPromptDualImage = async (
         }
     }
     
+    // ========================================================================
+    // Deflicker Post-Processing (Phase 5 Temporal Coherence)
+    // ========================================================================
+    const deflickerConfig = getDeflickerConfig(settings);
+    logDeflickerStatus(deflickerConfig, `${profileId}-dual`);
+    
+    if (deflickerConfig.enabled) {
+        // Inject deflicker node between VAEDecode and video output nodes
+        // The function now queries /object_info to verify node availability before injection.
+        const workflowWithDeflicker = await applyDeflickerToWorkflow(
+            { nodes: promptPayload } as Record<string, unknown>,
+            deflickerConfig,
+            settings.comfyUIUrl
+        );
+        
+        // Merge deflicker nodes into promptPayload if successfully applied
+        if (workflowWithDeflicker !== promptPayload && workflowWithDeflicker.nodes) {
+            const deflickerNodes = workflowWithDeflicker.nodes as Record<string, unknown>;
+            for (const [nodeId, node] of Object.entries(deflickerNodes)) {
+                if (nodeId.includes('deflicker_')) {
+                    promptPayload[nodeId] = node;
+                    console.log(`[${profileId}] Added deflicker node: ${nodeId}`);
+                }
+            }
+        }
+        console.log(`[${profileId}] Deflicker applied: strength=${deflickerConfig.strength}, window=${deflickerConfig.windowSize}`);
+    }
+    
     // Inject data based on mapping
     for (const [key, dataType] of Object.entries(mapping)) {
         if (dataType === 'none') continue;
@@ -4239,13 +4369,13 @@ export const queueComfyUIPromptDualImage = async (
             let dataToInject: unknown = null;
             switch (dataType) {
                 case 'human_readable_prompt':
-                    dataToInject = payloads.text;
+                    dataToInject = effectivePayloads.text;
                     break;
                 case 'full_timeline_json':
-                    dataToInject = payloads.json;
+                    dataToInject = effectivePayloads.json;
                     break;
                 case 'negative_prompt':
-                    dataToInject = payloads.negativePrompt;
+                    dataToInject = effectivePayloads.negativePrompt;
                     break;
                 case 'start_image':
                     if (uploadedImages.start && node.class_type === 'LoadImage') {

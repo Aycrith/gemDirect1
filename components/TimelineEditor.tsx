@@ -1498,8 +1498,15 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         // Graceful fallback: log warning but don't block generation
                         const errorMsg = analysisError instanceof Error ? analysisError.message : String(analysisError);
                         console.warn('[PIPELINE:BOOKEND] ⚠️ Keyframe pair analysis unavailable (non-blocking):', errorMsg);
+                        // Update status to show we're continuing despite analysis failure
+                        updateStatus({ 
+                            status: 'running', 
+                            message: 'Keyframe analysis skipped (vision LLM unavailable). Proceeding with video generation...' 
+                        });
                         // Continue with generation - analysis failure is non-fatal
                     }
+                } else {
+                    console.log('[PIPELINE:BOOKEND] Keyframe pair analysis disabled, skipping preflight');
                 }
 
                 // Use native dual-keyframe generation with configurable bookend workflow profile

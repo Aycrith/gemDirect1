@@ -1,0 +1,247 @@
+{
+  "id": "wan2-5b-flf2v-feta",
+  "revision": 1,
+  "last_node_id": 20,
+  "last_link_id": 18,
+  "_meta": {
+    "title": "WAN 2.2 5B FLF2V with FETA Enhancement",
+    "description": "WanVideoSampler-based workflow with FETA (Enhance-A-Video) for temporal coherence. Uses WanVideoWrapper nodes for native pipeline with temporal enhancement.",
+    "author": "gemDirect",
+    "version": "1.0.0"
+  },
+  "nodes": {
+    "1": {
+      "inputs": {
+        "model": "wan2.2_ti2v_5B_fp16.safetensors",
+        "base_precision": "bf16",
+        "quantization": "disabled",
+        "load_device": "offload_device"
+      },
+      "class_type": "WanVideoModelLoader",
+      "_meta": {
+        "title": "WanVideo Model Loader (5B FLF2V)"
+      }
+    },
+    "2": {
+      "inputs": {
+        "model_name": "t5\\t5xxl_fp8_e4m3fn_scaled.safetensors",
+        "precision": "bf16"
+      },
+      "class_type": "LoadWanVideoT5TextEncoder",
+      "_meta": {
+        "title": "WanVideo T5 Text Encoder Loader"
+      }
+    },
+    "3": {
+      "inputs": {
+        "model_name": "wan2.2_vae.safetensors",
+        "precision": "bf16"
+      },
+      "class_type": "WanVideoVAELoader",
+      "_meta": {
+        "title": "WanVideo VAE Loader"
+      }
+    },
+    "4": {
+      "inputs": {
+        "clip_name": "clip_vision_h.safetensors"
+      },
+      "class_type": "CLIPVisionLoader",
+      "_meta": {
+        "title": "Load CLIP Vision"
+      }
+    },
+    "5": {
+      "inputs": {
+        "image": "start_keyframe.png"
+      },
+      "class_type": "LoadImage",
+      "_meta": {
+        "title": "Load Start Image"
+      }
+    },
+    "6": {
+      "inputs": {
+        "image": "end_keyframe.png"
+      },
+      "class_type": "LoadImage",
+      "_meta": {
+        "title": "Load End Image"
+      }
+    },
+    "7": {
+      "inputs": {
+        "clip_vision": [
+          "4",
+          0
+        ],
+        "image_1": [
+          "5",
+          0
+        ],
+        "strength_1": 1.0,
+        "strength_2": 1.0,
+        "crop": "center",
+        "combine_embeds": "average",
+        "force_offload": true,
+        "image_2": [
+          "6",
+          0
+        ]
+      },
+      "class_type": "WanVideoClipVisionEncode",
+      "_meta": {
+        "title": "WanVideo ClipVision Encode (Start+End)"
+      }
+    },
+    "8": {
+      "inputs": {
+        "width": 832,
+        "height": 480,
+        "num_frames": 81,
+        "noise_aug_strength": 0.0,
+        "start_latent_strength": 1.0,
+        "end_latent_strength": 1.0,
+        "force_offload": true,
+        "vae": [
+          "3",
+          0
+        ],
+        "clip_embeds": [
+          "7",
+          0
+        ],
+        "start_image": [
+          "5",
+          0
+        ],
+        "end_image": [
+          "6",
+          0
+        ],
+        "fun_or_fl2v_model": true
+      },
+      "class_type": "WanVideoImageToVideoEncode",
+      "_meta": {
+        "title": "WanVideo ImageToVideo Encode (FLF2V)"
+      }
+    },
+    "9": {
+      "inputs": {
+        "positive_prompt": "A cinematic video scene with smooth motion and natural transitions between the start and end frames. Fluid camera movement, stable footage, no jitter.",
+        "negative_prompt": "flickering, shaking, jittering, unstable, vibrating, strobing, pulsating, frame jumping, temporal noise, color banding, aliasing, static, no motion, frozen, split screen, multiple panels, wobbly camera, unstable shot",
+        "t5": [
+          "2",
+          0
+        ],
+        "force_offload": true
+      },
+      "class_type": "WanVideoTextEncode",
+      "_meta": {
+        "title": "WanVideo TextEncode"
+      }
+    },
+    "10": {
+      "inputs": {
+        "weight": 2.0,
+        "start_percent": 0.0,
+        "end_percent": 1.0
+      },
+      "class_type": "WanVideoEnhanceAVideo",
+      "_meta": {
+        "title": "WanVideo Enhance-A-Video (FETA)"
+      }
+    },
+    "11": {
+      "inputs": {
+        "model": [
+          "1",
+          0
+        ],
+        "image_embeds": [
+          "8",
+          0
+        ],
+        "steps": 30,
+        "cfg": 4.5,
+        "shift": 5.0,
+        "seed": 123456789,
+        "force_offload": true,
+        "scheduler": "unipc",
+        "riflex_freq_index": 0,
+        "text_embeds": [
+          "9",
+          0
+        ],
+        "feta_args": [
+          "10",
+          0
+        ]
+      },
+      "class_type": "WanVideoSampler",
+      "_meta": {
+        "title": "WanVideo Sampler (with FETA)"
+      }
+    },
+    "12": {
+      "inputs": {
+        "vae": [
+          "3",
+          0
+        ],
+        "samples": [
+          "11",
+          0
+        ],
+        "enable_vae_tiling": false,
+        "tile_x": 272,
+        "tile_y": 272,
+        "tile_stride_x": 144,
+        "tile_stride_y": 128
+      },
+      "class_type": "WanVideoDecode",
+      "_meta": {
+        "title": "WanVideo Decode"
+      }
+    },
+    "13": {
+      "inputs": {
+        "frame_rate": 16,
+        "loop_count": 0,
+        "filename_prefix": "video/wan2_flf2v_feta",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "pingpong": false,
+        "save_output": true,
+        "images": [
+          "12",
+          0
+        ]
+      },
+      "class_type": "VHS_VideoCombine",
+      "_meta": {
+        "title": "Video Combine (VHS)"
+      }
+    }
+  },
+  "links": [
+    [1, 1, 0, 11, "model"],
+    [2, 2, 0, 9, "t5"],
+    [3, 3, 0, 8, "vae"],
+    [4, 3, 0, 12, "vae"],
+    [5, 4, 0, 7, "clip_vision"],
+    [6, 5, 0, 7, "image_1"],
+    [7, 5, 0, 8, "start_image"],
+    [8, 6, 0, 7, "image_2"],
+    [9, 6, 0, 8, "end_image"],
+    [10, 7, 0, 8, "clip_embeds"],
+    [11, 8, 0, 11, "image_embeds"],
+    [12, 9, 0, 11, "text_embeds"],
+    [13, 10, 0, 11, "feta_args"],
+    [14, 11, 0, 12, "samples"],
+    [15, 12, 0, 13, "images"]
+  ],
+  "version": 0.4
+}

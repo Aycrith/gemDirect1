@@ -135,6 +135,14 @@ Users should expect the following generation times:
 
 **Complete regression testing infrastructure for FLF2V (First-Last-Frame to Video) workflows**:
 
+### ★ Production Video Preview (UI)
+The easiest way to test the production pipeline is the **Production Video Preview** panel in the app:
+1. Open **Usage Dashboard** (bar chart icon)
+2. Expand **★ Production Video Preview** panel
+3. Click **Generate Preview Clip** → generates a ~3s video with production defaults (`wan-fun-inpaint` + Standard)
+
+Requires: ComfyUI running with ~8GB VRAM. See `AGENT_HANDOFF_CURRENT.md` for details.
+
 ### Golden Samples & Baselines
 - **Location**: `data/bookend-golden-samples/` (3 samples: geometric, character, environment)
 - **Baselines**: `data/bookend-golden-samples/baselines.json` (reference quality metrics)

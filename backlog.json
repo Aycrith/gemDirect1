@@ -1,0 +1,240 @@
+[
+  {
+    "id": "A1",
+    "workstream": "Workstream A — QA & Quality Signal Alignment",
+    "description": "Run multi-run Vision QA on all presets and produce baseline data",
+    "dependencies": [],
+    "deliverables": [
+      "vision-qa reports for all presets",
+      "baseline JSON updated"
+    ],
+    "acceptance_criteria": [
+      "All presets have QA data",
+      "Baseline values recorded",
+      "No failing QA runs"
+    ],
+    "priority": "high",
+    "estimated_effort": "small",
+    "notes": ""
+  },
+  {
+    "id": "A2",
+    "workstream": "Workstream A — QA & Quality Signal Alignment",
+    "description": "Implement benchmark harness with temporal-coherence, motion consistency, frame-to-frame and identity stability metrics",
+    "dependencies": [
+      "A1"
+    ],
+    "deliverables": [
+      "benchmark suite scripts",
+      "metrics output format (JSON/CSV)",
+      "report template"
+    ],
+    "acceptance_criteria": [
+      "Metrics run on sample videos",
+      "Reports generated successfully",
+      "Metrics documented"
+    ],
+    "priority": "high",
+    "estimated_effort": "medium",
+    "notes": ""
+  },
+  {
+    "id": "A3",
+    "workstream": "Workstream A — QA & Quality Signal Alignment",
+    "description": "Refactor QA passes: remove redundant overlap, unify threshold logic, surface preflight keyframe analysis status (ran/skipped/fail)",
+    "dependencies": [
+      "A1"
+    ],
+    "deliverables": [
+      "updated QA scripts",
+      "unified threshold config",
+      "logging/UI for preflight status"
+    ],
+    "acceptance_criteria": [
+      "No duplicate QA passes",
+      "Unified thresholds applied",
+      "Preflight status surfaced in UI/logs"
+    ],
+    "priority": "high",
+    "estimated_effort": "small",
+    "notes": ""
+  },
+  {
+    "id": "B1",
+    "workstream": "Workstream B — Resource Safety & Defaults Hardening",
+    "description": "Integrate GenerationQueue into all video generation entry points; add VRAM/node/model preflight checks",
+    "dependencies": [],
+    "deliverables": [
+      "modified generation code",
+      "resource preflight module",
+      "fallback logic",
+      "updated docs"
+    ],
+    "acceptance_criteria": [
+      "No OOM under concurrent jobs",
+      "Resource failures handled gracefully",
+      "Default presets still work",
+      "Documentation updated"
+    ],
+    "priority": "high",
+    "estimated_effort": "medium",
+    "notes": "VRAM ceiling 24 GB; provide safe mode for ~8 GB; aim for 20–22 GB headroom"
+  },
+  {
+    "id": "B2",
+    "workstream": "Workstream B — Resource Safety & Defaults Hardening",
+    "description": "Simplify presets and default flags; define safe-defaults mode and document VRAM requirements",
+    "dependencies": [
+      "B1"
+    ],
+    "deliverables": [
+      "updated presets configuration",
+      "safe-defaults mode implementation",
+      "docs/UI updates"
+    ],
+    "acceptance_criteria": [
+      "Defaults produce stable output on minimal hardware (~8 GB)",
+      "Experimental flags hidden/off by default",
+      "Documentation complete"
+    ],
+    "priority": "medium",
+    "estimated_effort": "small",
+    "notes": ""
+  },
+  {
+    "id": "C1",
+    "workstream": "Workstream C — Reproducibility, Versioning & Maintainability",
+    "description": "Integrate versioning for models/assets/configs and implement output manifest generation",
+    "dependencies": [
+      "B2"
+    ],
+    "deliverables": [
+      "versioning tool configuration",
+      "manifest generator module",
+      "documentation on workflow"
+    ],
+    "acceptance_criteria": [
+      "Assets/models tracked under versioning",
+      "Generated output includes manifest",
+      "Replay/re-run documented and reproducible"
+    ],
+    "priority": "high",
+    "estimated_effort": "medium",
+    "notes": ""
+  },
+  {
+    "id": "C2",
+    "workstream": "Workstream C — Reproducibility, Versioning & Maintainability",
+    "description": "Refactor pipeline to modular architecture with clear config/schema for scenes, assets, generation, and QA",
+    "dependencies": [
+      "C1"
+    ],
+    "deliverables": [
+      "modular code refactor",
+      "config schema definitions (YAML/JSON)",
+      "example config files",
+      "updated docs"
+    ],
+    "acceptance_criteria": [
+      "Legacy functionality preserved",
+      "Config-driven scenes render",
+      "Example configs generate expected outputs",
+      "Docs updated"
+    ],
+    "priority": "medium",
+    "estimated_effort": "large",
+    "notes": ""
+  },
+  {
+    "id": "C3",
+    "workstream": "Workstream C — Reproducibility, Versioning & Maintainability",
+    "description": "Write/expand documentation, onboarding guide, example usage, and configuration recipes",
+    "dependencies": [
+      "C2"
+    ],
+    "deliverables": [
+      "README updates",
+      "usage guide docs",
+      "example configs/examples folder",
+      "contribution guide"
+    ],
+    "acceptance_criteria": [
+      "Documentation renders correctly",
+      "Examples work as described",
+      "New users can generate a sample output following the guide"
+    ],
+    "priority": "medium",
+    "estimated_effort": "small",
+    "notes": ""
+  },
+  {
+    "id": "D1",
+    "workstream": "Workstream D — Pipeline Orchestration & Workflow Management",
+    "description": "Integrate orchestration framework (e.g., Prefect/Airflow/Dagster) for pipeline DAG management",
+    "dependencies": [
+      "C2"
+    ],
+    "deliverables": [
+      "orchestration framework setup",
+      "DAG definitions for scene load → render → QA → post-process → output",
+      "CLI/API for job submission & monitoring",
+      "logging and retry logic"
+    ],
+    "acceptance_criteria": [
+      "Orchestration runs end-to-end on sample pipeline",
+      "Failures retried or reported cleanly",
+      "Logs/status accessible",
+      "Docs updated"
+    ],
+    "priority": "medium",
+    "estimated_effort": "large",
+    "notes": ""
+  },
+  {
+    "id": "E1",
+    "workstream": "Workstream E — Cinematic / Temporal Quality Enhancements",
+    "description": "Implement camera-as-code support: motion path config + flow-guided frame generation for temporal coherence",
+    "dependencies": [
+      "D1",
+      "C2"
+    ],
+    "deliverables": [
+      "motion-path config schema",
+      "camera path loader/parser module",
+      "reference flow generator",
+      "generation engine updates for flow guidance",
+      "sample scene demonstrating camera motion"
+    ],
+    "acceptance_criteria": [
+      "Sample scene renders with expected camera motion",
+      "No major temporal artifacts/drift",
+      "Metrics show improved motion coherence vs baseline",
+      "Docs updated"
+    ],
+    "priority": "low",
+    "estimated_effort": "large",
+    "notes": "Advanced/optional feature — keep behind feature flag"
+  },
+  {
+    "id": "E2",
+    "workstream": "Workstream E — Cinematic / Temporal Quality Enhancements",
+    "description": "Add optional temporal augmentation/regularization to improve consistency and robustness",
+    "dependencies": [
+      "E1"
+    ],
+    "deliverables": [
+      "augmentation module/config",
+      "documentation of usage",
+      "test harness to evaluate effect"
+    ],
+    "acceptance_criteria": [
+      "Augmentation can be toggled via config",
+      "No regressions in QA or artifacts",
+      "Trade-offs documented",
+      "Sample outputs stable"
+    ],
+    "priority": "low",
+    "estimated_effort": "medium",
+    "notes": "Optional, advanced"
+  }
+]

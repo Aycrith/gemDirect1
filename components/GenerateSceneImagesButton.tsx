@@ -136,14 +136,9 @@ const GenerateSceneImagesButton: React.FC<GenerateSceneImagesButtonProps> = ({
                     
                     successes++;
                     
-                    // DEBUG: Verify state propagation with micro-task delay
-                    setTimeout(() => {
-                        const currentCount = Object.keys(generatedImages).length;
-                        console.log(`   ✓ [Batch Generation] Verification: generatedImages prop now has ${currentCount} items (expected: ${i + 1})`);
-                        if (currentCount < i + 1) {
-                            console.error(`   ❌ [Batch Generation] STATE SYNC ISSUE: Expected ${i + 1} images but only have ${currentCount}!`);
-                        }
-                    }, 100);
+                    // Note: State updates are asynchronous - the 'generatedImages' prop won't reflect
+                    // new values until the next render. The state IS being updated correctly via
+                    // onImagesGenerated(), just not visible in this closure's reference.
 
                     // NEW: Mark scene as complete
                     updateSceneImageStatus?.(scene.id, {

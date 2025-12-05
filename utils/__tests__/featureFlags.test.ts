@@ -47,9 +47,9 @@ describe('featureFlags', () => {
             }
         });
 
-        it('should have 40 flags defined', () => {
+        it('should have 51 flags defined', () => {
             const flagCount = Object.keys(DEFAULT_FEATURE_FLAGS).length;
-            expect(flagCount).toBe(40);
+            expect(flagCount).toBe(51);
         });
 
         it('should have metadata for every flag', () => {
@@ -211,6 +211,19 @@ describe('featureFlags', () => {
                 // Bookend QA (Phase 8)
                 keyframePairAnalysis: true,
                 bookendQAMode: true,
+                // Temporal Coherence Enhancement (Phase 5)
+                videoDeflicker: true,
+                deflickerStrength: 0.35,
+                deflickerWindowSize: 3,
+                ipAdapterReferenceConditioning: true,
+                ipAdapterWeight: 0.4,
+                promptScheduling: true,
+                promptTransitionFrames: 8,
+                // Anti-Flicker Enhancement (Phase 6)
+                enhanceAVideoEnabled: true,
+                fetaWeight: 2.0,
+                frameInterpolationEnabled: true,
+                interpolationTargetFps: 60,
             };
             
             const enabled = getEnabledFlags(allEnabled);
@@ -218,8 +231,14 @@ describe('featureFlags', () => {
             // visionFeedbackProvider is 'local-qwen' not a boolean true, so it doesn't count
             // enableQuickGenerate is false
             // videoQualityThreshold is a number not a boolean, so it doesn't count
-            // 34 boolean flags are set to true (including keyframePairAnalysis and bookendQAMode)
-            expect(enabled.length).toBe(34);
+            // deflickerStrength is a number not a boolean, so it doesn't count
+            // deflickerWindowSize is a number not a boolean, so it doesn't count
+            // ipAdapterWeight is a number not a boolean, so it doesn't count
+            // promptTransitionFrames is a number not a boolean, so it doesn't count
+            // fetaWeight is a number not a boolean, so it doesn't count
+            // interpolationTargetFps is a number not a boolean, so it doesn't count
+            // 39 boolean flags are set to true (37 previous + 2 new boolean flags: enhanceAVideoEnabled, frameInterpolationEnabled)
+            expect(enabled.length).toBe(39);
         });
     });
 

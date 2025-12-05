@@ -15,6 +15,13 @@ import {
     validateFlagCombination,
 } from '../utils/featureFlags';
 import {
+    STABILITY_PROFILE_LIST,
+    STABILITY_PROFILES,
+    detectCurrentProfile,
+    applyStabilityProfile,
+    getProfileSummary,
+} from '../utils/stabilityProfiles';
+import {
     validateActiveModelsWithEnforcement,
     formatEnforcementResult,
     type EnforcementResult,
@@ -1655,12 +1662,14 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                             ) : (
                                                 <>
                                                     <option value="wan-flf2v">WAN 2.2 First-Last-Frame (wan-flf2v)</option>
-                                                    <option value="wan-fun-inpaint">WAN 2.2 Fun Inpaint (wan-fun-inpaint)</option>
+                                                    <option value="wan-fun-inpaint">WAN 2.2 Fun Inpaint (wan-fun-inpaint) ★ Recommended</option>
+                                                    <option value="wan-flf2v-feta">WAN FLF2V + FETA (Temporal Coherence)</option>
+                                                    <option value="wan-ipadapter">WAN IP-Adapter (Character Consistency)</option>
                                                 </>
                                             )}
                                         </select>
                                         <p className="text-xs text-gray-500 mt-1">
-                                            Used when generating videos with start/end keyframes. <code className="px-1 bg-gray-800 rounded">wan-flf2v</code> is recommended for bookend mode.
+                                            <strong className="text-amber-400">★ Production Default:</strong> <code className="px-1 bg-gray-800 rounded">wan-fun-inpaint</code> + Standard stability profile (deflicker ON). Best balance of quality and performance.
                                         </p>
                                     </div>
                                 </div>
@@ -2346,6 +2355,317 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                             </label>
                                         );
                                     })}
+                                </div>
+                            </div>
+
+                            {/* Temporal Coherence Enhancement Section (Phase 5) */}
+                            <div className="space-y-3">
+                                <h4 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                                    <span className="w-6 h-6 flex items-center justify-center bg-cyan-900/50 text-cyan-400 rounded text-xs">T</span>
+                                    Temporal Coherence
+                                    <span className="px-2 py-0.5 text-xs rounded bg-purple-900/50 text-purple-300 border border-purple-700">
+                                        EXPERIMENTAL
+                                    </span>
+                                </h4>
+                                <p className="text-xs text-gray-400 pl-8 -mt-1">
+                                    Advanced features for improving video temporal consistency and smooth transitions.
+                                </p>
+                                
+                                {/* Stability Profile Selector */}
+                                <div className="pl-8">
+                                    <div className="p-4 rounded-lg border bg-gray-800/70 border-gray-600">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <label className="text-sm font-medium text-gray-200">
+                                                Stability Profile
+                                            </label>
+                                            <span className="text-xs text-gray-400">
+                                                {getProfileSummary(detectCurrentProfile(mergeFeatureFlags(formData.featureFlags)))}
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {STABILITY_PROFILE_LIST.map((profile) => {
+                                                const currentProfileId = detectCurrentProfile(mergeFeatureFlags(formData.featureFlags));
+                                                const isSelected = currentProfileId === profile.id;
+                                                const isDefault = profile.id === 'standard';
+                                                return (
+                                                    <button
+                                                        key={profile.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const newFlags = applyStabilityProfile(
+                                                                mergeFeatureFlags(formData.featureFlags),
+                                                                profile.id
+                                                            );
+                                                            handleInputChange('featureFlags', newFlags);
+                                                        }}
+                                                        className={`p-3 rounded-lg border text-center transition-all ${
+                                                            isSelected
+                                                                ? 'bg-cyan-900/40 border-cyan-500 text-cyan-300'
+                                                                : 'bg-gray-700/50 border-gray-600 text-gray-300 hover:border-gray-500 hover:bg-gray-700'
+                                                        }`}
+                                                    >
+                                                        <div className="font-medium text-sm">
+                                                            {profile.label}
+                                                            {isDefault && <span className="ml-1 text-amber-400">★</span>}
+                                                        </div>
+                                                        <div className="text-xs mt-1 opacity-70">
+                                                            {profile.performance.vramUsage.toUpperCase()} VRAM
+                                                        </div>
+                                                    </button>
+                                                );
+                                            })}
+                                            {/* Custom indicator */}
+                                            <button
+                                                type="button"
+                                                disabled
+                                                className={`p-3 rounded-lg border text-center transition-all ${
+                                                    detectCurrentProfile(mergeFeatureFlags(formData.featureFlags)) === 'custom'
+                                                        ? 'bg-amber-900/30 border-amber-600 text-amber-300'
+                                                        : 'bg-gray-800/30 border-gray-700 text-gray-500'
+                                                }`}
+                                            >
+                                                <div className="font-medium text-sm">Custom</div>
+                                                <div className="text-xs mt-1 opacity-70">
+                                                    Modified
+                                                </div>
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-gray-400 mt-3">
+                                            {STABILITY_PROFILES[detectCurrentProfile(mergeFeatureFlags(formData.featureFlags))]?.description || 'Select a profile to apply preset temporal coherence settings.'}
+                                        </p>
+                                        {/* VRAM usage hint - Phase 9 */}
+                                        <p className="text-xs text-amber-400/80 mt-2 flex items-center gap-1">
+                                            <span>⚠</span>
+                                            Standard/Cinematic profiles may increase VRAM usage; use Fast profile if you experience memory issues.
+                                        </p>
+                                        
+                                        {/* Reset to Production Default - Phase 9 */}
+                                        {detectCurrentProfile(mergeFeatureFlags(formData.featureFlags)) !== 'standard' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    // Apply standard profile (production default)
+                                                    const newFlags = applyStabilityProfile(
+                                                        mergeFeatureFlags(formData.featureFlags),
+                                                        'standard'
+                                                    );
+                                                    handleInputChange('featureFlags', newFlags);
+                                                    // Also reset workflow profiles to production default
+                                                    handleInputChange('videoWorkflowProfile', 'wan-fun-inpaint');
+                                                    handleInputChange('sceneBookendWorkflowProfile', 'wan-fun-inpaint');
+                                                }}
+                                                className="mt-3 w-full px-3 py-2 text-xs font-medium rounded-lg transition-all bg-amber-800/30 border border-amber-600/50 text-amber-300 hover:bg-amber-800/50 hover:border-amber-500 flex items-center justify-center gap-2"
+                                            >
+                                                <span>★</span>
+                                                Reset to Production Default
+                                                <span className="text-amber-400/70">(wan-fun-inpaint + Standard)</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                {/* Video Deflicker */}
+                                <div className="pl-8 space-y-3">
+                                    <div className={`p-4 rounded-lg border transition-colors ${
+                                        mergeFeatureFlags(formData.featureFlags).videoDeflicker
+                                            ? 'bg-cyan-900/20 border-cyan-700/50'
+                                            : 'bg-gray-800/50 border-gray-700'
+                                    }`}>
+                                        <label className="flex items-start gap-3 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={mergeFeatureFlags(formData.featureFlags).videoDeflicker}
+                                                onChange={(e) => {
+                                                    const newFlags = {
+                                                        ...mergeFeatureFlags(formData.featureFlags),
+                                                        videoDeflicker: e.target.checked
+                                                    };
+                                                    handleInputChange('featureFlags', newFlags);
+                                                }}
+                                                className="mt-1 w-4 h-4 bg-gray-700 border-gray-600 rounded focus:ring-cyan-400 text-cyan-500"
+                                            />
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="font-medium text-gray-200">Video Deflicker</span>
+                                                    <span className="px-2 py-0.5 text-xs rounded bg-purple-900/50 text-purple-300 border border-purple-700">
+                                                        EXPERIMENTAL
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-gray-400">
+                                                    Apply temporal deflicker post-processing to reduce flicker and improve video smoothness.
+                                                </p>
+                                            </div>
+                                        </label>
+                                        
+                                        {/* Deflicker parameters - show when enabled */}
+                                        {mergeFeatureFlags(formData.featureFlags).videoDeflicker && (
+                                            <div className="mt-4 pl-7 space-y-4 border-l-2 border-cyan-700/30">
+                                                <div>
+                                                    <label className="block text-xs text-gray-300 mb-1">
+                                                        Blend Strength: {(mergeFeatureFlags(formData.featureFlags).deflickerStrength ?? 0.35).toFixed(2)}
+                                                    </label>
+                                                    <input
+                                                        type="range"
+                                                        min="0"
+                                                        max="1"
+                                                        step="0.05"
+                                                        value={mergeFeatureFlags(formData.featureFlags).deflickerStrength ?? 0.35}
+                                                        onChange={(e) => {
+                                                            const newFlags = {
+                                                                ...mergeFeatureFlags(formData.featureFlags),
+                                                                deflickerStrength: parseFloat(e.target.value)
+                                                            };
+                                                            handleInputChange('featureFlags', newFlags);
+                                                        }}
+                                                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Higher = smoother but may reduce sharpness</p>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-300 mb-1">
+                                                        Window Size: {mergeFeatureFlags(formData.featureFlags).deflickerWindowSize ?? 3} frames
+                                                    </label>
+                                                    <input
+                                                        type="range"
+                                                        min="2"
+                                                        max="7"
+                                                        step="1"
+                                                        value={mergeFeatureFlags(formData.featureFlags).deflickerWindowSize ?? 3}
+                                                        onChange={(e) => {
+                                                            const newFlags = {
+                                                                ...mergeFeatureFlags(formData.featureFlags),
+                                                                deflickerWindowSize: parseInt(e.target.value)
+                                                            };
+                                                            handleInputChange('featureFlags', newFlags);
+                                                        }}
+                                                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                                    />
+                                                    <p className="text-xs text-gray-500 mt-1">Larger = smoother but higher latency</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* IP-Adapter Reference Conditioning */}
+                                    <div className={`p-4 rounded-lg border transition-colors ${
+                                        mergeFeatureFlags(formData.featureFlags).ipAdapterReferenceConditioning
+                                            ? 'bg-cyan-900/20 border-cyan-700/50'
+                                            : 'bg-gray-800/50 border-gray-700'
+                                    }`}>
+                                        <label className="flex items-start gap-3 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={mergeFeatureFlags(formData.featureFlags).ipAdapterReferenceConditioning}
+                                                onChange={(e) => {
+                                                    const newFlags = {
+                                                        ...mergeFeatureFlags(formData.featureFlags),
+                                                        ipAdapterReferenceConditioning: e.target.checked
+                                                    };
+                                                    handleInputChange('featureFlags', newFlags);
+                                                }}
+                                                className="mt-1 w-4 h-4 bg-gray-700 border-gray-600 rounded focus:ring-cyan-400 text-cyan-500"
+                                            />
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="font-medium text-gray-200">IP-Adapter Reference Conditioning</span>
+                                                    <span className="px-2 py-0.5 text-xs rounded bg-purple-900/50 text-purple-300 border border-purple-700">
+                                                        EXPERIMENTAL
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-gray-400">
+                                                    Use reference images from Visual Bible to guide video generation for style/identity stability.
+                                                </p>
+                                                {!mergeFeatureFlags(formData.featureFlags).characterConsistency && (
+                                                    <p className="text-xs text-amber-400 mt-1">
+                                                        ⚠️ Requires: Character Consistency
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </label>
+                                        
+                                        {/* IP-Adapter weight - show when enabled */}
+                                        {mergeFeatureFlags(formData.featureFlags).ipAdapterReferenceConditioning && (
+                                            <div className="mt-4 pl-7 border-l-2 border-cyan-700/30">
+                                                <label className="block text-xs text-gray-300 mb-1">
+                                                    Reference Weight: {(mergeFeatureFlags(formData.featureFlags).ipAdapterWeight ?? 0.4).toFixed(2)}
+                                                </label>
+                                                <input
+                                                    type="range"
+                                                    min="0"
+                                                    max="1"
+                                                    step="0.05"
+                                                    value={mergeFeatureFlags(formData.featureFlags).ipAdapterWeight ?? 0.4}
+                                                    onChange={(e) => {
+                                                        const newFlags = {
+                                                            ...mergeFeatureFlags(formData.featureFlags),
+                                                            ipAdapterWeight: parseFloat(e.target.value)
+                                                        };
+                                                        handleInputChange('featureFlags', newFlags);
+                                                    }}
+                                                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                                />
+                                                <p className="text-xs text-gray-500 mt-1">Higher = more adherence to reference (may reduce prompt responsiveness)</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Prompt Scheduling */}
+                                    <div className={`p-4 rounded-lg border transition-colors ${
+                                        mergeFeatureFlags(formData.featureFlags).promptScheduling
+                                            ? 'bg-cyan-900/20 border-cyan-700/50'
+                                            : 'bg-gray-800/50 border-gray-700'
+                                    }`}>
+                                        <label className="flex items-start gap-3 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={mergeFeatureFlags(formData.featureFlags).promptScheduling}
+                                                onChange={(e) => {
+                                                    const newFlags = {
+                                                        ...mergeFeatureFlags(formData.featureFlags),
+                                                        promptScheduling: e.target.checked
+                                                    };
+                                                    handleInputChange('featureFlags', newFlags);
+                                                }}
+                                                className="mt-1 w-4 h-4 bg-gray-700 border-gray-600 rounded focus:ring-cyan-400 text-cyan-500"
+                                            />
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="font-medium text-gray-200">Prompt Scheduling</span>
+                                                    <span className="px-2 py-0.5 text-xs rounded bg-purple-900/50 text-purple-300 border border-purple-700">
+                                                        EXPERIMENTAL
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-gray-400">
+                                                    Enable gradual prompt blending for smooth scene transitions over multiple frames.
+                                                </p>
+                                            </div>
+                                        </label>
+                                        
+                                        {/* Transition frames - show when enabled */}
+                                        {mergeFeatureFlags(formData.featureFlags).promptScheduling && (
+                                            <div className="mt-4 pl-7 border-l-2 border-cyan-700/30">
+                                                <label className="block text-xs text-gray-300 mb-1">
+                                                    Transition Duration: {mergeFeatureFlags(formData.featureFlags).promptTransitionFrames ?? 8} frames
+                                                </label>
+                                                <input
+                                                    type="range"
+                                                    min="4"
+                                                    max="24"
+                                                    step="2"
+                                                    value={mergeFeatureFlags(formData.featureFlags).promptTransitionFrames ?? 8}
+                                                    onChange={(e) => {
+                                                        const newFlags = {
+                                                            ...mergeFeatureFlags(formData.featureFlags),
+                                                            promptTransitionFrames: parseInt(e.target.value)
+                                                        };
+                                                        handleInputChange('featureFlags', newFlags);
+                                                    }}
+                                                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                                />
+                                                <p className="text-xs text-gray-500 mt-1">Number of frames over which to blend prompts during transitions</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 

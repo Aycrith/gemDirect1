@@ -5,7 +5,7 @@
     "method": "multi-run VLM aggregation",
     "runs": 3,
     "lastCalibrated": "2025-12-04T22:30:00Z",
-    "notes": "Thresholds based on 3-run aggregated medians. WARN is triggered when a score is within 5 points of the FAIL threshold (fixed margin, not variance-aware). Variance data is recorded for calibration decisions but not used dynamically at runtime.",
+    "notes": "Thresholds based on 3-run aggregated medians. WARN margin is variance-aware: max(5, 2*stdDev). Single-run mode can score 5-10 points below median, so minOverall thresholds are set 10+ points below median for reliable gating.",
     "aggregateStats": {
       "avgOverall": 93.8,
       "avgFocusStability": 93.1,
@@ -15,16 +15,16 @@
     }
   },
   "thresholdStrategy": {
-    "description": "Failure thresholds are hard gates; samples below these FAIL. Warning thresholds use a fixed 5-point margin above/below the FAIL threshold. For artifacts, lower is better, so maxArtifactSeverity is the FAIL threshold.",
-    "bandStrategy": "fixed",
+    "description": "Failure thresholds are hard gates; samples below these FAIL. Warning thresholds use variance-aware bands: warnMargin = max(5, 2*stdDev). For artifacts, lower is better, so maxArtifactSeverity is the FAIL threshold.",
+    "bandStrategy": "variance-aware",
     "failureMode": {
-      "overall": "FAIL if below minOverall; WARN if within 5 points of minOverall",
-      "focusStability": "FAIL if below minFocusStability; WARN if within 5 points of minFocusStability",
-      "artifactSeverity": "FAIL if above maxArtifactSeverity; WARN if within 5 points of maxArtifactSeverity",
-      "objectConsistency": "FAIL if below minObjectConsistency; WARN if within 5 points of minObjectConsistency"
+      "overall": "FAIL if below minOverall",
+      "focusStability": "FAIL if below minFocusStability",
+      "artifactSeverity": "FAIL if above maxArtifactSeverity",
+      "objectConsistency": "FAIL if below minObjectConsistency"
     },
     "warnMargin": 5,
-    "notes": "Variance data in perSampleOverrides is informational for calibration decisions, not used dynamically at runtime."
+    "varianceAwareMargin": "max(5, 2*stdDev)"
   },
   "globalDefaults": {
     "minOverall": 80,

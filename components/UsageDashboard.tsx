@@ -7,6 +7,139 @@ import { ApiCallLog } from '../types';
 import BarChartIcon from './icons/BarChartIcon';
 import TrashIcon from './icons/TrashIcon';
 import BayesianAnalyticsPanel from './BayesianAnalyticsPanel';
+import BookendVisionQAPanel from './BookendVisionQAPanel';
+import ProductionQualityPreviewPanel from './ProductionQualityPreviewPanel';
+
+/**
+ * QualityStatusWidget - Compact quality status indicator in header
+ * 
+ * Shows a quick summary of Vision QA results: ✅ N PASS / ⚠ N WARN / ❌ N FAIL
+ * Click to scroll to the Vision QA panel for details.
+ */
+const QualityStatusWidget: React.FC<{ onScrollToVisionQA?: () => void }> = ({ onScrollToVisionQA }) => {
+    const [status, setStatus] = useState<{ pass: number; warn: number; fail: number; loading: boolean }>({
+        pass: 0, warn: 0, fail: 0, loading: true
+    });
+
+    useEffect(() => {
+        // Load Vision QA results from public file
+        const loadResults = async () => {
+            try {
+                const [resultsRes, thresholdsRes] = await Promise.all([
+                    fetch('/vision-qa-latest.json'),
+                    fetch('/vision-thresholds.json'),
+                ]);
+                
+                if (!resultsRes.ok || !thresholdsRes.ok) {
+                    setStatus({ pass: 0, warn: 0, fail: 0, loading: false });
+                    return;
+                }
+                
+                const results = await resultsRes.json();
+                const thresholds = await thresholdsRes.json();
+                
+                // Calculate verdicts for each sample
+                let pass = 0, warn = 0, fail = 0;
+                const defaults = thresholds.globalDefaults || { minOverall: 60, minFocusStability: 70, maxArtifactSeverity: 30, minObjectConsistency: 60 };
+                const warnMargin = thresholds.thresholdStrategy?.warnMargin ?? 5;
+                
+                for (const [sampleId, sample] of Object.entries(results)) {
+                    if (typeof sample !== 'object' || sample === null) continue;
+                    const s = sample as { scores?: { overall?: number; focusStability?: number; artifactSeverity?: number; objectConsistency?: number }; aggregatedMetrics?: { overall?: { median?: number }; focusStability?: { median?: number }; artifactSeverity?: { median?: number }; objectConsistency?: { median?: number } }; frameAnalysis?: { hasBlackFrames?: boolean; hasHardFlicker?: boolean }; status?: string };
+                    if (s.status === 'error' || s.status === 'parse_error') { fail++; continue; }
+                    
+                    // Get metrics (prefer aggregated median)
+                    const useAggregated = s.aggregatedMetrics?.overall?.median !== undefined;
+                    const overall = useAggregated ? (s.aggregatedMetrics?.overall?.median ?? 0) : (s.scores?.overall ?? 0);
+                    const focusStability = useAggregated ? (s.aggregatedMetrics?.focusStability?.median ?? 0) : (s.scores?.focusStability ?? 0);
+                    const artifactSeverity = useAggregated ? (s.aggregatedMetrics?.artifactSeverity?.median ?? 100) : (s.scores?.artifactSeverity ?? 100);
+                    const objectConsistency = useAggregated ? (s.aggregatedMetrics?.objectConsistency?.median ?? 0) : (s.scores?.objectConsistency ?? 0);
+                    
+                    // Get per-sample overrides
+                    const override = thresholds.perSampleOverrides?.[sampleId] || {};
+                    const minOverall = override.minOverall ?? defaults.minOverall;
+                    const minFocusStability = override.minFocusStability ?? defaults.minFocusStability;
+                    const maxArtifactSeverity = override.maxArtifactSeverity ?? defaults.maxArtifactSeverity;
+                    const minObjectConsistency = override.minObjectConsistency ?? defaults.minObjectConsistency;
+                    
+                    // Check failures
+                    const hasBlackFrames = s.frameAnalysis?.hasBlackFrames ?? false;
+                    const hasHardFlicker = s.frameAnalysis?.hasHardFlicker ?? false;
+                    let hasFail = hasBlackFrames || hasHardFlicker ||
+                        overall < minOverall ||
+                        focusStability < minFocusStability ||
+                        artifactSeverity > maxArtifactSeverity ||
+                        objectConsistency < minObjectConsistency;
+                    
+                    // Check warnings (within margin)
+                    let hasWarn = !hasFail && (
+                        overall < minOverall + warnMargin ||
+                        focusStability < minFocusStability + warnMargin ||
+                        artifactSeverity > maxArtifactSeverity - warnMargin ||
+                        objectConsistency < minObjectConsistency + warnMargin
+                    );
+                    
+                    if (hasFail) fail++;
+                    else if (hasWarn) warn++;
+                    else pass++;
+                }
+                
+                setStatus({ pass, warn, fail, loading: false });
+            } catch {
+                setStatus({ pass: 0, warn: 0, fail: 0, loading: false });
+            }
+        };
+        
+        loadResults();
+    }, []);
+    
+    if (status.loading) {
+        return (
+            <div className="text-xs text-gray-500 animate-pulse">
+                Loading QA status...
+            </div>
+        );
+    }
+    
+    const total = status.pass + status.warn + status.fail;
+    if (total === 0) {
+        return (
+            <div className="text-xs text-gray-500">
+                No QA data
+            </div>
+        );
+    }
+    
+    const handleClick = () => {
+        if (onScrollToVisionQA) {
+            onScrollToVisionQA();
+        } else {
+            const panel = document.querySelector('[data-testid="vision-qa-panel"]');
+            if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+    
+    return (
+        <button 
+            onClick={handleClick}
+            className="flex items-center gap-3 text-xs bg-gray-900/50 px-3 py-1.5 rounded-lg ring-1 ring-gray-700/50 hover:ring-gray-600/70 transition-all"
+            title="Click to view Vision QA details"
+        >
+            <span className="text-gray-400 font-medium">QA Status:</span>
+            <span className="flex items-center gap-2">
+                {status.pass > 0 && (
+                    <span className="text-green-400 font-semibold">✅ {status.pass}</span>
+                )}
+                {status.warn > 0 && (
+                    <span className="text-amber-400 font-semibold">⚠ {status.warn}</span>
+                )}
+                {status.fail > 0 && (
+                    <span className="text-red-400 font-semibold">❌ {status.fail}</span>
+                )}
+            </span>
+        </button>
+    );
+};
 
 const RateLimitMeter: React.FC<{ model: keyof typeof RATE_LIMITS; logs: ApiCallLog[] }> = ({ model, logs }) => {
     const [rpm, setRpm] = useState(0);
@@ -166,10 +299,14 @@ const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
             onClick={(e) => e.stopPropagation()}
         >
             <header className="flex justify-between items-center p-4 border-b border-gray-700">
-                <h3 id="usage-dashboard-title" className="flex items-center text-lg font-bold text-amber-400">
-                    <BarChartIcon className="w-5 h-5 mr-2" />
-                    API Usage & Cost Analysis
-                </h3>
+                <div className="flex items-center gap-4">
+                    <h3 id="usage-dashboard-title" className="flex items-center text-lg font-bold text-amber-400">
+                        <BarChartIcon className="w-5 h-5 mr-2" />
+                        API Usage & Cost Analysis
+                    </h3>
+                    {/* Quality Status Widget - Phase 9 addition */}
+                    <QualityStatusWidget />
+                </div>
                 <button onClick={onClose} className="text-gray-400 hover:text-white">&times;</button>
             </header>
             
@@ -212,6 +349,19 @@ const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                         />
                     </div>
                 )}
+
+                {/* Production Quality Preview Panel - Phase 9 */}
+                <div className="mb-6">
+                    <ProductionQualityPreviewPanel 
+                        settings={localGenSettings}
+                        defaultCollapsed={true}
+                    />
+                </div>
+
+                {/* Bookend Vision QA Panel - Dev/QA Diagnostics */}
+                <div className="mb-6">
+                    <BookendVisionQAPanel defaultCollapsed={true} />
+                </div>
 
                 {/* API Call Log */}
                 <div>

@@ -94,7 +94,7 @@ const DEFAULT_CONFIG: VisionServiceConfig = {
                  import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL || 
                  'http://192.168.50.192:1234/v1/chat/completions',
     modelId: import.meta.env.VITE_VISION_LLM_MODEL || 'qwen/qwen3-vl-8b',
-    timeoutMs: Number(import.meta.env.VITE_VISION_LLM_TIMEOUT_MS || 120000), // 2 minutes
+    timeoutMs: Number(import.meta.env.VITE_VISION_LLM_TIMEOUT_MS || 15000), // 15 seconds - fail fast for optional preflight
     temperature: 0.3,
 };
 
@@ -254,8 +254,19 @@ async function callVisionLLM(
     } catch (error) {
         clearTimeout(timeoutId);
         
-        if (error instanceof Error && error.name === 'AbortError') {
-            throw new Error(`Vision LLM request timed out after ${config.timeoutMs}ms`);
+        // Detect common failure modes and provide clear error messages
+        if (error instanceof Error) {
+            if (error.name === 'AbortError') {
+                throw new Error(`Vision LLM request timed out after ${config.timeoutMs}ms`);
+            }
+            // CORS errors typically appear as TypeError: Failed to fetch
+            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                throw new Error(`Vision LLM unreachable (CORS or network error). URL: ${config.providerUrl}`);
+            }
+            // Network errors
+            if (error.message.includes('NetworkError') || error.message.includes('net::ERR')) {
+                throw new Error(`Vision LLM network error: ${error.message}`);
+            }
         }
         throw error;
     }
