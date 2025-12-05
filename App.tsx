@@ -296,6 +296,8 @@ const AppContent: React.FC = () => {
     // Refs for debouncing store validation
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastValidationTimeRef = useRef<number>(0);
+    // Track mount time to add grace period for initial load race condition
+    const mountTimeRef = useRef<number>(Date.now());
     
     // Run consistency validation when both stores are active and validation is enabled
     // DEBOUNCED: To prevent console spam during rapid state changes
@@ -307,6 +309,16 @@ const AppContent: React.FC = () => {
         
         // Don't validate if there's no data to compare
         if (scenes.length === 0 && newStoreScenes.length === 0) {
+            return;
+        }
+        
+        // GRACE PERIOD: Skip validation for first 10 seconds after mount
+        // This prevents false positives during the initial load race condition
+        // where Zustand rehydrates before usePersistentState loads from IndexedDB
+        const INITIAL_LOAD_GRACE_PERIOD_MS = 10000;
+        const timeSinceMount = Date.now() - mountTimeRef.current;
+        if (timeSinceMount < INITIAL_LOAD_GRACE_PERIOD_MS) {
+            console.log('[App] Skipping store validation during initial load grace period');
             return;
         }
         

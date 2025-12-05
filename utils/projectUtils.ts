@@ -76,7 +76,12 @@ export const loadProjectFromFile = (file: File): Promise<ProjectSaveState> => {
                 const projectData: any = JSON.parse(result);
                 
                 if (!projectData.version) {
-                    return reject(new Error('Invalid project file: missing version number.'));
+                    return reject(new Error(
+                        `Invalid project file: missing version number. ` +
+                        `The file "${file.name}" does not appear to be a valid gemDirect project. ` +
+                        `Expected a JSON file with a "version" field (current format: v1). ` +
+                        `Please check that you selected the correct file.`
+                    ));
                 }
 
                 // Rehydrate continuityData from base64

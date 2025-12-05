@@ -90,6 +90,25 @@ const formatDuration = (startedAt: number): string => {
   return `${minutes}m ${remainingSeconds}s`;
 };
 
+/**
+ * Hook to force re-render every second for live timer updates
+ */
+const useElapsedTime = (startedAt: number, isActive: boolean): string => {
+  const [, forceUpdate] = React.useState(0);
+  
+  React.useEffect(() => {
+    if (!isActive) return;
+    
+    const interval = setInterval(() => {
+      forceUpdate(prev => prev + 1);
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [isActive]);
+  
+  return formatDuration(startedAt);
+};
+
 const OperationDisplay: React.FC<{ operation: ProgressOperation; onClear: () => void }> = ({ 
   operation, 
   onClear 
@@ -98,6 +117,9 @@ const OperationDisplay: React.FC<{ operation: ProgressOperation; onClear: () => 
   const isDeterminate = operation.total !== undefined || operation.percentage !== undefined;
   const showProgressBar = isDeterminate && (operation.status === 'processing' || operation.status === 'queued');
   
+  // Live-updating timer for active operations
+  const isActive = operation.status === 'processing' || operation.status === 'queued';
+  const elapsedTime = useElapsedTime(operation.startedAt, isActive);
   // Calculate percentage
   let percentage = operation.percentage ?? 0;
   if (operation.total && operation.current !== undefined) {
@@ -130,7 +152,7 @@ const OperationDisplay: React.FC<{ operation: ProgressOperation; onClear: () => 
               {operation.task}
             </h4>
             <span className="text-xs text-gray-400 flex-shrink-0">
-              {formatDuration(operation.startedAt)}
+              {elapsedTime}
             </span>
           </div>
           

@@ -481,6 +481,8 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         const safetyTimer = setTimeout(() => {
             console.error('[handleGenerateStoryBible] Safety timeout triggered - clearing stuck loading state');
             setIsLoading(false);
+            // CRITICAL: Reset API status to clear the global progress indicator
+            updateApiStatus('error', 'Story Bible generation timed out');
             addToast('Story Bible generation timed out. Please try again or check your network connection.', 'error');
         }, safetyTimeoutMs);
         
@@ -493,6 +495,8 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         } catch (e) {
             clearTimeout(safetyTimer);
             console.error(e);
+            // CRITICAL: Reset API status to clear the global progress indicator
+            updateApiStatus('error', e instanceof Error ? e.message : 'Failed to generate Story Bible');
             addToast(e instanceof Error ? e.message : 'Failed to generate Story Bible.', 'error');
         } finally {
             clearTimeout(safetyTimer);

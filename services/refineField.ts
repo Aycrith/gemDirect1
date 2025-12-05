@@ -24,6 +24,8 @@ const clampToWordCap = (text: string, maxWords: number): string => {
  * These should be stripped before processing content.
  */
 const HEADER_PATTERNS = [
+  // Bracket-style instruction prefixes (e.g., [REVISED_IDEA_ONLY], [OUTPUT])
+  /^\[[\w_\-\s]+\]\s*/i,
   /^\*{1,2}refined\s*(plot\s*)?(outline|version|idea)?:?\*{0,2}\s*/i,
   /^\*{1,2}enhanced\s*(version|idea)?:?\*{0,2}\s*/i,
   /^\*{1,2}improved\s*(version|idea)?:?\*{0,2}\s*/i,

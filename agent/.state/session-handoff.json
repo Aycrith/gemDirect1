@@ -1,238 +1,101 @@
 {
-  "timestamp": "2025-12-04T20:50:00Z",
-  "agent": "BookendQA",
-  "sessionSummary": "MULTI-RUN VLM EVALUATION & AGGREGATION MISSION: COMPLETE. Phases 0-4 executed: Added -Runs parameter to analyze-bookend-vision.ps1 for multi-run VLM evaluation, updated regression gating to prefer aggregated median metrics, re-tightened thresholds based on 3-run aggregated medians. All tests pass (1926/1926). Vision regression now stable with 1 PASS / 7 WARN / 0 FAIL on tightened thresholds.",
-  "missionPhase": {
-    "current": "COMPLETE",
-    "phase0": "COMPLETE - Captured baseline VLM variance snapshot (5 PASS / 3 WARN)",
-    "phase1": "COMPLETE - Added multi-run VLM aggregation to analyze-bookend-vision.ps1",
-    "phase2": "COMPLETE - Updated vision regression gating to use aggregated metrics",
-    "phase3": "COMPLETE - Re-tightened thresholds to vision-thresholds.json v3.0.0",
-    "phase4": "COMPLETE - Full health check passed, handoff updated"
-  },
-  "multiRunAggregation": {
-    "scriptModified": "scripts/analyze-bookend-vision.ps1",
-    "newParameter": "-Runs N (default 1, max 10)",
-    "aggregationFunction": "Get-AggregatedMetrics computes mean/median/min/max/stdDev",
-    "outputFields": ["aggregatedMetrics", "runs", "rawAnalysisRuns"],
-    "observedVariance": {
-      "sample-001-geometric": { "stdDev": 7.1, "range": "80-97" },
-      "sample-002-character": { "stdDev": 2.8, "range": "94-100" },
-      "sample-004-motion": { "stdDev": 0.0, "range": "100-100" }
-    }
-  },
-  "aggregatedMedians": {
-    "sample-001-geometric": { "overall": 85, "focus": 85, "artifacts": 10, "objConsist": 95 },
-    "sample-002-character": { "overall": 100, "focus": 100, "artifacts": 0, "objConsist": 100 },
-    "sample-003-environment": { "overall": 93, "focus": 90, "artifacts": 0, "objConsist": 95 },
-    "sample-004-motion": { "overall": 100, "focus": 100, "artifacts": 0, "objConsist": 100 },
-    "sample-005-complex": { "overall": 88, "focus": 85, "artifacts": 10, "objConsist": 95 },
-    "sample-006-multichar": { "overall": 94, "focus": 95, "artifacts": 0, "objConsist": 98 },
-    "sample-007-occlusion": { "overall": 90, "focus": 90, "artifacts": 10, "objConsist": 95 },
-    "sample-008-lighting": { "overall": 90, "focus": 90, "artifacts": 10, "objConsist": 95 }
-  },
-  "thresholdChanges": {
-    "version": "3.0.0",
-    "methodology": "Thresholds set ~3-5 points below 3-run aggregated median",
-    "majorChanges": [
-      "sample-002-character: minOverall 90→95 (tightened)",
-      "sample-005-complex: minOverall 70→82, maxArtifactSeverity 65→15 (major tighten)",
-      "sample-006-multichar: minOverall 94→91 (relaxed for stability)"
-    ]
-  },
+  "timestamp": "2025-12-05T02:45:00.000Z",
+  "agent": "BugFixes",
+  "sessionSummary": "Bug Fix Session: Fixed 3 of 6 bugs from manual testing. BUG-001 (progress indicator persistence) via updateApiStatus calls, BUG-004 (LLM prefix leak) via bracket pattern in header strippers, BUG-005 (timer stuck at 0s) via useElapsedTime hook. All 1977 unit tests pass.",
   "filesModified": [
-    "scripts/analyze-bookend-vision.ps1 - Added -Runs parameter and Get-AggregatedMetrics function",
-    "scripts/test-bookend-vision-regression.ps1 - Updated to prefer aggregated median metrics",
-    "data/bookend-golden-samples/vision-thresholds.json - v3.0.0 with calibrated thresholds",
-    "AGENT_HANDOFF_CURRENT.md - Session documentation"
+    "utils/hooks.ts",
+    "components/GlobalProgressIndicator.tsx",
+    "services/refineField.ts",
+    "services/storyIdeaEnhancer.ts",
+    "MANUAL_TESTING_BUGS_20251205.md",
+    "agent/.state/session-handoff.json"
   ],
   "decisions": [
     {
-      "decision": "Use median (not mean) for aggregated metric gating",
-      "rationale": "Median is more robust to outliers from VLM variance",
-      "alternatives": ["Use mean", "Use minimum for conservative gating"]
+      "decision": "Fixed BUG-001 by adding updateApiStatus to safety timeout",
+      "rationale": "handleGenerateScenes had correct pattern - handleGenerateStoryBible was missing the call",
+      "alternatives": ["Persist progress state to IndexedDB", "Clear progress on page load"]
     },
     {
-      "decision": "Set thresholds 3-5 points below aggregated median",
-      "rationale": "Allows for natural VLM variance while catching regressions early (WARNs)",
-      "alternatives": ["Match threshold to median exactly", "Use 10-point margin"]
-    },
-    {
-      "decision": "Default -Runs to 1 for backward compatibility",
-      "rationale": "Fast single-run mode for quick checks, opt-in to multi-run for CI",
-      "alternatives": ["Default to 3 runs", "Require explicit -Runs parameter"]
+      "decision": "Fixed BUG-005 by adding interval-based timer hook",
+      "rationale": "React components only re-render on state changes - needed interval to force updates",
+      "alternatives": ["Use CSS animation for timer", "Use requestAnimationFrame"]
     }
   ],
   "currentState": {
-    "phase": "Multi-Run VLM Evaluation & Aggregation - COMPLETE",
-    "progress": "100%",
-    "status": "VLM variance mitigated. Multi-run aggregation available. Thresholds re-tightened based on stable metrics.",
-    "visionThresholdsVersion": "3.0.0",
-    "aggregationSupported": true,
-    "regressionStatus": "1 PASS / 7 WARN / 0 FAIL"
+    "phase": "implementing",
+    "progress": "60%",
+    "status": "Fixed 3 of 6 bugs (BUG-001, BUG-004, BUG-005). BUG-002 (store consistency), BUG-003 (timeout loop), BUG-006 (error messages) still pending."
   },
   "nextSteps": [
-    "1. Consider adding -Runs 3 as default for CI vision regression",
-    "2. Monitor VLM variance over time using stdDev metrics",
-    "3. Add automated threshold adjustment based on aggregated metrics trends",
-    "4. Document multi-run usage in BOOKEND_QA_DEVELOPER_CARD.md",
-    "5. Test aggregation with different VLM models (if available)"
+    "1. RETEST: Manual test Story Bible generation to verify fixes",
+    "2. FIX: BUG-002 - Resolve store consistency violations",
+    "3. FIX: BUG-003 - Story Bible validation timeout handling",
+    "4. FIX: BUG-006 - Improve invalid project file error messages",
+    "5. COMMIT: Stage and commit all fixes"
   ],
-  "blockers": [],
+  "blockers": [
+    {
+      "issue": "BUG-002: Store consistency violations - scene ID mismatches",
+      "suggestions": ["Complete Zustand migration", "Remove dual-store sync", "Fix sync timing"]
+    },
+    {
+      "issue": "BUG-003: Story Bible validation keeps failing with LM Studio",
+      "suggestions": ["Check validation schema", "Improve error messages", "Add validation bypass option"]
+    }
+  ],
   "openQuestions": [
-    "Should CI pipeline use multi-run by default?",
-    "Is 3 runs sufficient for stable metrics, or should 5 be used?",
-    "Should aggregatedMetrics be required for stricter thresholds?"
+    "Is Zustand migration complete enough to remove legacy store?",
+    "Should Story Bible validation be configurable for local LLMs?"
+  ],
+  "relatedIssues": [
+    "MANUAL_TESTING_BUGS_20251205.md"
   ],
   "testMetrics": {
     "typescript": "0 errors",
-    "unitTests": "1926 passed, 1 skipped",
-    "pixelRegression": "8/8 PASS",
-    "visionRegression": "1 PASS / 7 WARN / 0 FAIL",
-    "status": "VALIDATED - All tests pass, multi-run aggregation working"
+    "unitTests": "1977 passed, 1 skipped (101 test files)",
+    "build": "successful",
+    "verifiedAt": "2025-12-05T02:30:00.000Z"
+  },
+  "regressionMetrics": {
+    "run": "run-20251204-163603",
+    "summary": "8/8 PASS, 0 WARN, 0 FAIL",
+    "samples": {
+      "sample-001-geometric": { "avg": 49.55, "verdict": "PASS" },
+      "sample-002-character": { "avg": 51.45, "verdict": "PASS" },
+      "sample-003-environment": { "avg": 54.15, "verdict": "PASS" },
+      "sample-004-motion": { "avg": 50.0, "verdict": "PASS" },
+      "sample-005-complex": { "avg": 49.7, "verdict": "PASS" },
+      "sample-006-multichar": { "avg": 57.15, "verdict": "PASS" },
+      "sample-007-occlusion": { "avg": 51.5, "verdict": "PASS" },
+      "sample-008-lighting": { "avg": 53.75, "verdict": "PASS" }
+    },
+    "thresholds": { "fail": 25, "warn": 35 }
   },
   "scriptValidation": {
-    "bookend_similarity": { "status": "WORKING", "command": "npm run bookend:similarity" },
-    "bookend_e2e": { "status": "WORKING", "command": "npm run bookend:e2e" },
-    "bookend_regression": { "status": "WORKING", "command": "npm run bookend:regression" },
-    "bookend_sweep": { "status": "WORKING", "command": "npm run bookend:sweep -- -QuickMode" },
-    "bookend_vision": { "status": "WORKING", "command": "npm run bookend:vision", "multiRun": "pwsh -File scripts/analyze-bookend-vision.ps1 -Runs 3" },
-    "bookend_vision_regression": { "status": "WORKING", "command": "npm run bookend:vision-regression" },
-    "bookend_vision_last": { "status": "WORKING", "command": "npm run bookend:vision-last" },
-    "bookend_ci_core": { "status": "WORKING", "command": "npm run bookend:ci:core" },
-    "bookend_ci_vision": { "status": "WORKING", "command": "npm run bookend:ci:vision" }
+    "bookend_similarity": { "status": "working", "lastRun": "2025-12-04" },
+    "bookend_e2e": { "status": "working", "lastRun": "2025-12-04" },
+    "bookend_sweep": { "status": "working", "lastRun": "2025-12-03" },
+    "bookend_regression": { "status": "working", "lastRun": "2025-12-04T16:36:03Z", "result": "8/8 PASS" }
   },
-  "productionReadiness": {
-    "requirements": [
-      "✅ TypeScript compilation: 0 errors",
-      "✅ Unit tests: 1926 passed, 1 skipped",
-      "✅ Pixel regression: 8/8 PASS",
-      "✅ Vision regression: 1 PASS / 7 WARN / 0 FAIL",
-      "✅ Multi-run VLM aggregation: scripts/analyze-bookend-vision.ps1 -Runs N",
-      "✅ Aggregation-aware gating: scripts/test-bookend-vision-regression.ps1",
-      "✅ Calibrated thresholds: vision-thresholds.json v3.0.0",
-      "✅ VLM variance documented: stdDev metrics captured per sample"
-    ],
-    "status": "PRODUCTION READY - Multi-Run VLM Evaluation & Aggregation COMPLETE"
-  },
-  "previousMission": {
-    "name": "RUNTIME QA & COHERENCE INTEGRATION",
-    "status": "COMPLETE",
-    "phase0": "COMPLETE - Mapped runtime QA flow, identified coherence gap",
-    "phase1": "COMPLETE - Created services/visionThresholdConfig.ts with CoherenceThresholds interface",
-    "phase2": "COMPLETE - Integrated coherence checks into videoQualityGateService.ts",
-    "phase3": "COMPLETE - Added CoherenceMetrics component to VideoAnalysisCard.tsx",
-    "phase4": "COMPLETE - Created scripts/analyze-last-video.ps1 and npm run bookend:vision-last",
-    "phase5": "COMPLETE - Full health check passed, handoff updated"
-  }
-}
-  "runtimeCoherenceIntegration": {
-    "thresholdModule": "services/visionThresholdConfig.ts",
-    "qualityGateService": "services/videoQualityGateService.ts",
-    "uiComponent": "components/VideoAnalysisCard.tsx",
-    "cliTool": "scripts/analyze-last-video.ps1",
-    "npmScript": "npm run bookend:vision-last",
-    "runtimeThresholds": {
-      "minOverall": 80,
-      "minFocusStability": 85,
-      "maxArtifactSeverity": 40,
-      "minObjectConsistency": 85,
-      "disallowBlackFrames": true,
-      "disallowHardFlicker": true
+  "bugFixes": {
+    "BUG-001": {
+      "status": "FIXED",
+      "description": "Progress indicator persists across refresh/new project",
+      "fix": "Added updateApiStatus('error', ...) to handleGenerateStoryBible timeout and catch handlers",
+      "files": ["utils/hooks.ts"]
     },
-    "coherenceMetricMapping": {
-      "overall": "scores.overall (direct)",
-      "focusStability": "scores.motionQuality (proxy)",
-      "artifactSeverity": "issues[].category count (proxy)",
-      "objectConsistency": "(startFrameMatch + endFrameMatch) / 2 (proxy)",
-      "hasBlackFrames": "issues[].message pattern match",
-      "hasHardFlicker": "issues[].message pattern match"
+    "BUG-004": {
+      "status": "FIXED",
+      "description": "LLM instruction prefix [REVISED_IDEA_ONLY] leaked into UI",
+      "fix": "Added bracket-style pattern /^\\[[\\w_\\-\\s]+\\]\\s*/i to HEADER_PATTERNS in both services",
+      "files": ["services/refineField.ts", "services/storyIdeaEnhancer.ts"]
+    },
+    "BUG-005": {
+      "status": "FIXED",
+      "description": "Timer stuck at 0s - no live updates",
+      "fix": "Added useElapsedTime hook with 1-second interval for live timer rendering",
+      "files": ["components/GlobalProgressIndicator.tsx"]
     }
-  },
-  "filesModified": [
-    "services/visionThresholdConfig.ts - NEW: Shared coherence threshold module",
-    "services/videoQualityGateService.ts - Added coherence threshold integration",
-    "components/VideoAnalysisCard.tsx - Added CoherenceMetrics display component",
-    "components/TimelineEditor.tsx - Pass qualityGateResult to VideoAnalysisCard",
-    "scripts/analyze-last-video.ps1 - NEW: CLI for last video coherence analysis",
-    "package.json - Added bookend:vision-last npm script",
-    "AGENT_HANDOFF_CURRENT.md - Session documentation"
-  ],
-  "decisions": [
-    {
-      "decision": "Use globalDefaults for runtime thresholds instead of per-sample overrides",
-      "rationale": "Runtime doesn't know which sample type a video represents. globalDefaults provide sensible baseline.",
-      "alternatives": ["Allow per-scene threshold configuration", "Use average of all sample overrides"]
-    },
-    {
-      "decision": "Map VideoFeedbackResult metrics to coherence metrics via proxies",
-      "rationale": "VLM doesn't directly provide focusStability/artifactSeverity/objectConsistency. Proxies derived from available scores.",
-      "alternatives": ["Extend VLM prompt to include coherence metrics", "Skip coherence checks in runtime"]
-    },
-    {
-      "decision": "Add coherence metrics to UI only when bookendQAMode is active",
-      "rationale": "Avoid cluttering UI for normal users. Coherence is a QA/development concern.",
-      "alternatives": ["Always show coherence metrics", "Add separate QA view"]
-    }
-  ],
-  "currentState": {
-    "phase": "Runtime QA & Coherence Integration - COMPLETE",
-    "progress": "100%",
-    "status": "Runtime QA now enforces coherence thresholds when bookendQAMode enabled. CLI tool available for developer workflow.",
-    "bookendQAModeEnabled": true,
-    "coherenceIntegrated": true,
-    "uiCoherenceDisplay": true,
-    "cliToolAvailable": true
-  },
-  "nextSteps": [
-    "1. Test coherence integration in browser with bookendQAMode enabled",
-    "2. Run analyze-last-video.ps1 after video generation to validate thresholds",
-    "3. Consider extending VLM prompts to directly provide coherence metrics",
-    "4. Add coherence-specific tests to videoQualityGateService.test.ts",
-    "5. Document coherence metrics in Testing/Strategies/ for future reference"
-  ],
-  "blockers": [],
-  "openQuestions": [
-    "Should coherence metrics be shown in a separate panel vs inline with quality scores?",
-    "Is the proxy mapping for coherence metrics accurate enough for QA purposes?",
-    "Should analyze-last-video.ps1 support batch processing of multiple videos?"
-  ],
-  "testMetrics": {
-    "typescript": "0 errors",
-    "unitTests": "1926 passed, 1 skipped",
-    "videoQualityGateTests": "18 passed (all scenarios)",
-    "scriptsValidated": "8/8 npm scripts working (added bookend:vision-last)",
-    "status": "VALIDATED - All tests pass, coherence integration complete"
-  },
-  "scriptValidation": {
-    "bookend_similarity": { "status": "WORKING", "command": "npm run bookend:similarity" },
-    "bookend_e2e": { "status": "WORKING", "command": "npm run bookend:e2e" },
-    "bookend_regression": { "status": "WORKING", "command": "npm run bookend:regression" },
-    "bookend_sweep": { "status": "WORKING", "command": "npm run bookend:sweep -- -QuickMode" },
-    "bookend_vision": { "status": "WORKING", "command": "npm run bookend:vision" },
-    "bookend_vision_regression": { "status": "WORKING", "command": "npm run bookend:vision-regression" },
-    "bookend_vision_last": { 
-      "status": "WORKING", 
-      "command": "npm run bookend:vision-last",
-      "description": "Analyzes most recent video against runtime coherence thresholds",
-      "lastRun": "2025-12-04T19:05:00Z",
-      "lastResult": "PASS (sample-008-lighting: overall=95, focus=95, artifacts=5, objConsist=98)"
-    },
-    "bookend_ci_core": { "status": "WORKING", "command": "npm run bookend:ci:core" },
-    "bookend_ci_vision": { "status": "WORKING", "command": "npm run bookend:ci:vision" }
-  },
-  "productionReadiness": {
-    "requirements": [
-      "✅ TypeScript compilation: 0 errors",
-      "✅ Unit tests: 1926 passed, 1 skipped",
-      "✅ Coherence threshold module: services/visionThresholdConfig.ts",
-      "✅ Runtime quality gate: services/videoQualityGateService.ts integrated",
-      "✅ UI coherence display: components/VideoAnalysisCard.tsx updated",
-      "✅ CLI tool: scripts/analyze-last-video.ps1 created",
-      "✅ npm script: bookend:vision-last added",
-      "✅ bookendQAMode respects coherence thresholds",
-      "✅ Runtime thresholds aligned with CI globalDefaults"
-    ],
-    "status": "PRODUCTION READY - Runtime QA & Coherence Integration COMPLETE"
   }
 }

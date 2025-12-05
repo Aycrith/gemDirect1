@@ -163,6 +163,12 @@ export const DEFAULT_STRATEGY_ID = LOCAL_STRATEGY_ID;
  */
 const MAX_RETRY_ATTEMPTS = 2;
 
+/**
+ * Maximum time per generation attempt (45 seconds).
+ * This prevents the total generation time from exceeding a reasonable limit.
+ */
+const PER_ATTEMPT_TIMEOUT_MS = 45000;
+
 const notify = (onStateChange: ApiStateChangeCallback | undefined, status: Parameters<ApiStateChangeCallback>[0], message: string) => {
     onStateChange?.(status, message);
 };
@@ -228,8 +234,26 @@ const generateStoryBibleWithValidation = async (
         );
         
         try {
-            // Pass feedback from previous failed attempt
-            const bible = await generator(idea, genre, lastFeedback);
+            // Pass feedback from previous failed attempt, with per-attempt timeout
+            const generateWithTimeout = async (): Promise<StoryBible> => {
+                return new Promise((resolve, reject) => {
+                    const timer = setTimeout(() => {
+                        reject(new Error(`Generation attempt ${attempt + 1} timed out after ${PER_ATTEMPT_TIMEOUT_MS / 1000}s`));
+                    }, PER_ATTEMPT_TIMEOUT_MS);
+                    
+                    generator(idea, genre, lastFeedback)
+                        .then((result) => {
+                            clearTimeout(timer);
+                            resolve(result);
+                        })
+                        .catch((error) => {
+                            clearTimeout(timer);
+                            reject(error);
+                        });
+                });
+            };
+            
+            const bible = await generateWithTimeout();
             lastBible = bible;
             
             // If it's already V2, use it directly; otherwise convert using proper parser
