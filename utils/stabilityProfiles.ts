@@ -40,6 +40,10 @@ export interface StabilityProfile {
         timeMultiplier: number;
         /** Estimated VRAM usage category */
         vramUsage: 'low' | 'medium' | 'high';
+        /** Minimum VRAM requirement in GB */
+        vramMinGB: number;
+        /** Recommended VRAM in GB */
+        vramRecommendedGB: number;
     };
     /** Quality characteristics from Vision QA validation */
     quality: {
@@ -76,6 +80,8 @@ export const FAST_PROFILE: StabilityProfile = {
     performance: {
         timeMultiplier: 1.0,
         vramUsage: 'low',
+        vramMinGB: 6,
+        vramRecommendedGB: 8,
     },
     quality: {
         temporalConsistency: 'baseline',
@@ -110,6 +116,8 @@ export const STANDARD_PROFILE: StabilityProfile = {
     performance: {
         timeMultiplier: 1.1,
         vramUsage: 'medium',
+        vramMinGB: 8,
+        vramRecommendedGB: 12,
     },
     quality: {
         temporalConsistency: 'improved',
@@ -130,6 +138,7 @@ export const STANDARD_PROFILE: StabilityProfile = {
  * - Deflicker for frame smoothness
  * - IP-Adapter for identity/style stability
  * - Prompt scheduling for transition blending
+ * - Temporal regularization for additional smoothing (E2)
  */
 export const CINEMATIC_PROFILE: StabilityProfile = {
     id: 'cinematic',
@@ -143,10 +152,16 @@ export const CINEMATIC_PROFILE: StabilityProfile = {
         ipAdapterWeight: 0.5,
         promptScheduling: true,
         promptTransitionFrames: 12,
+        // Temporal regularization enabled for cinematic quality (E2)
+        temporalRegularizationEnabled: true,
+        temporalRegularizationStrength: 0.35,
+        temporalRegularizationWindowFrames: 3,
     },
     performance: {
         timeMultiplier: 1.4,
         vramUsage: 'high',
+        vramMinGB: 12,
+        vramRecommendedGB: 16,
     },
     quality: {
         temporalConsistency: 'best',
@@ -165,6 +180,8 @@ export const CUSTOM_PROFILE: StabilityProfile = {
     performance: {
         timeMultiplier: 1.0,
         vramUsage: 'medium',
+        vramMinGB: 8,
+        vramRecommendedGB: 12,
     },
     quality: {
         temporalConsistency: 'baseline',
@@ -202,6 +219,10 @@ export const TEMPORAL_COHERENCE_FLAGS: (keyof FeatureFlags)[] = [
     'ipAdapterWeight',
     'promptScheduling',
     'promptTransitionFrames',
+    // Temporal regularization (E2 - FFmpeg post-processing)
+    'temporalRegularizationEnabled',
+    'temporalRegularizationStrength',
+    'temporalRegularizationWindowFrames',
 ];
 
 /**

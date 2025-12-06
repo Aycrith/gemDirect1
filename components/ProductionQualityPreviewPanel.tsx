@@ -10,15 +10,25 @@
  * - Runs preview generation using real golden sample keyframes
  * - Displays generated video inline
  * - Links to Vision QA panel for deeper analysis
+ * - Config-driven pipeline configuration (C2 - Modular Pipeline Refactor)
  * 
  * Note: This is a diagnostic/preview tool that does not modify user project data.
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { LocalGenerationSettings, Scene, TimelineData, Shot } from '../types';
 import { applyStabilityProfile, type StabilityProfileId } from '../utils/stabilityProfiles';
 import { mergeFeatureFlags } from '../utils/featureFlags';
-import { generateVideoFromBookendsNative } from '../services/comfyUIService';
+import { generateVideoFromBookendsWithPreflight, getAvailablePresets } from '../services/comfyUIService';
+import type { PreflightResult } from '../services/resourcePreflight';
+import {
+    loadPipelineConfigById,
+    resolvePipelineRuntimeConfig,
+    mergePipelineIntoSettings,
+    getDefaultPipelineIdForPreset,
+} from '../services/pipelineConfigService';
+import type { ResolvedPipelineConfig } from '../types/pipelineConfig';
+import { listCameraTemplates, type CameraTemplateInfo } from '../services/cameraTemplateService';
 
 interface ProductionQualityPreviewPanelProps {
     settings: LocalGenerationSettings | null;
@@ -30,6 +40,15 @@ type PreviewStatus = 'idle' | 'loading-keyframes' | 'checking' | 'generating' | 
 
 /**
  * Pipeline preset configuration for the preview panel
+ * 
+ * Simplified preset structure (B2 - Resource Safety):
+ * - Fast: 6-8 GB VRAM, no temporal processing
+ * - Production: 8-12 GB VRAM, balanced quality/speed (default)
+ * - Cinematic: 12-16 GB VRAM, full temporal stack
+ * 
+ * Character-stable is merged into Cinematic as an opt-in via IP-Adapter toggle.
+ * 
+ * VRAM requirements are displayed to help users choose appropriate presets.
  */
 interface PipelinePreset {
     id: string;
@@ -39,57 +58,77 @@ interface PipelinePreset {
     stabilityProfile: StabilityProfileId;
     vramHint: string;
     vramLevel: 'low' | 'medium' | 'high';
+    vramMinGB: number;
+    vramRecommendedGB: number;
     isDefault: boolean;
     description: string;
+    /** Whether this preset is advanced (shown under expandable section) */
+    isAdvanced?: boolean;
 }
 
 /**
  * Available pipeline presets for preview generation
+ * 
+ * Pipeline presets from simplest to most feature-rich:
+ * - Fast: Quick iteration, low VRAM
+ * - Production: Balanced, recommended default
+ * - Cinematic: Maximum quality, high VRAM
+ * - Cinematic Gold: Hero configuration, best-of-breed features
  */
 const PIPELINE_PRESETS: PipelinePreset[] = [
     {
-        id: 'production',
-        label: '★ Production default (balanced)',
-        shortLabel: 'Production',
-        workflowProfile: 'wan-fun-inpaint',
-        stabilityProfile: 'standard',
-        vramHint: 'Requires ~8GB VRAM (recommended)',
-        vramLevel: 'medium',
-        isDefault: true,
-        description: 'Deflicker ON, IP-Adapter OFF. Best balance of quality and speed.',
-    },
-    {
-        id: 'cinematic',
-        label: 'Cinematic (FETA, higher VRAM)',
-        shortLabel: 'Cinematic',
-        workflowProfile: 'wan-flf2v-feta',
-        stabilityProfile: 'cinematic',
-        vramHint: 'May require >10GB VRAM',
-        vramLevel: 'high',
-        isDefault: false,
-        description: 'Full temporal stack: deflicker, IP-Adapter, prompt scheduling.',
-    },
-    {
-        id: 'character',
-        label: 'Character-stable (IP-Adapter, higher VRAM)',
-        shortLabel: 'Character',
-        workflowProfile: 'wan-ipadapter',
-        stabilityProfile: 'cinematic',
-        vramHint: 'May require >10GB VRAM',
-        vramLevel: 'high',
-        isDefault: false,
-        description: 'IP-Adapter for identity consistency. Requires IP-Adapter models installed.',
-    },
-    {
         id: 'fast',
-        label: 'Fast (no deflicker, low VRAM)',
+        label: 'Fast (Low VRAM)',
         shortLabel: 'Fast',
         workflowProfile: 'wan-flf2v',
         stabilityProfile: 'fast',
-        vramHint: 'Best for 6–8GB VRAM',
+        vramHint: '6-8 GB VRAM',
         vramLevel: 'low',
+        vramMinGB: 6,
+        vramRecommendedGB: 8,
         isDefault: false,
-        description: 'No temporal processing. Fastest generation, lowest VRAM.',
+        description: 'No temporal processing. Fastest generation for quick iteration.',
+    },
+    {
+        id: 'production',
+        label: '★ Production (Recommended)',
+        shortLabel: 'Production',
+        workflowProfile: 'wan-fun-inpaint',
+        stabilityProfile: 'standard',
+        vramHint: '8-12 GB VRAM',
+        vramLevel: 'medium',
+        vramMinGB: 8,
+        vramRecommendedGB: 12,
+        isDefault: true,
+        description: 'Deflicker ON for smooth output. Best balance of quality and speed.',
+    },
+    {
+        id: 'cinematic',
+        label: 'Cinematic (High Quality)',
+        shortLabel: 'Cinematic',
+        workflowProfile: 'wan-flf2v-feta',
+        stabilityProfile: 'cinematic',
+        vramHint: '12-16 GB VRAM',
+        vramLevel: 'high',
+        vramMinGB: 12,
+        vramRecommendedGB: 16,
+        isDefault: false,
+        description: 'Full temporal stack: deflicker, FETA enhancement. Enable IP-Adapter in settings for character consistency.',
+        isAdvanced: true,
+    },
+    {
+        id: 'cinematic-gold',
+        label: '🏆 Cinematic Gold (Hero)',
+        shortLabel: 'Gold',
+        workflowProfile: 'wan-flf2v-feta',
+        stabilityProfile: 'cinematic',
+        vramHint: '14-16 GB VRAM',
+        vramLevel: 'high',
+        vramMinGB: 14,
+        vramRecommendedGB: 16,
+        isDefault: false,
+        description: 'Hero configuration: best-of-breed features, strict QA (80+ threshold), optimized camera motion, 4s duration. For final production.',
+        isAdvanced: true,
     },
 ];
 
@@ -163,10 +202,46 @@ const ProductionQualityPreviewPanel: React.FC<ProductionQualityPreviewPanelProps
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [generationTime, setGenerationTime] = useState<number | null>(null);
     const [selectedPipelineId, setSelectedPipelineId] = useState<string>('production');
+    const [availableVRAM, setAvailableVRAM] = useState<{ freeMB: number; totalMB: number } | null>(null);
+    const [recommendedPreset, setRecommendedPreset] = useState<StabilityProfileId | null>(null);
+    const [presetDowngradeWarning, setPresetDowngradeWarning] = useState<string | null>(null);
+    const [cameraTemplates, setCameraTemplates] = useState<CameraTemplateInfo[]>([]);
+    const [selectedCameraTemplateId, setSelectedCameraTemplateId] = useState<string>('');
     const videoRef = useRef<HTMLVideoElement>(null);
 
     // Get the currently selected pipeline preset - always falls back to production default
     const selectedPipeline: PipelinePreset = PIPELINE_PRESETS.find(p => p.id === selectedPipelineId) ?? PRODUCTION_DEFAULT_PRESET;
+    
+    // Check VRAM availability on mount and settings change
+    useEffect(() => {
+        if (!settings) return;
+        
+        const checkVRAM = async () => {
+            try {
+                const result = await getAvailablePresets(settings);
+                setAvailableVRAM(result.vramStatus);
+                setRecommendedPreset(result.recommended);
+            } catch {
+                // Ignore errors - just means we can't show VRAM info
+            }
+        };
+        
+        checkVRAM();
+    }, [settings]);
+
+    // Load camera templates on mount
+    useEffect(() => {
+        const loadTemplates = async () => {
+            try {
+                const templates = await listCameraTemplates();
+                setCameraTemplates(templates);
+            } catch (err) {
+                console.warn('[ProductionQualityPreview] Failed to load camera templates:', err);
+            }
+        };
+        
+        loadTemplates();
+    }, []);
     
     // Check if ComfyUI is available
     const checkComfyUIStatus = useCallback(async (): Promise<boolean> => {
@@ -224,35 +299,65 @@ const ProductionQualityPreviewPanel: React.FC<ProductionQualityPreviewPanelProps
                 return;
             }
 
-            // Step 3: Check workflow profile exists for selected pipeline
-            const workflowProfile = settings.workflowProfiles?.[pipeline.workflowProfile];
-            if (!workflowProfile) {
-                setErrorMessage(
-                    `Workflow profile "${pipeline.workflowProfile}" not found. ` +
-                    'Import workflow profiles from Settings → ComfyUI Settings → Import from File.'
-                );
-                setStatus('error');
-                return;
+            // Step 3: Try config-driven approach first, with fallback to hard-coded
+            let pipelineSettings: LocalGenerationSettings;
+            let resolvedConfig: ResolvedPipelineConfig | null = null;
+            
+            // Attempt to load pipeline config for the selected preset
+            const configId = getDefaultPipelineIdForPreset(pipeline.id);
+            const loadResult = await loadPipelineConfigById(configId);
+            
+            if (loadResult.success && loadResult.config) {
+                // Config-driven path: resolve and use config
+                try {
+                    resolvedConfig = resolvePipelineRuntimeConfig(loadResult.config, settings);
+                    pipelineSettings = mergePipelineIntoSettings(settings, resolvedConfig);
+                    console.debug(`[ProductionQualityPreview] Using config-driven pipeline: ${configId}`);
+                } catch (configError) {
+                    // Config resolution failed - fall through to legacy path
+                    console.warn(
+                        `[ProductionQualityPreview] Config resolution failed for ${configId}, using legacy path:`,
+                        configError instanceof Error ? configError.message : configError
+                    );
+                    resolvedConfig = null;
+                }
+            } else if (loadResult.warnings?.length) {
+                console.warn(`[ProductionQualityPreview] Config load warnings for ${configId}:`, loadResult.warnings);
+            }
+            
+            // Fallback: use legacy hard-coded pipeline configuration
+            if (!resolvedConfig) {
+                // Check workflow profile exists for selected pipeline (legacy check)
+                const workflowProfile = settings.workflowProfiles?.[pipeline.workflowProfile];
+                if (!workflowProfile) {
+                    setErrorMessage(
+                        `Workflow profile "${pipeline.workflowProfile}" not found. ` +
+                        'Import workflow profiles from Settings → ComfyUI Settings → Import from File.'
+                    );
+                    setStatus('error');
+                    return;
+                }
+
+                // Create settings with selected pipeline configuration enforced (legacy path)
+                // mergeFeatureFlags returns complete FeatureFlags, applyStabilityProfile updates temporal settings
+                const baseFlags = mergeFeatureFlags(settings.featureFlags);
+                const pipelineFlags = {
+                    ...baseFlags,
+                    ...applyStabilityProfile(baseFlags, pipeline.stabilityProfile),
+                };
+                
+                pipelineSettings = {
+                    ...settings,
+                    videoWorkflowProfile: pipeline.workflowProfile,
+                    sceneBookendWorkflowProfile: pipeline.workflowProfile,
+                    featureFlags: pipelineFlags,
+                };
+                console.debug(`[ProductionQualityPreview] Using legacy hard-coded pipeline: ${pipeline.id}`);
             }
 
             // Step 4: Generate with selected pipeline configuration
             setStatus('generating');
             setStatusMessage(`Generating preview video with ${pipeline.shortLabel} pipeline...`);
-
-            // Create settings with selected pipeline configuration enforced
-            // mergeFeatureFlags returns complete FeatureFlags, applyStabilityProfile updates temporal settings
-            const baseFlags = mergeFeatureFlags(settings.featureFlags);
-            const pipelineFlags = {
-                ...baseFlags,
-                ...applyStabilityProfile(baseFlags, pipeline.stabilityProfile),
-            };
-            
-            const pipelineSettings: LocalGenerationSettings = {
-                ...settings,
-                videoWorkflowProfile: pipeline.workflowProfile,
-                sceneBookendWorkflowProfile: pipeline.workflowProfile,
-                featureFlags: pipelineFlags,
-            };
 
             // Create the preview scene and bookends
             const previewScene = createPreviewScene();
@@ -261,22 +366,43 @@ const ProductionQualityPreviewPanel: React.FC<ProductionQualityPreviewPanelProps
 
             // No-op logger and state handler for preview
             const noopLogger = () => {};
-            const stateHandler = (state: { progress?: number; message?: string }) => {
-                if (state.progress !== undefined) {
+            const stateHandler = (state: { progress?: number; message?: string; phase?: string }) => {
+                if (state.phase === 'preflight') {
+                    setStatusMessage(`Preflight: ${state.message || 'checking...'}`);
+                } else if (state.progress !== undefined) {
                     setStatusMessage(`Generating: ${state.progress}%`);
                 }
             };
 
-            // Generate video using selected pipeline
-            const videoDataUrl = await generateVideoFromBookendsNative(
-                pipelineSettings,
+            // Clear previous downgrade warning
+            setPresetDowngradeWarning(null);
+
+            // Determine workflow profile ID from config or fallback
+            const workflowProfileId = resolvedConfig?.workflowProfileId ?? pipeline.workflowProfile;
+            const stabilityProfileForPreflight = resolvedConfig?.stabilityProfileId ?? pipeline.stabilityProfile;
+
+            // Generate video using preflight-aware pipeline
+            const videoDataUrl = await generateVideoFromBookendsWithPreflight(
+                pipelineSettings!,
                 previewScene,
                 previewScene.timeline,
                 bookends,
                 directorsVision,
                 noopLogger,
                 stateHandler,
-                pipeline.workflowProfile
+                workflowProfileId,
+                {
+                    requestedPreset: stabilityProfileForPreflight,
+                    allowDowngrade: true,
+                    onPresetDowngrade: (from, to, reason) => {
+                        setPresetDowngradeWarning(`Preset downgraded from ${from} to ${to}: ${reason}`);
+                    },
+                    onPreflightComplete: (result: PreflightResult) => {
+                        if (result.vramStatus) {
+                            setAvailableVRAM({ freeMB: result.vramStatus.freeMB, totalMB: result.vramStatus.totalMB });
+                        }
+                    },
+                }
             );
 
             // Success!
@@ -389,6 +515,52 @@ const ProductionQualityPreviewPanel: React.FC<ProductionQualityPreviewPanelProps
                                 <div className="text-gray-200 font-mono capitalize">{selectedPipeline.stabilityProfile}</div>
                             </div>
                         </div>
+                        
+                        {/* Camera Motion Template Selector (H2) */}
+                        {(selectedPipeline.id === 'cinematic' || selectedPipeline.id === 'production') && cameraTemplates.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-gray-700">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-xs text-gray-400">📷 Camera Motion:</span>
+                                    <select
+                                        value={selectedCameraTemplateId}
+                                        onChange={(e) => setSelectedCameraTemplateId(e.target.value)}
+                                        className="flex-1 px-2 py-1 text-xs bg-gray-700/50 border border-gray-600 rounded text-gray-200 focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+                                    >
+                                        <option value="">From pipeline config (default)</option>
+                                        {cameraTemplates.map((template) => (
+                                            <option key={template.id} value={template.id}>
+                                                {template.name} ({template.motionType || 'custom'})
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {selectedCameraTemplateId && cameraTemplates.find(t => t.id === selectedCameraTemplateId) && (
+                                    <p className="text-[10px] text-gray-500 ml-16">
+                                        {cameraTemplates.find(t => t.id === selectedCameraTemplateId)?.description}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                        
+                        {/* Live VRAM Status */}
+                        {availableVRAM && (
+                            <div className="mt-3 pt-3 border-t border-gray-700">
+                                <div className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-400">GPU VRAM:</span>
+                                    <span className={`font-mono ${
+                                        availableVRAM.freeMB > 12000 ? 'text-green-400' :
+                                        availableVRAM.freeMB > 8000 ? 'text-amber-400' : 'text-red-400'
+                                    }`}>
+                                        {(availableVRAM.freeMB / 1024).toFixed(1)}GB free / {(availableVRAM.totalMB / 1024).toFixed(1)}GB total
+                                    </span>
+                                </div>
+                                {recommendedPreset && recommendedPreset !== selectedPipeline.stabilityProfile && (
+                                    <p className="text-[10px] text-amber-400 mt-1">
+                                        ⚠ Based on VRAM, recommended preset is: <strong className="capitalize">{recommendedPreset}</strong>
+                                    </p>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* QA Baseline Info - only shows for Production default */}
@@ -480,6 +652,13 @@ const ProductionQualityPreviewPanel: React.FC<ProductionQualityPreviewPanelProps
                             {selectedPipeline.vramLevel === 'high' && ' Consider using Production default if you experience memory issues.'}
                             {selectedPipeline.vramLevel === 'low' && ' Fast profile is ideal for limited VRAM.'}
                         </p>
+                        
+                        {/* Preset downgrade warning */}
+                        {presetDowngradeWarning && (
+                            <div className="bg-amber-900/30 text-amber-300 text-xs p-2 rounded-lg border border-amber-600/50">
+                                ⚠️ {presetDowngradeWarning}
+                            </div>
+                        )}
                     </div>
 
                     {/* Preview Video Player */}

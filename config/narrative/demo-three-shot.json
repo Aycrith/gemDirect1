@@ -1,0 +1,44 @@
+{
+  "$schema": "../../types/narrativeScript.ts",
+  "version": "1.0",
+  "id": "demo-three-shot",
+  "title": "Three-Shot Demo: Fast → Production → Cinematic",
+  "description": "Demonstrates multi-shot narrative pipeline with three shots using different pipeline configs. Each shot uses a different quality tier to show variation in temporal processing.",
+  
+  "shots": [
+    {
+      "id": "shot-001",
+      "name": "Opening - Fast Preview",
+      "description": "Quick establishing shot using fast pipeline (no temporal processing)",
+      "pipelineConfigId": "fast-preview",
+      "sampleId": "sample-001-geometric",
+      "durationSeconds": 3.0,
+      "temporalRegularization": "off"
+    },
+    {
+      "id": "shot-002", 
+      "name": "Main Action - Production QA",
+      "description": "Primary action shot using production pipeline with QA gates",
+      "pipelineConfigId": "production-qa-preview",
+      "sampleId": "sample-001-geometric",
+      "durationSeconds": 3.0,
+      "temporalRegularization": "auto"
+    },
+    {
+      "id": "shot-003",
+      "name": "Climax - Cinematic",
+      "description": "High-quality climactic shot with full temporal coherence",
+      "pipelineConfigId": "cinematic-preview",
+      "sampleId": "sample-001-geometric",
+      "durationSeconds": 3.0,
+      "temporalRegularization": "on"
+    }
+  ],
+  
+  "metadata": {
+    "createdAt": "2025-12-05T00:00:00Z",
+    "author": "N1 Narrative Pipeline Implementation",
+    "tags": ["demo", "three-shot", "multi-quality"],
+    "notes": "Sample narrative script for validating the N1 multi-shot pipeline. Uses sample-001-geometric across all shots for consistency."
+  }
+}

@@ -27,10 +27,10 @@ import {
 describe('featureFlags', () => {
     describe('DEFAULT_FEATURE_FLAGS', () => {
         it('should have expected default values for core flags', () => {
-            // Core workflow flags
+            // Core workflow flags - Task B2: Conservative defaults
             // Note: bookendKeyframes removed - use LocalGenerationSettings.keyframeMode instead
             expect(DEFAULT_FEATURE_FLAGS.videoUpscaling).toBe(false);
-            expect(DEFAULT_FEATURE_FLAGS.characterConsistency).toBe(true); // Enabled for identity preservation
+            expect(DEFAULT_FEATURE_FLAGS.characterConsistency).toBe(false); // Off by default for safe-defaults mode
             
             // Pipeline flags may be enabled for validation testing
             // Check that they have valid values (boolean or union type)
@@ -47,9 +47,9 @@ describe('featureFlags', () => {
             }
         });
 
-        it('should have 51 flags defined', () => {
+        it('should have 56 flags defined', () => {
             const flagCount = Object.keys(DEFAULT_FEATURE_FLAGS).length;
-            expect(flagCount).toBe(51);
+            expect(flagCount).toBe(56);
         });
 
         it('should have metadata for every flag', () => {
@@ -224,6 +224,13 @@ describe('featureFlags', () => {
                 fetaWeight: 2.0,
                 frameInterpolationEnabled: true,
                 interpolationTargetFps: 60,
+                // Temporal Regularization (E2)
+                temporalRegularizationEnabled: true,
+                temporalRegularizationStrength: 0.3,
+                temporalRegularizationWindowFrames: 3,
+                // Camera Path / Adaptive Temporal (E1.2/E2.2)
+                cameraPathDrivenGenerationEnabled: true,
+                temporalRegularizationAdaptiveMode: true,
             };
             
             const enabled = getEnabledFlags(allEnabled);
@@ -237,8 +244,10 @@ describe('featureFlags', () => {
             // promptTransitionFrames is a number not a boolean, so it doesn't count
             // fetaWeight is a number not a boolean, so it doesn't count
             // interpolationTargetFps is a number not a boolean, so it doesn't count
-            // 39 boolean flags are set to true (37 previous + 2 new boolean flags: enhanceAVideoEnabled, frameInterpolationEnabled)
-            expect(enabled.length).toBe(39);
+            // temporalRegularizationStrength is a number not a boolean, so it doesn't count
+            // temporalRegularizationWindowFrames is a number not a boolean, so it doesn't count
+            // 42 boolean flags are set to true (40 previous + 2 new: cameraPathDrivenGenerationEnabled, temporalRegularizationAdaptiveMode)
+            expect(enabled.length).toBe(42);
         });
     });
 

@@ -105,6 +105,13 @@ const createTestSettings = (useUnifiedSceneStore: boolean): LocalGenerationSetti
         fetaWeight: 2.0,
         frameInterpolationEnabled: false,
         interpolationTargetFps: 60,
+        // Temporal Regularization (E2)
+        temporalRegularizationEnabled: false,
+        temporalRegularizationStrength: 0.3,
+        temporalRegularizationWindowFrames: 3,
+        // Camera Path / Adaptive Temporal (E1.2/E2.2)
+        cameraPathDrivenGenerationEnabled: false,
+        temporalRegularizationAdaptiveMode: false,
     },
 });
 

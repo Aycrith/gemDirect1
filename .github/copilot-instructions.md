@@ -18,7 +18,7 @@ AI-powered cinematic story generator creating production video timelines. Integr
 2. Read `Documentation/PROJECT_STATUS_CONSOLIDATED.md` (15 minutes) - **Single source of truth**
 3. Read `START_HERE.md` (5 minutes) - Quick context
 4. Run `npm run check:health-helper` - Validates setup
-5. Run `npm test -- --run` - Validates current state (uses single-run mode)
+5. Run `npm test` - Validates current state (already includes single-run mode)
 
 ## 🛑 MANDATORY: Agent Tool Usage Rules
 
@@ -51,12 +51,12 @@ pwsh -File scripts/check-server-running.ps1 -Port 8188
 
 | Test Type | ❌ WRONG | ✅ CORRECT |
 |-----------|----------|------------|
-| Unit tests | `npm test` | `npm test -- --run --reporter=verbose` |
-| Unit tests | `vitest` | `npm test -- --run --reporter=verbose` |
-| Playwright | `npx playwright test` | `npx playwright test --reporter=list` |
+| Unit tests | `vitest` (raw) | `npm test` (already includes --run --reporter=verbose) |
+| Unit tests | `npm test -- --run` | `npm test` (--run is redundant, already in script) |
+| Playwright | `npx playwright test` (no reporter) | `npx playwright test --reporter=list` |
 | Playwright | `npm run check:playwright-*` | Use task: `Run Playwright Tests` |
 
-**Why?** Without `--run`, vitest enters watch mode and never terminates. Without reporters, you get no logging to verify completion.
+**Why?** Raw `vitest` enters watch mode. The `npm test` script already includes `--run --reporter=verbose`. For Playwright, always use a reporter for visibility.
 
 **Preferred method - use wrapper scripts:**
 ```powershell
@@ -168,8 +168,8 @@ npm run dev                    # Start React dev server (port 3000)
 #### Unit & Service Tests
 ```powershell
 # Unit tests (fast, no external deps)
-npm test -- --run                                    # All Vitest suites
-node ./node_modules/vitest/vitest.mjs run --pool=vmThreads services/comfyUIService.test.ts
+npm test                                             # All Vitest suites (--run included)
+npm test -- services/comfyUIService.test.ts          # Specific test file
 
 # Full E2E pipeline (story → keyframes → videos)
 pwsh -ExecutionPolicy Bypass -File scripts/run-comfyui-e2e.ps1 -FastIteration

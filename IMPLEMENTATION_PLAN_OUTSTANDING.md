@@ -194,10 +194,10 @@ Week 4+: LLM Transport Phase 2a (Phase 2.2a)
 
 ```powershell
 # Unit tests
-npm test -- --run
+npm test
 
 # Specific test file
-npm test -- --run services/__tests__/generationQueue
+npm test -- services/__tests__/generationQueue
 
 # E2E tests (requires dev server)
 npm run dev  # Terminal 1
@@ -207,7 +207,7 @@ npx playwright test tests/e2e/app-loading.spec.ts --project=chromium  # Terminal
 npx tsc --noEmit
 
 # Full validation
-npm test -- --run && npx playwright test --project=chromium
+npm test && npx playwright test --project=chromium
 ```
 
 ### Key Files

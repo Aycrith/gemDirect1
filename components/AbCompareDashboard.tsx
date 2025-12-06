@@ -10,7 +10,7 @@
  * @module components/AbCompareDashboard
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import type { 
     CompareTarget, 
     ComparePreset, 
@@ -569,6 +569,43 @@ const AbCompareDashboard: React.FC<AbCompareDashboardProps> = ({
     
     // Multi-scenario A/B modal state
     const [showMultiScenarioModal, setShowMultiScenarioModal] = useState(false);
+    const [latestAbReportPath, setLatestAbReportPath] = useState<string | null>(null);
+    const [latestReportState, setLatestReportState] = useState<'idle' | 'loading' | 'not-found'>('idle');
+    
+    // Locate the latest multi-scenario A/B report written by the CLI
+    useEffect(() => {
+        let cancelled = false;
+        const candidates = [
+            'reports/ab-experiments-latest.md',
+            'reports/ab-experiments-latest.json',
+        ];
+        
+        const findLatest = async (): Promise<void> => {
+            setLatestReportState('loading');
+            for (const candidate of candidates) {
+                try {
+                    const response = await fetch(candidate, { method: 'HEAD' });
+                    if (response.ok) {
+                        if (!cancelled) {
+                            setLatestAbReportPath(candidate);
+                            setLatestReportState('idle');
+                        }
+                        return;
+                    }
+                } catch {
+                    // Continue searching other candidates
+                }
+            }
+            if (!cancelled) {
+                setLatestReportState('not-found');
+            }
+        };
+        
+        void findLatest();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
     
     /**
      * Handle replay for a target
@@ -905,6 +942,18 @@ const AbCompareDashboard: React.FC<AbCompareDashboardProps> = ({
                                     <p className="text-xs text-gray-400 mb-2">
                                         Reports are saved to <code className="text-gray-300">reports/ab-experiments-*.md</code>
                                     </p>
+                                    {latestAbReportPath && (
+                                        <div className="flex items-center gap-2 text-xs text-gray-300 mb-2">
+                                            <span>Latest report:</span>
+                                            <FileLink path={latestAbReportPath} icon="??" label={latestAbReportPath.split(/[/\\]/).pop()} />
+                                        </div>
+                                    )}
+                                    {!latestAbReportPath && latestReportState === 'loading' && (
+                                        <p className="text-xs text-gray-500 mb-1">Looking for the most recent A/B report...</p>
+                                    )}
+                                    {!latestAbReportPath && latestReportState === 'not-found' && (
+                                        <p className="text-xs text-gray-500 mb-1">No recent A/B report detected yet.</p>
+                                    )}
                                     <a
                                         href="#"
                                         onClick={(e) => {

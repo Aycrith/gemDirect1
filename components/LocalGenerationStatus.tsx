@@ -25,6 +25,54 @@ const ProgressBar: React.FC<{ progress: number }> = ({ progress }) => (
     </div>
 );
 
+/**
+ * Preflight status badge - shows keyframe pair analysis result
+ */
+const PreflightBadge: React.FC<{ result?: LocalGenerationStatusType['preflightResult'] }> = ({ result }) => {
+    if (!result) return null;
+    
+    const { ran, passed, reason, scores } = result;
+    
+    // Determine badge appearance based on status
+    let icon: string;
+    let colorClass: string;
+    let label: string;
+    let tooltip: string;
+    
+    if (!ran) {
+        icon = '○';
+        colorClass = 'text-gray-400 bg-gray-800/50';
+        label = 'Preflight Skipped';
+        tooltip = reason || 'Keyframe analysis was not run';
+    } else if (passed) {
+        icon = '✓';
+        colorClass = 'text-green-400 bg-green-900/30';
+        label = 'Preflight Passed';
+        tooltip = scores 
+            ? `Continuity: ${scores.overallContinuity?.toFixed(0)}%, Character: ${scores.characterMatch?.toFixed(0)}%, Environment: ${scores.environmentMatch?.toFixed(0)}%`
+            : 'Keyframe pair analysis passed';
+    } else {
+        icon = '✗';
+        colorClass = 'text-red-400 bg-red-900/30';
+        label = 'Preflight Failed';
+        tooltip = reason || 'Keyframe pair analysis failed thresholds';
+    }
+    
+    return (
+        <div 
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${colorClass}`}
+            title={tooltip}
+            data-testid="preflight-status-badge"
+        >
+            <span>{icon}</span>
+            <span>{label}</span>
+            {scores?.overallContinuity !== undefined && (
+                <span className="text-gray-400">({scores.overallContinuity.toFixed(0)}%)</span>
+            )}
+        </div>
+    );
+};
+
 const LocalGenerationStatus: React.FC<Props> = ({ 
     status, 
     onClear,
@@ -60,6 +108,12 @@ const LocalGenerationStatus: React.FC<Props> = ({
                     <h3 className="flex items-center text-lg font-semibold text-gray-200">
                         <ServerIcon className={`w-5 h-5 mr-3 ${isLoading ? 'animate-pulse text-amber-400' : 'text-gray-400'}`} />
                         Local Generation Status
+                        {/* Preflight badge inline with title */}
+                        {status.preflightResult && (
+                            <span className="ml-3">
+                                <PreflightBadge result={status.preflightResult} />
+                            </span>
+                        )}
                     </h3>
                     <p className="text-sm text-amber-300 font-mono mt-1" data-testid="local-status-message">{status.message}</p>
                 </div>

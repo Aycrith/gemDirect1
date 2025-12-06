@@ -99,8 +99,8 @@ describe('ipAdapterService', () => {
         });
 
         it('checks feature flag when options not provided', () => {
-            // Default feature flag is now true (characterConsistency enabled for identity preservation)
-            expect(isIPAdapterEnabled()).toBe(true);
+            // Task B2: Default feature flag is now false (characterConsistency disabled for safe-defaults)
+            expect(isIPAdapterEnabled()).toBe(false);
         });
     });
 

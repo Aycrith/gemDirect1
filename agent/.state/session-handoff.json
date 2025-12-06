@@ -1,129 +1,119 @@
 {
-  "timestamp": "2025-12-05T23:00:00.000Z",
+  "timestamp": "2025-12-05T17:45:00.000Z",
   "agent": "Copilot",
-  "sessionSummary": "Implemented Production Video Preview feature - users can now generate a preview clip directly from the Usage Dashboard with one click. Panel calls generateVideoFromBookendsNative with production defaults (wan-fun-inpaint + Standard) using sample-001-geometric keyframes. Added VRAM info, error handling, video player, and link to Vision QA panel. Updated AGENT_HANDOFF_CURRENT.md with preview UI documentation. All 1982 tests pass, TypeScript compiles, build successful.",
+  "sessionSummary": "H1-H3 High-Impact Features Complete. Created experimentHistoryService, RunHistoryPanel for browsing past experiments. Added 5 camera motion templates with cameraTemplateService. Created Cinematic Gold pipeline profile. H4 (External Orchestrator PoC) not started - stretch goal.",
   "filesModified": [
+    "services/experimentHistoryService.ts",
+    "services/cameraTemplateService.ts",
+    "components/RunHistoryPanel.tsx",
+    "components/UsageDashboard.tsx",
     "components/ProductionQualityPreviewPanel.tsx",
-    "components/BookendVisionQAPanel.tsx",
-    "public/artifacts/preview-sample/start.png",
-    "public/artifacts/preview-sample/end.png",
-    "public/artifacts/preview-sample/context.json",
-    "AGENT_HANDOFF_CURRENT.md",
-    "README.md"
+    "config/camera-templates/static-center.json",
+    "config/camera-templates/slow-pan-left-to-right.json",
+    "config/camera-templates/slow-dolly-in.json",
+    "config/camera-templates/orbit-around-center.json",
+    "config/camera-templates/gentle-float-down.json",
+    "config/pipelines/cinematic-gold.json",
+    "types/abCompare.ts",
+    "Documentation/Guides/PIPELINE_CONFIGS.md",
+    "services/__tests__/experimentHistoryService.test.ts",
+    "services/__tests__/cameraTemplateService.test.ts"
   ],
   "decisions": [
     {
-      "decision": "Enhanced ProductionQualityPreviewPanel to generate actual videos",
-      "rationale": "Previous version only validated configuration. Now loads keyframes from public/artifacts/preview-sample/ and calls generateVideoFromBookendsNative with production defaults. User can see the actual video output.",
+      "decision": "Created unified experimentHistoryService for manifests and narratives",
+      "rationale": "Single service provides consistent API for loading history from different artifact types. Filters and sorts work across all experiment types.",
       "alternatives": [
-        "Keep validation-only mode (not user-visible impact)",
-        "Create separate preview component (redundant)"
+        "Separate services per artifact type (inconsistent API)",
+        "Client-side filtering only (slower, more memory)"
       ]
     },
     {
-      "decision": "Used sample-001-geometric (spinning top) for preview",
-      "rationale": "Simple, known-good golden sample with low variance. Quick generation (~3s clip). Easy to validate quality visually.",
+      "decision": "Camera templates stored as JSON files in config/camera-templates/",
+      "rationale": "JSON files are version-controlled, easy to edit, and can be loaded in browser via fetch or Node via fs.",
       "alternatives": [
-        "Use sample-002-character (more complex, slower)",
-        "Create new preview scene (unnecessary when golden samples exist)"
+        "Hardcode templates in service (not user-extensible)",
+        "Store in database (overkill for static configs)"
       ]
     },
     {
-      "decision": "Added scroll-to-VisionQA link in preview panel",
-      "rationale": "Connects preview experience to deeper QA analysis. Users can see Vision QA baseline (7 PASS / 1 WARN) and click to view detailed metrics. Added data-testid to BookendVisionQAPanel for scrolling.",
+      "decision": "Cinematic Gold uses 4-second duration as default",
+      "rationale": "4 seconds provides better narrative flow than 3 seconds for hero-quality final renders.",
       "alternatives": [
-        "No linking (siloed experience)",
-        "Full Vision QA embed (cluttered UI)"
-      ]
-    },
-    {
-      "decision": "Copied preview keyframes to public/artifacts/preview-sample/",
-      "rationale": "Browser cannot directly load files from data/bookend-golden-samples/. Public folder is served by dev server. Small footprint (2 images + context.json).",
-      "alternatives": [
-        "Embed base64 in code (bloated bundle)",
-        "Create API endpoint (over-engineering)"
+        "Keep 3 seconds (matches other presets)",
+        "Make duration configurable per-shot (more complex)"
       ]
     }
   ],
   "currentState": {
     "phase": "complete",
-    "progress": "100%",
-    "status": "Production Video Preview feature complete. Users can generate preview clips with one click. Documentation updated."
+    "progress": "75%",
+    "status": "H1-H3 complete, H4 not started (stretch goal)"
   },
   "nextSteps": [
-    "1. MANUAL TEST: Start ComfyUI, open app, click 'Generate Preview Clip' to verify end-to-end",
-    "2. FUTURE: Wire GenerationQueue to ComfyUI paths for VRAM safety (HIGH priority)",
-    "3. FUTURE: Add more preview scene options (transition scene from previewSceneService)",
-    "4. FUTURE: Consider auto-running preview on first app load as onboarding"
+    "H4: Create orchestrator-poc/ folder for Temporal/Prefect/Dagster demo (optional)",
+    "Wire up RunHistoryPanel action buttons to actual navigation",
+    "Add camera template preview thumbnails in dropdown"
   ],
   "blockers": [],
   "openQuestions": [
+    "Should H4 external orchestrator use Temporal, Prefect, or Dagster?",
+    "Should camera templates support dynamic parameter overrides (e.g., different durations)?"
   ],
   "relatedIssues": [
-    "Vision LLM CORS workaround documented in KNOWN_ISSUES.md section 6",
-    "Deflicker graceful degradation documented in KNOWN_ISSUES.md section 7",
-    "GenerationQueue integration documented in KNOWN_ISSUES.md section 2"
+    "AGENT_HANDOFF_H1H4_FEATURES_20251205.md"
+  ]
+}
+    "status": "Task C1.1 complete. Manifests persist to data/manifests/, E2E pipeline integrated, Git LFS configured."
+  },
+  "nextSteps": [
+    "1. Run full E2E test with ComfyUI to verify manifest writing in practice",
+    "2. Consider adding manifest viewer/browser UI component",
+    "3. Continue with Task C1.2: Git state capture (commit hash) in manifests"
+  ],
+  "blockers": [],
+  "openQuestions": [],
+  "relatedIssues": [
+    "generationManifestNodeWriter.ts provides writeManifest(), writeManifestSync(), listManifests()",
+    "write-manifest.ts CLI supports --build, --manifest, --file, --dry-run modes",
+    "generate-scene-videos-wan2.ps1 now calls manifest writer after successful video copy",
+    ".gitattributes tracks golden samples, vision baselines, artifacts with Git LFS"
   ],
   "testMetrics": {
-    "typescript": "0 errors - clean compilation",
-    "unitTests": "18/18 deflicker tests passing",
-    "deflickerCoverage": "getAvailableDeflickerNode, applyDeflickerToWorkflow async, graceful degradation",
-    "e2eTests": "Not run this session"
+    "typescript": "0 errors - clean build",
+    "unitTests": "2053 passed | 1 skipped (103 test files)",
+    "manifestCLI": "Tested with --dry-run and actual write",
+    "e2eTests": "Not run this session - manifest integration needs live ComfyUI"
   },
   "implementationDetails": {
-    "newFunctions": [
-      "getAvailableDeflickerNode(comfyUIUrl: string): Promise<string | null>"
+    "newFiles": [
+      "services/generationManifestNodeWriter.ts - Node.js fs-based manifest writer",
+      "scripts/write-manifest.ts - CLI tool for PowerShell integration",
+      "data/manifests/README.md - Directory documentation",
+      "data/manifests/.gitkeep - Keep directory in git",
+      ".gitattributes - Git LFS configuration"
     ],
-    "modifiedFunctions": [
-      "applyDeflickerToWorkflow - Now async, accepts optional comfyUIUrl, returns unchanged workflow if no node available",
-      "createDeflickerNodeInjection - New nodeType parameter to specify which class_type to use"
+    "modifiedFiles": [
+      "scripts/generate-scene-videos-wan2.ps1 - Added manifest writing after video success",
+      "Documentation/Guides/VERSIONING_AND_MANIFESTS.md - Added disk persistence and LFS docs"
     ],
-    "modifiedServices": [
-      "deflickerService.ts - Added node availability check, async applyDeflickerToWorkflow",
-      "comfyUIService.ts - Updated calls to applyDeflickerToWorkflow with await and comfyUIUrl"
+    "manifestNamingScheme": "manifest_<type>_<scene>_<shot>_<timestamp>.json",
+    "lfsTrackedPatterns": [
+      "data/bookend-golden-samples/**/*.{png,jpg,mp4}",
+      "data/vision-qa-baselines/**/*.{png,jpg}",
+      "artifacts/**/*.{mp4,png,zip}",
+      "*.safetensors, *.ckpt, *.pth"
     ],
-    "keyPatterns": [
-      "Query /object_info via getInstalledNodes() before node injection",
-      "KNOWN_DEFLICKER_NODES priority order: TemporalSmoothing, VHS_VideoDeflicker, VideoDeflicker",
-      "Graceful degradation: return unchanged workflow if no compatible node found",
-      "Pass comfyUIUrl to enable node availability checking (null = legacy behavior with warning)"
-    ]
-  },
-  "previousSession": {
-    "summary": "Resolved blocking issues for bookend video generation. Fixed vision LLM timeout (120s→15s), CORS detection, deflicker disabled, successful video generation.",
-    "agent": "Copilot (12-4-2025 session 1)"
-  },
-  "codeChanges": {
-    "services/deflickerService.ts": {
-      "import": "Added getInstalledNodes from comfyUIService",
-      "getAvailableDeflickerNode": "New async function checking node availability via /object_info",
-      "applyDeflickerToWorkflow": "Now async, queries node availability before injection, uses detected node type",
-      "createDeflickerNodeInjection": "Added nodeType parameter"
-    },
-    "services/comfyUIService.ts": {
-      "line1527": "Added await and settings.comfyUIUrl to applyDeflickerToWorkflow call",
-      "line4336": "Added await and settings.comfyUIUrl to applyDeflickerToWorkflow call"
-    },
-    "services/__tests__/deflickerService.test.ts": {
-      "imports": "Added getAvailableDeflickerNode, mock for comfyUIService",
-      "getAvailableDeflickerNode tests": "4 new tests for availability checking",
-      "applyDeflickerToWorkflow tests": "Updated to async, added graceful degradation test"
-    },
-    "KNOWN_ISSUES.md": {
-      "section6": "Vision LLM CORS Workaround - documented interim solution and long-term options",
-      "section7": "Deflicker Node Graceful Degradation - marked as RESOLVED with implementation details"
+    "acceptance": {
+      "manifestsPersistToDisk": "✅ data/manifests/ directory with deterministic paths",
+      "e2ePipelineIntegrated": "✅ generate-scene-videos-wan2.ps1 calls write-manifest.ts",
+      "manifestLocationDocumented": "✅ VERSIONING_AND_MANIFESTS.md updated with paths and examples",
+      "gitLFSConfigured": "✅ .gitattributes tracks large binary assets",
+      "noBrowserBreakingChanges": "✅ Node writer is separate service, browser uses in-memory store"
     }
   },
-  "productionReadiness": {
-    "status": "BETA - Ready for validation testing",
-    "readinessChecks": [
-      "✅ Deflicker graceful degradation implemented",
-      "✅ Vision LLM CORS workaround in place (15s timeout + fallback)",
-      "✅ All deflicker tests passing (18/18)",
-      "✅ TypeScript compiles cleanly",
-      "✅ Key considerations documented in KNOWN_ISSUES.md",
-      "⏳ Full test suite run pending",
-      "⏳ End-to-end video generation validation pending"
-    ]
+  "previousSession": {
+    "summary": "Task B2 - Preset Simplification & Safe Defaults Mode. Simplified stability presets, created SAFE_DEFAULTS_FLAGS.",
+    "agent": "Copilot"
   }
 }

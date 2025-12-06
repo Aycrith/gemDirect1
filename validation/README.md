@@ -285,7 +285,7 @@ You can run phases independently:
 npx tsc --noEmit
 
 # Just unit tests
-npm test -- --run
+npm test
 
 # Just E2E tests
 npx playwright test

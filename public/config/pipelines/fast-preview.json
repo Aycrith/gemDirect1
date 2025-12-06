@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "id": "fast-preview",
+  "name": "Fast Preview",
+  "description": "Quick iteration pipeline with no temporal processing. Optimized for 6-8 GB GPUs.",
+  
+  "workflowProfileId": "wan-flf2v",
+  "presetMode": "fast",
+  "stabilityProfile": "fast",
+  
+  "featureFlags": {
+    "base": "default",
+    "overrides": {
+      "videoDeflicker": false,
+      "ipAdapterReferenceConditioning": false,
+      "promptScheduling": false
+    }
+  },
+  
+  "qa": {
+    "keyframePairAnalysis": false,
+    "bookendQAMode": false,
+    "videoQualityGateEnabled": false
+  },
+  
+  "outputHints": {
+    "durationSeconds": 3.0
+  },
+  
+  "keyframeMode": "bookend",
+  
+  "vramRequirements": {
+    "minGB": 6,
+    "recommendedGB": 8,
+    "category": "low"
+  },
+  
+  "metadata": {
+    "createdAt": "2025-12-05T00:00:00Z",
+    "author": "gemDirect1 C2 Pipeline Refactor",
+    "tags": ["fast", "preview", "low-vram"],
+    "notes": "Fast iteration pipeline for development and testing. No temporal processing overhead."
+  }
+}

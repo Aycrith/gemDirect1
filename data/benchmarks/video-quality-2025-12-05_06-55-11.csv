@@ -1,0 +1,2 @@
+sampleId,presetId,overallQuality,frameCount,duration,fps,resolution,brightnessVariance,colorConsistency,maxBrightnessJump,flickerFrameCount,frameDifferenceScore,transitionSmoothness,hasConsistentMotion,motionIntensity,jitterScore,identityScore,regionsStable,identityBreakCount,centerRegionVariance,analysisTimestamp,errors
+sample-001-geometric,production,88.9,81,5.06,16.0,832x480,0,100,0,0,0,100,true,low,0,63.1,true,0,62627.53,2025-12-05T06:55:11.321Z,

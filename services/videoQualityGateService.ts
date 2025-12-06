@@ -17,6 +17,14 @@
  * - maxArtifactSeverity: 40 - Maximum artifact level (0=none, 100=severe)
  * - minObjectConsistency: 85 - Objects maintain identity throughout
  * 
+ * ## API Usage Note
+ * This service uses checkCoherenceThresholds() for violation detection.
+ * This function only produces violations when metrics are BELOW threshold.
+ * 
+ * IMPORTANT: Do NOT replace with calculateSampleVerdict() — that function
+ * has a WARN zone for PASSING values, which would create false positives here.
+ * See Documentation/QA_SEMANTICS.md for full explanation of dual API semantics.
+ * 
  * ## Usage
  * ```typescript
  * import { evaluateVideoQuality, QualityGateDecision } from './videoQualityGateService';
@@ -37,6 +45,7 @@ import { analyzeVideo } from './videoFeedbackService';
 import { 
     getRuntimeCoherenceThresholds, 
     checkCoherenceThresholds, 
+    WARNING_MARGIN,
     type CoherenceThresholds,
     type CoherenceViolation,
     type CoherenceCheckResult
@@ -131,9 +140,17 @@ export const DEFAULT_QUALITY_THRESHOLDS: QualityThresholds = {
 };
 
 /**
- * Warning margin - if score is within this margin of threshold, it's a warning not failure
+ * Warning margin - if score is within this margin of threshold, it's a warning not failure.
+ * 
+ * NOTE: This is imported from visionThresholdConfig for consistency across all QA systems.
+ * The value should match:
+ * - data/bookend-golden-samples/vision-thresholds.json (thresholdStrategy.warnMargin)
+ * - components/BookendVisionQAPanel.tsx
+ * - scripts/test-bookend-vision-regression.ps1
+ * 
+ * See Documentation/QA_SEMANTICS.md for unified threshold semantics.
  */
-const WARNING_MARGIN = 10;
+// WARNING_MARGIN is imported from visionThresholdConfig at the top of this file
 
 // ============================================================================
 // Main Functions

@@ -655,6 +655,54 @@ Try {
                     Write-Host "[$sceneId] ✓ Video copied successfully: $($sourceVideo.Name) (${sizeMB} MB, ${totalElapsed}s total)" -ForegroundColor Green
                     Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation succeeded: $targetPath (${totalElapsed}s, ${sizeMB} MB)"
                     $videoFound = $true
+                    
+                    # ================================================================
+                    # MANIFEST WRITING: Persist generation manifest to disk
+                    # ================================================================
+                    try {
+                      $manifestScript = Join-Path $PSScriptRoot 'write-manifest.ts'
+                      if (Test-Path $manifestScript) {
+                        # Extract seed from workflow (node 3 KSampler)
+                        $manifestSeed = if ($promptPayload.'3' -and $promptPayload.'3'.inputs -and $promptPayload.'3'.inputs.seed) {
+                          $promptPayload.'3'.inputs.seed
+                        } else { 0 }
+                        
+                        Write-Host "[$sceneId] Writing generation manifest..." -ForegroundColor Cyan
+                        $manifestArgs = @(
+                          'tsx',
+                          $manifestScript,
+                          '--build',
+                          '--type', 'video',
+                          '--scene', $sceneId,
+                          '--workflow-id', 'wan-i2v',
+                          '--prompt', ($humanPrompt -replace '"', '\"'),
+                          '--negative', ($negativePrompt -replace '"', '\"'),
+                          '--seed', $manifestSeed,
+                          '--output-dir', $sceneVideoDir,
+                          '--video-file', "$sceneId.mp4",
+                          '--prompt-id', $promptId,
+                          '--comfyui-url', $ComfyUrl,
+                          '--project-root', $projectRoot
+                        )
+                        
+                        # Run manifest writer
+                        $manifestResult = & npx @manifestArgs 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                          Write-Host "[$sceneId] ✓ Manifest written" -ForegroundColor Green
+                          Add-RunSummaryLine "[Scene $sceneId] Manifest persisted to disk"
+                        } else {
+                          Write-Warning "[$sceneId] Manifest write failed (exit=$LASTEXITCODE): $manifestResult"
+                          Add-RunSummaryLine "[Scene $sceneId] Manifest write failed: $manifestResult"
+                        }
+                      } else {
+                        Write-Warning "[$sceneId] Manifest script not found at $manifestScript"
+                      }
+                    } catch {
+                      Write-Warning "[$sceneId] Failed to write manifest: $_"
+                      Add-RunSummaryLine "[Scene $sceneId] Manifest write exception: $_"
+                    }
+                    # ================================================================
+                    
                   } else {
                     Write-Warning "[$sceneId] Video file too small ($size bytes) - generation may have failed"
                     Add-RunSummaryLine "[Scene $sceneId] Wan2 video generation failed: file too small ($size bytes)"

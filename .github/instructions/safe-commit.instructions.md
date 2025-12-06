@@ -19,9 +19,9 @@ npx tsc --noEmit
 
 ### 2. Unit Tests (Mandatory)
 ```powershell
-npm test -- --run --reporter=verbose
+npm test
 ```
-**Requirement**: All tests pass. Skipped tests are acceptable.
+**Requirement**: All tests pass. Skipped tests are acceptable. The `npm test` script already includes `--run --reporter=verbose`.
 
 ### 3. No Critical Issues (Mandatory)
 Check `agent/.state/issues.json`:

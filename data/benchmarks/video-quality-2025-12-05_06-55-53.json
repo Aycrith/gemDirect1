@@ -1,0 +1,369 @@
+{
+  "version": "1.0.0",
+  "taskId": "A2",
+  "generatedAt": "2025-12-05T06:55:53.822Z",
+  "regressionRun": "run-20251204-163603",
+  "presets": [
+    "production"
+  ],
+  "samplesPerPreset": 8,
+  "results": [
+    {
+      "sampleId": "sample-004-motion",
+      "presetId": "production",
+      "videoPath": "C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output\\video\\regression_sample-004-motion_20251204-163603_00001_.mp4",
+      "frameCount": 81,
+      "duration": 5.0625,
+      "fps": 16,
+      "resolution": {
+        "width": 832,
+        "height": 480
+      },
+      "temporalCoherence": {
+        "brightnessVariance": 0,
+        "colorConsistency": 100,
+        "maxBrightnessJump": 0,
+        "flickerFrameCount": 0,
+        "frameDifferenceScore": 0
+      },
+      "motionConsistency": {
+        "transitionSmoothness": 100,
+        "hasConsistentMotion": true,
+        "motionIntensity": "low",
+        "jitterScore": 0
+      },
+      "identityStability": {
+        "identityScore": 89.8,
+        "regionsStable": true,
+        "identityBreakCount": 0,
+        "centerRegionVariance": 23538.14
+      },
+      "overallQuality": 96.9,
+      "analysisTimestamp": "2025-12-05T06:55:25.415Z",
+      "analysisErrors": []
+    },
+    {
+      "sampleId": "sample-008-lighting",
+      "presetId": "production",
+      "videoPath": "C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output\\video\\regression_sample-008-lighting_20251204-163603_00001_.mp4",
+      "frameCount": 81,
+      "duration": 5.0625,
+      "fps": 16,
+      "resolution": {
+        "width": 832,
+        "height": 480
+      },
+      "temporalCoherence": {
+        "brightnessVariance": 0,
+        "colorConsistency": 100,
+        "maxBrightnessJump": 0,
+        "flickerFrameCount": 0,
+        "frameDifferenceScore": 0
+      },
+      "motionConsistency": {
+        "transitionSmoothness": 100,
+        "hasConsistentMotion": true,
+        "motionIntensity": "low",
+        "jitterScore": 0
+      },
+      "identityStability": {
+        "identityScore": 88.3,
+        "regionsStable": true,
+        "identityBreakCount": 0,
+        "centerRegionVariance": 28092.08
+      },
+      "overallQuality": 96.5,
+      "analysisTimestamp": "2025-12-05T06:55:29.387Z",
+      "analysisErrors": []
+    },
+    {
+      "sampleId": "sample-003-environment",
+      "presetId": "production",
+      "videoPath": "C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output\\video\\regression_sample-003-environment_20251204-163603_00001_.mp4",
+      "frameCount": 81,
+      "duration": 5.0625,
+      "fps": 16,
+      "resolution": {
+        "width": 832,
+        "height": 480
+      },
+      "temporalCoherence": {
+        "brightnessVariance": 0,
+        "colorConsistency": 100,
+        "maxBrightnessJump": 0,
+        "flickerFrameCount": 0,
+        "frameDifferenceScore": 0
+      },
+      "motionConsistency": {
+        "transitionSmoothness": 100,
+        "hasConsistentMotion": true,
+        "motionIntensity": "low",
+        "jitterScore": 0
+      },
+      "identityStability": {
+        "identityScore": 95,
+        "regionsStable": true,
+        "identityBreakCount": 0,
+        "centerRegionVariance": 18934.57
+      },
+      "overallQuality": 98.5,
+      "analysisTimestamp": "2025-12-05T06:55:33.928Z",
+      "analysisErrors": []
+    },
+    {
+      "sampleId": "sample-007-occlusion",
+      "presetId": "production",
+      "videoPath": "C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output\\video\\regression_sample-007-occlusion_20251204-163603_00001_.mp4",
+      "frameCount": 81,
+      "duration": 5.062012,
+      "fps": 16,
+      "resolution": {
+        "width": 832,
+        "height": 480
+      },
+      "temporalCoherence": {
+        "brightnessVariance": 0,
+        "colorConsistency": 100,
+        "maxBrightnessJump": 0,
+        "flickerFrameCount": 0,
+        "frameDifferenceScore": 0
+      },
+      "motionConsistency": {
+        "transitionSmoothness": 100,
+        "hasConsistentMotion": true,
+        "motionIntensity": "low",
+        "jitterScore": 0
+      },
+      "identityStability": {
+        "identityScore": 86.3,
+        "regionsStable": true,
+        "identityBreakCount": 0,
+        "centerRegionVariance": 30170.35
+      },
+      "overallQuality": 95.9,
+      "analysisTimestamp": "2025-12-05T06:55:38.086Z",
+      "analysisErrors": []
+    },
+    {
+      "sampleId": "sample-006-multichar",
+      "presetId": "production",
+      "videoPath": "C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output\\video\\regression_sample-006-multichar_20251204-163603_00001_.mp4",
+      "frameCount": 81,
+      "duration": 5.0625,
+      "fps": 16,
+      "resolution": {
+        "width": 832,
+        "height": 480
+      },
+      "temporalCoherence": {
+        "brightnessVariance": 0,
+        "colorConsistency": 100,
+        "maxBrightnessJump": 0,
+        "flickerFrameCount": 0,
+        "frameDifferenceScore": 0
+      },
+      "motionConsistency": {
+        "transitionSmoothness": 100,
+        "hasConsistentMotion": true,
+        "motionIntensity": "low",
+        "jitterScore": 0
+      },
+      "identityStability": {
+        "identityScore": 87.7,
+        "regionsStable": true,
+        "identityBreakCount": 0,
+        "centerRegionVariance": 30399.73
+      },
+      "overallQuality": 96.3,
+      "analysisTimestamp": "2025-12-05T06:55:42.144Z",
+      "analysisErrors": []
+    },
+    {
+      "sampleId": "sample-002-character",
+      "presetId": "production",
+      "videoPath": "C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output\\video\\regression_sample-002-character_20251204-163603_00001_.mp4",
+      "frameCount": 81,
+      "duration": 5.0625,
+      "fps": 16,
+      "resolution": {
+        "width": 832,
+        "height": 480
+      },
+      "temporalCoherence": {
+        "brightnessVariance": 0,
+        "colorConsistency": 100,
+        "maxBrightnessJump": 0,
+        "flickerFrameCount": 0,
+        "frameDifferenceScore": 0
+      },
+      "motionConsistency": {
+        "transitionSmoothness": 100,
+        "hasConsistentMotion": true,
+        "motionIntensity": "low",
+        "jitterScore": 0
+      },
+      "identityStability": {
+        "identityScore": 85.9,
+        "regionsStable": true,
+        "identityBreakCount": 0,
+        "centerRegionVariance": 32591.21
+      },
+      "overallQuality": 95.8,
+      "analysisTimestamp": "2025-12-05T06:55:46.073Z",
+      "analysisErrors": []
+    },
+    {
+      "sampleId": "sample-005-complex",
+      "presetId": "production",
+      "videoPath": "C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output\\video\\regression_sample-005-complex_20251204-163603_00001_.mp4",
+      "frameCount": 81,
+      "duration": 5.0625,
+      "fps": 16,
+      "resolution": {
+        "width": 832,
+        "height": 480
+      },
+      "temporalCoherence": {
+        "brightnessVariance": 0,
+        "colorConsistency": 100,
+        "maxBrightnessJump": 0,
+        "flickerFrameCount": 0,
+        "frameDifferenceScore": 0
+      },
+      "motionConsistency": {
+        "transitionSmoothness": 100,
+        "hasConsistentMotion": true,
+        "motionIntensity": "low",
+        "jitterScore": 0
+      },
+      "identityStability": {
+        "identityScore": 71.7,
+        "regionsStable": true,
+        "identityBreakCount": 0,
+        "centerRegionVariance": 58720.34
+      },
+      "overallQuality": 91.5,
+      "analysisTimestamp": "2025-12-05T06:55:50.009Z",
+      "analysisErrors": []
+    },
+    {
+      "sampleId": "sample-001-geometric",
+      "presetId": "production",
+      "videoPath": "C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output\\video\\regression_sample-001-geometric_20251204-163603_00001_.mp4",
+      "frameCount": 81,
+      "duration": 5.0625,
+      "fps": 16,
+      "resolution": {
+        "width": 832,
+        "height": 480
+      },
+      "temporalCoherence": {
+        "brightnessVariance": 0,
+        "colorConsistency": 100,
+        "maxBrightnessJump": 0,
+        "flickerFrameCount": 0,
+        "frameDifferenceScore": 0
+      },
+      "motionConsistency": {
+        "transitionSmoothness": 100,
+        "hasConsistentMotion": true,
+        "motionIntensity": "low",
+        "jitterScore": 0
+      },
+      "identityStability": {
+        "identityScore": 63.1,
+        "regionsStable": true,
+        "identityBreakCount": 0,
+        "centerRegionVariance": 62627.53
+      },
+      "overallQuality": 88.9,
+      "analysisTimestamp": "2025-12-05T06:55:53.821Z",
+      "analysisErrors": []
+    }
+  ],
+  "aggregates": {
+    "overall": {
+      "mean": 95.04,
+      "median": 96.1,
+      "min": 88.9,
+      "max": 98.5,
+      "stdDev": 2.97,
+      "count": 8
+    },
+    "temporalCoherence": {
+      "brightnessVariance": {
+        "mean": 0,
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "stdDev": 0,
+        "count": 8
+      },
+      "colorConsistency": {
+        "mean": 100,
+        "median": 100,
+        "min": 100,
+        "max": 100,
+        "stdDev": 0,
+        "count": 8
+      },
+      "flickerFrameCount": {
+        "mean": 0,
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "stdDev": 0,
+        "count": 8
+      }
+    },
+    "motionConsistency": {
+      "transitionSmoothness": {
+        "mean": 100,
+        "median": 100,
+        "min": 100,
+        "max": 100,
+        "stdDev": 0,
+        "count": 8
+      },
+      "jitterScore": {
+        "mean": 0,
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "stdDev": 0,
+        "count": 8
+      }
+    },
+    "identityStability": {
+      "identityScore": {
+        "mean": 83.48,
+        "median": 87,
+        "min": 63.1,
+        "max": 95,
+        "stdDev": 9.88,
+        "count": 8
+      },
+      "centerRegionVariance": {
+        "mean": 35634.24,
+        "median": 30285.04,
+        "min": 18934.57,
+        "max": 62627.53,
+        "stdDev": 15042.43,
+        "count": 8
+      }
+    },
+    "byPreset": {
+      "production": {
+        "overall": {
+          "mean": 95.04,
+          "median": 96.1,
+          "min": 88.9,
+          "max": 98.5,
+          "stdDev": 2.97,
+          "count": 8
+        },
+        "sampleCount": 8
+      }
+    }
+  }
+}

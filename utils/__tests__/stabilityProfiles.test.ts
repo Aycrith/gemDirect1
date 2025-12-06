@@ -142,6 +142,9 @@ describe('stabilityProfiles', () => {
                 ipAdapterWeight: 0.5,
                 promptScheduling: true,
                 promptTransitionFrames: 12,
+                temporalRegularizationEnabled: true,
+                temporalRegularizationStrength: 0.35,
+                temporalRegularizationWindowFrames: 3, // Matches CINEMATIC_PROFILE
             };
             expect(detectCurrentProfile(flags)).toBe('cinematic');
         });

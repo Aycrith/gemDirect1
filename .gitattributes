@@ -1,0 +1,98 @@
+# Git LFS Configuration for gemDirect1
+# =====================================
+# This file configures Git LFS to track large binary files that shouldn't
+# be stored directly in the git repository.
+#
+# Setup:
+#   1. Install Git LFS: https://git-lfs.github.com/
+#   2. Initialize in repo: git lfs install
+#   3. Clone with LFS: git lfs clone <repo-url>
+#
+# Operations:
+#   - Pull LFS files: git lfs pull
+#   - Push LFS files: git lfs push --all origin
+#   - Check status: git lfs status
+#   - List tracked files: git lfs ls-files
+
+# ============================================================================
+# Golden Samples (QA baseline images and videos)
+# ============================================================================
+# These are reference assets for bookend QA and regression testing.
+# Stored in LFS to avoid bloating the repository.
+
+data/bookend-golden-samples/**/*.png filter=lfs diff=lfs merge=lfs -text
+data/bookend-golden-samples/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+data/bookend-golden-samples/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
+data/bookend-golden-samples/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
+data/bookend-golden-samples/**/*.webm filter=lfs diff=lfs merge=lfs -text
+
+# ============================================================================
+# Vision QA Baselines
+# ============================================================================
+# Reference images for vision-based quality assessment.
+
+data/vision-qa-baselines/**/*.png filter=lfs diff=lfs merge=lfs -text
+data/vision-qa-baselines/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+
+# ============================================================================
+# Artifacts (Generated test outputs)
+# ============================================================================
+# Large generated artifacts from E2E test runs.
+
+artifacts/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
+artifacts/**/*.png filter=lfs diff=lfs merge=lfs -text
+artifacts/**/*.zip filter=lfs diff=lfs merge=lfs -text
+
+# ============================================================================
+# Model Files (if ever committed - generally should not be)
+# ============================================================================
+# These are extremely large and should normally be excluded entirely,
+# but tracked here as a safeguard.
+
+*.safetensors filter=lfs diff=lfs merge=lfs -text
+*.ckpt filter=lfs diff=lfs merge=lfs -text
+*.pth filter=lfs diff=lfs merge=lfs -text
+*.pt filter=lfs diff=lfs merge=lfs -text
+
+# ============================================================================
+# Other Binary Assets
+# ============================================================================
+# General binary file types that may grow large.
+
+# Office documents (if any)
+*.pdf filter=lfs diff=lfs merge=lfs -text
+*.docx filter=lfs diff=lfs merge=lfs -text
+
+# Compressed archives
+*.tar.gz filter=lfs diff=lfs merge=lfs -text
+*.tar.bz2 filter=lfs diff=lfs merge=lfs -text
+
+# ============================================================================
+# NOT Tracked by LFS (kept in regular Git)
+# ============================================================================
+# The following are explicitly NOT tracked by LFS:
+#
+# - workflows/*.json - ComfyUI workflow files (typically small, <100KB)
+# - data/manifests/*.json - Generation manifests (small JSON files)
+# - *.md, *.ts, *.tsx, *.json - Source code and documentation
+#
+# These files benefit from git's diff/merge capabilities and are small enough
+# to store directly in the repository.
+
+# ============================================================================
+# Text File Normalization
+# ============================================================================
+# Ensure consistent line endings for text files.
+
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=crlf

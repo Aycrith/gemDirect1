@@ -217,7 +217,7 @@
   },
   {
     "id": "E2",
-    "workstream": "Workstream E — Cinematic / Temporal Quality Enhancements",
+    "workstream": "Workstream E - Cinematic / Temporal Quality Enhancements",
     "description": "Add optional temporal augmentation/regularization to improve consistency and robustness",
     "dependencies": [
       "E1"
@@ -236,5 +236,55 @@
     "priority": "low",
     "estimated_effort": "medium",
     "notes": "Optional, advanced"
+  },
+  {
+    "id": "F1",
+    "workstream": "Workstream F - QA UX & Narrative UI",
+    "description": "Implement in-app A/B QA dashboard for comparing presets and pipelines",
+    "dependencies": [
+      "A2",
+      "A3",
+      "B2"
+    ],
+    "deliverables": [
+      "React components for A/B comparison in Production Preview and/or Timeline views",
+      "Wiring from benchmark/Vision QA data into UI widgets",
+      "Controls for selecting two presets/pipelines and visualizing key metrics side-by-side",
+      "Documentation updates and a new recipe describing UI-based A/B usage"
+    ],
+    "acceptance_criteria": [
+      "User can select two presets/pipelines in the UI and run an A/B comparison without using CLI scripts",
+      "Key QA metrics (Vision QA verdicts, flicker/jitter, identity, camera-path metrics when available) are displayed side-by-side",
+      "UI clearly indicates which configuration corresponds to which run and when metrics are stale or missing",
+      "Existing preview and generation flows remain functional and performance remains acceptable"
+    ],
+    "priority": "medium",
+    "estimated_effort": "medium",
+    "notes": "Build on existing benchmark harness and Vision QA history; ensure all logic for verdicts and thresholds reuses shared helpers, not duplicated in the UI."
+  },
+  {
+    "id": "F2",
+    "workstream": "Workstream F - QA UX & Narrative UI",
+    "description": "Integrate narrative pipeline and QA summary into the React UI (narrative launcher and health view)",
+    "dependencies": [
+      "N1",
+      "N2",
+      "C3"
+    ],
+    "deliverables": [
+      "UI to list available narrative scripts and select one to run",
+      "Status view showing per-shot progress (queued, running, succeeded, failed) for a narrative run",
+      "Narrative QA panel showing per-shot verdicts and overall narrative verdict, linked to underlying reports",
+      "Documentation and updated recipes explaining how to use the narrative UI"
+    ],
+    "acceptance_criteria": [
+      "User can select a narrative script from the UI and trigger a run without dropping to the CLI",
+      "Per-shot status and QA verdicts are visible in the UI once a narrative run completes",
+      "Narrative UI links to or surfaces key QA/benchmark data (e.g., per-shot reports or summaries) without duplicating core logic",
+      "Existing single-shot UI (Timeline, Production Preview) remain usable and uncluttered"
+    ],
+    "priority": "medium",
+    "estimated_effort": "medium",
+    "notes": "Build on narrativePipeline and Narrative QA summaries; keep UI minimal and focused for the first pass, with clear entry points for future enhancements."
   }
 ]

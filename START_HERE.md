@@ -36,7 +36,7 @@ npm run check:health-helper       # Verify ComfyUI ready
 
 # Build & Test
 npm run build                     # Should complete with 0 errors
-npm test -- --run                 # Should show 1,522 tests passing
+npm test                          # Should show 2400+ tests passing
 npx playwright test               # E2E tests (117 runnable)
 
 # Run Full Pipeline
@@ -146,7 +146,7 @@ pwsh -ExecutionPolicy Bypass -File scripts/run-comfyui-e2e.ps1 -FastIteration
 ### DO ✅
 - Read `.github/copilot-instructions.md` first
 - Use service layer for all external API calls
-- Run tests before/after changes: `npm test -- --run`
+- Run tests before/after changes: `npm test`
 - Check `Documentation/PROJECT_STATUS_CONSOLIDATED.md` for current state
 
 ### DON'T ❌

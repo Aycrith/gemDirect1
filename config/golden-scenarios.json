@@ -1,0 +1,135 @@
+{
+  "$schema": "../types/goldenScenario.schema.json",
+  "version": "1.0",
+  "description": "Canonical scenarios for golden set regression testing. Each scenario represents a specific quality dimension to validate.",
+  "lastUpdated": "2025-12-05T00:00:00Z",
+  
+  "scenarios": [
+    {
+      "id": "geometric-baseline",
+      "name": "Geometric Baseline",
+      "description": "Simple geometric object with minimal motion. Tests baseline focus stability.",
+      "sampleId": "sample-001-geometric",
+      "pipelineConfigId": "cinematic-gold",
+      "expectedOutcome": {
+        "visionQaMinScore": 85,
+        "flickerMaxFrames": 3,
+        "identityMinScore": 80,
+        "overallMinScore": 75
+      },
+      "tags": ["baseline", "static", "focus"],
+      "priority": 1
+    },
+    {
+      "id": "character-consistency",
+      "name": "Character Consistency",
+      "description": "Tests character identity preservation across frames.",
+      "sampleId": "sample-002-character",
+      "pipelineConfigId": "cinematic-gold",
+      "expectedOutcome": {
+        "visionQaMinScore": 80,
+        "flickerMaxFrames": 5,
+        "identityMinScore": 85,
+        "overallMinScore": 70
+      },
+      "tags": ["character", "identity", "consistency"],
+      "priority": 1
+    },
+    {
+      "id": "environment-stability",
+      "name": "Environment Stability",
+      "description": "Tests background and environment coherence.",
+      "sampleId": "sample-003-environment",
+      "pipelineConfigId": "cinematic-gold",
+      "expectedOutcome": {
+        "visionQaMinScore": 80,
+        "flickerMaxFrames": 4,
+        "identityMinScore": 75,
+        "overallMinScore": 70
+      },
+      "tags": ["environment", "background", "stability"],
+      "priority": 2
+    },
+    {
+      "id": "motion-trajectory",
+      "name": "Motion Trajectory",
+      "description": "Tests motion smoothness and trajectory adherence.",
+      "sampleId": "sample-004-motion",
+      "pipelineConfigId": "cinematic-gold",
+      "expectedOutcome": {
+        "visionQaMinScore": 75,
+        "flickerMaxFrames": 6,
+        "identityMinScore": 70,
+        "jitterMaxScore": 25,
+        "overallMinScore": 65
+      },
+      "tags": ["motion", "trajectory", "smoothness"],
+      "priority": 1
+    },
+    {
+      "id": "complex-combined",
+      "name": "Complex Combined",
+      "description": "Combines character, environment, and motion. The ultimate quality test.",
+      "sampleId": "sample-005-complex",
+      "pipelineConfigId": "cinematic-gold",
+      "expectedOutcome": {
+        "visionQaMinScore": 70,
+        "flickerMaxFrames": 8,
+        "identityMinScore": 65,
+        "overallMinScore": 60
+      },
+      "tags": ["complex", "combined", "challenging"],
+      "priority": 1
+    },
+    {
+      "id": "occlusion-handling",
+      "name": "Occlusion Handling",
+      "description": "Tests identity preservation through partial occlusion.",
+      "sampleId": "sample-007-occlusion",
+      "pipelineConfigId": "cinematic-gold",
+      "expectedOutcome": {
+        "visionQaMinScore": 70,
+        "flickerMaxFrames": 7,
+        "identityMinScore": 60,
+        "overallMinScore": 55
+      },
+      "tags": ["occlusion", "identity", "challenging"],
+      "priority": 2
+    },
+    {
+      "id": "lighting-transition",
+      "name": "Lighting Transition",
+      "description": "Tests temporal coherence during lighting changes.",
+      "sampleId": "sample-008-lighting",
+      "pipelineConfigId": "cinematic-gold",
+      "expectedOutcome": {
+        "visionQaMinScore": 70,
+        "flickerMaxFrames": 6,
+        "identityMinScore": 70,
+        "overallMinScore": 60
+      },
+      "tags": ["lighting", "transition", "temporal"],
+      "priority": 2
+    },
+    {
+      "id": "production-qa-baseline",
+      "name": "Production QA Baseline",
+      "description": "Same geometric test with production-qa preset for A/B baseline comparison.",
+      "sampleId": "sample-001-geometric",
+      "pipelineConfigId": "production-qa-preview",
+      "expectedOutcome": {
+        "visionQaMinScore": 75,
+        "flickerMaxFrames": 5,
+        "identityMinScore": 70,
+        "overallMinScore": 65
+      },
+      "tags": ["baseline", "production-qa", "comparison"],
+      "priority": 3
+    }
+  ],
+  
+  "metadata": {
+    "author": "gemDirect1 Q1 - Golden Set Runner",
+    "notes": "These scenarios are designed to cover key quality dimensions: focus stability, character consistency, environment coherence, motion smoothness, and challenging edge cases. Priority 1 scenarios are run in every golden set execution. Priority 2+ are optional but recommended."
+  }
+}

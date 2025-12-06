@@ -1,0 +1,36 @@
+{
+  "id": "slow-dolly-in",
+  "description": "Slow dolly-in (push in) from medium to closer framing. Creates focus and intimacy on subject.",
+  "coordinateSpace": "screen",
+  "motionType": "dolly",
+  "motionIntensity": 0.25,
+  "keyframes": [
+    {
+      "timeSeconds": 0.0,
+      "position": { "x": 0.5, "y": 0.5 },
+      "fovDegrees": 55,
+      "easing": "easeOut",
+      "label": "Start - medium shot"
+    },
+    {
+      "timeSeconds": 1.5,
+      "position": { "x": 0.5, "y": 0.5 },
+      "fovDegrees": 50,
+      "easing": "linear",
+      "label": "Mid - transitioning"
+    },
+    {
+      "timeSeconds": 3.0,
+      "position": { "x": 0.5, "y": 0.5 },
+      "fovDegrees": 42,
+      "easing": "easeIn",
+      "label": "End - closer framing"
+    }
+  ],
+  "metadata": {
+    "createdAt": "2025-12-05T00:00:00Z",
+    "author": "H2 Camera Motion Templates",
+    "notes": "Subtle dolly-in using FOV change. Creates the feeling of moving closer to the subject. Good for building tension or focusing attention.",
+    "tags": ["dolly", "push-in", "zoom", "intimate", "focus"]
+  }
+}

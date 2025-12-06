@@ -109,8 +109,17 @@ export const DEFAULT_COHERENCE_THRESHOLDS: CoherenceThresholds = {
 /**
  * Warning margin for threshold checks.
  * If a metric is within this margin of the threshold, it triggers a warning instead of pass.
+ * 
+ * IMPORTANT: This value must remain consistent across all QA systems:
+ * - services/visionThresholdConfig.ts (this file)
+ * - data/bookend-golden-samples/vision-thresholds.json (thresholdStrategy.warnMargin)
+ * - components/BookendVisionQAPanel.tsx (should import from this file)
+ * - components/UsageDashboard.tsx (QualityStatusWidget, should import from this file)
+ * - scripts/test-bookend-vision-regression.ps1 ($warnMargin)
+ * 
+ * DO NOT change this value without updating the documentation in QA_SEMANTICS.md
  */
-const WARNING_MARGIN = 5;
+export const WARNING_MARGIN = 5;
 
 // ============================================================================
 // Functions
@@ -129,6 +138,18 @@ export function getRuntimeCoherenceThresholds(): CoherenceThresholds {
 
 /**
  * Check coherence metrics against thresholds.
+ * 
+ * USE THIS FUNCTION FOR: Runtime quality gating, CI pipeline checks,
+ * programmatic pass/fail decisions where you only care about actual violations.
+ * 
+ * DO NOT USE FOR: UI verdicts where you want to show "close to failing" warnings.
+ * For UI display, use calculateSampleVerdict() instead.
+ * 
+ * SEMANTIC DIFFERENCE: This function only produces violations when metrics
+ * are BELOW threshold. A score of 82 (above threshold 80) produces NO violation.
+ * The warning margin affects violation SEVERITY, not presence.
+ * 
+ * See Documentation/QA_SEMANTICS.md for full explanation of dual API semantics.
  * 
  * @param metrics - Object containing coherence metrics from video analysis
  * @param thresholds - Thresholds to check against (defaults to runtime thresholds)
@@ -253,4 +274,191 @@ export function formatCoherenceResult(result: CoherenceCheckResult): string {
     const violationMessages = result.violations.map(v => v.message).join('; ');
     
     return `${prefix} Coherence check ${result.decision}: ${violationMessages}`;
+}
+
+// ============================================================================
+// UI Verdict Calculation (Shared Logic for Components)
+// ============================================================================
+
+/**
+ * Verdict type used by UI components.
+ * - PASS: All metrics meet thresholds with comfortable margin
+ * - WARN: Metrics are passing but within warning margin of thresholds
+ * - FAIL: One or more metrics violate thresholds
+ */
+export type Verdict = 'PASS' | 'WARN' | 'FAIL';
+
+/**
+ * Result of calculating a verdict for a single metric.
+ */
+export interface MetricVerdictResult {
+    verdict: Verdict;
+    /** Human-readable message (e.g., "overall<80", "overall~80") */
+    message?: string;
+}
+
+/**
+ * Calculate verdict for a single metric (minimum threshold).
+ * Used for metrics where higher is better (overall, focusStability, objectConsistency).
+ * 
+ * @param value - The metric value (0-100)
+ * @param threshold - The minimum threshold
+ * @param warnMargin - Warning margin (default: WARNING_MARGIN)
+ * @param metricName - Name for message generation
+ * @returns MetricVerdictResult with verdict and optional message
+ */
+export function calculateMinMetricVerdict(
+    value: number,
+    threshold: number,
+    warnMargin: number = WARNING_MARGIN,
+    metricName?: string
+): MetricVerdictResult {
+    if (value < threshold) {
+        return {
+            verdict: 'FAIL',
+            message: metricName ? `${metricName}<${threshold}` : undefined,
+        };
+    } else if (value < threshold + warnMargin) {
+        return {
+            verdict: 'WARN',
+            message: metricName ? `${metricName}~${threshold}` : undefined,
+        };
+    }
+    return { verdict: 'PASS' };
+}
+
+/**
+ * Calculate verdict for a single metric (maximum threshold).
+ * Used for metrics where lower is better (artifactSeverity).
+ * 
+ * @param value - The metric value (0-100)
+ * @param threshold - The maximum threshold
+ * @param warnMargin - Warning margin (default: WARNING_MARGIN)
+ * @param metricName - Name for message generation
+ * @returns MetricVerdictResult with verdict and optional message
+ */
+export function calculateMaxMetricVerdict(
+    value: number,
+    threshold: number,
+    warnMargin: number = WARNING_MARGIN,
+    metricName?: string
+): MetricVerdictResult {
+    if (value > threshold) {
+        return {
+            verdict: 'FAIL',
+            message: metricName ? `${metricName}>${threshold}` : undefined,
+        };
+    } else if (value > threshold - warnMargin) {
+        return {
+            verdict: 'WARN',
+            message: metricName ? `${metricName}~${threshold}` : undefined,
+        };
+    }
+    return { verdict: 'PASS' };
+}
+
+/**
+ * Input for calculating a sample verdict.
+ */
+export interface SampleMetrics {
+    overall: number;
+    focusStability: number;
+    artifactSeverity: number;
+    objectConsistency: number;
+    hasBlackFrames?: boolean;
+    hasHardFlicker?: boolean;
+}
+
+/**
+ * Thresholds for sample verdict calculation.
+ */
+export interface SampleThresholds {
+    minOverall: number;
+    minFocusStability: number;
+    maxArtifactSeverity: number;
+    minObjectConsistency: number;
+    disallowBlackFrames?: boolean;
+    disallowHardFlicker?: boolean;
+}
+
+/**
+ * Full result of sample verdict calculation.
+ */
+export interface SampleVerdictResult {
+    verdict: Verdict;
+    failures: string[];
+    warnings: string[];
+}
+
+/**
+ * Calculate verdict for a complete sample with all metrics.
+ * This is the unified function that replaces duplicated logic in UI components.
+ * 
+ * USE THIS FUNCTION FOR: UI display, per-sample verdicts in panels/reports,
+ * showing users "close to failing" warnings, aggregating PASS/WARN/FAIL counts.
+ * 
+ * DO NOT USE FOR: Runtime quality gating where you only want violations on
+ * actual threshold failures. For that, use checkCoherenceThresholds() instead.
+ * 
+ * SEMANTIC DIFFERENCE: This function has a WARN zone ABOVE threshold.
+ * A score of 82 (above threshold 80, but below 85) produces WARN verdict
+ * because it "passed but barely."
+ * 
+ * See Documentation/QA_SEMANTICS.md for full explanation of dual API semantics.
+ * 
+ * Semantics:
+ * - FAIL: Any metric below threshold, or hard failures (blackFrames, hardFlicker)
+ * - WARN: All metrics pass but one or more within WARNING_MARGIN of threshold
+ * - PASS: All metrics pass with comfortable margin
+ * 
+ * @param metrics - The sample's quality metrics
+ * @param thresholds - The thresholds to check against
+ * @param warnMargin - Warning margin (default: WARNING_MARGIN)
+ * @returns SampleVerdictResult with verdict and detailed failure/warning messages
+ */
+export function calculateSampleVerdict(
+    metrics: SampleMetrics,
+    thresholds: SampleThresholds,
+    warnMargin: number = WARNING_MARGIN
+): SampleVerdictResult {
+    const failures: string[] = [];
+    const warnings: string[] = [];
+
+    // Check overall (min threshold)
+    const overallResult = calculateMinMetricVerdict(metrics.overall, thresholds.minOverall, warnMargin, 'overall');
+    if (overallResult.verdict === 'FAIL' && overallResult.message) failures.push(overallResult.message);
+    else if (overallResult.verdict === 'WARN' && overallResult.message) warnings.push(overallResult.message);
+
+    // Check focusStability (min threshold)
+    const focusResult = calculateMinMetricVerdict(metrics.focusStability, thresholds.minFocusStability, warnMargin, 'focus');
+    if (focusResult.verdict === 'FAIL' && focusResult.message) failures.push(focusResult.message);
+    else if (focusResult.verdict === 'WARN' && focusResult.message) warnings.push(focusResult.message);
+
+    // Check artifactSeverity (max threshold - higher is worse)
+    const artifactResult = calculateMaxMetricVerdict(metrics.artifactSeverity, thresholds.maxArtifactSeverity, warnMargin, 'artifacts');
+    if (artifactResult.verdict === 'FAIL' && artifactResult.message) failures.push(artifactResult.message);
+    else if (artifactResult.verdict === 'WARN' && artifactResult.message) warnings.push(artifactResult.message);
+
+    // Check objectConsistency (min threshold)
+    const objResult = calculateMinMetricVerdict(metrics.objectConsistency, thresholds.minObjectConsistency, warnMargin, 'objConsist');
+    if (objResult.verdict === 'FAIL' && objResult.message) failures.push(objResult.message);
+    else if (objResult.verdict === 'WARN' && objResult.message) warnings.push(objResult.message);
+
+    // Hard failures (boolean checks)
+    if (thresholds.disallowBlackFrames !== false && metrics.hasBlackFrames) {
+        failures.push('hasBlackFrames');
+    }
+    if (thresholds.disallowHardFlicker !== false && metrics.hasHardFlicker) {
+        failures.push('hasHardFlicker');
+    }
+
+    // Determine final verdict
+    let verdict: Verdict = 'PASS';
+    if (failures.length > 0) {
+        verdict = 'FAIL';
+    } else if (warnings.length > 0) {
+        verdict = 'WARN';
+    }
+
+    return { verdict, failures, warnings };
 }

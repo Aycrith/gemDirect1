@@ -9,12 +9,20 @@ import TrashIcon from './icons/TrashIcon';
 import BayesianAnalyticsPanel from './BayesianAnalyticsPanel';
 import BookendVisionQAPanel from './BookendVisionQAPanel';
 import ProductionQualityPreviewPanel from './ProductionQualityPreviewPanel';
+import AbCompareDashboard from './AbCompareDashboard';
+import NarrativeDashboard from './NarrativeDashboard';
+import EnvironmentHealthPanel from './EnvironmentHealthPanel';
+import RunHistoryPanel from './RunHistoryPanel';
+import { calculateSampleVerdict, WARNING_MARGIN } from '../services/visionThresholdConfig';
 
 /**
  * QualityStatusWidget - Compact quality status indicator in header
  * 
  * Shows a quick summary of Vision QA results: ✅ N PASS / ⚠ N WARN / ❌ N FAIL
  * Click to scroll to the Vision QA panel for details.
+ * 
+ * Uses unified threshold logic from services/visionThresholdConfig.
+ * See Documentation/QA_SEMANTICS.md for WARN vs FAIL semantics.
  */
 const QualityStatusWidget: React.FC<{ onScrollToVisionQA?: () => void }> = ({ onScrollToVisionQA }) => {
     const [status, setStatus] = useState<{ pass: number; warn: number; fail: number; loading: boolean }>({
@@ -38,10 +46,10 @@ const QualityStatusWidget: React.FC<{ onScrollToVisionQA?: () => void }> = ({ on
                 const results = await resultsRes.json();
                 const thresholds = await thresholdsRes.json();
                 
-                // Calculate verdicts for each sample
+                // Calculate verdicts for each sample using unified logic
                 let pass = 0, warn = 0, fail = 0;
                 const defaults = thresholds.globalDefaults || { minOverall: 60, minFocusStability: 70, maxArtifactSeverity: 30, minObjectConsistency: 60 };
-                const warnMargin = thresholds.thresholdStrategy?.warnMargin ?? 5;
+                const warnMargin = thresholds.thresholdStrategy?.warnMargin ?? WARNING_MARGIN;
                 
                 for (const [sampleId, sample] of Object.entries(results)) {
                     if (typeof sample !== 'object' || sample === null) continue;
@@ -62,25 +70,18 @@ const QualityStatusWidget: React.FC<{ onScrollToVisionQA?: () => void }> = ({ on
                     const maxArtifactSeverity = override.maxArtifactSeverity ?? defaults.maxArtifactSeverity;
                     const minObjectConsistency = override.minObjectConsistency ?? defaults.minObjectConsistency;
                     
-                    // Check failures
+                    // Check verdicts using unified logic
                     const hasBlackFrames = s.frameAnalysis?.hasBlackFrames ?? false;
                     const hasHardFlicker = s.frameAnalysis?.hasHardFlicker ?? false;
-                    let hasFail = hasBlackFrames || hasHardFlicker ||
-                        overall < minOverall ||
-                        focusStability < minFocusStability ||
-                        artifactSeverity > maxArtifactSeverity ||
-                        objectConsistency < minObjectConsistency;
                     
-                    // Check warnings (within margin)
-                    let hasWarn = !hasFail && (
-                        overall < minOverall + warnMargin ||
-                        focusStability < minFocusStability + warnMargin ||
-                        artifactSeverity > maxArtifactSeverity - warnMargin ||
-                        objectConsistency < minObjectConsistency + warnMargin
+                    const verdictResult = calculateSampleVerdict(
+                        { overall, focusStability, artifactSeverity, objectConsistency, hasBlackFrames, hasHardFlicker },
+                        { minOverall, minFocusStability, maxArtifactSeverity, minObjectConsistency },
+                        warnMargin
                     );
                     
-                    if (hasFail) fail++;
-                    else if (hasWarn) warn++;
+                    if (verdictResult.verdict === 'FAIL') fail++;
+                    else if (verdictResult.verdict === 'WARN') warn++;
                     else pass++;
                 }
                 
@@ -340,6 +341,9 @@ const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                 {/* Performance Metrics - Added 2025-11-29 */}
                 <PerformanceMetricsPanel logs={logs} />
 
+                {/* Environment Health Panel - G1 Self-Diagnostics */}
+                <EnvironmentHealthPanel defaultCollapsed={true} />
+
                 {/* Bayesian A/B Testing Analytics - Feature Flag Controlled */}
                 {showBayesianAnalytics && metricsContext && (
                     <div className="mb-6">
@@ -356,6 +360,21 @@ const UsageDashboard: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ is
                         settings={localGenSettings}
                         defaultCollapsed={true}
                     />
+                </div>
+
+                {/* A/B QA Comparison Dashboard - F1 */}
+                <div className="mb-6">
+                    <AbCompareDashboard defaultCollapsed={true} />
+                </div>
+
+                {/* Narrative Pipeline Dashboard - F2 */}
+                <div className="mb-6">
+                    <NarrativeDashboard defaultCollapsed={true} />
+                </div>
+
+                {/* Run History & Experiment Browser - H1 */}
+                <div className="mb-6">
+                    <RunHistoryPanel defaultCollapsed={true} />
                 </div>
 
                 {/* Bookend Vision QA Panel - Dev/QA Diagnostics */}

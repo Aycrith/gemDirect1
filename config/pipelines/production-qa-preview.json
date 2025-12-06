@@ -1,0 +1,76 @@
+{
+  "$schema": "../../types/pipelineConfig.ts",
+  "version": "1.0",
+  "id": "production-qa-preview",
+  "name": "Production QA Preview",
+  "description": "Production-quality video generation with QA gates enabled. Optimized for 10-12 GB GPUs with quality validation aligned to Vision QA thresholds.",
+  
+  "workflowProfileId": "wan-fun-inpaint",
+  "presetMode": "production-qa",
+  "stabilityProfile": "standard",
+  
+  "featureFlags": {
+    "base": "production-qa",
+    "overrides": {}
+  },
+  
+  "qa": {
+    "keyframePairAnalysis": true,
+    "bookendQAMode": true,
+    "videoQualityGateEnabled": true,
+    "videoQualityThreshold": 70,
+    "videoAnalysisFeedback": true,
+    "autoVideoAnalysis": true
+  },
+  
+  "outputHints": {
+    "durationSeconds": 3.0
+  },
+  
+  "keyframeMode": "bookend",
+
+  "cameraPath": {
+    "id": "production-qa-basic-pan",
+    "description": "Basic left-to-right pan over 3 seconds. Demonstrates camera path infrastructure for temporal coherence.",
+    "coordinateSpace": "screen",
+    "motionType": "pan",
+    "motionIntensity": 0.3,
+    "keyframes": [
+      { "timeSeconds": 0.0, "position": { "x": 0.0, "y": 0.5 }, "fovDegrees": 50, "label": "Start - left side" },
+      { "timeSeconds": 1.5, "position": { "x": 0.5, "y": 0.5 }, "easing": "easeInOut", "label": "Mid - center" },
+      { "timeSeconds": 3.0, "position": { "x": 1.0, "y": 0.5 }, "easing": "easeOut", "label": "End - right side" }
+    ],
+    "metadata": {
+      "createdAt": "2025-12-05T00:00:00Z",
+      "author": "E1 Camera-as-Code Infrastructure",
+      "notes": "Illustrative camera path for Production QA pipeline. Not enforced in generation - used for metadata and future motion guidance."
+    }
+  },
+  
+  "vramRequirements": {
+    "minGB": 10,
+    "recommendedGB": 12,
+    "category": "medium"
+  },
+  
+  "scenes": [
+    {
+      "id": "preview-production-qa",
+      "name": "Preview Scene",
+      "description": "Sample preview scene for Production QA pipeline testing",
+      "temporalContext": {
+        "startMoment": "Subject at rest, medium shot",
+        "endMoment": "Closer view with more detail visible",
+        "duration": 3.0
+      }
+    }
+  ],
+  
+  "metadata": {
+    "createdAt": "2025-12-05T00:00:00Z",
+    "lastModifiedAt": "2025-12-05T00:00:00Z",
+    "author": "gemDirect1 C2 Pipeline Refactor + E1 Camera-as-Code",
+    "tags": ["production", "qa", "preview", "default", "camera-path"],
+    "notes": "Default Production QA pipeline configuration. Uses wan-fun-inpaint workflow with Standard stability profile. QA features aligned with A1/A3 Vision QA thresholds. Includes illustrative camera path for E1 infrastructure."
+  }
+}

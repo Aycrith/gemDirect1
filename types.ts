@@ -689,6 +689,28 @@ export interface LocalGenerationOutput extends LocalGenerationAsset {
     assets?: LocalGenerationAsset[];
 }
 
+/**
+ * Result of preflight analysis (keyframe pair continuity check).
+ * Stored with generation status to surface in UI.
+ */
+export interface PreflightResult {
+    /** Whether preflight ran at all */
+    ran: boolean;
+    /** Pass/Fail status */
+    passed?: boolean;
+    /** Reason for skip or failure */
+    reason?: string;
+    /** Timestamp of preflight run */
+    timestamp?: number;
+    /** Detailed scores (if available) */
+    scores?: {
+        characterMatch?: number;
+        environmentMatch?: number;
+        cameraMatch?: number;
+        overallContinuity?: number;
+    };
+}
+
 export interface LocalGenerationStatus {
       status: 'idle' | 'queued' | 'running' | 'complete' | 'error';
       message: string;
@@ -697,6 +719,8 @@ export interface LocalGenerationStatus {
       queue_position?: number;
       node_title?: string;
       final_output?: LocalGenerationOutput;
+      /** Result of last preflight analysis (keyframe pair check) */
+      preflightResult?: PreflightResult;
   }
 
 // ============================================================================

@@ -1,0 +1,24 @@
+{
+  "manifestVersion": "1.0.0",
+  "manifestId": "gm_mitq5jx6_ll6l5b",
+  "generationType": "video",
+  "sceneId": "sample-001-geometric",
+  "workflow": {
+    "profileId": "wan-i2v",
+    "label": "wan-i2v",
+    "category": "video"
+  },
+  "models": [],
+  "stabilityProfile": "custom",
+  "determinism": {
+    "seed": 277068126,
+    "seedExplicit": false
+  },
+  "comfyUIUrl": "http://127.0.0.1:8188",
+  "videoProvider": "comfyui-local",
+  "inputs": {},
+  "outputs": {},
+  "timing": {
+    "queuedAt": "2025-12-06T03:19:00.378Z"
+  }
+}

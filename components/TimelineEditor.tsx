@@ -1458,7 +1458,11 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 const keyframePairAnalysisEnabled = effectiveFlags.keyframePairAnalysis;
                 if (keyframePairAnalysisEnabled) {
                     try {
-                        updateStatus({ status: 'running', message: 'Analyzing keyframe pair continuity...' });
+                        updateStatus({ 
+                            status: 'running', 
+                            message: 'Analyzing keyframe pair continuity...',
+                            preflightResult: { ran: false } // Will be updated after completion
+                        });
                         console.log('[PIPELINE:BOOKEND] Running keyframe pair analysis preflight...');
                         
                         const analysisRequest: KeyframePairRequest = {
@@ -1485,28 +1489,69 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             const blockingMessage = getBlockingMessage(analysisResult) || thresholdCheck.reason || 'Quality check failed';
                             console.warn('[PIPELINE:BOOKEND] ⚠️ Keyframe pair analysis failed thresholds:', blockingMessage);
                             
-                            // Block generation with clear guidance
+                            // Block generation with clear guidance - store preflight result for UI display
                             updateStatus({ 
                                 status: 'error', 
-                                message: `Keyframe continuity check failed: ${blockingMessage}. Consider regenerating keyframes for better consistency.`
+                                message: `Keyframe continuity check failed: ${blockingMessage}. Consider regenerating keyframes for better consistency.`,
+                                preflightResult: {
+                                    ran: true,
+                                    passed: false,
+                                    reason: blockingMessage,
+                                    timestamp: Date.now(),
+                                    scores: {
+                                        characterMatch: analysisResult.characterMatch,
+                                        environmentMatch: analysisResult.environmentMatch,
+                                        cameraMatch: analysisResult.cameraMatch,
+                                        overallContinuity: analysisResult.overallContinuity,
+                                    }
+                                }
                             });
                             return;
                         }
                         
                         console.log('[PIPELINE:BOOKEND] ✅ Keyframe pair analysis passed');
+                        // Store successful preflight result
+                        updateStatus({ 
+                            status: 'running', 
+                            message: 'Preflight passed. Starting video generation...',
+                            preflightResult: {
+                                ran: true,
+                                passed: true,
+                                timestamp: Date.now(),
+                                scores: {
+                                    characterMatch: analysisResult.characterMatch,
+                                    environmentMatch: analysisResult.environmentMatch,
+                                    cameraMatch: analysisResult.cameraMatch,
+                                    overallContinuity: analysisResult.overallContinuity,
+                                }
+                            }
+                        });
                     } catch (analysisError) {
                         // Graceful fallback: log warning but don't block generation
                         const errorMsg = analysisError instanceof Error ? analysisError.message : String(analysisError);
                         console.warn('[PIPELINE:BOOKEND] ⚠️ Keyframe pair analysis unavailable (non-blocking):', errorMsg);
-                        // Update status to show we're continuing despite analysis failure
+                        // Update status to show we're continuing despite analysis failure - store skip reason
                         updateStatus({ 
                             status: 'running', 
-                            message: 'Keyframe analysis skipped (vision LLM unavailable). Proceeding with video generation...' 
+                            message: 'Keyframe analysis skipped (vision LLM unavailable). Proceeding with video generation...',
+                            preflightResult: {
+                                ran: false,
+                                reason: `Skipped: ${errorMsg}`,
+                                timestamp: Date.now(),
+                            }
                         });
                         // Continue with generation - analysis failure is non-fatal
                     }
                 } else {
                     console.log('[PIPELINE:BOOKEND] Keyframe pair analysis disabled, skipping preflight');
+                    // Clear or set disabled preflight result
+                    updateStatus({
+                        preflightResult: {
+                            ran: false,
+                            reason: 'Disabled in settings',
+                            timestamp: Date.now(),
+                        }
+                    });
                 }
 
                 // Use native dual-keyframe generation with configurable bookend workflow profile

@@ -19,6 +19,7 @@
  * using the local orchestrator (scripts/run-golden-set.ts).
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 
@@ -41,6 +42,7 @@ interface PipelineRunArgs {
     parallel?: number;
     dryRun?: boolean;
     check?: boolean;
+    priority?: number;
 }
 
 const COLORS = {
@@ -100,6 +102,9 @@ function parseArgs(): PipelineRunArgs {
             case '--dry-run':
                 result.dryRun = true;
                 break;
+            case '--priority':
+                result.priority = parseInt(args[++i]!, 10);
+                break;
             case '--check':
                 result.check = true;
                 break;
@@ -127,6 +132,7 @@ ${COLORS.yellow}OPTIONS:${COLORS.reset}
   --seed N             Seed for reproducibility
   --golden-set         Run the full golden set regression
   --parallel N         Number of parallel workers (default: 1)
+  --priority N         Max scenario priority to include (golden set)
   --dry-run            Show what would run without executing
   --help, -h           Show this help message
 
@@ -167,6 +173,28 @@ interface TemporalStatus {
     version?: string;
     error?: string;
     fallbackReason?: string;
+}
+
+/**
+ * Lightweight loader for golden set scenarios so we can start a Temporal workflow
+ * without pulling in the full service stack.
+ */
+function loadGoldenSetScenarios(maxPriority = 1): Array<{ sampleId: string; pipelineConfigId: string }> {
+    const filePath = path.resolve(__dirname, '..', 'config', 'golden-scenarios.json');
+    try {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(raw) as { scenarios?: Array<{ id?: string; sampleId?: string; pipelineConfigId?: string; priority?: number }> };
+        const scenarios = Array.isArray(parsed.scenarios) ? parsed.scenarios : [];
+        return scenarios
+            .filter((s: { priority?: number }) => typeof s.priority !== 'number' || s.priority <= maxPriority)
+            .map((s: { id?: string; sampleId?: string; pipelineConfigId?: string }) => ({
+                sampleId: s.sampleId ?? s.id ?? 'sample-001-geometric',
+                pipelineConfigId: s.pipelineConfigId ?? 'production-qa-preview',
+            }));
+    } catch (err) {
+        log(`Unable to load golden set scenarios: ${err instanceof Error ? err.message : String(err)}`, 'warn');
+        return [];
+    }
 }
 
 async function checkTemporalAvailability(config: ExternalConfig): Promise<TemporalStatus> {
@@ -236,6 +264,7 @@ async function runWithTemporal(
     // Dynamic import to avoid error when SDK not installed
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Client } = require('@temporalio/client');
+    const workflowId = `gemDirect-${Date.now()}`;
     
     const client = new Client({
         address: config.temporalAddress,
@@ -243,17 +272,47 @@ async function runWithTemporal(
     });
     
     try {
-        const workflowId = `gemDirect-${Date.now()}`;
-        
         if (args.goldenSet) {
+            const scenarios = loadGoldenSetScenarios(args.priority ?? 1);
+            if (scenarios.length === 0) {
+                throw new Error('No golden set scenarios found to start Temporal workflow');
+            }
+            const input = {
+                scenarios,
+                parallelism: args.parallel ?? 1,
+                priority: args.priority ?? 1,
+            };
+            
             log(`Starting golden set regression workflow: ${workflowId}`, 'info');
-            // Would call goldenSetRegressionWorkflow here
-            log('Golden set workflow not yet fully implemented for Temporal', 'warn');
+            const handle = await client.workflow.start('goldenSetRegressionWorkflow', {
+                taskQueue: config.taskQueue,
+                workflowId,
+                args: [input],
+            });
+            log(`Workflow started (runId: ${handle.firstExecutionRunId})`, 'success');
+            log(`Use Temporal UI/CLI to monitor run ${workflowId}`, 'info');
         } else if (args.pipelineConfigId && args.sampleId) {
+            const scenarios = [{
+                sampleId: args.sampleId,
+                pipelineConfigId: args.pipelineConfigId,
+                seed: args.seed,
+            }];
+            const input = {
+                scenarios,
+                parallelism: 1,
+            };
             log(`Starting single pipeline workflow: ${workflowId}`, 'info');
-            // Would call single pipeline workflow here
-            log('Single pipeline workflow not yet fully implemented for Temporal', 'warn');
+            const handle = await client.workflow.start('goldenSetRegressionWorkflow', {
+                taskQueue: config.taskQueue,
+                workflowId,
+                args: [input],
+            });
+            log(`Workflow started (runId: ${handle.firstExecutionRunId})`, 'success');
         }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`Temporal workflow start failed: ${message}`, 'warn');
+        throw error;
     } finally {
         await client.connection.close();
     }
@@ -265,7 +324,14 @@ async function runDirectFallback(args: PipelineRunArgs): Promise<void> {
     if (args.dryRun) {
         log('[DRY RUN] Would run pipeline directly', 'warn');
         if (args.goldenSet) {
-            console.log(`  Command: npx ts-node scripts/run-golden-set.ts --parallel ${args.parallel ?? 1}`);
+            const parts = ['npx', 'ts-node', 'scripts/run-golden-set.ts'];
+            if (args.parallel) {
+                parts.push('--parallel', String(args.parallel));
+            }
+            if (args.priority) {
+                parts.push('--priority', String(args.priority));
+            }
+            console.log(`  Command: ${parts.join(' ')}`);
         } else {
             console.log(`  Pipeline: ${args.pipelineConfigId ?? 'production-qa-preview'}`);
             console.log(`  Sample: ${args.sampleId ?? 'geometric-baseline'}`);
@@ -277,9 +343,15 @@ async function runDirectFallback(args: PipelineRunArgs): Promise<void> {
     if (args.goldenSet) {
         log('Running golden set regression directly...', 'info');
         const scriptPath = path.resolve(__dirname, 'run-golden-set.ts');
-        const parallelArg = args.parallel ? `--parallel ${args.parallel}` : '';
+        const scriptArgs = ['ts-node', scriptPath];
+        if (args.parallel && Number.isFinite(args.parallel)) {
+            scriptArgs.push('--parallel', String(args.parallel));
+        }
+        if (args.priority && Number.isFinite(args.priority)) {
+            scriptArgs.push('--priority', String(args.priority));
+        }
         
-        const result = spawn('npx', ['ts-node', scriptPath, parallelArg].filter(Boolean), {
+        const result = spawn('npx', scriptArgs, {
             stdio: 'inherit',
             shell: true,
         });
@@ -295,11 +367,35 @@ async function runDirectFallback(args: PipelineRunArgs): Promise<void> {
         });
     } else if (args.pipelineConfigId || args.sampleId) {
         log('Single pipeline execution via direct mode...', 'info');
-        // For single pipeline, we'd need to implement or call appropriate script
-        // For now, provide guidance
-        log(`To run a single pipeline, use:`, 'info');
-        console.log(`  npx ts-node scripts/run-pipeline.ts --pipeline ${args.pipelineConfigId ?? 'production-qa-preview'} --sample ${args.sampleId ?? 'geometric-baseline'}`);
-        log('Single pipeline direct execution not fully wired - use golden set or A/B experiments', 'warn');
+        const scriptPath = path.resolve(__dirname, 'run-pipeline.ts');
+        const scriptArgs = ['tsx', scriptPath];
+        if (args.pipelineConfigId) {
+            scriptArgs.push('--pipeline', args.pipelineConfigId);
+        }
+        if (args.sampleId) {
+            scriptArgs.push('--sample', args.sampleId);
+        }
+        if (args.seed !== undefined) {
+            scriptArgs.push('--seed', String(args.seed));
+        }
+        if (args.dryRun) {
+            scriptArgs.push('--dry-run');
+        }
+        
+        const result = spawn('npx', scriptArgs, {
+            stdio: 'inherit',
+            shell: true,
+        });
+        
+        await new Promise<void>((resolve, reject) => {
+            result.on('close', (code) => {
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`Pipeline exited with code ${code}`));
+                }
+            });
+        });
     } else {
         log('No action specified. Use --help for usage.', 'error');
     }
@@ -347,14 +443,19 @@ async function main(): Promise<void> {
     
     // Execute with appropriate mode
     if (temporalStatus.available && config.enabled) {
-        await runWithTemporal(args, config);
-    } else {
-        if (temporalStatus.fallbackReason) {
-            log(temporalStatus.fallbackReason, 'info');
+        try {
+            await runWithTemporal(args, config);
+            log('Execution complete', 'success');
+            return;
+        } catch (err) {
+            log('Temporal start failed, falling back to direct execution', 'warn');
         }
-        await runDirectFallback(args);
     }
     
+    if (temporalStatus.fallbackReason) {
+        log(temporalStatus.fallbackReason, 'info');
+    }
+    await runDirectFallback(args);
     log('Execution complete', 'success');
 }
 

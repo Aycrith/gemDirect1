@@ -119,6 +119,17 @@ export interface VRAMStatus {
     utilizationPercent: number;
 }
 
+export interface PreflightConfig {
+    /** Minimum free VRAM required (MB) before starting a task */
+    minVRAMMB?: number;
+    /** Maximum wait time for VRAM availability (ms) */
+    vramWaitTimeoutMs?: number;
+    /** ComfyUI server URL for preflight checks */
+    comfyUIUrl?: string;
+    /** Skip preflight checks (for testing or fallback) */
+    skipPreflight?: boolean;
+}
+
 // ============================================================================
 // GENERATION QUEUE CLASS
 // ============================================================================
@@ -139,15 +150,32 @@ export class GenerationQueue {
     
     private listeners: Set<(state: QueueState) => void> = new Set();
     private vramCheckFn?: () => Promise<VRAMStatus>;
+    private _preflightConfig: PreflightConfig = {};
 
     constructor(options?: {
         vramCheck?: () => Promise<VRAMStatus>;
+        preflight?: PreflightConfig;
     }) {
         this.vramCheckFn = options?.vramCheck;
+        this._preflightConfig = options?.preflight ?? {};
         
         if (DEBUG_QUEUE) {
-            console.debug('[GenerationQueue] Initialized');
+            console.debug('[GenerationQueue] Initialized', { hasPreflight: !!options?.preflight });
         }
+    }
+
+    /**
+     * Get the current preflight configuration
+     */
+    getPreflightConfig(): PreflightConfig {
+        return this._preflightConfig;
+    }
+
+    /**
+     * Update preflight configuration
+     */
+    setPreflightConfig(config: Partial<PreflightConfig>): void {
+        this._preflightConfig = { ...this._preflightConfig, ...config };
     }
 
     // -------------------------------------------------------------------------
@@ -545,13 +573,37 @@ export class GenerationQueue {
 // ============================================================================
 
 let globalQueue: GenerationQueue | null = null;
+let globalPreflightConfig: PreflightConfig = {};
+
+/**
+ * Configure preflight settings for the global queue
+ * Call this before getGenerationQueue() to apply settings
+ */
+export function configureQueuePreflight(config: PreflightConfig): void {
+    globalPreflightConfig = { ...globalPreflightConfig, ...config };
+    
+    // If queue already exists, recreate it with new config
+    if (globalQueue) {
+        const wasRunning = globalQueue.getState().isRunning;
+        if (wasRunning) {
+            console.warn('[GenerationQueue] Cannot reconfigure while task is running');
+            return;
+        }
+        globalQueue.clear();
+        globalQueue = new GenerationQueue({ preflight: globalPreflightConfig });
+    }
+    
+    if (DEBUG_QUEUE) {
+        console.debug('[GenerationQueue] Preflight config updated:', config);
+    }
+}
 
 /**
  * Get or create the global generation queue
  */
 export function getGenerationQueue(): GenerationQueue {
     if (!globalQueue) {
-        globalQueue = new GenerationQueue();
+        globalQueue = new GenerationQueue({ preflight: globalPreflightConfig });
     }
     return globalQueue;
 }
@@ -561,6 +613,7 @@ export function getGenerationQueue(): GenerationQueue {
  */
 export function createGenerationQueue(options?: {
     vramCheck?: () => Promise<VRAMStatus>;
+    preflight?: PreflightConfig;
 }): GenerationQueue {
     return new GenerationQueue(options);
 }
@@ -573,6 +626,7 @@ export function resetGlobalQueue(): void {
         globalQueue.clear();
     }
     globalQueue = null;
+    globalPreflightConfig = {};
 }
 
 // ============================================================================

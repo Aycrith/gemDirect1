@@ -1,0 +1,1394 @@
+{
+  "metadata": {
+    "timestamp": "20251205-005002",
+    "presetId": "character",
+    "presetName": "Character-stable",
+    "stabilityProfile": "cinematic",
+    "description": "IP-Adapter based workflow for character consistency",
+    "workflowProfile": "wan-ipadapter",
+    "regressionRun": "run-20251204-163603",
+    "vlmRuns": 3
+  },
+  "samples": {
+    "sample-003-environment": {
+      "scores": {
+        "objectConsistency": 95,
+        "artifactSeverity": 10,
+        "promptAdherence": 90,
+        "motionQuality": 85,
+        "endFrameMatch": 90,
+        "overall": 88,
+        "startFrameMatch": 95,
+        "focusStability": 85
+      },
+      "context": {
+        "sceneDescription": "Camera slowly pans across a cozy cafe interior",
+        "motionDescription": "Smooth horizontal camera pan from left to right, revealing more of the cafe interior"
+      },
+      "status": "success",
+      "summary": "The video successfully captures a smooth camera pan across a cozy cafe interior with high fidelity to the reference frames, maintaining object consistency and lighting. Minor visual artifacts are present but do not detract from overall quality.",
+      "runs": [
+        {
+          "status": "success",
+          "coherenceNotes": "The motion is smooth and coherent with no flickering or glitches. The leather armchair moves from left to right as expected, and all key objects remain consistent in type and count. Lighting and composition match the prompts well.",
+          "summary": "The video successfully captures a smooth camera pan across a cozy cafe interior with high fidelity to the reference frames, maintaining object consistency and lighting. Minor visual artifacts are present but do not detract from overall quality.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 10,
+            "promptAdherence": 90,
+            "motionQuality": 85,
+            "endFrameMatch": 90,
+            "overall": 88,
+            "startFrameMatch": 95,
+            "focusStability": 85
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "The motion is smooth with no flickering or artifacts. The leather armchair moves from left to right as expected, and all key elements (brick wall, espresso machine, hanging plants) maintain consistent appearance and position. No major inconsistencies or visual glitches observed.",
+          "summary": "The video successfully captures a smooth camera pan across a cozy cafe interior with high fidelity to the reference frames. Objects remain consistent and the lighting is natural, though minor tonal shifts occur during the pan.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 10,
+            "promptAdherence": 90,
+            "motionQuality": 85,
+            "endFrameMatch": 90,
+            "overall": 88,
+            "startFrameMatch": 95,
+            "focusStability": 85
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "The leather armchair moves from left to right as expected, and all key objects remain consistent in type and count. Lighting and composition are preserved throughout the pan with no noticeable artifacts or inconsistencies.",
+          "summary": "The video successfully captures a smooth camera pan across a cozy cafe interior with high fidelity to the reference frames. Minor tonal shifts and slight perspective adjustments are present but do not detract from the overall quality.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 10,
+            "promptAdherence": 90,
+            "motionQuality": 85,
+            "endFrameMatch": 90,
+            "overall": 88,
+            "startFrameMatch": 95,
+            "focusStability": 85
+          }
+        }
+      ],
+      "timestamp": "2025-12-05T00:54:00Z",
+      "aggregatedMetrics": {
+        "runsTotal": 3,
+        "promptAdherence": {
+          "mean": 90.0,
+          "max": 90.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 0.0
+        },
+        "runsSuccessful": 3,
+        "overall": {
+          "mean": 88.0,
+          "max": 88.0,
+          "min": 88.0,
+          "count": 3,
+          "median": 88.0,
+          "stdDev": 0.0
+        },
+        "motionQuality": {
+          "mean": 85.0,
+          "max": 85.0,
+          "min": 85.0,
+          "count": 3,
+          "median": 85.0,
+          "stdDev": 0.0
+        },
+        "focusStability": {
+          "mean": 85.0,
+          "max": 85.0,
+          "min": 85.0,
+          "count": 3,
+          "median": 85.0,
+          "stdDev": 0.0
+        },
+        "endFrameMatch": {
+          "mean": 90.0,
+          "max": 90.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 0.0
+        },
+        "startFrameMatch": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "artifactSeverity": {
+          "mean": 10.0,
+          "max": 10.0,
+          "min": 10.0,
+          "count": 3,
+          "median": 10.0,
+          "stdDev": 0.0
+        },
+        "objectConsistency": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        }
+      },
+      "coherenceNotes": "The motion is smooth and coherent with no flickering or glitches. The leather armchair moves from left to right as expected, and all key objects remain consistent in type and count. Lighting and composition match the prompts well.",
+      "pixelSimilarity": {
+        "avgSimilarity": 54.15,
+        "endSimilarity": 53.9,
+        "startSimilarity": 54.4
+      },
+      "rawAnalysis": null,
+      "rawAnalysisRuns": [
+        "{\n  \"startFrameMatch\": 95,\n  \"endFrameMatch\": 90,\n  \"motionQuality\": 85,\n  \"promptAdherence\": 90,\n  \"focusStability\": 85,\n  \"artifactSeverity\": 10,\n  \"objectConsistency\": 95,\n  \"overall\": 88,\n  \"summary\": \"The video successfully captures a smooth camera pan across a cozy cafe interior with high fidelity to the reference frames, maintaining object consistency and lighting. Minor visual artifacts are present but do not detract from overall quality.\",\n  \"coherenceNotes\": \"The motion is smooth and coherent with no flickering or glitches. The leather armchair moves from left to right as expected, and all key objects remain consistent in type and count. Lighting and composition match the prompts well.\"\n}",
+        "{\n  \"startFrameMatch\": 95,\n  \"endFrameMatch\": 90,\n  \"motionQuality\": 85,\n  \"promptAdherence\": 90,\n  \"focusStability\": 85,\n  \"artifactSeverity\": 10,\n  \"objectConsistency\": 95,\n  \"overall\": 88,\n  \"summary\": \"The video successfully captures a smooth camera pan across a cozy cafe interior with high fidelity to the reference frames. Objects remain consistent and the lighting is natural, though minor tonal shifts occur during the pan.\",\n  \"coherenceNotes\": \"The motion is smooth with no flickering or artifacts. The leather armchair moves from left to right as expected, and all key elements (brick wall, espresso machine, hanging plants) maintain consistent appearance and position. No major inconsistencies or visual glitches observed.\"\n}",
+        "{\"startFrameMatch\":95,\"endFrameMatch\":90,\"motionQuality\":85,\"promptAdherence\":90,\"focusStability\":85,\"artifactSeverity\":10,\"objectConsistency\":95,\"overall\":88,\"summary\":\"The video successfully captures a smooth camera pan across a cozy cafe interior with high fidelity to the reference frames. Minor tonal shifts and slight perspective adjustments are present but do not detract from the overall quality.\",\"coherenceNotes\":\"The leather armchair moves from left to right as expected, and all key objects remain consistent in type and count. Lighting and composition are preserved throughout the pan with no noticeable artifacts or inconsistencies.\"}"
+      ],
+      "frameAnalysis": {
+        "brightnessStats": {
+          "values": [
+            82.5,
+            79.8,
+            81.1,
+            80.2,
+            80.4,
+            79.8,
+            78.2,
+            78.8,
+            78.4,
+            78.2
+          ],
+          "avg": 79.7,
+          "max": 82.5,
+          "min": 78.2
+        },
+        "frameArtifactScore": 0,
+        "hasBlackFrames": false,
+        "hasHardFlicker": false
+      },
+      "presetId": "character",
+      "workflowProfile": "wan-ipadapter"
+    },
+    "sample-007-occlusion": {
+      "scores": {
+        "objectConsistency": 95,
+        "artifactSeverity": 10,
+        "promptAdherence": 90,
+        "motionQuality": 85,
+        "endFrameMatch": 95,
+        "overall": 90,
+        "startFrameMatch": 95,
+        "focusStability": 90
+      },
+      "context": {
+        "sceneDescription": "A person walking on a sidewalk passes behind a lamppost, briefly occluded, then re-emerges on the other side. Static camera, consistent lighting, tests identity preservation through temporary occlusion.",
+        "motionDescription": "Man walks steadily from left to right across frame. As he passes the lamppost in the center, he is briefly occluded (hidden behind it), then re-emerges on the right side. His identity (gray hoodie, blue jeans, same face/build) must remain consistent before and after occlusion. Static camera throughout."
+      },
+      "status": "success",
+      "summary": "The video accurately depicts the man walking from left to right, occluded by the lamppost, with perfect identity and clothing consistency. Motion is smooth and natural, with no visual artifacts.",
+      "runs": [
+        {
+          "status": "success",
+          "coherenceNotes": "No artifacts or focus issues. The man's appearance and the lamppost remain consistent throughout. Motion is coherent and matches the expected occlusion and re-emergence.",
+          "summary": "The video accurately depicts the man walking from left to right, occluded by the lamppost, with perfect identity and clothing consistency. Motion is smooth and natural, with no visual artifacts.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 10,
+            "promptAdherence": 90,
+            "motionQuality": 85,
+            "endFrameMatch": 95,
+            "overall": 90,
+            "startFrameMatch": 95,
+            "focusStability": 90
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "Motion is coherent and natural, with no flickering, artifacts, or focus issues. The subject’s clothing and facial features are consistent before and after occlusion. No visual disturbances detected.",
+          "summary": "The video perfectly matches the keyframes with smooth, natural motion and flawless object consistency. The subject’s identity and appearance remain perfectly preserved throughout.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 90,
+            "endFrameMatch": 95,
+            "overall": 92,
+            "startFrameMatch": 95,
+            "focusStability": 90
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "Motion is coherent and natural, with the subject walking from left to right and passing behind the lamppost. No focus loss or major artifacts detected. The only minor issue is slight noise in the final frame, which is negligible.",
+          "summary": "The video exhibits excellent fidelity to the reference frames, with smooth motion and perfect object consistency. The subject's appearance and the environment remain unchanged throughout, with only minor visual noise present.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 10,
+            "promptAdherence": 90,
+            "motionQuality": 85,
+            "endFrameMatch": 95,
+            "overall": 90,
+            "startFrameMatch": 95,
+            "focusStability": 90
+          }
+        }
+      ],
+      "timestamp": "2025-12-05T00:54:13Z",
+      "aggregatedMetrics": {
+        "runsTotal": 3,
+        "promptAdherence": {
+          "mean": 91.7,
+          "max": 95.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 2.36
+        },
+        "runsSuccessful": 3,
+        "overall": {
+          "mean": 90.7,
+          "max": 92.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 0.94
+        },
+        "motionQuality": {
+          "mean": 86.7,
+          "max": 90.0,
+          "min": 85.0,
+          "count": 3,
+          "median": 85.0,
+          "stdDev": 2.36
+        },
+        "focusStability": {
+          "mean": 90.0,
+          "max": 90.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 0.0
+        },
+        "endFrameMatch": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "startFrameMatch": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "artifactSeverity": {
+          "mean": 6.7,
+          "max": 10.0,
+          "min": 0.0,
+          "count": 3,
+          "median": 10.0,
+          "stdDev": 4.71
+        },
+        "objectConsistency": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        }
+      },
+      "coherenceNotes": "No artifacts or focus issues. The man's appearance and the lamppost remain consistent throughout. Motion is coherent and matches the expected occlusion and re-emergence.",
+      "pixelSimilarity": {
+        "avgSimilarity": 51.5,
+        "endSimilarity": 53.2,
+        "startSimilarity": 49.8
+      },
+      "rawAnalysis": null,
+      "rawAnalysisRuns": [
+        "{\n  \"startFrameMatch\": 95,\n  \"endFrameMatch\": 95,\n  \"motionQuality\": 85,\n  \"promptAdherence\": 90,\n  \"focusStability\": 90,\n  \"artifactSeverity\": 10,\n  \"objectConsistency\": 95,\n  \"overall\": 90,\n  \"summary\": \"The video accurately depicts the man walking from left to right, occluded by the lamppost, with perfect identity and clothing consistency. Motion is smooth and natural, with no visual artifacts.\",\n  \"coherenceNotes\": \"No artifacts or focus issues. The man's appearance and the lamppost remain consistent throughout. Motion is coherent and matches the expected occlusion and re-emergence.\"\n}",
+        "{\n  \"startFrameMatch\": 95,\n  \"endFrameMatch\": 95,\n  \"motionQuality\": 90,\n  \"promptAdherence\": 95,\n  \"focusStability\": 90,\n  \"artifactSeverity\": 0,\n  \"objectConsistency\": 95,\n  \"overall\": 92,\n  \"summary\": \"The video perfectly matches the keyframes with smooth, natural motion and flawless object consistency. The subject’s identity and appearance remain perfectly preserved throughout.\",\n  \"coherenceNotes\": \"Motion is coherent and natural, with no flickering, artifacts, or focus issues. The subject’s clothing and facial features are consistent before and after occlusion. No visual disturbances detected.\"\n}",
+        "{\n  \"startFrameMatch\": 95,\n  \"endFrameMatch\": 95,\n  \"motionQuality\": 85,\n  \"promptAdherence\": 90,\n  \"focusStability\": 90,\n  \"artifactSeverity\": 10,\n  \"objectConsistency\": 95,\n  \"overall\": 90,\n  \"summary\": \"The video exhibits excellent fidelity to the reference frames, with smooth motion and perfect object consistency. The subject's appearance and the environment remain unchanged throughout, with only minor visual noise present.\",\n  \"coherenceNotes\": \"Motion is coherent and natural, with the subject walking from left to right and passing behind the lamppost. No focus loss or major artifacts detected. The only minor issue is slight noise in the final frame, which is negligible.\"\n}"
+      ],
+      "frameAnalysis": {
+        "brightnessStats": {
+          "values": [
+            124.8,
+            121.7,
+            121.7,
+            127.0,
+            127.2,
+            121.0,
+            118.9,
+            114.6,
+            113.9,
+            117.6
+          ],
+          "avg": 120.8,
+          "max": 127.2,
+          "min": 113.9
+        },
+        "frameArtifactScore": 0,
+        "hasBlackFrames": false,
+        "hasHardFlicker": false
+      },
+      "presetId": "character",
+      "workflowProfile": "wan-ipadapter"
+    },
+    "sample-008-lighting": {
+      "scores": {
+        "objectConsistency": 95,
+        "artifactSeverity": 0,
+        "promptAdherence": 95,
+        "motionQuality": 90,
+        "endFrameMatch": 95,
+        "overall": 95,
+        "startFrameMatch": 95,
+        "focusStability": 95
+      },
+      "context": {
+        "sceneDescription": "A single woman (same person throughout) sitting at a wooden desk by a window. The scene is completely static except for the gradual lighting change. The woman maintains the SAME pose, SAME position, SAME appearance. No sudden movements, no flickering, no black frames, no distortion.",
+        "motionDescription": "Completely static scene with gradual lighting transition ONLY. The woman does NOT move - she maintains the SAME pose throughout. The ONLY change is lighting: window light slowly dims as sky darkens, desk lamp slowly brightens. The transition is smooth and continuous with NO sudden changes, NO flickering, NO black frames, NO distortion. All objects remain in exactly the same positions."
+      },
+      "status": "success",
+      "summary": "The video perfectly matches the keyframes with flawless lighting transition and absolute object consistency. No artifacts or inconsistencies detected.",
+      "runs": [
+        {
+          "status": "success",
+          "coherenceNotes": "All elements remain perfectly consistent throughout. Lighting transitions smoothly from daylight to dusk with the lamp gradually illuminating. Subject and objects maintain exact positions and appearances. No flickering, distortion, or visual artifacts.",
+          "summary": "The video perfectly matches the keyframes with flawless lighting transition and absolute object consistency. No artifacts or inconsistencies detected.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 90,
+            "endFrameMatch": 95,
+            "overall": 95,
+            "startFrameMatch": 95,
+            "focusStability": 95
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "No flickering, no black frames, no distortion. Subject and objects maintain exact positions and appearances. Lighting transition is smooth and natural.",
+          "summary": "The video perfectly matches the keyframes with flawless lighting transition and zero artifacts. All objects and the subject remain perfectly consistent throughout.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 90,
+            "endFrameMatch": 95,
+            "overall": 95,
+            "startFrameMatch": 95,
+            "focusStability": 95
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "All elements remain perfectly consistent in position and appearance. Lighting transitions are smooth and natural. No artifacts, flickering, or distortions observed.",
+          "summary": "The video successfully captures the static scene with a smooth lighting transition from daylight to dusk, maintaining perfect object and subject consistency throughout.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 0,
+            "promptAdherence": 90,
+            "motionQuality": 85,
+            "endFrameMatch": 95,
+            "overall": 90,
+            "startFrameMatch": 95,
+            "focusStability": 90
+          }
+        }
+      ],
+      "timestamp": "2025-12-05T00:53:47Z",
+      "aggregatedMetrics": {
+        "runsTotal": 3,
+        "promptAdherence": {
+          "mean": 93.3,
+          "max": 95.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 2.36
+        },
+        "runsSuccessful": 3,
+        "overall": {
+          "mean": 93.3,
+          "max": 95.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 2.36
+        },
+        "motionQuality": {
+          "mean": 88.3,
+          "max": 90.0,
+          "min": 85.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 2.36
+        },
+        "focusStability": {
+          "mean": 93.3,
+          "max": 95.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 2.36
+        },
+        "endFrameMatch": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "startFrameMatch": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "artifactSeverity": {
+          "mean": 0.0,
+          "max": 0.0,
+          "min": 0.0,
+          "count": 3,
+          "median": 0.0,
+          "stdDev": 0.0
+        },
+        "objectConsistency": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        }
+      },
+      "coherenceNotes": "All elements remain perfectly consistent throughout. Lighting transitions smoothly from daylight to dusk with the lamp gradually illuminating. Subject and objects maintain exact positions and appearances. No flickering, distortion, or visual artifacts.",
+      "pixelSimilarity": {
+        "avgSimilarity": 53.75,
+        "endSimilarity": 57.6,
+        "startSimilarity": 49.9
+      },
+      "rawAnalysis": null,
+      "rawAnalysisRuns": [
+        "{\n  \"startFrameMatch\": 95,\n  \"endFrameMatch\": 95,\n  \"motionQuality\": 90,\n  \"promptAdherence\": 95,\n  \"focusStability\": 95,\n  \"artifactSeverity\": 0,\n  \"objectConsistency\": 95,\n  \"overall\": 95,\n  \"summary\": \"The video perfectly matches the keyframes with flawless lighting transition and absolute object consistency. No artifacts or inconsistencies detected.\",\n  \"coherenceNotes\": \"All elements remain perfectly consistent throughout. Lighting transitions smoothly from daylight to dusk with the lamp gradually illuminating. Subject and objects maintain exact positions and appearances. No flickering, distortion, or visual artifacts.\"\n}",
+        "{\"startFrameMatch\":95,\"endFrameMatch\":95,\"motionQuality\":90,\"promptAdherence\":95,\"focusStability\":95,\"artifactSeverity\":0,\"objectConsistency\":95,\"overall\":95,\"summary\":\"The video perfectly matches the keyframes with flawless lighting transition and zero artifacts. All objects and the subject remain perfectly consistent throughout.\",\"coherenceNotes\":\"No flickering, no black frames, no distortion. Subject and objects maintain exact positions and appearances. Lighting transition is smooth and natural.\"}",
+        "{\n  \"startFrameMatch\": 95,\n  \"endFrameMatch\": 95,\n  \"motionQuality\": 85,\n  \"promptAdherence\": 90,\n  \"focusStability\": 90,\n  \"artifactSeverity\": 0,\n  \"objectConsistency\": 95,\n  \"overall\": 90,\n  \"summary\": \"The video successfully captures the static scene with a smooth lighting transition from daylight to dusk, maintaining perfect object and subject consistency throughout.\",\n  \"coherenceNotes\": \"All elements remain perfectly consistent in position and appearance. Lighting transitions are smooth and natural. No artifacts, flickering, or distortions observed.\"\n}"
+      ],
+      "frameAnalysis": {
+        "brightnessStats": {
+          "values": [
+            130.1,
+            129.8,
+            133.1,
+            132.3,
+            131.6,
+            131.1,
+            130.4,
+            129.3,
+            128.2,
+            127.2
+          ],
+          "avg": 130.3,
+          "max": 133.1,
+          "min": 127.2
+        },
+        "frameArtifactScore": 0,
+        "hasBlackFrames": false,
+        "hasHardFlicker": false
+      },
+      "presetId": "character",
+      "workflowProfile": "wan-ipadapter"
+    },
+    "sample-002-character": {
+      "scores": {
+        "objectConsistency": 99,
+        "artifactSeverity": 0,
+        "promptAdherence": 98,
+        "motionQuality": 95,
+        "endFrameMatch": 97,
+        "overall": 97,
+        "startFrameMatch": 98,
+        "focusStability": 95
+      },
+      "context": {
+        "sceneDescription": "A young woman with distinctive red hair turns to face the camera",
+        "motionDescription": "Character smoothly turns head from profile to face camera, subtle smile forms"
+      },
+      "status": "success",
+      "summary": "The video perfectly matches the reference keyframes with flawless motion and identity consistency. No artifacts or focus issues are present.",
+      "runs": [
+        {
+          "status": "success",
+          "coherenceNotes": "All frames show consistent subject, lighting, and composition. The head turn and smile transition are smooth and natural. No visual artifacts or inconsistencies detected.",
+          "summary": "The video perfectly matches the reference keyframes with flawless motion and identity consistency. No artifacts or focus issues are present.",
+          "scores": {
+            "objectConsistency": 99,
+            "artifactSeverity": 0,
+            "promptAdherence": 98,
+            "motionQuality": 95,
+            "endFrameMatch": 97,
+            "overall": 97,
+            "startFrameMatch": 98,
+            "focusStability": 95
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "All frames show consistent subject, lighting, and composition. Motion is smooth and natural, with no visual artifacts or inconsistencies.",
+          "summary": "The video perfectly matches the keyframes with flawless motion and identity consistency. No artifacts or focus issues detected.",
+          "scores": {
+            "objectConsistency": 100,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 90,
+            "endFrameMatch": 95,
+            "overall": 95,
+            "startFrameMatch": 95,
+            "focusStability": 95
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "All frames are clean and consistent. The subject’s appearance, lighting, and composition remain identical throughout. Motion is smooth and natural, with no flickering or glitches.",
+          "summary": "The video perfectly matches the keyframes with flawless motion and identity consistency. No artifacts or focus issues detected.",
+          "scores": {
+            "objectConsistency": 100,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 90,
+            "endFrameMatch": 95,
+            "overall": 95,
+            "startFrameMatch": 95,
+            "focusStability": 95
+          }
+        }
+      ],
+      "timestamp": "2025-12-05T00:54:35Z",
+      "aggregatedMetrics": {
+        "runsTotal": 3,
+        "promptAdherence": {
+          "mean": 96.0,
+          "max": 98.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 1.41
+        },
+        "runsSuccessful": 3,
+        "overall": {
+          "mean": 95.7,
+          "max": 97.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.94
+        },
+        "motionQuality": {
+          "mean": 91.7,
+          "max": 95.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 2.36
+        },
+        "focusStability": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "endFrameMatch": {
+          "mean": 95.7,
+          "max": 97.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.94
+        },
+        "startFrameMatch": {
+          "mean": 96.0,
+          "max": 98.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 1.41
+        },
+        "artifactSeverity": {
+          "mean": 0.0,
+          "max": 0.0,
+          "min": 0.0,
+          "count": 3,
+          "median": 0.0,
+          "stdDev": 0.0
+        },
+        "objectConsistency": {
+          "mean": 99.7,
+          "max": 100.0,
+          "min": 99.0,
+          "count": 3,
+          "median": 100.0,
+          "stdDev": 0.47
+        }
+      },
+      "coherenceNotes": "All frames show consistent subject, lighting, and composition. The head turn and smile transition are smooth and natural. No visual artifacts or inconsistencies detected.",
+      "pixelSimilarity": {
+        "avgSimilarity": 51.45,
+        "endSimilarity": 52.9,
+        "startSimilarity": 50
+      },
+      "rawAnalysis": null,
+      "rawAnalysisRuns": [
+        "{\"startFrameMatch\":98,\"endFrameMatch\":97,\"motionQuality\":95,\"promptAdherence\":98,\"focusStability\":95,\"artifactSeverity\":0,\"objectConsistency\":99,\"overall\":97,\"summary\":\"The video perfectly matches the reference keyframes with flawless motion and identity consistency. No artifacts or focus issues are present.\",\"coherenceNotes\":\"All frames show consistent subject, lighting, and composition. The head turn and smile transition are smooth and natural. No visual artifacts or inconsistencies detected.\"}",
+        "{\"startFrameMatch\":95,\"endFrameMatch\":95,\"motionQuality\":90,\"promptAdherence\":95,\"focusStability\":95,\"artifactSeverity\":0,\"objectConsistency\":100,\"overall\":95,\"summary\":\"The video perfectly matches the keyframes with flawless motion and identity consistency. No artifacts or focus issues detected.\",\"coherenceNotes\":\"All frames show consistent subject, lighting, and composition. Motion is smooth and natural, with no visual artifacts or inconsistencies.\"}",
+        "{\"startFrameMatch\":95,\"endFrameMatch\":95,\"motionQuality\":90,\"promptAdherence\":95,\"focusStability\":95,\"artifactSeverity\":0,\"objectConsistency\":100,\"overall\":95,\"summary\":\"The video perfectly matches the keyframes with flawless motion and identity consistency. No artifacts or focus issues detected.\",\"coherenceNotes\":\"All frames are clean and consistent. The subject’s appearance, lighting, and composition remain identical throughout. Motion is smooth and natural, with no flickering or glitches.\"}"
+      ],
+      "frameAnalysis": {
+        "brightnessStats": {
+          "values": [
+            131.9,
+            130.9,
+            133.3,
+            134.8,
+            132.0,
+            127.5,
+            124.5,
+            123.5,
+            123.7,
+            123.3
+          ],
+          "avg": 128.5,
+          "max": 134.8,
+          "min": 123.3
+        },
+        "frameArtifactScore": 0,
+        "hasBlackFrames": false,
+        "hasHardFlicker": false
+      },
+      "presetId": "character",
+      "workflowProfile": "wan-ipadapter"
+    },
+    "sample-004-motion": {
+      "scores": {
+        "objectConsistency": 100,
+        "artifactSeverity": 0,
+        "promptAdherence": 100,
+        "motionQuality": 100,
+        "endFrameMatch": 100,
+        "overall": 100,
+        "startFrameMatch": 100,
+        "focusStability": 100
+      },
+      "context": {
+        "sceneDescription": "Single person walking slowly across a simple outdoor path",
+        "motionDescription": "Woman walks slowly and steadily from left to right across the frame over 3 seconds, maintaining consistent pose and stride"
+      },
+      "status": "success",
+      "summary": "Video perfectly matches keyframes with flawless motion and no artifacts. Subject remains consistently in focus and attire is identical throughout.",
+      "runs": [
+        {
+          "status": "success",
+          "coherenceNotes": "No artifacts, no inconsistencies, and motion is perfectly smooth and natural. All elements are visually coherent and match the prompt exactly.",
+          "summary": "Video perfectly matches keyframes with flawless motion and no artifacts. Subject remains consistently in focus and attire is identical throughout.",
+          "scores": {
+            "objectConsistency": 100,
+            "artifactSeverity": 0,
+            "promptAdherence": 100,
+            "motionQuality": 100,
+            "endFrameMatch": 100,
+            "overall": 100,
+            "startFrameMatch": 100,
+            "focusStability": 100
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "No artifacts, no inconsistencies, and perfect motion coherence between frames. All elements remain visually stable and true to the prompt.",
+          "summary": "The video perfectly matches the keyframes with flawless motion and no visual artifacts. The subject remains consistently focused and the scene adheres to all specified details.",
+          "scores": {
+            "objectConsistency": 100,
+            "artifactSeverity": 0,
+            "promptAdherence": 100,
+            "motionQuality": 100,
+            "endFrameMatch": 100,
+            "overall": 100,
+            "startFrameMatch": 100,
+            "focusStability": 100
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "No artifacts, no focus loss, no motion inconsistencies. All elements remain perfectly aligned with the prompt across all frames.",
+          "summary": "Video perfectly matches keyframes with flawless motion and no artifacts. Subject and environment are consistent and visually pristine.",
+          "scores": {
+            "objectConsistency": 100,
+            "artifactSeverity": 0,
+            "promptAdherence": 100,
+            "motionQuality": 100,
+            "endFrameMatch": 100,
+            "overall": 100,
+            "startFrameMatch": 100,
+            "focusStability": 100
+          }
+        }
+      ],
+      "timestamp": "2025-12-05T00:53:35Z",
+      "aggregatedMetrics": {
+        "runsTotal": 3,
+        "promptAdherence": {
+          "mean": 100.0,
+          "max": 100.0,
+          "min": 100.0,
+          "count": 3,
+          "median": 100.0,
+          "stdDev": 0.0
+        },
+        "runsSuccessful": 3,
+        "overall": {
+          "mean": 100.0,
+          "max": 100.0,
+          "min": 100.0,
+          "count": 3,
+          "median": 100.0,
+          "stdDev": 0.0
+        },
+        "motionQuality": {
+          "mean": 100.0,
+          "max": 100.0,
+          "min": 100.0,
+          "count": 3,
+          "median": 100.0,
+          "stdDev": 0.0
+        },
+        "focusStability": {
+          "mean": 100.0,
+          "max": 100.0,
+          "min": 100.0,
+          "count": 3,
+          "median": 100.0,
+          "stdDev": 0.0
+        },
+        "endFrameMatch": {
+          "mean": 100.0,
+          "max": 100.0,
+          "min": 100.0,
+          "count": 3,
+          "median": 100.0,
+          "stdDev": 0.0
+        },
+        "startFrameMatch": {
+          "mean": 100.0,
+          "max": 100.0,
+          "min": 100.0,
+          "count": 3,
+          "median": 100.0,
+          "stdDev": 0.0
+        },
+        "artifactSeverity": {
+          "mean": 0.0,
+          "max": 0.0,
+          "min": 0.0,
+          "count": 3,
+          "median": 0.0,
+          "stdDev": 0.0
+        },
+        "objectConsistency": {
+          "mean": 100.0,
+          "max": 100.0,
+          "min": 100.0,
+          "count": 3,
+          "median": 100.0,
+          "stdDev": 0.0
+        }
+      },
+      "coherenceNotes": "No artifacts, no inconsistencies, and motion is perfectly smooth and natural. All elements are visually coherent and match the prompt exactly.",
+      "pixelSimilarity": {
+        "avgSimilarity": 50.0,
+        "endSimilarity": 51.4,
+        "startSimilarity": 48.6
+      },
+      "rawAnalysis": null,
+      "rawAnalysisRuns": [
+        "{\"startFrameMatch\":100,\"endFrameMatch\":100,\"motionQuality\":100,\"promptAdherence\":100,\"focusStability\":100,\"artifactSeverity\":0,\"objectConsistency\":100,\"overall\":100,\"summary\":\"Video perfectly matches keyframes with flawless motion and no artifacts. Subject remains consistently in focus and attire is identical throughout.\",\"coherenceNotes\":\"No artifacts, no inconsistencies, and motion is perfectly smooth and natural. All elements are visually coherent and match the prompt exactly.\"}",
+        "{\"startFrameMatch\":100,\"endFrameMatch\":100,\"motionQuality\":100,\"promptAdherence\":100,\"focusStability\":100,\"artifactSeverity\":0,\"objectConsistency\":100,\"overall\":100,\"summary\":\"The video perfectly matches the keyframes with flawless motion and no visual artifacts. The subject remains consistently focused and the scene adheres to all specified details.\",\"coherenceNotes\":\"No artifacts, no inconsistencies, and perfect motion coherence between frames. All elements remain visually stable and true to the prompt.\"}",
+        "{\"startFrameMatch\":100,\"endFrameMatch\":100,\"motionQuality\":100,\"promptAdherence\":100,\"focusStability\":100,\"artifactSeverity\":0,\"objectConsistency\":100,\"overall\":100,\"summary\":\"Video perfectly matches keyframes with flawless motion and no artifacts. Subject and environment are consistent and visually pristine.\",\"coherenceNotes\":\"No artifacts, no focus loss, no motion inconsistencies. All elements remain perfectly aligned with the prompt across all frames.\"}"
+      ],
+      "frameAnalysis": {
+        "brightnessStats": {
+          "values": [
+            142.1,
+            141.1,
+            146.9,
+            152.1,
+            153.2,
+            141.0,
+            139.5,
+            140.7,
+            141.6,
+            153.1
+          ],
+          "avg": 145.1,
+          "max": 153.2,
+          "min": 139.5
+        },
+        "frameArtifactScore": 0,
+        "hasBlackFrames": false,
+        "hasHardFlicker": false
+      },
+      "presetId": "character",
+      "workflowProfile": "wan-ipadapter"
+    },
+    "sample-001-geometric": {
+      "scores": {
+        "objectConsistency": 100,
+        "artifactSeverity": 0,
+        "promptAdherence": 95,
+        "motionQuality": 90,
+        "endFrameMatch": 95,
+        "overall": 95,
+        "startFrameMatch": 95,
+        "focusStability": 95
+      },
+      "context": {
+        "sceneDescription": "A colorful wooden spinning top toy sitting still on a wooden table, with camera slowly pushing in slightly",
+        "motionDescription": "The spinning top remains completely still and stationary throughout. The camera slowly and smoothly pushes in slightly, moving from a medium shot to a slightly closer shot. The top stays in perfect sharp focus the entire time. No object motion, just subtle camera movement."
+      },
+      "status": "success",
+      "summary": "The video perfectly matches the keyframes with flawless object consistency and sharp focus throughout. The camera smoothly pushes in as required, with no artifacts or motion inconsistencies.",
+      "runs": [
+        {
+          "status": "success",
+          "coherenceNotes": "All frames show the same spinning top with identical color, lighting, and composition. Focus remains crisp and centered. No artifacts or coherence issues detected.",
+          "summary": "The video perfectly matches the keyframes with flawless object consistency and sharp focus throughout. The camera smoothly pushes in as required, with no artifacts or motion inconsistencies.",
+          "scores": {
+            "objectConsistency": 100,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 90,
+            "endFrameMatch": 95,
+            "overall": 95,
+            "startFrameMatch": 95,
+            "focusStability": 95
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "All frames show the same spinning top with consistent colors, lighting, and focus. No artifacts, no object changes, and the motion is perfectly coherent with the intended camera push-in.",
+          "summary": "The video perfectly matches the keyframes with flawless object consistency and focus stability. The camera smoothly pushes in as required, with no artifacts or motion issues.",
+          "scores": {
+            "objectConsistency": 100,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 95,
+            "endFrameMatch": 95,
+            "overall": 97,
+            "startFrameMatch": 95,
+            "focusStability": 95
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "All frames show consistent object appearance and camera motion. Focus remains sharp and centered on the top throughout. No visual artifacts or coherence issues.",
+          "summary": "The video perfectly matches the keyframes with smooth camera movement and flawless focus on the spinning top. No artifacts or inconsistencies detected.",
+          "scores": {
+            "objectConsistency": 100,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 90,
+            "endFrameMatch": 95,
+            "overall": 95,
+            "startFrameMatch": 95,
+            "focusStability": 95
+          }
+        }
+      ],
+      "timestamp": "2025-12-05T00:54:57Z",
+      "aggregatedMetrics": {
+        "runsTotal": 3,
+        "promptAdherence": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "runsSuccessful": 3,
+        "overall": {
+          "mean": 95.7,
+          "max": 97.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.94
+        },
+        "motionQuality": {
+          "mean": 91.7,
+          "max": 95.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 2.36
+        },
+        "focusStability": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "endFrameMatch": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "startFrameMatch": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "artifactSeverity": {
+          "mean": 0.0,
+          "max": 0.0,
+          "min": 0.0,
+          "count": 3,
+          "median": 0.0,
+          "stdDev": 0.0
+        },
+        "objectConsistency": {
+          "mean": 100.0,
+          "max": 100.0,
+          "min": 100.0,
+          "count": 3,
+          "median": 100.0,
+          "stdDev": 0.0
+        }
+      },
+      "coherenceNotes": "All frames show the same spinning top with identical color, lighting, and composition. Focus remains crisp and centered. No artifacts or coherence issues detected.",
+      "pixelSimilarity": {
+        "avgSimilarity": 49.55,
+        "endSimilarity": 51.2,
+        "startSimilarity": 47.9
+      },
+      "rawAnalysis": null,
+      "rawAnalysisRuns": [
+        "{\n  \"startFrameMatch\": 95,\n  \"endFrameMatch\": 95,\n  \"motionQuality\": 90,\n  \"promptAdherence\": 95,\n  \"focusStability\": 95,\n  \"artifactSeverity\": 0,\n  \"objectConsistency\": 100,\n  \"overall\": 95,\n  \"summary\": \"The video perfectly matches the keyframes with flawless object consistency and sharp focus throughout. The camera smoothly pushes in as required, with no artifacts or motion inconsistencies.\",\n  \"coherenceNotes\": \"All frames show the same spinning top with identical color, lighting, and composition. Focus remains crisp and centered. No artifacts or coherence issues detected.\"\n}",
+        "{\"startFrameMatch\":95,\"endFrameMatch\":95,\"motionQuality\":95,\"promptAdherence\":95,\"focusStability\":95,\"artifactSeverity\":0,\"objectConsistency\":100,\"overall\":97,\"summary\":\"The video perfectly matches the keyframes with flawless object consistency and focus stability. The camera smoothly pushes in as required, with no artifacts or motion issues.\",\"coherenceNotes\":\"All frames show the same spinning top with consistent colors, lighting, and focus. No artifacts, no object changes, and the motion is perfectly coherent with the intended camera push-in.\"}",
+        "{\"startFrameMatch\":95,\"endFrameMatch\":95,\"motionQuality\":90,\"promptAdherence\":95,\"focusStability\":95,\"artifactSeverity\":0,\"objectConsistency\":100,\"overall\":95,\"summary\":\"The video perfectly matches the keyframes with smooth camera movement and flawless focus on the spinning top. No artifacts or inconsistencies detected.\",\"coherenceNotes\":\"All frames show consistent object appearance and camera motion. Focus remains sharp and centered on the top throughout. No visual artifacts or coherence issues.\"}"
+      ],
+      "frameAnalysis": {
+        "brightnessStats": {
+          "values": [
+            141.3,
+            140.1,
+            145.3,
+            149.5,
+            146.2,
+            138.0,
+            137.2,
+            137.7,
+            138.1,
+            140.1
+          ],
+          "avg": 141.4,
+          "max": 149.5,
+          "min": 137.2
+        },
+        "frameArtifactScore": 0,
+        "hasBlackFrames": false,
+        "hasHardFlicker": false
+      },
+      "presetId": "character",
+      "workflowProfile": "wan-ipadapter"
+    },
+    "sample-006-multichar": {
+      "scores": {
+        "objectConsistency": 98,
+        "artifactSeverity": 0,
+        "promptAdherence": 95,
+        "motionQuality": 90,
+        "endFrameMatch": 95,
+        "overall": 94,
+        "startFrameMatch": 95,
+        "focusStability": 95
+      },
+      "context": {
+        "sceneDescription": "A single cream-colored ceramic coffee mug with latte art sits in sharp focus on a warm wooden counter. The primary focus is this one mug - it never moves, never multiplies, never changes. In the blurred background, a single barista in a black apron pours from one consistent stainless steel pitcher (not a flask, not a coffee pot - always the same single pitcher).",
+        "motionDescription": "The foreground mug remains absolutely still in place - it never moves, never multiplies. Steam rises naturally from the same mug. The barista's motion is smooth and continuous: starts at espresso machine, reaches toward the counter, pours from the SAME stainless steel pitcher into the SAME mug. The pitcher type never changes. No additional cups appear."
+      },
+      "status": "success",
+      "summary": "The video perfectly matches the keyframes with smooth, natural motion and flawless object consistency. The single mug remains static and focused throughout, with steam rising naturally and the barista pouring from the same pitcher without any artifacts or inconsistencies.",
+      "runs": [
+        {
+          "status": "success",
+          "coherenceNotes": "No artifacts detected. The mug and pitcher remain consistent in type, count, and appearance. Focus is sharp and stable on the mug throughout. Motion is smooth and coherent, matching the expected pouring action.",
+          "summary": "The video perfectly matches the keyframes with smooth, natural motion and flawless object consistency. The single mug remains static and focused throughout, with steam rising naturally and the barista pouring from the same pitcher without any artifacts or inconsistencies.",
+          "scores": {
+            "objectConsistency": 98,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 90,
+            "endFrameMatch": 95,
+            "overall": 94,
+            "startFrameMatch": 95,
+            "focusStability": 95
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "All elements remain consistent: the mug stays centered and still, steam rises naturally, and the barista pours from the same pitcher into the same mug. No visual artifacts or object changes detected.",
+          "summary": "The video perfectly matches the keyframes with flawless object consistency and motion, showing a single mug and pitcher in sharp focus throughout. No artifacts or inconsistencies are present.",
+          "scores": {
+            "objectConsistency": 98,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 90,
+            "endFrameMatch": 95,
+            "overall": 94,
+            "startFrameMatch": 95,
+            "focusStability": 95
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "No artifacts or inconsistencies observed. The barista's pouring motion is smooth and continuous, steam rises naturally, and the mug remains perfectly still and in focus.",
+          "summary": "The video perfectly matches the keyframes with smooth, natural motion and flawless object consistency. The single mug and pitcher remain identical and centered throughout.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 0,
+            "promptAdherence": 95,
+            "motionQuality": 90,
+            "endFrameMatch": 95,
+            "overall": 93,
+            "startFrameMatch": 95,
+            "focusStability": 95
+          }
+        }
+      ],
+      "timestamp": "2025-12-05T00:54:24Z",
+      "aggregatedMetrics": {
+        "runsTotal": 3,
+        "promptAdherence": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "runsSuccessful": 3,
+        "overall": {
+          "mean": 93.7,
+          "max": 94.0,
+          "min": 93.0,
+          "count": 3,
+          "median": 94.0,
+          "stdDev": 0.47
+        },
+        "motionQuality": {
+          "mean": 90.0,
+          "max": 90.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 0.0
+        },
+        "focusStability": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "endFrameMatch": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "startFrameMatch": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "artifactSeverity": {
+          "mean": 0.0,
+          "max": 0.0,
+          "min": 0.0,
+          "count": 3,
+          "median": 0.0,
+          "stdDev": 0.0
+        },
+        "objectConsistency": {
+          "mean": 97.0,
+          "max": 98.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 98.0,
+          "stdDev": 1.41
+        }
+      },
+      "coherenceNotes": "No artifacts detected. The mug and pitcher remain consistent in type, count, and appearance. Focus is sharp and stable on the mug throughout. Motion is smooth and coherent, matching the expected pouring action.",
+      "pixelSimilarity": {
+        "avgSimilarity": 57.150000000000006,
+        "endSimilarity": 56.7,
+        "startSimilarity": 57.6
+      },
+      "rawAnalysis": null,
+      "rawAnalysisRuns": [
+        "{\"startFrameMatch\":95,\"endFrameMatch\":95,\"motionQuality\":90,\"promptAdherence\":95,\"focusStability\":95,\"artifactSeverity\":0,\"objectConsistency\":98,\"overall\":94,\"summary\":\"The video perfectly matches the keyframes with smooth, natural motion and flawless object consistency. The single mug remains static and focused throughout, with steam rising naturally and the barista pouring from the same pitcher without any artifacts or inconsistencies.\",\"coherenceNotes\":\"No artifacts detected. The mug and pitcher remain consistent in type, count, and appearance. Focus is sharp and stable on the mug throughout. Motion is smooth and coherent, matching the expected pouring action.\"}",
+        "{\"startFrameMatch\":95,\"endFrameMatch\":95,\"motionQuality\":90,\"promptAdherence\":95,\"focusStability\":95,\"artifactSeverity\":0,\"objectConsistency\":98,\"overall\":94,\"summary\":\"The video perfectly matches the keyframes with flawless object consistency and motion, showing a single mug and pitcher in sharp focus throughout. No artifacts or inconsistencies are present.\",\"coherenceNotes\":\"All elements remain consistent: the mug stays centered and still, steam rises naturally, and the barista pours from the same pitcher into the same mug. No visual artifacts or object changes detected.\"}",
+        "{\"startFrameMatch\":95,\"endFrameMatch\":95,\"motionQuality\":90,\"promptAdherence\":95,\"focusStability\":95,\"artifactSeverity\":0,\"objectConsistency\":95,\"overall\":93,\"summary\":\"The video perfectly matches the keyframes with smooth, natural motion and flawless object consistency. The single mug and pitcher remain identical and centered throughout.\",\"coherenceNotes\":\"No artifacts or inconsistencies observed. The barista's pouring motion is smooth and continuous, steam rises naturally, and the mug remains perfectly still and in focus.\"}"
+      ],
+      "frameAnalysis": {
+        "brightnessStats": {
+          "values": [
+            77.0,
+            75.8,
+            75.2,
+            76.8,
+            78.6,
+            74.3,
+            73.3,
+            73.7,
+            75.0,
+            74.7
+          ],
+          "avg": 75.4,
+          "max": 78.6,
+          "min": 73.3
+        },
+        "frameArtifactScore": 0,
+        "hasBlackFrames": false,
+        "hasHardFlicker": false
+      },
+      "presetId": "character",
+      "workflowProfile": "wan-ipadapter"
+    },
+    "sample-005-complex": {
+      "scores": {
+        "objectConsistency": 95,
+        "artifactSeverity": 10,
+        "promptAdherence": 90,
+        "motionQuality": 85,
+        "endFrameMatch": 90,
+        "overall": 88,
+        "startFrameMatch": 95,
+        "focusStability": 85
+      },
+      "context": {
+        "sceneDescription": "A clean modern kitchen with stable soft lighting. Objects remain fixed throughout. Only change is fruit on cutting board becomes sliced. Static camera, gentle lighting with no harsh transitions.",
+        "motionDescription": "Static camera with completely fixed composition. Very gentle, subtle lighting shift - no dramatic transitions. The only object change is the fruit on cutting board becomes sliced. All other objects (mug, plant, appliances) remain in exact same positions. Lighting stays soft and diffused throughout with no flares or glares."
+      },
+      "status": "success",
+      "summary": "The video accurately depicts the kitchen scene with precise object placement and a subtle lighting shift, maintaining high visual fidelity throughout.",
+      "runs": [
+        {
+          "status": "success",
+          "coherenceNotes": "All objects remain consistent in type and position. The only change is the fruit on the cutting board becoming sliced, which occurs smoothly without artifacts or focus issues.",
+          "summary": "The video accurately depicts the kitchen scene with precise object placement and a subtle lighting shift, maintaining high visual fidelity throughout.",
+          "scores": {
+            "objectConsistency": 95,
+            "artifactSeverity": 10,
+            "promptAdherence": 90,
+            "motionQuality": 85,
+            "endFrameMatch": 90,
+            "overall": 88,
+            "startFrameMatch": 95,
+            "focusStability": 85
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "Minor color banding and slight blur in the final frame, but no major artifacts or object inconsistencies. The focus remains on the kitchen scene throughout, with the only change being the sliced fruit on the cutting board.",
+          "summary": "The video successfully captures the intended scene transition with high fidelity, showing consistent object placement and a subtle lighting shift. Minor artifacts and slight focus softness are present but do not detract significantly from the overall quality.",
+          "scores": {
+            "objectConsistency": 85,
+            "artifactSeverity": 30,
+            "promptAdherence": 90,
+            "motionQuality": 85,
+            "endFrameMatch": 90,
+            "overall": 80,
+            "startFrameMatch": 95,
+            "focusStability": 85
+          }
+        },
+        {
+          "status": "success",
+          "coherenceNotes": "The lighting shift is subtle and natural, with no flickering or major artifacts. The only change is the fruit being sliced, which is accurately depicted. The blue mug and succulent remain consistently positioned, though the final frame has slightly reduced sharpness and color saturation.",
+          "summary": "The video successfully captures the scene transition with minimal artifacts, though some minor color banding and slight softness in the final frame reduce overall quality. Object consistency is maintained with only minor variations in lighting and focus.",
+          "scores": {
+            "objectConsistency": 85,
+            "artifactSeverity": 30,
+            "promptAdherence": 90,
+            "motionQuality": 85,
+            "endFrameMatch": 90,
+            "overall": 78,
+            "startFrameMatch": 95,
+            "focusStability": 85
+          }
+        }
+      ],
+      "timestamp": "2025-12-05T00:54:47Z",
+      "aggregatedMetrics": {
+        "runsTotal": 3,
+        "promptAdherence": {
+          "mean": 90.0,
+          "max": 90.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 0.0
+        },
+        "runsSuccessful": 3,
+        "overall": {
+          "mean": 82.0,
+          "max": 88.0,
+          "min": 78.0,
+          "count": 3,
+          "median": 80.0,
+          "stdDev": 4.32
+        },
+        "motionQuality": {
+          "mean": 85.0,
+          "max": 85.0,
+          "min": 85.0,
+          "count": 3,
+          "median": 85.0,
+          "stdDev": 0.0
+        },
+        "focusStability": {
+          "mean": 85.0,
+          "max": 85.0,
+          "min": 85.0,
+          "count": 3,
+          "median": 85.0,
+          "stdDev": 0.0
+        },
+        "endFrameMatch": {
+          "mean": 90.0,
+          "max": 90.0,
+          "min": 90.0,
+          "count": 3,
+          "median": 90.0,
+          "stdDev": 0.0
+        },
+        "startFrameMatch": {
+          "mean": 95.0,
+          "max": 95.0,
+          "min": 95.0,
+          "count": 3,
+          "median": 95.0,
+          "stdDev": 0.0
+        },
+        "artifactSeverity": {
+          "mean": 23.3,
+          "max": 30.0,
+          "min": 10.0,
+          "count": 3,
+          "median": 30.0,
+          "stdDev": 9.43
+        },
+        "objectConsistency": {
+          "mean": 88.3,
+          "max": 95.0,
+          "min": 85.0,
+          "count": 3,
+          "median": 85.0,
+          "stdDev": 4.71
+        }
+      },
+      "coherenceNotes": "All objects remain consistent in type and position. The only change is the fruit on the cutting board becoming sliced, which occurs smoothly without artifacts or focus issues.",
+      "pixelSimilarity": {
+        "avgSimilarity": 49.7,
+        "endSimilarity": 51.5,
+        "startSimilarity": 47.9
+      },
+      "rawAnalysis": null,
+      "rawAnalysisRuns": [
+        "{\"startFrameMatch\":95,\"endFrameMatch\":90,\"motionQuality\":85,\"promptAdherence\":90,\"focusStability\":85,\"artifactSeverity\":10,\"objectConsistency\":95,\"overall\":88,\"summary\":\"The video accurately depicts the kitchen scene with precise object placement and a subtle lighting shift, maintaining high visual fidelity throughout.\",\"coherenceNotes\":\"All objects remain consistent in type and position. The only change is the fruit on the cutting board becoming sliced, which occurs smoothly without artifacts or focus issues.\"}",
+        "{\n  \"startFrameMatch\": 95,\n  \"endFrameMatch\": 90,\n  \"motionQuality\": 85,\n  \"promptAdherence\": 90,\n  \"focusStability\": 85,\n  \"artifactSeverity\": 30,\n  \"objectConsistency\": 85,\n  \"overall\": 80,\n  \"summary\": \"The video successfully captures the intended scene transition with high fidelity, showing consistent object placement and a subtle lighting shift. Minor artifacts and slight focus softness are present but do not detract significantly from the overall quality.\",\n  \"coherenceNotes\": \"Minor color banding and slight blur in the final frame, but no major artifacts or object inconsistencies. The focus remains on the kitchen scene throughout, with the only change being the sliced fruit on the cutting board.\"\n}",
+        "{\n  \"startFrameMatch\": 95,\n  \"endFrameMatch\": 90,\n  \"motionQuality\": 85,\n  \"promptAdherence\": 90,\n  \"focusStability\": 85,\n  \"artifactSeverity\": 30,\n  \"objectConsistency\": 85,\n  \"overall\": 78,\n  \"summary\": \"The video successfully captures the scene transition with minimal artifacts, though some minor color banding and slight softness in the final frame reduce overall quality. Object consistency is maintained with only minor variations in lighting and focus.\",\n  \"coherenceNotes\": \"The lighting shift is subtle and natural, with no flickering or major artifacts. The only change is the fruit being sliced, which is accurately depicted. The blue mug and succulent remain consistently positioned, though the final frame has slightly reduced sharpness and color saturation.\"\n}"
+      ],
+      "frameAnalysis": {
+        "brightnessStats": {
+          "values": [
+            140.0,
+            139.9,
+            140.3,
+            141.0,
+            141.7,
+            140.3,
+            138.6,
+            140.2,
+            141.9,
+            142.7
+          ],
+          "avg": 140.7,
+          "max": 142.7,
+          "min": 138.6
+        },
+        "frameArtifactScore": 0,
+        "hasBlackFrames": false,
+        "hasHardFlicker": false
+      },
+      "presetId": "character",
+      "workflowProfile": "wan-ipadapter"
+    }
+  },
+  "summary": {
+    "aggregates": {
+      "overall": {
+        "min": 88.0,
+        "max": 100.0,
+        "mean": 93.4
+      },
+      "focusStability": {
+        "mean": 92.5
+      },
+      "objectConsistency": {
+        "mean": 97.1
+      },
+      "artifactSeverity": {
+        "mean": 3.8
+      }
+    },
+    "presetId": "character",
+    "sampleCount": 8
+  }
+}

@@ -14,9 +14,21 @@
  * 
  * For production, this panel will show "No results found" if no data is available,
  * which is expected since vision QA is a development/QA-only pipeline.
+ * 
+ * Threshold Logic:
+ * Uses calculateSampleVerdict() from services/visionThresholdConfig.ts for UI verdicts.
+ * This function has a WARN zone for passing values that are close to thresholds.
+ * 
+ * IMPORTANT: Do NOT replace with checkCoherenceThresholds() — the semantic difference
+ * is intentional. See Documentation/QA_SEMANTICS.md for full explanation.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { 
+    calculateSampleVerdict, 
+    WARNING_MARGIN,
+    type Verdict
+} from '../services/visionThresholdConfig';
 
 // Types for vision QA results
 interface VisionQAScores {
@@ -96,10 +108,8 @@ interface VisionThresholds {
     };
 }
 
-// Sample verdict calculation
-type Verdict = 'PASS' | 'WARN' | 'FAIL';
-
-interface SampleVerdict {
+// Sample verdict data (extends shared SampleVerdictResult with UI-specific fields)
+interface SampleVerdictData {
     sampleId: string;
     shortId: string;
     verdict: Verdict;
@@ -134,16 +144,15 @@ interface BookendVisionQAPanelProps {
     defaultCollapsed?: boolean;
 }
 
-const WARN_MARGIN = 5; // Default points within threshold to trigger WARN
-
 /**
- * Calculate verdict for a sample
+ * Calculate verdict for a sample using unified threshold logic.
+ * Wraps the shared calculateSampleVerdict to add UI-specific metadata.
  */
-function calculateVerdict(
+function calculateVerdictForSample(
     sample: VisionQASample,
     thresholds: VisionThresholds,
     sampleId: string
-): SampleVerdict {
+): SampleVerdictData {
     const aggregated = sample.aggregatedMetrics;
     const useAggregated = !!(aggregated?.overall?.median !== undefined);
     
@@ -156,8 +165,8 @@ function calculateVerdict(
     const maxArtifactSeverity = override?.maxArtifactSeverity ?? defaults.maxArtifactSeverity;
     const minObjectConsistency = override?.minObjectConsistency ?? defaults.minObjectConsistency;
     
-    // Get warn margin (per-sample, threshold-level, or default)
-    const warnMargin = override?.warnMargin ?? thresholds.thresholdStrategy?.warnMargin ?? WARN_MARGIN;
+    // Get warn margin (per-sample, threshold-level, or default from shared config)
+    const warnMargin = override?.warnMargin ?? thresholds.thresholdStrategy?.warnMargin ?? WARNING_MARGIN;
     
     // Get metrics
     const overall = useAggregated ? (aggregated?.overall?.median ?? 0) : (sample.scores?.overall ?? 0);
@@ -168,41 +177,26 @@ function calculateVerdict(
     const hasBlackFrames = sample.frameAnalysis?.hasBlackFrames ?? false;
     const hasHardFlicker = sample.frameAnalysis?.hasHardFlicker ?? false;
     
-    const failures: string[] = [];
-    const warnings: string[] = [];
-    
-    // Check each metric
-    if (overall < minOverall) {
-        failures.push(`overall<${minOverall}`);
-    } else if (overall < minOverall + warnMargin) {
-        warnings.push(`overall~${minOverall}`);
-    }
-    
-    if (focusStability < minFocusStability) {
-        failures.push(`focus<${minFocusStability}`);
-    } else if (focusStability < minFocusStability + warnMargin) {
-        warnings.push(`focus~${minFocusStability}`);
-    }
-    
-    if (artifactSeverity > maxArtifactSeverity) {
-        failures.push(`artifacts>${maxArtifactSeverity}`);
-    } else if (artifactSeverity > maxArtifactSeverity - warnMargin) {
-        warnings.push(`artifacts~${maxArtifactSeverity}`);
-    }
-    
-    if (objectConsistency < minObjectConsistency) {
-        failures.push(`objConsist<${minObjectConsistency}`);
-    } else if (objectConsistency < minObjectConsistency + warnMargin) {
-        warnings.push(`objConsist~${minObjectConsistency}`);
-    }
-    
-    // Hard checks
-    if (hasBlackFrames) failures.push('hasBlackFrames');
-    if (hasHardFlicker) failures.push('hasHardFlicker');
-    
-    let verdict: Verdict = 'PASS';
-    if (failures.length > 0) verdict = 'FAIL';
-    else if (warnings.length > 0) verdict = 'WARN';
+    // Use shared verdict calculation
+    const verdictResult = calculateSampleVerdict(
+        {
+            overall,
+            focusStability,
+            artifactSeverity,
+            objectConsistency,
+            hasBlackFrames,
+            hasHardFlicker,
+        },
+        {
+            minOverall,
+            minFocusStability,
+            maxArtifactSeverity,
+            minObjectConsistency,
+            disallowBlackFrames: true,
+            disallowHardFlicker: true,
+        },
+        warnMargin
+    );
     
     // Extract variance data if available
     const variance = useAggregated ? {
@@ -217,7 +211,7 @@ function calculateVerdict(
     return {
         sampleId,
         shortId: sampleId.replace('sample-', ''),
-        verdict,
+        verdict: verdictResult.verdict,
         overall,
         focusStability,
         artifactSeverity,
@@ -225,8 +219,8 @@ function calculateVerdict(
         isAggregated: useAggregated,
         hasBlackFrames,
         hasHardFlicker,
-        warnings,
-        failures,
+        warnings: verdictResult.warnings,
+        failures: verdictResult.failures,
         variance,
         thresholds: {
             minOverall,
@@ -365,7 +359,7 @@ const BookendVisionQAPanel: React.FC<BookendVisionQAPanelProps> = ({
     }, [loadData]);
     
     // Calculate verdicts for all samples
-    const verdicts: SampleVerdict[] = [];
+    const verdicts: SampleVerdictData[] = [];
     let passCount = 0;
     let warnCount = 0;
     let failCount = 0;
@@ -374,7 +368,7 @@ const BookendVisionQAPanel: React.FC<BookendVisionQAPanelProps> = ({
         for (const [sampleId, sample] of Object.entries(results)) {
             if (!sampleId.startsWith('sample-')) continue;
             
-            const verdict = calculateVerdict(sample, thresholds, sampleId);
+            const verdict = calculateVerdictForSample(sample, thresholds, sampleId);
             verdicts.push(verdict);
             
             if (verdict.verdict === 'PASS') passCount++;

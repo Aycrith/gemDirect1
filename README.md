@@ -8,9 +8,24 @@
 [![Tests](https://img.shields.io/badge/tests-88%25-yellowgreen)](Testing/)
 [![WAN2](https://img.shields.io/badge/WAN2-working-brightgreen)](logs/20251119-205415/)
 
-AI-powered cinematic story generator creating production video timelines. Transform text prompts into complete narratives with generated keyframes and MP4 videos via ComfyUI + WAN2 workflows.
+## 🎬 What is gemDirect1?
 
-## 📊 Current Status (Updated 2025-11-23)
+**gemDirect1** is an AI-powered cinematic story generator that transforms text prompts into complete video production timelines. The system combines:
+
+- **Gemini AI / Local LLM** (LM Studio) for story, scene, and shot generation
+- **ComfyUI + WAN2 workflows** for keyframe image and video rendering
+- **Strong QA pipelines** with Vision QA, temporal coherence benchmarks, and quality gates
+- **Configurable presets** (Safe Defaults, Production QA, Cinematic) for different VRAM/quality tradeoffs
+- **Reproducible pipelines** via pipeline configs and generation manifests
+
+**Primary Goals**:
+- 🎥 Cinematic quality output with temporal stability
+- 📊 Automated QA and regression testing
+- 🔄 Reproducible generation with versioned manifests
+
+---
+
+## 📊 Current Status (Updated 2025-12-05)
 
 | Metric | Value | Status |
 |--------|-------|--------|
@@ -32,24 +47,72 @@ AI-powered cinematic story generator creating production video timelines. Transf
 
 📖 **Full Status**: See [`Documentation/PROJECT_STATUS_CONSOLIDATED.md`](Documentation/PROJECT_STATUS_CONSOLIDATED.md) for complete project status (single source of truth).
 
+---
+
+## 📚 Key Concepts
+
+Before diving in, familiarize yourself with these core concepts (detailed guides linked):
+
+| Concept | Description | Guide |
+|---------|-------------|-------|
+| **Presets & VRAM** | Stability profiles (Fast/Standard/Cinematic) and feature flag presets (Safe Defaults, Production QA) control VRAM usage and quality | [`PRESETS_AND_VRAM.md`](Documentation/Guides/PRESETS_AND_VRAM.md) |
+| **Pipeline Configs** | JSON files that define reproducible generation pipelines (workflow, flags, QA expectations) | [`PIPELINE_CONFIGS.md`](Documentation/Guides/PIPELINE_CONFIGS.md) |
+| **QA & Thresholds** | Unified threshold logic (PASS/WARN/FAIL) for Vision QA and video quality gates | [`QA_SEMANTICS.md`](Documentation/QA_SEMANTICS.md) |
+| **Manifests & Versioning** | Generation manifests capture codebase, workflow, model versions, and seeds for reproducibility | [`VERSIONING_AND_MANIFESTS.md`](Documentation/Guides/VERSIONING_AND_MANIFESTS.md) |
+| **Video Benchmarks** | Temporal coherence, motion consistency, and identity stability metrics | [`VIDEO_QUALITY_BENCHMARK_GUIDE.md`](Testing/Benchmarks/VIDEO_QUALITY_BENCHMARK_GUIDE.md) |
+
+---
+
 ## 🚀 Quick Start
 
+### Prerequisites
+
+- **Node.js ≥22.19.0** (enforced by scripts)
+- **Git LFS** installed (`git lfs install`)
+- **ComfyUI** running on `localhost:8188` with WAN2 workflows
+- **LM Studio** (optional) for local LLM story generation
+
+### Installation
+
 ```powershell
-# 1. Prerequisites
-node -v  # Must be ≥22.19.0
-# ComfyUI must be running on localhost:8188
+# 1. Clone and setup
+git clone https://github.com/Aycrith/gemDirect1.git
+cd gemDirect1
+git lfs pull              # Pull large files (models, workflows)
+npm install               # Install dependencies
 
-# 2. Install & Run
-npm install
-npm run dev  # Starts on http://localhost:3000
+# 2. Configure environment
+# Create .env.local with your Gemini API key (optional if using LM Studio)
+echo "GEMINI_API_KEY=your-key-here" > .env.local
 
-# 3. Validate
-npm run check:health-helper  # Verifies ComfyUI integration
-npm test                      # Run unit tests
-npx playwright test           # Run E2E tests (88% passing)
+# 3. Verify ComfyUI is ready
+npm run check:health-helper   # Validates ComfyUI + workflows
+
+# 4. Start the app
+npm run dev                   # Starts on http://localhost:3000
 ```
 
-📘 **New Here?** Read [`START_HERE.md`](START_HERE.md) for 5-minute overview, or [`Documentation/PROJECT_STATUS_CONSOLIDATED.md`](Documentation/PROJECT_STATUS_CONSOLIDATED.md) for comprehensive status.
+### First Generation (Safe Defaults Mode)
+
+1. Open http://localhost:3000
+2. Go to **Settings (⚙️)** → **Features** tab → Click **"Apply Safe Defaults"**
+3. Enter a story prompt (e.g., "A robot explores an abandoned city")
+4. Click **Generate Story** → then **Generate Scenes**
+5. In the Timeline Editor, click **Generate Keyframes**
+6. Output videos appear in `logs/<timestamp>/` and ComfyUI output folder
+
+### Validation Commands
+
+```powershell
+npm run build                 # Should complete with 0 TypeScript errors
+npm test                      # Unit tests (2400+ passing)
+npx playwright test           # E2E tests (100+ passing)
+npm run check:health-helper   # Verify ComfyUI integration
+```
+
+📘 **New Here?** Read [`Documentation/Guides/GETTING_STARTED.md`](Documentation/Guides/GETTING_STARTED.md) for the complete onboarding guide, or [`START_HERE.md`](START_HERE.md) for a 5-minute overview.
+
+---
 
 ## 🧪 Testing
 
@@ -348,6 +411,95 @@ SKIP_FASTVIDEO_TESTS=true npm test
 - Verify server running: `curl http://127.0.0.1:8055/health`
 - Check firewall/antivirus not blocking port 8055
 - Try different port: `pwsh scripts\run-fastvideo-server.ps1 -Port 8056`
+
+---
+
+## 🛡️ Resource Safety & VRAM Management
+
+### Generation Queue System
+
+All video generation is routed through a **serial GenerationQueue** to prevent VRAM exhaustion from concurrent GPU operations. This ensures:
+
+- **No OOM errors** from multiple simultaneous generations
+- **Automatic VRAM gating** - waits for sufficient memory before starting
+- **Circuit breaker** - stops queue after 3 consecutive failures
+- **Priority support** - user-initiated tasks process before background
+
+### Preflight Checks
+
+Before queueing any video generation, the system runs resource preflight checks:
+
+1. **VRAM availability** - Queries GPU free memory via ComfyUI `/system_stats`
+2. **Node dependencies** - Verifies required workflow nodes are installed
+3. **Workflow validation** - Confirms mappings are correct for the profile
+
+### Stability Presets & VRAM Requirements
+
+| Preset | VRAM Required | Features | Generation Time |
+|--------|---------------|----------|-----------------|
+| **Fast** | 8GB + 2GB headroom | No temporal processing | ~30s/shot |
+| **Standard** | 12GB + 2GB headroom | Deflicker enabled | ~45s/shot |
+| **Cinematic** | 16GB + 2GB headroom | Deflicker + IP-Adapter + Prompt Scheduling | ~60s/shot |
+
+### Automatic Fallback
+
+When VRAM is insufficient for the requested preset, the system automatically downgrades:
+
+```
+Cinematic → Standard → Fast
+```
+
+The UI displays a warning when downgrade occurs:
+> ⚠️ Preset downgraded from cinematic to standard: VRAM insufficient (12000MB free)
+
+### Queue State & Monitoring
+
+```typescript
+// Get queue state programmatically
+import { getGenerationQueue } from './services/generationQueue';
+
+const queue = getGenerationQueue();
+const state = queue.getState();
+// {
+//   size: 2,              // Tasks waiting
+//   isRunning: true,      // Currently executing
+//   currentTaskId: '...',
+//   isCircuitOpen: false, // True if circuit breaker tripped
+//   consecutiveFailures: 0
+// }
+
+// Subscribe to state changes
+const unsubscribe = queue.subscribe((state) => {
+  console.log('Queue updated:', state);
+});
+```
+
+### Feature Flags
+
+The queue system is controlled by feature flags:
+
+```json
+{
+  "featureFlags": {
+    "useGenerationQueue": true,        // Route through queue (default: true)
+    "autoEjectLMStudioModels": true    // Unload LLM before generation
+  }
+}
+```
+
+### Troubleshooting
+
+**"Circuit breaker tripped":**
+- Wait 30 seconds for automatic reset, or
+- Call `queue.resetCircuitBreaker()` manually
+
+**"VRAM insufficient" with plenty free:**
+- Check that ComfyUI reports accurate VRAM via `/system_stats`
+- Headroom (2GB) is reserved for system overhead
+
+**Jobs stuck in queue:**
+- Check if current task is hung: `queue.getState().currentTaskId`
+- Force cancel: `queue.cancelAll()`
 
 ### Provider Comparison
 

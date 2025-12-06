@@ -1,0 +1,79 @@
+{
+  "$schema": "../../types/pipelineConfig.ts",
+  "version": "1.0",
+  "id": "cinematic-gold",
+  "name": "Cinematic Gold",
+  "description": "Hero configuration with best-of-breed features pre-packaged. Maximum quality with full temporal coherence, optimized camera motion, and strict QA gates. For final production renders.",
+  
+  "workflowProfileId": "wan-flf2v-feta",
+  "presetMode": "cinematic",
+  "stabilityProfile": "cinematic",
+  
+  "featureFlags": {
+    "base": "production-qa",
+    "overrides": {
+      "videoDeflicker": true,
+      "deflickerStrength": 0.5,
+      "deflickerWindowSize": 7,
+      "ipAdapterReferenceConditioning": true,
+      "ipAdapterWeight": 0.6,
+      "promptScheduling": true,
+      "promptTransitionFrames": 15,
+      "characterConsistency": true,
+      "videoUpscaling": false
+    }
+  },
+  
+  "qa": {
+    "keyframePairAnalysis": true,
+    "bookendQAMode": true,
+    "videoQualityGateEnabled": true,
+    "videoQualityThreshold": 80,
+    "videoAnalysisFeedback": true,
+    "autoVideoAnalysis": true,
+    "strictMode": true
+  },
+  
+  "outputHints": {
+    "durationSeconds": 4.0,
+    "targetResolution": { "width": 1280, "height": 720 },
+    "targetFps": 24
+  },
+  
+  "keyframeMode": "bookend",
+
+  "cameraPathId": "slow-dolly-in",
+
+  "vramRequirements": {
+    "minGB": 14,
+    "recommendedGB": 16,
+    "category": "high"
+  },
+  
+  "temporalRegularization": {
+    "enabled": true,
+    "strength": 0.7,
+    "windowSize": 5
+  },
+  
+  "scenes": [
+    {
+      "id": "cinematic-gold-default",
+      "name": "Cinematic Gold Scene",
+      "description": "Hero scene configuration for maximum quality output",
+      "temporalContext": {
+        "startMoment": "Subject established in environment, medium-wide shot",
+        "endMoment": "Closer intimate view with emotional emphasis",
+        "duration": 4.0
+      }
+    }
+  ],
+  
+  "metadata": {
+    "createdAt": "2025-12-05T00:00:00Z",
+    "lastModifiedAt": "2025-12-05T00:00:00Z",
+    "author": "gemDirect1 H3 - Cinematic Gold",
+    "tags": ["cinematic", "gold", "hero", "production", "final", "best-of"],
+    "notes": "The 'gold standard' pipeline configuration. Combines: (1) Full temporal coherence stack with enhanced deflicker, (2) IP-Adapter for character consistency, (3) Prompt scheduling for smooth transitions, (4) Camera motion template support (default: slow-dolly-in), (5) Strict QA gates (threshold 80), (6) 4-second optimal duration for narrative flow. Use this for final production renders when quality is the top priority. Requires 14+ GB VRAM."
+  }
+}

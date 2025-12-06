@@ -1,0 +1,9 @@
+sampleId,presetId,overallQuality,frameCount,duration,fps,resolution,brightnessVariance,colorConsistency,maxBrightnessJump,flickerFrameCount,frameDifferenceScore,transitionSmoothness,hasConsistentMotion,motionIntensity,jitterScore,identityScore,regionsStable,identityBreakCount,centerRegionVariance,analysisTimestamp,errors
+sample-004-motion,production,96.9,81,5.06,16.0,832x480,0,100,0,0,0,100,true,low,0,89.8,true,0,23538.14,2025-12-05T06:55:25.415Z,
+sample-008-lighting,production,96.5,81,5.06,16.0,832x480,0,100,0,0,0,100,true,low,0,88.3,true,0,28092.08,2025-12-05T06:55:29.387Z,
+sample-003-environment,production,98.5,81,5.06,16.0,832x480,0,100,0,0,0,100,true,low,0,95,true,0,18934.57,2025-12-05T06:55:33.928Z,
+sample-007-occlusion,production,95.9,81,5.06,16.0,832x480,0,100,0,0,0,100,true,low,0,86.3,true,0,30170.35,2025-12-05T06:55:38.086Z,
+sample-006-multichar,production,96.3,81,5.06,16.0,832x480,0,100,0,0,0,100,true,low,0,87.7,true,0,30399.73,2025-12-05T06:55:42.144Z,
+sample-002-character,production,95.8,81,5.06,16.0,832x480,0,100,0,0,0,100,true,low,0,85.9,true,0,32591.21,2025-12-05T06:55:46.073Z,
+sample-005-complex,production,91.5,81,5.06,16.0,832x480,0,100,0,0,0,100,true,low,0,71.7,true,0,58720.34,2025-12-05T06:55:50.009Z,
+sample-001-geometric,production,88.9,81,5.06,16.0,832x480,0,100,0,0,0,100,true,low,0,63.1,true,0,62627.53,2025-12-05T06:55:53.821Z,

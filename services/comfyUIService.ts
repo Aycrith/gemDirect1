@@ -41,6 +41,13 @@ import {
     applyDeflickerToWorkflow,
     logDeflickerStatus,
 } from './deflickerService';
+// E1.2: Camera-as-Code - camera path to ComfyUI node integration
+import {
+    buildCameraNodeOverrides,
+    formatForComfyUINode,
+    validateCameraPathForGeneration,
+    type CameraNodeOverrides,
+} from './cameraPathToComfyNodes';
 // Phase 7: Video upscaling post-processing (imported when needed)
 // Generation Queue for serial VRAM-safe execution
 import { getGenerationQueue, createVideoTask, GenerationStatus } from './generationQueue';
@@ -48,6 +55,16 @@ import { getGenerationQueue, createVideoTask, GenerationStatus } from './generat
 import { CSGError } from '../types/errors';
 // Endpoint snapping post-processor for bookend video quality
 import { snapEndpointsToKeyframes, isEndpointSnappingSupported, type EndpointSnappingOptions } from '../utils/videoEndpointSnapper';
+// Generation Manifest for reproducibility tracking
+import {
+    buildManifest,
+    completeManifest,
+    markManifestStarted,
+    serializeManifest,
+    getManifestFilename,
+    type GenerationManifest,
+    type BuildManifestOptions,
+} from './generationManifestService';
 
 // Interface for ComfyUI workflow nodes
 interface WorkflowNode {
@@ -96,6 +113,69 @@ const logPromptDebug = (tag: string, data: Record<string, unknown>) => {
         // Best-effort debug logging; do not break pipeline
     }
 };
+
+// ============================================================================
+// Generation Manifest Emission
+// ============================================================================
+
+/**
+ * In-memory manifest store for the current session.
+ * Maps manifest ID to manifest object.
+ */
+const manifestStore: Map<string, GenerationManifest> = new Map();
+
+/**
+ * Emit a generation manifest - logs to console and stores in memory.
+ * Future: Can be extended to persist to IndexedDB or file system.
+ * 
+ * @param manifest The manifest to emit
+ * @returns The manifest ID for reference
+ */
+function emitManifest(manifest: GenerationManifest): string {
+    const filename = getManifestFilename(manifest);
+    const json = serializeManifest(manifest);
+    
+    // Store in memory
+    manifestStore.set(manifest.manifestId, manifest);
+    
+    // Log for debugging/tracing
+    console.log(`[Manifest] Emitting ${filename}:`, {
+        manifestId: manifest.manifestId,
+        type: manifest.generationType,
+        workflow: manifest.workflow.profileId,
+        sceneId: manifest.sceneId,
+        shotId: manifest.shotId,
+        seed: manifest.determinism.seed,
+    });
+    
+    // Log full manifest at debug level
+    if (typeof window !== 'undefined' && (window as any).DEBUG_MANIFESTS) {
+        console.debug(`[Manifest] Full content:\n${json}`);
+    }
+    
+    return manifest.manifestId;
+}
+
+/**
+ * Get a stored manifest by ID
+ */
+export function getManifestById(manifestId: string): GenerationManifest | undefined {
+    return manifestStore.get(manifestId);
+}
+
+/**
+ * Get all manifests from the current session
+ */
+export function getAllManifests(): GenerationManifest[] {
+    return Array.from(manifestStore.values());
+}
+
+/**
+ * Clear all stored manifests (for session reset)
+ */
+export function clearManifests(): void {
+    manifestStore.clear();
+}
 
 export interface WorkflowGenerationMetadata {
     highlightMappings: WorkflowProfileMappingHighlight[];
@@ -4048,6 +4128,21 @@ export async function generateVideoFromBookendsNative(
         );
     }
     
+    // Build generation manifest for reproducibility
+    const manifestOptions: BuildManifestOptions = {
+        generationType: 'video',
+        sceneId: scene.id,
+        settings,
+        workflowProfile: profile,
+        prompt: payloads.text,
+        negativePrompt: payloads.negativePrompt,
+        startKeyframe: bookends.start,
+        endKeyframe: bookends.end,
+        seed: Math.floor(Math.random() * 2147483647), // Will be overwritten if workflow specifies seed
+        seedExplicit: false,
+    };
+    let manifest = buildManifest(manifestOptions);
+    
     onStateChange({
         phase: 'native-bookend-video',
         status: 'running',
@@ -4075,6 +4170,10 @@ export async function generateVideoFromBookendsNative(
         throw new Error('Failed to queue native bookend video generation');
     }
     
+    // Update manifest with prompt ID and mark as started
+    manifest = { ...manifest, promptId: response.prompt_id };
+    manifest = markManifestStarted(manifest);
+    
     // Wait for completion
     const output = await waitForComfyCompletion(
         settings,
@@ -4092,6 +4191,12 @@ export async function generateVideoFromBookendsNative(
     if (!output?.data) {
         throw new Error('Native bookend video generation failed: No output data');
     }
+    
+    // Complete manifest with output info and emit
+    manifest = completeManifest(manifest, {
+        videoFilename: output.filename || 'output.mp4',
+    });
+    emitManifest(manifest);
     
     console.log(`[Native Bookend] ✅ Video generation complete using ${profileId}`);
     return output.data;
@@ -4353,6 +4458,86 @@ export const queueComfyUIPromptDualImage = async (
             }
         }
         console.log(`[${profileId}] Deflicker applied: strength=${deflickerConfig.strength}, window=${deflickerConfig.windowSize}`);
+    }
+    
+    // ========================================================================
+    // Camera Path-Driven Generation (E1.2 - Camera-as-Code Integration)
+    // ========================================================================
+    let cameraOverrides: CameraNodeOverrides | null = null;
+    const cameraPathEnabled = isFeatureEnabled(settings.featureFlags, 'cameraPathDrivenGenerationEnabled');
+    
+    if (cameraPathEnabled) {
+        // Try to load pipeline config for camera path
+        try {
+            const { loadPipelineConfig, resolveCameraPath } = await import('./pipelineConfigService');
+            
+            // Look for the production-qa-preview config which has a cameraPath
+            const pipelineConfig = await loadPipelineConfig('production-qa-preview');
+            const cameraPath = resolveCameraPath(pipelineConfig);
+            
+            if (cameraPath) {
+                // Default frame count for FLF2V workflows (typical: 49 frames)
+                const totalFrames = 49; // TODO: Extract from workflow settings if available
+                
+                // Validate camera path
+                const validation = validateCameraPathForGeneration(cameraPath, totalFrames);
+                
+                if (validation.valid) {
+                    // Build per-frame overrides
+                    cameraOverrides = buildCameraNodeOverrides(cameraPath, totalFrames, {
+                        fps: 16, // Typical WAN video fps
+                        applyEasing: true,
+                        clampPositions: true,
+                    });
+                    
+                    console.log(`[${profileId}] Camera path '${cameraPath.id}' enabled: ${totalFrames} frame overrides generated`);
+                    
+                    // Log validation warnings if any
+                    if (validation.warnings.length > 0) {
+                        console.warn(`[${profileId}] Camera path warnings:`, validation.warnings);
+                    }
+                    
+                    // Inject camera overrides into workflow
+                    // Look for motion control nodes that accept position inputs
+                    const motionInputs = formatForComfyUINode(cameraOverrides, 'generic');
+                    
+                    for (const motionInput of motionInputs) {
+                        // Find nodes that might accept this input
+                        for (const [nodeId, nodeEntry] of Object.entries(promptPayload)) {
+                            const node = nodeEntry as WorkflowNode;
+                            if (node && node.inputs && motionInput.inputKey in (node.inputs as object)) {
+                                (node.inputs as Record<string, unknown>)[motionInput.inputKey] = motionInput.value;
+                                console.log(`[${profileId}] Injected camera override: ${nodeId}.${motionInput.inputKey}`);
+                            }
+                        }
+                    }
+                    
+                    // Store camera path metadata for manifest/metrics
+                    // This will be picked up by the manifest builder
+                    try {
+                        logCorrelation(
+                            { correlationId: generateCorrelationId(), timestamp: Date.now(), source: 'comfyui' },
+                            'camera-path-applied',
+                            {
+                                profileId,
+                                cameraPathId: cameraPath.id,
+                                coordinateSpace: cameraPath.coordinateSpace,
+                                motionType: cameraPath.motionType,
+                                keyframeCount: cameraPath.keyframes?.length || 0,
+                                totalFrames,
+                            }
+                        );
+                    } catch {
+                        // Best-effort logging
+                    }
+                } else {
+                    console.warn(`[${profileId}] Camera path validation failed:`, validation.errors);
+                }
+            }
+        } catch (err) {
+            // Camera path is optional - log warning and continue
+            console.warn(`[${profileId}] Camera path integration failed (non-blocking):`, err);
+        }
     }
     
     // Inject data based on mapping
@@ -4755,3 +4940,266 @@ export const testComfyUIConnection = async (comfyUIUrl: string): Promise<{ succe
         gpu: gpuName,
     };
 };
+
+// ============================================================================
+// PREFLIGHT-INTEGRATED VIDEO GENERATION (Resource Safety)
+// ============================================================================
+
+import { 
+    runResourcePreflight, 
+    canProceedWithGeneration, 
+    formatPreflightSummary,
+    type PreflightResult,
+    PRESET_VRAM_REQUIREMENTS,
+} from './resourcePreflight';
+import { configureQueuePreflight, type PreflightConfig } from './generationQueue';
+import type { StabilityProfileId } from '../utils/stabilityProfiles';
+
+/**
+ * Extended options for preflight-aware video generation
+ */
+export interface PreflightVideoGenerationOptions {
+    /** Requested stability preset (fast, standard, cinematic) */
+    requestedPreset?: StabilityProfileId;
+    /** Allow automatic preset downgrade if VRAM insufficient */
+    allowDowngrade?: boolean;
+    /** Skip preflight entirely (for fallback/testing) */
+    skipPreflight?: boolean;
+    /** Callback when preset is downgraded */
+    onPresetDowngrade?: (from: StabilityProfileId, to: StabilityProfileId, reason: string) => void;
+    /** Callback with preflight results */
+    onPreflightComplete?: (result: PreflightResult) => void;
+    /** Logging callback */
+    logCallback?: (message: string, level?: 'info' | 'warn' | 'error') => void;
+}
+
+/**
+ * Configure the global generation queue with preflight settings from LocalGenerationSettings.
+ * Call this when settings change to update VRAM thresholds and preflight behavior.
+ * 
+ * @param settings - Current LocalGenerationSettings
+ * @param preset - Active stability preset
+ */
+export function configureQueueFromSettings(
+    settings: LocalGenerationSettings,
+    preset: StabilityProfileId = 'standard'
+): void {
+    const minVRAM = PRESET_VRAM_REQUIREMENTS[preset] || PRESET_VRAM_REQUIREMENTS.standard;
+    
+    const config: PreflightConfig = {
+        comfyUIUrl: settings.comfyUIUrl,
+        minVRAMMB: minVRAM,
+        vramWaitTimeoutMs: 60000,
+        skipPreflight: settings.featureFlags?.useGenerationQueue === false,
+    };
+    
+    configureQueuePreflight(config);
+    console.log(`[configureQueueFromSettings] Queue configured for ${preset} preset (min VRAM: ${minVRAM}MB)`);
+}
+
+/**
+ * Run preflight checks and generate video from bookends with automatic preset fallback.
+ * This is the recommended entry point for production video generation.
+ * 
+ * @param settings - LocalGenerationSettings
+ * @param scene - Scene with temporal context
+ * @param timeline - Timeline data
+ * @param bookends - Start and end keyframe images
+ * @param directorsVision - Director's vision string
+ * @param logApiCall - API logging callback
+ * @param onStateChange - State change callback
+ * @param profileId - Workflow profile ID
+ * @param options - Preflight options
+ * @returns Video data URL
+ */
+export async function generateVideoFromBookendsWithPreflight(
+    settings: LocalGenerationSettings,
+    scene: Scene,
+    timeline: TimelineData,
+    bookends: { start: string; end: string },
+    directorsVision: string,
+    logApiCall: ApiLogCallback,
+    onStateChange: (state: any) => void,
+    profileId: string = 'wan-fun-inpaint',
+    options: PreflightVideoGenerationOptions = {}
+): Promise<string> {
+    const {
+        requestedPreset = 'standard',
+        allowDowngrade = true,
+        skipPreflight = false,
+        onPresetDowngrade,
+        onPreflightComplete,
+        logCallback,
+    } = options;
+    
+    const log = logCallback || console.log;
+    
+    // Skip preflight if disabled
+    if (skipPreflight || settings.featureFlags?.useGenerationQueue === false) {
+        log('[Preflight] Preflight checks disabled, proceeding directly', 'info');
+        return generateVideoFromBookendsNative(
+            settings, scene, timeline, bookends, directorsVision, logApiCall, onStateChange, profileId
+        );
+    }
+    
+    // Run preflight checks
+    onStateChange({
+        phase: 'preflight',
+        status: 'running',
+        progress: 0,
+        message: 'Running resource preflight checks...'
+    });
+    
+    const preflightResult = await runResourcePreflight(settings, {
+        profileId,
+        requestedPreset,
+        allowDowngrade,
+        logCallback: log,
+    });
+    
+    onPreflightComplete?.(preflightResult);
+    
+    // Handle preflight results
+    if (preflightResult.status === 'blocked') {
+        const summary = formatPreflightSummary(preflightResult);
+        log(`[Preflight] BLOCKED:\n${summary}`, 'error');
+        onStateChange({
+            phase: 'preflight',
+            status: 'error',
+            progress: 0,
+            message: `Preflight failed: ${preflightResult.messages.find(m => m.level === 'error')?.message || 'Unknown error'}`
+        });
+        throw new Error(`Resource preflight failed:\n${summary}`);
+    }
+    
+    // Handle preset downgrade
+    let effectivePreset = requestedPreset;
+    if (preflightResult.wasDowngraded && preflightResult.recommendedPreset) {
+        effectivePreset = preflightResult.recommendedPreset;
+        const reason = `VRAM insufficient for ${requestedPreset} (${preflightResult.vramStatus?.freeMB?.toFixed(0) || '?'}MB free)`;
+        log(`[Preflight] Preset downgraded: ${requestedPreset} → ${effectivePreset} (${reason})`, 'warn');
+        onPresetDowngrade?.(requestedPreset, effectivePreset, reason);
+        
+        onStateChange({
+            phase: 'preflight',
+            status: 'warning',
+            progress: 50,
+            message: `Preset downgraded to ${effectivePreset} due to VRAM constraints`
+        });
+    }
+    
+    // Warnings but proceeding
+    if (preflightResult.status === 'warning') {
+        const warnings = preflightResult.messages.filter(m => m.level === 'warn');
+        log(`[Preflight] Proceeding with ${warnings.length} warning(s)`, 'warn');
+        warnings.forEach(w => log(`  - ${w.message}`, 'warn'));
+    }
+    
+    // Configure queue with effective preset
+    configureQueueFromSettings(settings, effectivePreset);
+    
+    // Preflight passed - proceed with generation
+    onStateChange({
+        phase: 'preflight',
+        status: 'complete',
+        progress: 100,
+        message: `Preflight passed (${effectivePreset} preset)`
+    });
+    
+    log(`[Preflight] ✅ Passed - proceeding with ${effectivePreset} preset`, 'info');
+    
+    // Generate video using native function
+    return generateVideoFromBookendsNative(
+        settings, scene, timeline, bookends, directorsVision, logApiCall, onStateChange, profileId
+    );
+}
+
+/**
+ * Check if generation can proceed based on current VRAM availability.
+ * Use this for quick gating before queueing operations.
+ * 
+ * @param settings - LocalGenerationSettings
+ * @param minVRAMMB - Minimum VRAM required (defaults to fast preset requirement)
+ * @returns Object with canProceed flag and current free VRAM
+ */
+export async function checkGenerationReadiness(
+    settings: LocalGenerationSettings,
+    minVRAMMB?: number
+): Promise<{ canProceed: boolean; freeMB: number; reason?: string }> {
+    if (!settings.comfyUIUrl) {
+        return { canProceed: false, freeMB: 0, reason: 'ComfyUI URL not configured' };
+    }
+    
+    return canProceedWithGeneration(settings.comfyUIUrl, minVRAMMB);
+}
+
+/**
+ * Get the recommended preset based on current VRAM availability.
+ * Useful for UI to show which presets are available.
+ * 
+ * @param settings - LocalGenerationSettings
+ * @returns Object with available presets and recommended preset
+ */
+export async function getAvailablePresets(
+    settings: LocalGenerationSettings
+): Promise<{
+    available: StabilityProfileId[];
+    recommended: StabilityProfileId;
+    vramStatus: { freeMB: number; totalMB: number } | null;
+}> {
+    if (!settings.comfyUIUrl) {
+        return { 
+            available: ['fast'], 
+            recommended: 'fast',
+            vramStatus: null 
+        };
+    }
+    
+    try {
+        const resourceMessage = await checkSystemResources(settings.comfyUIUrl);
+        
+        // Import parseVRAMStatus from resourcePreflight
+        const { parseVRAMStatus, VRAM_HEADROOM_MB } = await import('./resourcePreflight');
+        const vramStatus = parseVRAMStatus(resourceMessage);
+        
+        if (!vramStatus.available) {
+            return { 
+                available: ['fast', 'standard', 'cinematic'], 
+                recommended: 'standard',
+                vramStatus: null 
+            };
+        }
+        
+        const available: StabilityProfileId[] = [];
+        let recommended: StabilityProfileId = 'fast';
+        
+        // Check each preset in order of quality (lowest to highest)
+        const presets: StabilityProfileId[] = ['fast', 'standard', 'cinematic'];
+        
+        for (const preset of presets) {
+            const required = PRESET_VRAM_REQUIREMENTS[preset] + VRAM_HEADROOM_MB;
+            if (vramStatus.freeMB >= required) {
+                available.push(preset);
+                recommended = preset; // Last one that fits is highest quality available
+            }
+        }
+        
+        // Ensure at least 'fast' is available
+        if (available.length === 0) {
+            available.push('fast');
+        }
+        
+        return {
+            available,
+            recommended,
+            vramStatus: { freeMB: vramStatus.freeMB, totalMB: vramStatus.totalMB }
+        };
+    } catch (error) {
+        console.warn('[getAvailablePresets] Error checking VRAM:', error);
+        return { 
+            available: ['fast', 'standard', 'cinematic'], 
+            recommended: 'standard',
+            vramStatus: null 
+        };
+    }
+}

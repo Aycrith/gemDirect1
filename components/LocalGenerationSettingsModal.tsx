@@ -9,6 +9,12 @@ import {
 import {
     FEATURE_FLAG_META,
     DEFAULT_FEATURE_FLAGS,
+    SAFE_DEFAULTS_FLAGS,
+    SAFE_DEFAULTS_MODE_CONFIG,
+    PRODUCTION_QA_FLAGS,
+    PRODUCTION_QA_MODE_CONFIG,
+    checkSafeDefaults,
+    checkProductionQA,
     mergeFeatureFlags,
     getFlagsByCategory,
     checkFlagDependencies,
@@ -1989,6 +1995,121 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                 </p>
                             </div>
 
+                            {/* Safe Defaults Banner */}
+                            {(() => {
+                                const safeCheck = checkSafeDefaults(formData.featureFlags || {});
+                                return (
+                                    <div className={`rounded-lg p-4 border ${
+                                        safeCheck.isSafe 
+                                            ? 'bg-green-900/20 border-green-700/50' 
+                                            : 'bg-amber-900/20 border-amber-700/50'
+                                    }`}>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-lg ${safeCheck.isSafe ? 'text-green-400' : 'text-amber-400'}`}>
+                                                    {safeCheck.isSafe ? '✅' : '⚠️'}
+                                                </span>
+                                                <h4 className={`text-sm font-medium ${safeCheck.isSafe ? 'text-green-300' : 'text-amber-300'}`}>
+                                                    {safeCheck.isSafe ? 'VRAM-Safe Configuration' : 'VRAM-Intensive Features Enabled'}
+                                                </h4>
+                                            </div>
+                                            {!safeCheck.isSafe && (
+                                                <button
+                                                    onClick={() => {
+                                                        handleInputChange('featureFlags', SAFE_DEFAULTS_FLAGS);
+                                                        addToast('Applied safe defaults for ~8 GB GPUs', 'success');
+                                                    }}
+                                                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded transition-colors"
+                                                >
+                                                    Apply Safe Defaults
+                                                </button>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-gray-400 mb-2">
+                                            {safeCheck.recommendation}
+                                        </p>
+                                        {!safeCheck.isSafe && (
+                                            <div className="flex flex-wrap gap-1 mt-2">
+                                                {safeCheck.unsafeFlags.map(flag => (
+                                                    <span key={flag} className="px-2 py-0.5 text-xs bg-amber-900/50 text-amber-200 rounded">
+                                                        {FEATURE_FLAG_META[flag]?.label || flag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-500">
+                                            💡 <strong>Tip:</strong> {SAFE_DEFAULTS_MODE_CONFIG.description}. {SAFE_DEFAULTS_MODE_CONFIG.recommendation}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Production QA Banner */}
+                            {(() => {
+                                const qaCheck = checkProductionQA(formData.featureFlags || {});
+                                const safeCheck = checkSafeDefaults(formData.featureFlags || {});
+                                // Only show if not in Safe Defaults mode (would conflict)
+                                if (safeCheck.isSafe) return null;
+                                
+                                return (
+                                    <div className={`rounded-lg p-4 border ${
+                                        qaCheck.isProductionQA 
+                                            ? 'bg-blue-900/20 border-blue-700/50' 
+                                            : 'bg-gray-800/50 border-gray-700/50'
+                                    }`}>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-lg ${qaCheck.isProductionQA ? 'text-blue-400' : 'text-gray-400'}`}>
+                                                    {qaCheck.isProductionQA ? '🔬' : '🔧'}
+                                                </span>
+                                                <h4 className={`text-sm font-medium ${qaCheck.isProductionQA ? 'text-blue-300' : 'text-gray-300'}`}>
+                                                    {qaCheck.isProductionQA ? 'Production QA Mode Active' : 'Production QA Mode'}
+                                                </h4>
+                                            </div>
+                                            {!qaCheck.isProductionQA && (
+                                                <button
+                                                    onClick={() => {
+                                                        handleInputChange('featureFlags', PRODUCTION_QA_FLAGS);
+                                                        addToast('Applied Production QA mode for ~10-12 GB GPUs', 'success');
+                                                    }}
+                                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition-colors"
+                                                >
+                                                    Apply Production QA
+                                                </button>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-gray-400 mb-2">
+                                            {qaCheck.isProductionQA 
+                                                ? 'QA features enabled with VRAM-conscious settings. Aligned with A1/A3 Vision QA thresholds.'
+                                                : qaCheck.recommendation}
+                                        </p>
+                                        {qaCheck.missingQAFlags.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mt-2">
+                                                <span className="text-xs text-gray-500">Missing QA:</span>
+                                                {qaCheck.missingQAFlags.map(flag => (
+                                                    <span key={flag} className="px-2 py-0.5 text-xs bg-blue-900/50 text-blue-200 rounded">
+                                                        {FEATURE_FLAG_META[flag]?.label || flag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {qaCheck.extraVRAMFlags.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mt-2">
+                                                <span className="text-xs text-gray-500">VRAM-heavy (not in QA preset):</span>
+                                                {qaCheck.extraVRAMFlags.map(flag => (
+                                                    <span key={flag} className="px-2 py-0.5 text-xs bg-amber-900/50 text-amber-200 rounded">
+                                                        {FEATURE_FLAG_META[flag]?.label || flag}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div className="mt-3 pt-3 border-t border-gray-700 text-xs text-gray-500">
+                                            💡 <strong>Tip:</strong> {PRODUCTION_QA_MODE_CONFIG.description}. {PRODUCTION_QA_MODE_CONFIG.recommendation}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
                             {/* Flag validation warnings */}
                             {(() => {
                                 const validation = validateFlagCombination(formData.featureFlags);
@@ -2387,6 +2508,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                 const currentProfileId = detectCurrentProfile(mergeFeatureFlags(formData.featureFlags));
                                                 const isSelected = currentProfileId === profile.id;
                                                 const isDefault = profile.id === 'standard';
+                                                const vramGB = profile.performance?.vramRecommendedGB ?? profile.performance?.vramMinGB ?? 8;
                                                 return (
                                                     <button
                                                         key={profile.id}
@@ -2409,7 +2531,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                             {isDefault && <span className="ml-1 text-amber-400">★</span>}
                                                         </div>
                                                         <div className="text-xs mt-1 opacity-70">
-                                                            {profile.performance.vramUsage.toUpperCase()} VRAM
+                                                            ~{vramGB} GB VRAM
                                                         </div>
                                                     </button>
                                                 );
@@ -2665,6 +2787,120 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                 <p className="text-xs text-gray-500 mt-1">Number of frames over which to blend prompts during transitions</p>
                                             </div>
                                         )}
+                                    </div>
+
+                                    {/* Camera Path-Driven Generation (G3 Advanced Control) */}
+                                    <div className={`p-4 rounded-lg border transition-colors ${
+                                        mergeFeatureFlags(formData.featureFlags).cameraPathDrivenGenerationEnabled
+                                            ? 'bg-indigo-900/20 border-indigo-700/50'
+                                            : 'bg-gray-800/50 border-gray-700'
+                                    }`}>
+                                        <label className="flex items-start gap-3 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={mergeFeatureFlags(formData.featureFlags).cameraPathDrivenGenerationEnabled}
+                                                onChange={(e) => {
+                                                    const newFlags = {
+                                                        ...mergeFeatureFlags(formData.featureFlags),
+                                                        cameraPathDrivenGenerationEnabled: e.target.checked
+                                                    };
+                                                    handleInputChange('featureFlags', newFlags);
+                                                }}
+                                                className="mt-1 w-4 h-4 bg-gray-700 border-gray-600 rounded focus:ring-indigo-400 text-indigo-500"
+                                            />
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                    <span className="font-medium text-gray-200">Camera Path-Driven Generation</span>
+                                                    <span className="px-2 py-0.5 text-xs rounded bg-purple-900/50 text-purple-300 border border-purple-700">
+                                                        EXPERIMENTAL
+                                                    </span>
+                                                    <span className="px-2 py-0.5 text-xs rounded bg-indigo-900/50 text-indigo-300 border border-indigo-700">
+                                                        ADVANCED
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs text-gray-400">
+                                                    Use cameraPath from pipeline config to drive ComfyUI camera/motion nodes. 
+                                                    Enables reproducible camera movements and path-based QA metrics.
+                                                </p>
+                                                <p className="text-xs text-amber-400/80 mt-2 flex items-center gap-1">
+                                                    <span>⚠</span>
+                                                    May increase generation time. Requires pipeline configs with cameraPath defined.
+                                                </p>
+                                                <a 
+                                                    href="#"
+                                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                                    className="inline-block text-xs text-blue-400 hover:text-blue-300 mt-1"
+                                                    title="See Documentation/Guides/PIPELINE_CONFIGS.md"
+                                                >
+                                                    📖 See PIPELINE_CONFIGS.md for camera path setup
+                                                </a>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    {/* Adaptive Temporal Regularization (G3 Advanced Control) */}
+                                    <div className={`p-4 rounded-lg border transition-colors ${
+                                        mergeFeatureFlags(formData.featureFlags).temporalRegularizationAdaptiveMode
+                                            ? 'bg-indigo-900/20 border-indigo-700/50'
+                                            : 'bg-gray-800/50 border-gray-700'
+                                    }`}>
+                                        <label className="flex items-start gap-3 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={mergeFeatureFlags(formData.featureFlags).temporalRegularizationAdaptiveMode}
+                                                disabled={!mergeFeatureFlags(formData.featureFlags).temporalRegularizationEnabled}
+                                                onChange={(e) => {
+                                                    const newFlags = {
+                                                        ...mergeFeatureFlags(formData.featureFlags),
+                                                        temporalRegularizationAdaptiveMode: e.target.checked
+                                                    };
+                                                    handleInputChange('featureFlags', newFlags);
+                                                }}
+                                                className={`mt-1 w-4 h-4 bg-gray-700 border-gray-600 rounded focus:ring-indigo-400 ${
+                                                    mergeFeatureFlags(formData.featureFlags).temporalRegularizationEnabled 
+                                                        ? 'text-indigo-500' 
+                                                        : 'text-gray-600 opacity-50'
+                                                }`}
+                                            />
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                    <span className={`font-medium ${
+                                                        mergeFeatureFlags(formData.featureFlags).temporalRegularizationEnabled 
+                                                            ? 'text-gray-200' 
+                                                            : 'text-gray-400'
+                                                    }`}>Adaptive Temporal Regularization</span>
+                                                    <span className="px-2 py-0.5 text-xs rounded bg-purple-900/50 text-purple-300 border border-purple-700">
+                                                        EXPERIMENTAL
+                                                    </span>
+                                                    <span className="px-2 py-0.5 text-xs rounded bg-indigo-900/50 text-indigo-300 border border-indigo-700">
+                                                        ADVANCED
+                                                    </span>
+                                                </div>
+                                                <p className={`text-xs ${
+                                                    mergeFeatureFlags(formData.featureFlags).temporalRegularizationEnabled 
+                                                        ? 'text-gray-400' 
+                                                        : 'text-gray-500'
+                                                }`}>
+                                                    Automatically adjust temporal regularization strength/window based on motion coherence 
+                                                    metrics (path adherence, jitter, flicker). Optimizes smoothing per-shot.
+                                                </p>
+                                                {!mergeFeatureFlags(formData.featureFlags).temporalRegularizationEnabled && (
+                                                    <p className="text-xs text-amber-400 mt-1">
+                                                        ⚠️ Requires: Temporal Regularization Enabled
+                                                    </p>
+                                                )}
+                                                {mergeFeatureFlags(formData.featureFlags).temporalRegularizationEnabled && (
+                                                    <a 
+                                                        href="#"
+                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                                        className="inline-block text-xs text-blue-400 hover:text-blue-300 mt-1"
+                                                        title="See Documentation/Guides/VIDEO_QUALITY_BENCHMARK_GUIDE.md"
+                                                    >
+                                                        📖 See VIDEO_QUALITY_BENCHMARK_GUIDE.md for temporal metrics
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </label>
                                     </div>
                                 </div>
                             </div>

@@ -1,0 +1,43 @@
+{
+  "id": "gentle-float-down",
+  "description": "Gentle downward float motion. Creates dreamy, ethereal feeling or reveals scene from above.",
+  "coordinateSpace": "screen",
+  "motionType": "crane",
+  "motionIntensity": 0.2,
+  "keyframes": [
+    {
+      "timeSeconds": 0.0,
+      "position": { "x": 0.5, "y": 0.35 },
+      "fovDegrees": 52,
+      "easing": "easeOut",
+      "label": "Start - higher angle"
+    },
+    {
+      "timeSeconds": 1.0,
+      "position": { "x": 0.5, "y": 0.42 },
+      "fovDegrees": 51,
+      "easing": "easeInOut",
+      "label": "Descending"
+    },
+    {
+      "timeSeconds": 2.0,
+      "position": { "x": 0.5, "y": 0.48 },
+      "fovDegrees": 50,
+      "easing": "easeInOut",
+      "label": "Approaching eye level"
+    },
+    {
+      "timeSeconds": 3.0,
+      "position": { "x": 0.5, "y": 0.55 },
+      "fovDegrees": 48,
+      "easing": "easeIn",
+      "label": "End - slightly below eye level"
+    }
+  ],
+  "metadata": {
+    "createdAt": "2025-12-05T00:00:00Z",
+    "author": "H2 Camera Motion Templates",
+    "notes": "Vertical descent motion simulating a crane shot. Gentle, smooth motion good for reveals, transitions, or dreamlike sequences.",
+    "tags": ["crane", "vertical", "descend", "reveal", "ethereal"]
+  }
+}

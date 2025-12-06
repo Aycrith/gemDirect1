@@ -1,0 +1,293 @@
+{
+  "version": "1.0.0",
+  "taskId": "A2",
+  "generatedAt": "2025-12-05T06:55:11.322Z",
+  "regressionRun": "run-20251204-163603",
+  "presets": [
+    "production"
+  ],
+  "samplesPerPreset": 1,
+  "results": [
+    {
+      "sampleId": "sample-001-geometric",
+      "presetId": "production",
+      "videoPath": "C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output\\video\\regression_sample-001-geometric_20251204-163603_00001_.mp4",
+      "frameCount": 81,
+      "duration": 5.0625,
+      "fps": 16,
+      "resolution": {
+        "width": 832,
+        "height": 480
+      },
+      "temporalCoherence": {
+        "brightnessVariance": 0,
+        "colorConsistency": 100,
+        "maxBrightnessJump": 0,
+        "flickerFrameCount": 0,
+        "frameDifferenceScore": 0
+      },
+      "motionConsistency": {
+        "transitionSmoothness": 100,
+        "hasConsistentMotion": true,
+        "motionIntensity": "low",
+        "jitterScore": 0
+      },
+      "identityStability": {
+        "identityScore": 63.1,
+        "regionsStable": true,
+        "identityBreakCount": 0,
+        "centerRegionVariance": 62627.53
+      },
+      "overallQuality": 88.9,
+      "frameMetrics": [
+        {
+          "frameIndex": 0,
+          "meanBrightness": 180,
+          "meanR": 181.3660843315552,
+          "meanG": 184.3875974490683,
+          "meanB": 153.7468803710794,
+          "fileSize": 246237
+        },
+        {
+          "frameIndex": 4,
+          "meanBrightness": 180,
+          "meanR": 169.23422287302392,
+          "meanG": 180.90071814205288,
+          "meanB": 163.74904124913957,
+          "fileSize": 265890
+        },
+        {
+          "frameIndex": 8,
+          "meanBrightness": 180,
+          "meanR": 168.18886880675032,
+          "meanG": 172.3616295885164,
+          "meanB": 160.66340311897602,
+          "fileSize": 282238
+        },
+        {
+          "frameIndex": 12,
+          "meanBrightness": 180,
+          "meanR": 176.3511909693001,
+          "meanG": 173.69206993120844,
+          "meanB": 157.65435428863398,
+          "fileSize": 303738
+        },
+        {
+          "frameIndex": 16,
+          "meanBrightness": 180,
+          "meanR": 168.08535368003868,
+          "meanG": 186.12057952569103,
+          "meanB": 154.37069849197914,
+          "fileSize": 308789
+        },
+        {
+          "frameIndex": 20,
+          "meanBrightness": 180,
+          "meanR": 167.83261395487105,
+          "meanG": 173.0083099844929,
+          "meanB": 157.43585734682884,
+          "fileSize": 313302
+        },
+        {
+          "frameIndex": 24,
+          "meanBrightness": 180,
+          "meanR": 174.72005680609195,
+          "meanG": 178.40770284813115,
+          "meanB": 155.9636260302438,
+          "fileSize": 318735
+        },
+        {
+          "frameIndex": 28,
+          "meanBrightness": 180,
+          "meanR": 168.4986876404285,
+          "meanG": 186.8972567109518,
+          "meanB": 153.60681730126362,
+          "fileSize": 289370
+        },
+        {
+          "frameIndex": 32,
+          "meanBrightness": 180,
+          "meanR": 176.0677820952764,
+          "meanG": 172.48905427057474,
+          "meanB": 160.41429323306645,
+          "fileSize": 305164
+        },
+        {
+          "frameIndex": 36,
+          "meanBrightness": 180,
+          "meanR": 169.56382269062527,
+          "meanG": 190.3952340488737,
+          "meanB": 155.91355548281,
+          "fileSize": 312163
+        },
+        {
+          "frameIndex": 40,
+          "meanBrightness": 180,
+          "meanR": 171.43395292183328,
+          "meanG": 179.23458005605778,
+          "meanB": 162.56007104338926,
+          "fileSize": 336814
+        },
+        {
+          "frameIndex": 44,
+          "meanBrightness": 180,
+          "meanR": 179.36766768121763,
+          "meanG": 180.96623243675072,
+          "meanB": 169.383775327451,
+          "fileSize": 395567
+        },
+        {
+          "frameIndex": 48,
+          "meanBrightness": 180,
+          "meanR": 167.52678563259173,
+          "meanG": 175.7167650921574,
+          "meanB": 172.079076189942,
+          "fileSize": 423371
+        },
+        {
+          "frameIndex": 52,
+          "meanBrightness": 180,
+          "meanR": 165.74777771130192,
+          "meanG": 176.85368053186755,
+          "meanB": 158.27896678569223,
+          "fileSize": 446792
+        },
+        {
+          "frameIndex": 56,
+          "meanBrightness": 180,
+          "meanR": 164.4044587437544,
+          "meanG": 186.59154416225311,
+          "meanB": 169.14237330663082,
+          "fileSize": 453359
+        },
+        {
+          "frameIndex": 60,
+          "meanBrightness": 180,
+          "meanR": 168.35163150960707,
+          "meanG": 177.56674098106933,
+          "meanB": 156.25707477459812,
+          "fileSize": 453632
+        },
+        {
+          "frameIndex": 64,
+          "meanBrightness": 180,
+          "meanR": 176.77084816128107,
+          "meanG": 187.36282270600265,
+          "meanB": 168.39171138207485,
+          "fileSize": 387992
+        },
+        {
+          "frameIndex": 68,
+          "meanBrightness": 180,
+          "meanR": 173.73394324505335,
+          "meanG": 174.55705856075176,
+          "meanB": 157.14503945707668,
+          "fileSize": 343278
+        },
+        {
+          "frameIndex": 72,
+          "meanBrightness": 180,
+          "meanR": 174.25252990016665,
+          "meanG": 182.31368451793983,
+          "meanB": 168.907458733716,
+          "fileSize": 310803
+        },
+        {
+          "frameIndex": 76,
+          "meanBrightness": 180,
+          "meanR": 172.06807054924164,
+          "meanG": 188.81634494015617,
+          "meanB": 155.2100507524104,
+          "fileSize": 290569
+        }
+      ],
+      "analysisTimestamp": "2025-12-05T06:55:11.321Z",
+      "analysisErrors": []
+    }
+  ],
+  "aggregates": {
+    "overall": {
+      "mean": 88.9,
+      "median": 88.9,
+      "min": 88.9,
+      "max": 88.9,
+      "stdDev": 0,
+      "count": 1
+    },
+    "temporalCoherence": {
+      "brightnessVariance": {
+        "mean": 0,
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "stdDev": 0,
+        "count": 1
+      },
+      "colorConsistency": {
+        "mean": 100,
+        "median": 100,
+        "min": 100,
+        "max": 100,
+        "stdDev": 0,
+        "count": 1
+      },
+      "flickerFrameCount": {
+        "mean": 0,
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "stdDev": 0,
+        "count": 1
+      }
+    },
+    "motionConsistency": {
+      "transitionSmoothness": {
+        "mean": 100,
+        "median": 100,
+        "min": 100,
+        "max": 100,
+        "stdDev": 0,
+        "count": 1
+      },
+      "jitterScore": {
+        "mean": 0,
+        "median": 0,
+        "min": 0,
+        "max": 0,
+        "stdDev": 0,
+        "count": 1
+      }
+    },
+    "identityStability": {
+      "identityScore": {
+        "mean": 63.1,
+        "median": 63.1,
+        "min": 63.1,
+        "max": 63.1,
+        "stdDev": 0,
+        "count": 1
+      },
+      "centerRegionVariance": {
+        "mean": 62627.53,
+        "median": 62627.53,
+        "min": 62627.53,
+        "max": 62627.53,
+        "stdDev": 0,
+        "count": 1
+      }
+    },
+    "byPreset": {
+      "production": {
+        "overall": {
+          "mean": 88.9,
+          "median": 88.9,
+          "min": 88.9,
+          "max": 88.9,
+          "stdDev": 0,
+          "count": 1
+        },
+        "sampleCount": 1
+      }
+    }
+  }
+}

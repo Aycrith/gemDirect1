@@ -491,79 +491,596 @@ export interface FeatureFlags {
      * @stability experimental
      */
     interpolationTargetFps: number;
+
+    // ============================================================================
+    // Temporal Regularization Flags (E2 - Post-Processing Prototype)
+    // ============================================================================
+
+    /**
+     * Enable temporal regularization post-processing step.
+     * Uses ffmpeg tmix filter to apply frame blending after video generation.
+     * Reduces flicker/jitter at the cost of potential motion blur.
+     * This is an alternative/complement to in-workflow deflicker.
+     * @default false
+     * @stability experimental
+     */
+    temporalRegularizationEnabled: boolean;
+
+    /**
+     * Temporal regularization smoothing strength (0.0-1.0).
+     * Higher values = more smoothing but increased motion blur.
+     * Recommended: 0.2-0.4 for light smoothing, 0.5-0.7 for heavy flicker.
+     * @default 0.3
+     * @stability experimental
+     */
+    temporalRegularizationStrength: number;
+
+    /**
+     * Temporal regularization window size in frames.
+     * Number of frames to blend together (2-7).
+     * Larger windows = more smoothing but higher latency impact.
+     * @default 3
+     * @stability experimental
+     */
+    temporalRegularizationWindowFrames: number;
+
+    // ============================================================================
+    // Camera-as-Code Flags (E1 - Camera Path Infrastructure)
+    // ============================================================================
+
+    /**
+     * Enable camera-path-driven video generation.
+     * When enabled and a cameraPath is present in the pipeline config,
+     * ComfyUI requests will include camera/motion node overrides derived
+     * from the cameraPath keyframes.
+     * @default false
+     * @stability experimental
+     */
+    cameraPathDrivenGenerationEnabled: boolean;
+
+    // ============================================================================
+    // Adaptive Temporal Regularization Flags (E2.2 - Path-Guided Tuning)
+    // ============================================================================
+
+    /**
+     * Enable adaptive (path-guided) temporal regularization.
+     * When enabled, temporal regularization strength/window are adjusted
+     * based on motion coherence metrics (path adherence, jitter, flicker).
+     * Requires temporalRegularizationEnabled to be true.
+     * @default false
+     * @stability experimental
+     */
+    temporalRegularizationAdaptiveMode: boolean;
 }
 
 /**
  * Default feature flag values
- * All disabled by default for backward compatibility
+ * 
+ * IMPORTANT: Default configuration is designed for:
+ * - Safe operation on ~8-12 GB VRAM GPUs
+ * - Predictable, stable behavior for new users
+ * - No surprise experimental features enabled
+ * 
+ * Flags are organized into categories:
+ * - ESSENTIAL: Core functionality, always enabled
+ * - PRODUCTION: Stable features for quality output
+ * - ADVANCED/EXPERIMENTAL: Higher resource requirements, opt-in only
+ * 
+ * See Documentation/PRESET_GUIDE.md for preset documentation.
  */
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
-    // Note: bookendKeyframes removed - use LocalGenerationSettings.keyframeMode instead
-    videoUpscaling: false,
-    characterConsistency: true,  // Enable IP-Adapter character consistency for identity preservation
-    shotLevelContinuity: true,  // Enable shot-level continuity (Phase 7 integration complete)
-    autoSuggestions: false,
-    narrativeStateTracking: true,  // Enable narrative state tracking (Phase 7 integration complete)
-    promptABTesting: false,
-    showBayesianAnalytics: true,  // Enable Bayesian analytics panel (toggle off near release)
-    enhancedNegativePrompts: true,  // Enable enhanced negative prompts (Phase 7 complete)
-    subjectFirstPrompts: true,      // Enable subject-first prompt ordering (Phase 7 complete)
-    promptWeighting: false,
-    qualityPrefixVariant: 'legacy',
-    providerHealthPolling: false,
-    promptQualityGate: true,     // Enable prompt quality gating (Phase 1 Prompt Optimization)
-    characterAppearanceTracking: false,
-    // Pipeline Integration Flags (enabled for validation)
-    sceneListContextV2: false,
-    actContextV2: false,
-    keyframePromptPipeline: true,  // Enable new keyframe pipeline
-    videoPromptPipeline: true,     // Enable video prompt pipeline (Phase 1 Prompt Optimization)
-    bibleV2SaveSync: true,         // Enable Visual Bible sync
-    sceneListValidationMode: 'warn', // Log validation warnings
-    promptTokenGuard: 'warn',      // Log token budget warnings
-    // State Management Migration Flags (Phase 1C activation)
-    useUnifiedSceneStore: true,    // Enable unified Zustand store (Phase 1C)
-    sceneStoreParallelValidation: true, // Enable parallel store validation
-    useSettingsStore: true,        // Use Zustand settings store (Phase 1D - enabled for testing)
-    useGenerationStatusStore: true, // Use Zustand generation status store (Phase 1D - enabled)
-    // Quick Generate (hidden - stub feature)
-    enableQuickGenerate: false,    // Quick Generate is not implemented - hidden from users
-    // Generation Queue Integration
-    useGenerationQueue: true,      // Route through serial queue (prevents VRAM exhaustion)
-    // LLM Transport Adapter Integration
-    useLLMTransportAdapter: true,  // Route through transport abstraction (enables testing/provider switching)
-    // Vision LLM Integration
-    visionLLMFeedback: true,       // Enable vision feedback on keyframes (enabled for quality diagnosis)
-    visionFeedbackProvider: 'local-qwen', // Vision provider - use local Qwen VL
-    autoVisionAnalysis: true,      // Auto-analyze keyframes after generation (enabled)
-    // Video Analysis Integration
-    videoAnalysisFeedback: true,   // Enable video analysis feedback (enabled for quality diagnosis)
-    autoVideoAnalysis: true,       // Auto-analyze videos after generation (enabled for quality diagnosis)
-    videoQualityGateEnabled: false, // Quality gate enforcement (disabled by default - manual review preferred)
-    videoQualityThreshold: 60,     // Minimum acceptable video quality score
-    // Bookend QA (Phase 8)
-    keyframePairAnalysis: true,    // Enable keyframe pair analysis preflight (uses vision LLM)
-    bookendQAMode: false,          // Master switch for Bookend QA Mode (off by default)
-    // VRAM Management
-    autoEjectLMStudioModels: true, // Auto-eject LM Studio models before ComfyUI generation
-    // Keyframe Generation Enhancements
-    keyframeVersionHistory: true,        // Enable keyframe version history
-    autoGenerateTemporalContext: true,   // Auto-generate bookend temporal context from scene
-    // Temporal Coherence Enhancement (Phase 5) - STANDARD PROFILE DEFAULTS (Phase 8)
-    // Changed in Phase 8: Default is now "Standard" stability profile with deflicker ON
-    videoDeflicker: true,                // Deflicker post-processing (ON by default - Standard profile)
-    deflickerStrength: 0.35,             // Deflicker blend strength (Standard profile)
-    deflickerWindowSize: 3,              // Deflicker temporal window size (Standard profile)
-    ipAdapterReferenceConditioning: false, // IP-Adapter reference conditioning (off - requires character ref images)
-    ipAdapterWeight: 0.4,                // IP-Adapter reference weight
-    promptScheduling: false,             // Prompt scheduling for transitions (off - Standard profile)
-    promptTransitionFrames: 8,           // Prompt transition blend duration
-    // Anti-Flicker Enhancement (Phase 6)
-    enhanceAVideoEnabled: false,         // FETA enhancement (off by default - requires WanVideoSampler)
-    fetaWeight: 2.0,                     // FETA weight for temporal consistency
-    frameInterpolationEnabled: false,    // Frame interpolation post-processing
-    interpolationTargetFps: 60,          // Target FPS for interpolation
+    // ==================== ESSENTIAL (always enabled) ====================
+    // These flags provide core functionality and are safe for all systems
+    
+    // Prompt assembly - stable, required for generation
+    keyframePromptPipeline: true,      // Use unified prompt assembler for keyframes
+    videoPromptPipeline: true,         // Use unified prompt assembler for video
+    subjectFirstPrompts: true,         // Optimal prompt ordering
+    enhancedNegativePrompts: true,     // Better quality control
+    promptQualityGate: true,           // Validate prompt quality
+    sceneListValidationMode: 'warn',   // Log validation warnings
+    promptTokenGuard: 'warn',          // Log token budget warnings
+    
+    // State management - stable infrastructure
+    useUnifiedSceneStore: true,        // Centralized scene state
+    useSettingsStore: true,            // Centralized settings
+    useGenerationStatusStore: true,    // Centralized generation status
+    useGenerationQueue: true,          // Prevent VRAM exhaustion
+    
+    // VRAM management
+    autoEjectLMStudioModels: true,     // Free VRAM before generation
+    
+    // Keyframe features
+    keyframeVersionHistory: true,      // Non-destructive regeneration
+    autoGenerateTemporalContext: true, // Auto-generate bookend context
+    
+    // ==================== PRODUCTION (on by default, stable) ====================
+    // These flags improve quality and are validated for production use
+    
+    // Visual Bible integration
+    bibleV2SaveSync: true,             // Sync Visual Bible on save
+    
+    // Temporal coherence - Standard profile defaults
+    videoDeflicker: true,              // Deflicker post-processing
+    deflickerStrength: 0.35,           // Conservative strength
+    deflickerWindowSize: 3,            // Small temporal window
+    
+    // ==================== ADVANCED (off by default, opt-in) ====================
+    // These flags require more VRAM or are experimental
+    
+    // Video quality
+    videoUpscaling: false,             // High VRAM requirement
+    
+    // Identity/continuity - requires setup
+    characterConsistency: false,       // Requires Visual Bible + IP-Adapter models
+    shotLevelContinuity: false,        // Advanced continuity tracking
+    narrativeStateTracking: false,     // Advanced state machine
+    characterAppearanceTracking: false, // Character presence warnings
+    
+    // Temporal coherence - advanced
+    ipAdapterReferenceConditioning: false, // High VRAM, requires models
+    ipAdapterWeight: 0.4,              // Reference weight
+    promptScheduling: false,           // Transition blending
+    promptTransitionFrames: 8,         // Transition duration
+    
+    // FETA enhancement - requires specific workflow
+    enhanceAVideoEnabled: false,       // Requires WanVideoSampler
+    fetaWeight: 2.0,                   // FETA weight
+    frameInterpolationEnabled: false,  // Post-processing
+    interpolationTargetFps: 60,        // Target FPS
+    
+    // Temporal regularization - ffmpeg-based post-processing (E2)
+    temporalRegularizationEnabled: false, // Optional smoothing step
+    temporalRegularizationStrength: 0.3,  // Default moderate strength
+    temporalRegularizationWindowFrames: 3, // Default 3-frame window
+    
+    // Camera-as-Code - camera path-driven generation (E1)
+    cameraPathDrivenGenerationEnabled: false, // Opt-in camera path control
+    
+    // Adaptive Temporal Regularization - path-guided tuning (E2.2)
+    temporalRegularizationAdaptiveMode: false, // Opt-in adaptive mode
+    
+    // ==================== EXPERIMENTAL (off by default, hidden) ====================
+    // These flags are for testing/development only
+    
+    // A/B testing
+    promptABTesting: false,            // Prompt comparison
+    showBayesianAnalytics: false,      // Analytics panel
+    
+    // Quality prefix
+    promptWeighting: false,            // Weighting syntax
+    qualityPrefixVariant: 'legacy',    // Quality prefix style
+    
+    // Provider management
+    providerHealthPolling: false,      // Health checks
+    
+    // Auto-generation
+    autoSuggestions: false,            // Auto suggestions
+    
+    // Pipeline integration (beta)
+    sceneListContextV2: false,         // V2 context assembly
+    actContextV2: false,               // V2 act mapping
+    
+    // State validation (migration)
+    sceneStoreParallelValidation: false, // Parallel validation
+    
+    // Quick Generate (not implemented)
+    enableQuickGenerate: false,        // Stub feature
+    
+    // LLM/Vision integration
+    useLLMTransportAdapter: false,     // LLM abstraction layer
+    visionLLMFeedback: false,          // Vision feedback
+    visionFeedbackProvider: 'disabled', // Vision provider
+    autoVisionAnalysis: false,         // Auto keyframe analysis
+    
+    // Video analysis
+    videoAnalysisFeedback: false,      // Video feedback
+    autoVideoAnalysis: false,          // Auto video analysis
+    videoQualityGateEnabled: false,    // Quality enforcement
+    videoQualityThreshold: 60,         // Quality threshold
+    
+    // Bookend QA
+    keyframePairAnalysis: false,       // Pre-flight analysis
+    bookendQAMode: false,              // QA master switch
 };
+
+// ============================================================================
+// SAFE DEFAULTS MODE
+// ============================================================================
+
+/**
+ * Safe defaults feature flags for ~8 GB VRAM GPUs.
+ * 
+ * Use this configuration for:
+ * - GPUs with 8 GB or less VRAM
+ * - First-time users who want predictable behavior
+ * - Troubleshooting VRAM-related issues
+ * 
+ * This mode disables all VRAM-intensive features and experimental flags
+ * while maintaining core generation functionality.
+ */
+export const SAFE_DEFAULTS_FLAGS: FeatureFlags = {
+    ...DEFAULT_FEATURE_FLAGS,
+    
+    // Disable VRAM-intensive features
+    videoUpscaling: false,
+    characterConsistency: false,
+    ipAdapterReferenceConditioning: false,
+    enhanceAVideoEnabled: false,
+    frameInterpolationEnabled: false,
+    
+    // Use minimal temporal processing
+    videoDeflicker: false,             // Disable deflicker for lowest VRAM
+    deflickerStrength: 0.0,
+    deflickerWindowSize: 3,
+    
+    // Disable temporal regularization (extra post-processing step)
+    temporalRegularizationEnabled: false,
+    temporalRegularizationStrength: 0.3,
+    temporalRegularizationWindowFrames: 3,
+    
+    // Disable experimental camera/motion features
+    cameraPathDrivenGenerationEnabled: false,
+    temporalRegularizationAdaptiveMode: false,
+    
+    // Disable vision/analysis features (require additional resources)
+    visionLLMFeedback: false,
+    visionFeedbackProvider: 'disabled',
+    autoVisionAnalysis: false,
+    videoAnalysisFeedback: false,
+    autoVideoAnalysis: false,
+    videoQualityGateEnabled: false,
+    keyframePairAnalysis: false,
+    bookendQAMode: false,
+    
+    // Keep essential features only
+    useGenerationQueue: true,          // Still prevent VRAM exhaustion
+    autoEjectLMStudioModels: true,     // Still free VRAM
+};
+
+/**
+ * Safe defaults mode configuration metadata
+ */
+export const SAFE_DEFAULTS_MODE_CONFIG = {
+    name: 'Safe Defaults Mode',
+    description: 'Conservative settings for ~8 GB GPUs',
+    targetVRAM_GB: 8,
+    features: {
+        disabledForVRAM: [
+            'videoUpscaling',
+            'characterConsistency', 
+            'ipAdapterReferenceConditioning',
+            'enhanceAVideoEnabled',
+            'frameInterpolationEnabled',
+            'videoDeflicker',
+        ],
+        disabledForStability: [
+            'visionLLMFeedback',
+            'autoVisionAnalysis',
+            'videoAnalysisFeedback',
+            'autoVideoAnalysis',
+            'videoQualityGateEnabled',
+            'keyframePairAnalysis',
+            'bookendQAMode',
+        ],
+    },
+    recommendation: 'Use this mode for first-time setup or when experiencing OOM errors.',
+} as const;
+
+// ============================================================================
+// PRODUCTION QA MODE
+// ============================================================================
+
+/**
+ * Production QA feature flags for moderate VRAM GPUs (~10-12 GB).
+ * 
+ * Use this configuration for:
+ * - GPUs with 10-12 GB VRAM
+ * - Production workflows with quality assurance enabled
+ * - Aligns with A1/A3 Vision QA thresholds
+ * 
+ * This mode enables key QA features (keyframePairAnalysis, bookendQAMode,
+ * videoQualityGateEnabled) while respecting moderate VRAM constraints.
+ * It sits between Safe Defaults (most conservative) and Cinematic (high-fidelity).
+ * 
+ * VRAM-heavy features (FETA, IP-Adapter) remain disabled unless explicitly enabled.
+ */
+export const PRODUCTION_QA_FLAGS: FeatureFlags = {
+    ...DEFAULT_FEATURE_FLAGS,
+    
+    // === QA FEATURES (ENABLED) ===
+    // These enable quality gating aligned with A1/A3 Vision QA thresholds
+    keyframePairAnalysis: true,        // Pre-flight continuity check
+    bookendQAMode: true,               // Master QA switch
+    videoQualityGateEnabled: true,     // Quality gate enforcement
+    videoQualityThreshold: 70,         // Default quality threshold
+    
+    // Vision/analysis features for QA validation
+    videoAnalysisFeedback: true,       // Video analysis
+    autoVideoAnalysis: true,           // Auto-run after generation
+    
+    // === MODERATE TEMPORAL PROCESSING ===
+    // Standard profile deflicker settings (not cinematic)
+    videoDeflicker: true,
+    deflickerStrength: 0.45,           // Standard profile strength
+    deflickerWindowSize: 5,            // Standard profile window
+    
+    // Temporal regularization disabled by default for Production QA
+    // Enable via pipeline flag for A/B comparison testing
+    temporalRegularizationEnabled: false,
+    temporalRegularizationStrength: 0.3,
+    temporalRegularizationWindowFrames: 3,
+    
+    // Camera-as-Code disabled by default for Production QA
+    // Enable explicitly when testing camera path integration
+    cameraPathDrivenGenerationEnabled: false,
+    temporalRegularizationAdaptiveMode: false,
+    
+    // === VRAM-CONSCIOUS SETTINGS (DISABLED) ===
+    // Keep VRAM-heavy features off for ~10-12 GB compatibility
+    videoUpscaling: false,             // High VRAM
+    characterConsistency: false,       // Requires IP-Adapter models
+    ipAdapterReferenceConditioning: false, // High VRAM
+    enhanceAVideoEnabled: false,       // Very high VRAM (FETA)
+    frameInterpolationEnabled: false,  // High VRAM
+    
+    // === KEEP ESSENTIAL FEATURES ===
+    useGenerationQueue: true,          // Prevent VRAM exhaustion
+    autoEjectLMStudioModels: true,     // Free VRAM before generation
+};
+
+/**
+ * Production QA mode configuration metadata
+ */
+export const PRODUCTION_QA_MODE_CONFIG = {
+    name: 'Production QA Mode',
+    description: 'QA-enabled settings for ~10-12 GB GPUs',
+    targetVRAM_GB: 10,
+    features: {
+        enabledForQA: [
+            'keyframePairAnalysis',
+            'bookendQAMode',
+            'videoQualityGateEnabled',
+            'videoAnalysisFeedback',
+            'autoVideoAnalysis',
+        ],
+        enabledTemporal: [
+            'videoDeflicker',
+        ],
+        disabledForVRAM: [
+            'videoUpscaling',
+            'characterConsistency',
+            'ipAdapterReferenceConditioning',
+            'enhanceAVideoEnabled',
+            'frameInterpolationEnabled',
+        ],
+    },
+    recommendation: 'Use this mode for production workflows with quality validation. Requires vision LLM for full QA.',
+    thresholdAlignment: 'Aligned with A1/A3 Vision QA thresholds (minOverall: 80, videoQualityThreshold: 70)',
+} as const;
+
+/**
+ * Check if current flags match Production QA configuration.
+ * Returns true if QA features are enabled and VRAM-heavy features are disabled.
+ */
+export function checkProductionQA(flags: Partial<FeatureFlags>): {
+    isProductionQA: boolean;
+    missingQAFlags: (keyof FeatureFlags)[];
+    extraVRAMFlags: (keyof FeatureFlags)[];
+    recommendation: string;
+} {
+    const merged = mergeFeatureFlags(flags);
+    const missingQAFlags: (keyof FeatureFlags)[] = [];
+    const extraVRAMFlags: (keyof FeatureFlags)[] = [];
+    
+    // Check required QA flags
+    const requiredQAFlags: (keyof FeatureFlags)[] = [
+        'keyframePairAnalysis', 'bookendQAMode', 'videoQualityGateEnabled'
+    ];
+    
+    for (const flag of requiredQAFlags) {
+        if (merged[flag] !== true) {
+            missingQAFlags.push(flag);
+        }
+    }
+    
+    // Check VRAM-heavy flags (should be disabled)
+    const vramHeavyFlags: (keyof FeatureFlags)[] = [
+        'videoUpscaling', 'characterConsistency', 'ipAdapterReferenceConditioning',
+        'enhanceAVideoEnabled', 'frameInterpolationEnabled'
+    ];
+    
+    for (const flag of vramHeavyFlags) {
+        if (merged[flag] === true) {
+            extraVRAMFlags.push(flag);
+        }
+    }
+    
+    const isProductionQA = missingQAFlags.length === 0 && extraVRAMFlags.length === 0;
+    
+    let recommendation: string;
+    if (isProductionQA) {
+        recommendation = 'Current configuration matches Production QA mode.';
+    } else if (missingQAFlags.length > 0 && extraVRAMFlags.length === 0) {
+        recommendation = `Enable ${missingQAFlags.length} QA feature(s) for full Production QA: ${missingQAFlags.map(f => FEATURE_FLAG_META[f]?.label || f).join(', ')}.`;
+    } else if (missingQAFlags.length === 0 && extraVRAMFlags.length > 0) {
+        recommendation = `Disable ${extraVRAMFlags.length} VRAM-heavy feature(s) for Production QA: ${extraVRAMFlags.map(f => FEATURE_FLAG_META[f]?.label || f).join(', ')}.`;
+    } else {
+        recommendation = 'Apply Production QA preset to enable QA features while staying VRAM-conscious.';
+    }
+    
+    return { isProductionQA, missingQAFlags, extraVRAMFlags, recommendation };
+}
+
+/**
+ * Check if current flags are within safe defaults.
+ * Returns true if all VRAM-intensive features are disabled.
+ */
+export function checkSafeDefaults(flags: Partial<FeatureFlags>): {
+    isSafe: boolean;
+    unsafeFlags: (keyof FeatureFlags)[];
+    recommendation: string;
+} {
+    const merged = mergeFeatureFlags(flags);
+    const unsafeFlags: (keyof FeatureFlags)[] = [];
+    
+    const vramIntensiveFlags: (keyof FeatureFlags)[] = [
+        'videoUpscaling', 'characterConsistency', 'ipAdapterReferenceConditioning',
+        'enhanceAVideoEnabled', 'frameInterpolationEnabled', 'videoDeflicker'
+    ];
+    
+    for (const flag of vramIntensiveFlags) {
+        if (merged[flag] === true) {
+            unsafeFlags.push(flag);
+        }
+    }
+    
+    const isSafe = unsafeFlags.length === 0;
+    const recommendation = isSafe 
+        ? 'Current configuration is safe for 8 GB GPUs.'
+        : `Consider disabling ${unsafeFlags.length} VRAM-intensive feature(s) for 8 GB GPUs: ${unsafeFlags.map(f => FEATURE_FLAG_META[f]?.label || f).join(', ')}.`;
+    
+    return { isSafe, unsafeFlags, recommendation };
+}
+
+/**
+ * Flag tier for UI organization.
+ * - 'essential': Core flags always shown
+ * - 'production': Stable flags shown in main settings
+ * - 'advanced': Higher VRAM flags shown under Advanced
+ * - 'experimental': Development/testing flags, hidden by default
+ */
+export type FeatureFlagTier = 'essential' | 'production' | 'advanced' | 'experimental';
+
+/**
+ * VRAM impact classification for flags
+ */
+export type VRAMImpact = 'none' | 'low' | 'medium' | 'high';
+
+/**
+ * Extended feature flag metadata with tier and VRAM information
+ */
+export interface FeatureFlagMetaExtended extends FeatureFlagMeta {
+    /** UI organization tier */
+    tier: FeatureFlagTier;
+    /** VRAM usage impact */
+    vramImpact: VRAMImpact;
+    /** Minimum recommended VRAM in GB */
+    minVRAM?: number;
+}
+
+/**
+ * Get flag tier for a given flag
+ */
+export function getFlagTier(flag: keyof FeatureFlags): FeatureFlagTier {
+    // Essential flags - always on, cannot be toggled
+    const essential: (keyof FeatureFlags)[] = [
+        'keyframePromptPipeline', 'videoPromptPipeline', 'subjectFirstPrompts',
+        'enhancedNegativePrompts', 'promptQualityGate', 'useUnifiedSceneStore',
+        'useSettingsStore', 'useGenerationStatusStore', 'useGenerationQueue',
+        'autoEjectLMStudioModels', 'keyframeVersionHistory', 'autoGenerateTemporalContext'
+    ];
+    
+    // Production flags - shown in main settings
+    const production: (keyof FeatureFlags)[] = [
+        'videoDeflicker', 'deflickerStrength', 'deflickerWindowSize',
+        'bibleV2SaveSync', 'sceneListValidationMode', 'promptTokenGuard'
+    ];
+    
+    // Advanced flags - shown under Advanced toggle
+    const advanced: (keyof FeatureFlags)[] = [
+        'videoUpscaling', 'characterConsistency', 'shotLevelContinuity',
+        'narrativeStateTracking', 'characterAppearanceTracking',
+        'ipAdapterReferenceConditioning', 'ipAdapterWeight',
+        'promptScheduling', 'promptTransitionFrames',
+        'enhanceAVideoEnabled', 'fetaWeight',
+        'frameInterpolationEnabled', 'interpolationTargetFps',
+        'visionLLMFeedback', 'visionFeedbackProvider', 'autoVisionAnalysis',
+        'videoAnalysisFeedback', 'autoVideoAnalysis', 'videoQualityGateEnabled',
+        'videoQualityThreshold', 'keyframePairAnalysis', 'bookendQAMode'
+    ];
+    
+    if (essential.includes(flag)) return 'essential';
+    if (production.includes(flag)) return 'production';
+    if (advanced.includes(flag)) return 'advanced';
+    return 'experimental';
+}
+
+/**
+ * Get VRAM impact for a given flag
+ */
+export function getFlagVRAMImpact(flag: keyof FeatureFlags): VRAMImpact {
+    const highVRAM: (keyof FeatureFlags)[] = [
+        'videoUpscaling', 'ipAdapterReferenceConditioning', 'enhanceAVideoEnabled',
+        'frameInterpolationEnabled'
+    ];
+    
+    const mediumVRAM: (keyof FeatureFlags)[] = [
+        'characterConsistency', 'videoDeflicker', 'visionLLMFeedback',
+        'videoAnalysisFeedback'
+    ];
+    
+    const lowVRAM: (keyof FeatureFlags)[] = [
+        'promptScheduling', 'shotLevelContinuity', 'narrativeStateTracking'
+    ];
+    
+    if (highVRAM.includes(flag)) return 'high';
+    if (mediumVRAM.includes(flag)) return 'medium';
+    if (lowVRAM.includes(flag)) return 'low';
+    return 'none';
+}
+
+/**
+ * Get minimum recommended VRAM for a flag (in GB)
+ */
+export function getFlagMinVRAM(flag: keyof FeatureFlags): number | undefined {
+    const vramRequirements: Partial<Record<keyof FeatureFlags, number>> = {
+        videoUpscaling: 12,
+        characterConsistency: 10,
+        ipAdapterReferenceConditioning: 12,
+        enhanceAVideoEnabled: 16,
+        frameInterpolationEnabled: 12,
+        visionLLMFeedback: 10,
+        videoAnalysisFeedback: 10,
+    };
+    
+    return vramRequirements[flag];
+}
+
+/**
+ * Check if current flags are compatible with available VRAM
+ */
+export function checkFlagsForVRAM(
+    flags: Partial<FeatureFlags>,
+    availableVRAM_GB: number
+): { compatible: boolean; warnings: string[] } {
+    const warnings: string[] = [];
+    const merged = mergeFeatureFlags(flags);
+    
+    const flagsToCheck: (keyof FeatureFlags)[] = [
+        'videoUpscaling', 'characterConsistency', 'ipAdapterReferenceConditioning',
+        'enhanceAVideoEnabled', 'frameInterpolationEnabled', 'visionLLMFeedback',
+        'videoAnalysisFeedback'
+    ];
+    
+    for (const flag of flagsToCheck) {
+        if (merged[flag] === true) {
+            const minVRAM = getFlagMinVRAM(flag);
+            if (minVRAM && availableVRAM_GB < minVRAM) {
+                const meta = FEATURE_FLAG_META[flag];
+                warnings.push(
+                    `${meta.label} requires ~${minVRAM} GB VRAM, but only ${availableVRAM_GB} GB available. ` +
+                    `Consider disabling this feature to avoid OOM errors.`
+                );
+            }
+        }
+    }
+    
+    return {
+        compatible: warnings.length === 0,
+        warnings
+    };
+}
 
 /**
  * Feature flag metadata for UI display
@@ -977,6 +1494,49 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         category: 'quality',
         stability: 'experimental',
         dependencies: ['frameInterpolationEnabled'],
+    },
+    // Temporal Regularization (E2 - Post-Processing Prototype)
+    temporalRegularizationEnabled: {
+        id: 'temporalRegularizationEnabled',
+        label: 'Temporal Regularization',
+        description: 'Enable ffmpeg-based frame blending post-processing to reduce flicker.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: [],
+    },
+    temporalRegularizationStrength: {
+        id: 'temporalRegularizationStrength',
+        label: 'Regularization Strength',
+        description: 'Smoothing intensity (0-1). Higher values = more smoothing but potential blur.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['temporalRegularizationEnabled'],
+    },
+    temporalRegularizationWindowFrames: {
+        id: 'temporalRegularizationWindowFrames',
+        label: 'Regularization Window',
+        description: 'Number of frames to blend (2-7). Larger = smoother but more blur.',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['temporalRegularizationEnabled'],
+    },
+    // Camera-as-Code (E1) - Camera Path Integration
+    cameraPathDrivenGenerationEnabled: {
+        id: 'cameraPathDrivenGenerationEnabled',
+        label: 'Camera Path-Driven Generation',
+        description: 'Use cameraPath from pipeline config to drive ComfyUI camera/motion nodes. Enables reproducible camera movements.',
+        category: 'experimental',
+        stability: 'experimental',
+        dependencies: [],
+    },
+    // Adaptive Temporal Regularization (E2.2)
+    temporalRegularizationAdaptiveMode: {
+        id: 'temporalRegularizationAdaptiveMode',
+        label: 'Adaptive Temporal Regularization',
+        description: 'Adjust temporal regularization strength/window based on motion coherence metrics (path adherence, jitter).',
+        category: 'quality',
+        stability: 'experimental',
+        dependencies: ['temporalRegularizationEnabled'],
     },
 };
 
