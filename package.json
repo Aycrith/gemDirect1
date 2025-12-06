@@ -41,8 +41,20 @@
     "bookend:vision-qa:publish": "pwsh -File scripts/publish-vision-qa-results.ps1",
     "bookend:vision-qa:check-schema": "pwsh -File scripts/check-vision-qa-schema.ps1",
     "bookend:vision-qa:trend": "pwsh -File scripts/vision-qa-trend-report.ps1",
+    "benchmark:video-quality": "npx tsx scripts/benchmarks/video-quality-benchmark.ts",
+    "benchmark:video-quality:verbose": "npx tsx scripts/benchmarks/video-quality-benchmark.ts --verbose",
     "bookend:ci:core": "npx tsc --noEmit && npx vitest run --reporter=verbose && npm run bookend:regression",
-    "bookend:ci:vision": "pwsh -File scripts/run-bookend-vision-qa.ps1 -Runs 3"
+    "bookend:ci:vision": "pwsh -File scripts/run-bookend-vision-qa.ps1 -Runs 3",
+    "pipeline": "npx tsx scripts/run-pipeline.ts",
+    "pipeline:list": "npx tsx scripts/run-pipeline.ts --list",
+    "pipeline:production-qa-golden": "npx tsx scripts/run-pipeline.ts --pipeline production-qa-golden",
+    "temporal:regularize": "npx tsx scripts/temporal-regularizer.ts",
+    "narrative": "npx tsx scripts/run-narrative.ts",
+    "narrative:list": "npx tsx scripts/run-narrative.ts --list",
+    "narrative:demo": "npx tsx scripts/run-narrative.ts --script config/narrative/demo-three-shot.json",
+    "replay:from-manifest": "npx tsx scripts/replay-from-manifest.ts",
+    "pipeline:external": "npx ts-node scripts/run-pipeline-external.ts",
+    "pipeline:external:check": "npx ts-node scripts/run-pipeline-external.ts --check"
   },
   "dependencies": {
     "@google/genai": "^1.28.0",
