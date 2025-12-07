@@ -24,6 +24,7 @@ import type {
     PipelineStepContext,
     PipelineStepResult,
 } from '../services/pipelineOrchestrator';
+import { runPreflight } from '../utils/preflight';
 
 // ============================================================================
 // Constants
@@ -67,6 +68,42 @@ function getProjectRoot(): string {
 }
 
 // ============================================================================
+// Step 0: Preflight (ffmpeg/VLM)
+// ============================================================================
+
+function createPreflightStep(): PipelineStep {
+    return {
+        id: 'preflight-check',
+        description: 'Check ffmpeg (tmix) and VLM endpoint availability',
+        run: async (): Promise<PipelineStepResult> => {
+            try {
+                const result = await runPreflight();
+                const warningText = result.warnings.join('; ');
+                if (warningText) {
+                    console.warn(`[preflight] Warnings: ${warningText}`);
+                } else {
+                    console.log('[preflight] All checks passed');
+                }
+                return {
+                    status: 'succeeded',
+                    contextUpdates: {
+                        preflight: result,
+                        preflightWarning: warningText || undefined,
+                    },
+                };
+            } catch (error) {
+                return {
+                    status: 'succeeded',
+                    contextUpdates: {
+                        preflightError: error instanceof Error ? error.message : String(error),
+                    },
+                };
+            }
+        },
+    };
+}
+
+// ============================================================================
 // Step 1: Generate Golden Video
 // ============================================================================
 
@@ -85,6 +122,7 @@ function createGenerateStep(): PipelineStep {
             const { spawn } = await import('child_process');
             const projectRoot = (ctx.projectRoot as string) || getProjectRoot();
             const sample = (ctx.sample as string) || DEFAULT_GOLDEN_SAMPLE;
+            const stepStarted = Date.now();
             
             // Use the regression test script with sample filter
             const scriptPath = path.join(projectRoot, 'scripts', 'test-bookend-regression.ps1');
@@ -96,7 +134,27 @@ function createGenerateStep(): PipelineStep {
                 };
             }
 
-            return new Promise((resolve) => {
+            return new Promise(async (resolve) => {
+                // Helper: wait for a video file to appear
+                const waitForVideo = (candidates: () => string | undefined, timeoutMs = 60000, intervalMs = 2000): Promise<string | undefined> => {
+                    const end = Date.now() + timeoutMs;
+                    return new Promise(res => {
+                        const check = () => {
+                            const pathCandidate = candidates();
+                            if (pathCandidate) {
+                                res(pathCandidate);
+                                return;
+                            }
+                            if (Date.now() >= end) {
+                                res(undefined);
+                                return;
+                            }
+                            setTimeout(check, intervalMs);
+                        };
+                        check();
+                    });
+                };
+
                 const args = [
                     '-NoLogo',
                     '-ExecutionPolicy', 'Bypass',
@@ -157,31 +215,89 @@ function createGenerateStep(): PipelineStep {
                         return;
                     }
 
-                    // Find video file in run directory
+                    // Find video file from results.json (written by regression script)
                     const resolvedRunDir = runDir; // Capture for type narrowing
                     const absoluteRunDir = path.isAbsolute(resolvedRunDir)
                         ? resolvedRunDir
                         : path.join(projectRoot, resolvedRunDir);
 
                     let videoPath: string | undefined;
-                    const sampleDir = path.join(absoluteRunDir, sample);
-                    if (fs.existsSync(sampleDir)) {
-                        const files = fs.readdirSync(sampleDir);
-                        const videoFile = files.find(f => f.endsWith('.mp4'));
-                        if (videoFile) {
-                            videoPath = path.join(sampleDir, videoFile);
+                    
+                    // Read results.json to get the video path
+                    const resultsJsonPath = path.join(absoluteRunDir, 'results.json');
+                    if (fs.existsSync(resultsJsonPath)) {
+                        try {
+                            const resultsData = JSON.parse(fs.readFileSync(resultsJsonPath, 'utf-8'));
+                            const sampleData = resultsData.samples?.[sample];
+                            
+                            if (sampleData?.videoPath) {
+                                // videoPath in results.json is relative to ComfyUI output dir
+                                // e.g., "video/regression_sample-001-geometric_*.mp4"
+                                // ComfyUI default output: C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\output
+                                const comfyOutputDir = process.env.COMFYUI_OUTPUT_DIR 
+                                    || 'C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output';
+                                videoPath = path.join(comfyOutputDir, sampleData.videoPath);
+                                
+                                // Verify the file exists
+                                if (!fs.existsSync(videoPath)) {
+                                    console.warn(`[generate-step] Video file not found at resolved path: ${videoPath}`);
+                                    videoPath = undefined;
+                                }
+                            }
+                        } catch (parseErr) {
+                            console.warn(`[generate-step] Failed to parse results.json: ${parseErr}`);
                         }
                     }
 
-                    resolve({
-                        status: 'succeeded',
-                        contextUpdates: {
-                            runDir: absoluteRunDir,
-                            videoPath,
-                            sample,
-                            generateOutput: stdout,
-                        },
-                    });
+                    const finish = (pathCandidate?: string) => {
+                        resolve({
+                            status: 'succeeded',
+                            contextUpdates: {
+                                runDir: absoluteRunDir,
+                                videoPath: pathCandidate,
+                                sample,
+                                generateOutput: stdout,
+                            },
+                        });
+                    };
+
+                    const sampleDir = path.join(absoluteRunDir, sample);
+                    const comfyFallback = () => {
+                        if (videoPath) return finish(videoPath);
+                        const comfyOutputDir = process.env.COMFYUI_OUTPUT_DIR 
+                            || 'C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output';
+                        const comfyVideoDir = path.join(comfyOutputDir, 'video');
+                        if (fs.existsSync(comfyVideoDir)) {
+                            const files = fs.readdirSync(comfyVideoDir)
+                                .filter(f => f.endsWith('.mp4') && f.includes(`regression_${sample}`))
+                                .map(f => ({ f, t: fs.statSync(path.join(comfyVideoDir, f)).mtimeMs }))
+                                .filter(({ t }) => t >= stepStarted - 5 * 60 * 1000)
+                                .sort((a, b) => b.t - a.t);
+                            if (files[0]) {
+                                const fallbackPath = path.join(comfyVideoDir, files[0].f);
+                                console.warn(`[generate-step] Using fallback video from Comfy output: ${fallbackPath}`);
+                                return finish(fallbackPath);
+                            }
+                        }
+                        finish(videoPath);
+                    };
+
+                    if (!videoPath) {
+                        waitForVideo(() => {
+                            if (!fs.existsSync(sampleDir)) return undefined;
+                            const files = fs.readdirSync(sampleDir);
+                            const videoFile = files.find(f => f.endsWith('.mp4'));
+                            return videoFile ? path.join(sampleDir, videoFile) : undefined;
+                        }).then(found => {
+                            if (found) {
+                                videoPath = found;
+                            }
+                            comfyFallback();
+                        });
+                        return;
+                    }
+
+                    comfyFallback();
                 });
 
                 child.on('error', (error) => {
@@ -199,19 +315,22 @@ function createGenerateStep(): PipelineStep {
 // Step 1.5: Apply Temporal Regularization (Optional - E2 Prototype)
 // ============================================================================
 
-/**
- * Step that applies temporal regularization (ffmpeg-based smoothing) to the generated video.
- * This is an optional post-processing step controlled by:
- * - context.temporalRegularization: 'on' | 'off' | 'auto'
- * - When 'auto', respects feature flags (temporalRegularizationEnabled)
- * 
- * Uses scripts/temporal-regularizer.ts which:
- * - Applies ffmpeg tmix filter for frame blending
- * - Produces a *-smoothed.mp4 output file
- * - Updates context.videoPath to point to smoothed file
- * 
- * E2 Prototype: This step is for A/B comparison testing of temporal smoothing.
- */
+    /**
+     * Step that applies temporal regularization (ffmpeg-based smoothing) to the generated video.
+     * This is an optional post-processing step controlled by:
+     * - context.temporalRegularization: 'on' | 'off' | 'auto'
+     * - When 'auto', respects feature flags (temporalRegularizationEnabled)
+     * 
+     * Uses scripts/temporal-regularizer.ts which:
+     * - Applies ffmpeg tmix filter for frame blending
+     * - Produces a *-smoothed.mp4 output file (when supported by current ffmpeg)
+     * - Updates context.videoPath to point to smoothed file
+     * 
+     * Temporal regularization is treated as a non-critical enhancement:
+     * - If it fails, the pipeline continues using the original video for QA/benchmark.
+     * 
+     * E2 Prototype: This step is for A/B comparison testing of temporal smoothing.
+     */
 function createTemporalRegularizationStep(): PipelineStep {
     return {
         id: 'temporal-regularization',
@@ -231,11 +350,17 @@ function createTemporalRegularizationStep(): PipelineStep {
             // 'auto' or undefined = use feature flag defaults (currently off for Production QA)
             const shouldRun = temporalRegularization === 'on';
             const isAuto = !temporalRegularization || temporalRegularization === 'auto';
+            const baseContextUpdates = {
+                originalVideoPath: videoPath,
+                videoPath,
+            };
             
             if (temporalRegularization === 'off' || (isAuto && !DEFAULT_TEMPORAL_REGULARIZATION.enabled)) {
+                // Treat as a successful no-op so downstream steps still run
                 return {
-                    status: 'skipped',
+                    status: 'succeeded',
                     contextUpdates: {
+                        ...baseContextUpdates,
                         temporalRegularizationApplied: false,
                         temporalRegularizationSkipReason: isAuto 
                             ? 'Disabled by default (use --temporal-regularization on to enable)'
@@ -245,9 +370,11 @@ function createTemporalRegularizationStep(): PipelineStep {
             }
             
             if (!shouldRun && !DEFAULT_TEMPORAL_REGULARIZATION.enabled) {
+                // Temporal is disabled but this is not a hard failure
                 return {
-                    status: 'skipped',
+                    status: 'succeeded',
                     contextUpdates: {
+                        ...baseContextUpdates,
                         temporalRegularizationApplied: false,
                         temporalRegularizationSkipReason: 'Temporal regularization not enabled',
                     },
@@ -255,9 +382,11 @@ function createTemporalRegularizationStep(): PipelineStep {
             }
             
             if (!videoPath) {
+                // No video to process – continue pipeline using existing context
                 return {
-                    status: 'skipped',
+                    status: 'succeeded',
                     contextUpdates: {
+                        ...baseContextUpdates,
                         temporalRegularizationApplied: false,
                         temporalRegularizationSkipReason: 'No video path available from previous step',
                     },
@@ -315,12 +444,13 @@ function createTemporalRegularizationStep(): PipelineStep {
                     stderr += data.toString();
                 });
 
-                child.on('close', (code) => {
+                child.on('close', async (code) => {
                     if (code !== 0) {
                         // Temporal regularization failure is non-critical - warn but continue
                         resolve({
                             status: 'succeeded',
                             contextUpdates: {
+                                ...baseContextUpdates,
                                 temporalRegularizationApplied: false,
                                 temporalRegularizationWarning: `Temporal regularization failed (exit code ${code}): ${stderr.slice(0, 300)}`,
                                 // Keep original videoPath
@@ -328,19 +458,33 @@ function createTemporalRegularizationStep(): PipelineStep {
                         });
                         return;
                     }
-
+                    
                     // Verify output was created
                     if (!fs.existsSync(smoothedPath)) {
                         resolve({
                             status: 'succeeded',
                             contextUpdates: {
+                                ...baseContextUpdates,
                                 temporalRegularizationApplied: false,
                                 temporalRegularizationWarning: 'Temporal regularization completed but output file not found',
                             },
                         });
                         return;
                     }
-
+                    
+                    const stats = fs.statSync(smoothedPath);
+                    if (!stats || stats.size === 0) {
+                        resolve({
+                            status: 'succeeded',
+                            contextUpdates: {
+                                ...baseContextUpdates,
+                                temporalRegularizationApplied: false,
+                                temporalRegularizationWarning: 'Temporal regularization output is zero bytes; using original video',
+                            },
+                        });
+                        return;
+                    }
+                    
                     // Success - update video path to smoothed version
                     resolve({
                         status: 'succeeded',
@@ -360,6 +504,7 @@ function createTemporalRegularizationStep(): PipelineStep {
                     resolve({
                         status: 'succeeded',
                         contextUpdates: {
+                            ...baseContextUpdates,
                             temporalRegularizationApplied: false,
                             temporalRegularizationWarning: `Failed to spawn process: ${error.message}`,
                         },
@@ -723,6 +868,112 @@ function createManifestStep(): PipelineStep {
 }
 
 // ============================================================================
+// Step 5: Run Summary (telemetry)
+// ============================================================================
+
+function createRunSummaryStep(): PipelineStep {
+    return {
+        id: 'write-run-summary',
+        description: 'Write run summary (JSON + Markdown) with QA/benchmark/temporal state',
+        dependsOn: ['verify-manifest'],
+        run: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
+            const projectRoot = (ctx.projectRoot as string) || getProjectRoot();
+            const startedAt = (ctx.pipelineStartedAt as string) || new Date().toISOString();
+            const finishedAt = new Date().toISOString();
+            const warnings: string[] = [];
+            const temporalWarning = ctx.temporalRegularizationWarning as string | undefined;
+            const manifestWarning = ctx.manifestWarning as string | undefined;
+            if (temporalWarning) warnings.push(temporalWarning);
+            if (manifestWarning) warnings.push(manifestWarning);
+            if (ctx.preflightWarning) warnings.push(ctx.preflightWarning as string);
+            if (ctx.preflightError) warnings.push(`Preflight error: ${ctx.preflightError as string}`);
+
+            const preflight = ctx.preflight as {
+                ffmpegVersion?: string;
+                tmixNormalizeSupported?: boolean;
+                vlmReachable?: boolean;
+            } | undefined;
+
+            const summary = {
+                pipelineId: 'production-qa-golden',
+                sample: ctx.sample as string | undefined,
+                startedAt,
+                finishedAt,
+                status: 'succeeded' as const,
+                runDir: ctx.runDir as string | undefined,
+                videoPath: ctx.videoPath as string | undefined,
+                originalVideoPath: ctx.originalVideoPath as string | undefined,
+                temporalRegularizationApplied: ctx.temporalRegularizationApplied as boolean | undefined,
+                temporalRegularizationWarning: temporalWarning,
+                visionQaStatus: ctx.visionQaStatus as string | undefined,
+                visionQaResultsPath: ctx.visionQaResultsPath as string | undefined,
+                benchmarkJsonPath: ctx.benchmarkJsonPath as string | undefined,
+                benchmarkReportPath: ctx.benchmarkReportPath as string | undefined,
+                manifestPath: ctx.manifestPath as string | undefined,
+                preflight,
+                warnings,
+            };
+
+            const runSummariesDir = path.join(projectRoot, 'data', 'run-summaries');
+            const reportsDir = path.join(projectRoot, 'reports');
+            const publicDir = path.join(projectRoot, 'public');
+            fs.mkdirSync(runSummariesDir, { recursive: true });
+            fs.mkdirSync(reportsDir, { recursive: true });
+            fs.mkdirSync(publicDir, { recursive: true });
+
+            const timestamp = startedAt.replace(/[:.]/g, '-').slice(0, 19);
+            const jsonPath = path.join(runSummariesDir, `run-summary-${timestamp}.json`);
+            fs.writeFileSync(jsonPath, JSON.stringify(summary, null, 2));
+
+            const mdLines = [
+                `# Run Summary: production-qa-golden`,
+                ``,
+                `- Sample: \`${summary.sample || 'unknown'}\``,
+                `- Run Dir: \`${summary.runDir || 'n/a'}\``,
+                `- Video: \`${summary.videoPath || 'n/a'}\` (original: \`${summary.originalVideoPath || 'n/a'}\`)`,
+                `- Temporal: ${summary.temporalRegularizationApplied ? 'applied' : 'not applied/failed'}` +
+                    (summary.temporalRegularizationWarning ? ` — ${summary.temporalRegularizationWarning}` : ''),
+                `- Vision QA: ${summary.visionQaStatus || 'n/a'} (${summary.visionQaResultsPath || 'n/a'})`,
+                `- Benchmark: \`${summary.benchmarkJsonPath || 'n/a'}\` (report: \`${summary.benchmarkReportPath || 'n/a'}\`)`,
+                `- Manifest: \`${summary.manifestPath || 'n/a'}\``,
+                `- Preflight: ffmpeg=${summary.preflight?.ffmpegVersion || 'n/a'}, tmixNormalize=${summary.preflight?.tmixNormalizeSupported ? 'yes' : 'no'}, VLM=${summary.preflight?.vlmReachable ? 'reachable' : 'unreachable'}`,
+            ];
+            if (warnings.length > 0) {
+                mdLines.push(`- Warnings: ${warnings.join('; ')}`);
+            }
+            const mdPath = path.join(reportsDir, `RUN_SUMMARY_${timestamp}.md`);
+            fs.writeFileSync(mdPath, mdLines.join('\n'));
+
+            const latestPath = path.join(publicDir, 'latest-run-summary.json');
+            fs.writeFileSync(latestPath, JSON.stringify(summary, null, 2));
+
+            const lite = {
+                pipelineId: summary.pipelineId,
+                startedAt: summary.startedAt,
+                finishedAt: summary.finishedAt,
+                status: 'succeeded',
+                videoPath: summary.videoPath,
+                visionQaStatus: summary.visionQaStatus,
+                benchmarkJsonPath: summary.benchmarkJsonPath,
+                warnings,
+            };
+            const latestLitePath = path.join(publicDir, 'latest-run-summary-lite.json');
+            fs.writeFileSync(latestLitePath, JSON.stringify(lite, null, 2));
+
+            return {
+                status: 'succeeded',
+                contextUpdates: {
+                    runSummaryPath: jsonPath,
+                    runSummaryReportPath: mdPath,
+                    latestRunSummaryPath: latestPath,
+                    latestRunSummaryLitePath: latestLitePath,
+                },
+            };
+        },
+    };
+}
+
+// ============================================================================
 // Pipeline Factory
 // ============================================================================
 
@@ -762,7 +1013,7 @@ function createAdaptiveTemporalRegularizationStep(): PipelineStep {
             const temporalRegularization = ctx.temporalRegularization as string | undefined;
             if (temporalRegularization !== 'adaptive') {
                 return {
-                    status: 'skipped',
+                    status: 'succeeded',
                     contextUpdates: {
                         adaptiveTemporalApplied: false,
                         adaptiveTemporalSkipReason: 'Adaptive mode not enabled (use --temporal-regularization adaptive)',
@@ -772,7 +1023,7 @@ function createAdaptiveTemporalRegularizationStep(): PipelineStep {
             
             if (!videoPath) {
                 return {
-                    status: 'skipped',
+                    status: 'succeeded',
                     contextUpdates: {
                         adaptiveTemporalApplied: false,
                         adaptiveTemporalSkipReason: 'No video path available',
@@ -972,14 +1223,16 @@ export function getProductionQaGoldenPipeline(options?: {
 }): PipelineDefinition {
     return {
         id: 'production-qa-golden',
-        description: `Full generation → temporal regularization → Vision QA → benchmark → adaptive temporal → manifest pipeline for golden sample (${options?.sample || DEFAULT_GOLDEN_SAMPLE})`,
+        description: `Preflight → generation → temporal regularization → Vision QA → benchmark → adaptive temporal → manifest pipeline for golden sample (${options?.sample || DEFAULT_GOLDEN_SAMPLE})`,
         steps: [
+            createPreflightStep(),
             createGenerateStep(),
             createTemporalRegularizationStep(),
             createVisionQAStep(),
             createBenchmarkStep(),
             createAdaptiveTemporalRegularizationStep(),
             createManifestStep(),
+            createRunSummaryStep(),
         ],
     };
 }

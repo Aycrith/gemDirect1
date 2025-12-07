@@ -46,6 +46,7 @@ const ContinuityDirector = lazy(() => import('./components/ContinuityDirector'))
 const ContinuityModal = lazy(() => import('./components/ContinuityModal'));
 const VisualBiblePanel = lazy(() => import('./components/VisualBiblePanel'));
 const ArtifactViewer = lazy(() => import('./components/ArtifactViewer'));
+const PipelineTelemetryPanel = lazy(() => import('./components/PipelineTelemetryPanel'));
 
 // P1 Optimization (2025-11-20): Additional lazy loading for conditional components
 const PipelineGenerator = lazy(() => import('./components/PipelineGenerator')); // Only used in Quick Generate mode
@@ -982,6 +983,13 @@ const AppContent: React.FC = () => {
                     {/* Shared ArtifactViewer - renders after stage content in both modes */}
                     <Suspense fallback={<LoadingFallback message="Loading artifacts..." />}>
                         <ArtifactViewer addToast={addToast} />
+                    </Suspense>
+                    {/* Pipeline Telemetry Panel - displays Production/Narrative summaries with preflight info */}
+                    <Suspense fallback={<LoadingFallback message="Loading pipeline telemetry..." />}>
+                        <PipelineTelemetryPanel 
+                            defaultCollapsed={true}
+                            showLauncher={true}
+                        />
                     </Suspense>
                 </div>
             </main>

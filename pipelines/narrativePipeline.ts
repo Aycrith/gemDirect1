@@ -36,6 +36,7 @@ import {
     WARNING_MARGIN, 
     DEFAULT_COHERENCE_THRESHOLDS,
 } from '../services/visionThresholdConfig';
+import { runPreflight } from '../utils/preflight';
 
 // ============================================================================
 // Constants
@@ -429,6 +430,42 @@ export function initializeRunContext(
 }
 
 // ============================================================================
+// Preflight Step (shared)
+// ============================================================================
+
+function createPreflightStep(): PipelineStep {
+    return {
+        id: 'preflight-check',
+        description: 'Check ffmpeg (tmix) and VLM endpoint availability',
+        run: async (): Promise<PipelineStepResult> => {
+            try {
+                const result = await runPreflight();
+                const warningText = result.warnings.join('; ');
+                if (warningText) {
+                    console.warn(`[preflight] Warnings: ${warningText}`);
+                } else {
+                    console.log('[preflight] All checks passed');
+                }
+                return {
+                    status: 'succeeded',
+                    contextUpdates: {
+                        preflight: result,
+                        preflightWarning: warningText || undefined,
+                    },
+                };
+            } catch (error) {
+                return {
+                    status: 'succeeded',
+                    contextUpdates: {
+                        preflightError: error instanceof Error ? error.message : String(error),
+                    },
+                };
+            }
+        },
+    };
+}
+
+// ============================================================================
 // Per-Shot Pipeline Steps
 // ============================================================================
 
@@ -445,6 +482,7 @@ function createShotGenerateStep(shot: NarrativeShotRef, shotIndex: number): Pipe
             const { spawn } = await import('child_process');
             const projectRoot = (ctx.projectRoot as string) || getProjectRoot();
             const sample = shot.sampleId || DEFAULT_SAMPLE_ID;
+            const stepStarted = Date.now();
             
             // Use the regression test script
             const scriptPath = path.join(projectRoot, 'scripts', 'test-bookend-regression.ps1');
@@ -456,7 +494,26 @@ function createShotGenerateStep(shot: NarrativeShotRef, shotIndex: number): Pipe
                 };
             }
 
-            return new Promise((resolve) => {
+            return new Promise(async (resolve) => {
+                const waitForVideo = (candidates: () => string | undefined, timeoutMs = 60000, intervalMs = 2000): Promise<string | undefined> => {
+                    const end = Date.now() + timeoutMs;
+                    return new Promise(res => {
+                        const check = () => {
+                            const candidate = candidates();
+                            if (candidate) {
+                                res(candidate);
+                                return;
+                            }
+                            if (Date.now() >= end) {
+                                res(undefined);
+                                return;
+                            }
+                            setTimeout(check, intervalMs);
+                        };
+                        check();
+                    });
+                };
+
                 const args = [
                     '-NoLogo',
                     '-ExecutionPolicy', 'Bypass',
@@ -539,25 +596,65 @@ function createShotGenerateStep(shot: NarrativeShotRef, shotIndex: number): Pipe
                         }
                     }
 
-                    // Update narrative context with artifacts
-                    const narrativeContext = ctx.narrativeContext as NarrativeRunContext | undefined;
-                    if (narrativeContext) {
-                        const shotArtifact = narrativeContext.shots.find(s => s.shotId === shot.id);
+                    // Wait briefly for a video to appear if not found yet (script may still be finalizing)
+                    const finish = (pathCandidate?: string) => {
+                        const narrativeContext = ctx.narrativeContext as NarrativeRunContext | undefined;
+                        if (narrativeContext) {
+                            const shotArtifact = narrativeContext.shots.find(s => s.shotId === shot.id);
                         if (shotArtifact) {
                             shotArtifact.status = 'succeeded';
                             shotArtifact.runDir = absoluteRunDir;
-                            shotArtifact.videoPath = videoPath;
+                            shotArtifact.videoPath = pathCandidate;
+                            shotArtifact.sampleId = sample;
                         }
                     }
 
-                    resolve({
-                        status: 'succeeded',
-                        contextUpdates: {
-                            [`shot_${shot.id}_runDir`]: absoluteRunDir,
-                            [`shot_${shot.id}_videoPath`]: videoPath,
-                            [`shot_${shot.id}_sample`]: sample,
-                        },
-                    });
+                        resolve({
+                            status: 'succeeded',
+                            contextUpdates: {
+                                [`shot_${shot.id}_runDir`]: absoluteRunDir,
+                                [`shot_${shot.id}_videoPath`]: pathCandidate,
+                                [`shot_${shot.id}_sample`]: sample,
+                            },
+                        });
+                    };
+
+                    const comfyFallback = () => {
+                        if (videoPath) return finish(videoPath);
+                        const comfyOutputDir = process.env.COMFYUI_OUTPUT_DIR 
+                            || 'C:\\ComfyUI\\ComfyUI_windows_portable\\ComfyUI\\output';
+                        const comfyVideoDir = path.join(comfyOutputDir, 'video');
+                        if (fs.existsSync(comfyVideoDir)) {
+                            const files = fs.readdirSync(comfyVideoDir)
+                                .filter(f => f.endsWith('.mp4') && f.includes(`regression_${sample}`))
+                                .map(f => ({ f, t: fs.statSync(path.join(comfyVideoDir, f)).mtimeMs }))
+                                .filter(({ t }) => t >= stepStarted - 5 * 60 * 1000)
+                                .sort((a, b) => b.t - a.t);
+                            if (files[0]) {
+                                const fallbackPath = path.join(comfyVideoDir, files[0].f);
+                                console.warn(`[generate-shot-${shot.id}] Using fallback video from Comfy output: ${fallbackPath}`);
+                                return finish(fallbackPath);
+                            }
+                        }
+                        finish(videoPath);
+                    };
+
+                    if (!videoPath) {
+                        waitForVideo(() => {
+                            if (!fs.existsSync(sampleDir)) return undefined;
+                            const files = fs.readdirSync(sampleDir);
+                            const videoFile = files.find(f => f.endsWith('.mp4'));
+                            return videoFile ? path.join(sampleDir, videoFile) : undefined;
+                        }).then(found => {
+                            if (found) {
+                                videoPath = found;
+                            }
+                            comfyFallback();
+                        });
+                        return;
+                    }
+
+                    comfyFallback();
                 });
 
                 child.on('error', (error) => {
@@ -574,33 +671,59 @@ function createShotGenerateStep(shot: NarrativeShotRef, shotIndex: number): Pipe
 /**
  * Create a step that applies temporal regularization for a shot (optional).
  */
-function createShotTemporalStep(shot: NarrativeShotRef): PipelineStep {
-    return {
-        id: `temporal-shot-${shot.id}`,
+    function createShotTemporalStep(shot: NarrativeShotRef): PipelineStep {
+        return {
+            id: `temporal-shot-${shot.id}`,
         description: `Apply temporal regularization for shot ${shot.id}`,
         dependsOn: [`generate-shot-${shot.id}`],
         run: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
             const { spawn } = await import('child_process');
             const projectRoot = (ctx.projectRoot as string) || getProjectRoot();
             const videoPath = ctx[`shot_${shot.id}_videoPath`] as string | undefined;
+            const narrativeContext = ctx.narrativeContext as NarrativeRunContext | undefined;
+
+            const updateArtifact = (changes: Partial<import('../types/narrativeScript').NarrativeShotArtifacts>) => {
+                if (!narrativeContext) return;
+                const shotArtifact = narrativeContext.shots.find(s => s.shotId === shot.id);
+                if (shotArtifact) {
+                    Object.assign(shotArtifact, changes);
+                }
+            };
             
             // Determine if we should run based on shot config
             const temporalMode = shot.temporalRegularization || 'auto';
             const shouldRun = temporalMode === 'on';
+            const baseContextUpdates = {
+                [`shot_${shot.id}_originalVideoPath`]: videoPath,
+                [`shot_${shot.id}_videoPath`]: videoPath,
+            };
             
             if (temporalMode === 'off' || (temporalMode === 'auto' && shot.pipelineConfigId === 'fast-preview')) {
+                updateArtifact({
+                    originalVideoPath: videoPath,
+                    temporalRegularizationApplied: false,
+                    temporalSkipReason: 'Temporal regularization disabled for this shot',
+                });
                 return {
-                    status: 'skipped',
+                    status: 'succeeded',
                     contextUpdates: {
+                        ...baseContextUpdates,
                         [`shot_${shot.id}_temporalApplied`]: false,
+                        [`shot_${shot.id}_temporalSkipReason`]: 'Temporal regularization disabled for this shot',
                     },
                 };
             }
             
             if (!videoPath || !fs.existsSync(videoPath)) {
+                updateArtifact({
+                    originalVideoPath: videoPath,
+                    temporalRegularizationApplied: false,
+                    temporalSkipReason: 'No video available',
+                });
                 return {
-                    status: 'skipped',
+                    status: 'succeeded',
                     contextUpdates: {
+                        ...baseContextUpdates,
                         [`shot_${shot.id}_temporalApplied`]: false,
                         [`shot_${shot.id}_temporalSkipReason`]: 'No video available',
                     },
@@ -608,10 +731,17 @@ function createShotTemporalStep(shot: NarrativeShotRef): PipelineStep {
             }
             
             if (!shouldRun) {
+                updateArtifact({
+                    originalVideoPath: videoPath,
+                    temporalRegularizationApplied: false,
+                    temporalSkipReason: 'Temporal regularization not requested (mode=auto)',
+                });
                 return {
-                    status: 'skipped',
+                    status: 'succeeded',
                     contextUpdates: {
+                        ...baseContextUpdates,
                         [`shot_${shot.id}_temporalApplied`]: false,
+                        [`shot_${shot.id}_temporalSkipReason`]: 'Temporal regularization not requested (mode=auto)',
                     },
                 };
             }
@@ -622,9 +752,15 @@ function createShotTemporalStep(shot: NarrativeShotRef): PipelineStep {
             const scriptPath = path.join(projectRoot, 'scripts', 'temporal-regularizer.ts');
             
             if (!fs.existsSync(scriptPath)) {
+                updateArtifact({
+                    originalVideoPath: videoPath,
+                    temporalRegularizationApplied: false,
+                    temporalSkipReason: 'Temporal regularizer script not found',
+                });
                 return {
-                    status: 'skipped',
+                    status: 'succeeded',
                     contextUpdates: {
+                        ...baseContextUpdates,
                         [`shot_${shot.id}_temporalApplied`]: false,
                         [`shot_${shot.id}_temporalSkipReason`]: 'Temporal regularizer script not found',
                     },
@@ -646,27 +782,61 @@ function createShotTemporalStep(shot: NarrativeShotRef): PipelineStep {
                     stdio: ['ignore', 'pipe', 'pipe'],
                 });
 
-                child.on('close', (code) => {
+                let stderr = '';
+                child.stderr?.on('data', (data: Buffer) => {
+                    stderr += data.toString();
+                });
+
+                child.on('close', async (code) => {
                     if (code !== 0 || !fs.existsSync(smoothedPath)) {
+                        updateArtifact({
+                            originalVideoPath: videoPath,
+                            temporalRegularizationApplied: false,
+                            temporalWarning: code !== 0
+                                ? `Temporal regularization failed (exit ${code})${stderr ? `: ${stderr.slice(-200)}` : ''}`
+                                : 'Temporal regularization output missing; using original shot video',
+                            temporalSkipReason: code !== 0 ? 'process_failed' : 'missing_output',
+                        });
                         resolve({
                             status: 'succeeded', // Non-critical
                             contextUpdates: {
+                                ...baseContextUpdates,
                                 [`shot_${shot.id}_temporalApplied`]: false,
+                                [`shot_${shot.id}_temporalSkipReason`]: code !== 0
+                                    ? `Temporal regularization failed (exit ${code})${stderr ? `: ${stderr.slice(-200)}` : ''}`
+                                    : 'Temporal regularization output missing; using original shot video',
                             },
                         });
                         return;
                     }
 
-                    // Update video path to smoothed version
-                    const narrativeContext = ctx.narrativeContext as NarrativeRunContext | undefined;
-                    if (narrativeContext) {
-                        const shotArtifact = narrativeContext.shots.find(s => s.shotId === shot.id);
-                        if (shotArtifact) {
-                            shotArtifact.videoPath = smoothedPath;
-                            shotArtifact.temporalRegularizationApplied = true;
-                        }
+                    const stats = fs.statSync(smoothedPath);
+                    if (!stats || stats.size === 0) {
+                        updateArtifact({
+                            originalVideoPath: videoPath,
+                            temporalRegularizationApplied: false,
+                            temporalSkipReason: 'Temporal regularization output is zero bytes; using original shot video',
+                        });
+                        resolve({
+                            status: 'succeeded', // Non-critical
+                            contextUpdates: {
+                                ...baseContextUpdates,
+                                [`shot_${shot.id}_temporalApplied`]: false,
+                                [`shot_${shot.id}_temporalSkipReason`]: 'Temporal regularization output is zero bytes; using original shot video',
+                            },
+                        });
+                        return;
                     }
-
+	
+                    // Update video path to smoothed version
+                    updateArtifact({
+                        videoPath: smoothedPath,
+                        originalVideoPath: videoPath,
+                        temporalRegularizationApplied: true,
+                        temporalWarning: undefined,
+                        temporalSkipReason: undefined,
+                    });
+	
                     resolve({
                         status: 'succeeded',
                         contextUpdates: {
@@ -678,10 +848,17 @@ function createShotTemporalStep(shot: NarrativeShotRef): PipelineStep {
                 });
 
                 child.on('error', () => {
+                    updateArtifact({
+                        originalVideoPath: videoPath,
+                        temporalRegularizationApplied: false,
+                        temporalWarning: 'Temporal regularization spawn failed',
+                    });
                     resolve({
                         status: 'succeeded', // Non-critical
                         contextUpdates: {
+                            ...baseContextUpdates,
                             [`shot_${shot.id}_temporalApplied`]: false,
+                            [`shot_${shot.id}_temporalSkipReason`]: 'Temporal regularization spawn failed',
                         },
                     });
                 });
@@ -974,17 +1151,33 @@ function createConcatStep(script: NarrativeScript): PipelineStep {
 
             // Collect video paths for all successful shots
             const videoPaths: string[] = [];
+            const missingShots: string[] = [];
             for (const shot of script.shots) {
-                const videoPath = ctx[`shot_${shot.id}_videoPath`] as string | undefined;
+                let videoPath = ctx[`shot_${shot.id}_videoPath`] as string | undefined;
+                // Fallback to narrative context artifact if the context map is missing the path
+                if (!videoPath && narrativeContext?.shots) {
+                    const artifact = narrativeContext.shots.find(s => s.shotId === shot.id);
+                    videoPath = artifact?.videoPath;
+                }
+
                 if (videoPath && fs.existsSync(videoPath)) {
                     videoPaths.push(videoPath);
+                } else {
+                    missingShots.push(shot.id);
                 }
             }
 
             if (videoPaths.length === 0) {
                 return {
                     status: 'failed',
-                    errorMessage: 'No video files available for concatenation',
+                    errorMessage: `No video files available for concatenation${missingShots.length ? ` (missing: ${missingShots.join(', ')})` : ''}`,
+                };
+            }
+
+            if (missingShots.length > 0) {
+                return {
+                    status: 'failed',
+                    errorMessage: `Missing video outputs for shots: ${missingShots.join(', ')}`,
                 };
             }
 
@@ -1087,14 +1280,28 @@ function createConcatStep(script: NarrativeScript): PipelineStep {
 /**
  * Extract metrics from benchmark JSON file.
  */
-function extractBenchmarkMetrics(benchmarkPath: string): Partial<NarrativeShotMetrics> {
+function extractBenchmarkMetrics(benchmarkPath: string, sampleId?: string): Partial<NarrativeShotMetrics> {
     try {
         if (!fs.existsSync(benchmarkPath)) return {};
         const content = JSON.parse(fs.readFileSync(benchmarkPath, 'utf-8'));
-        const sample = content.samples?.[0];
-        if (!sample?.metrics) return {};
-        
-        const m = sample.metrics;
+        // Newer schema: results array with metrics per sample/preset
+        const fromResults = Array.isArray(content.results) ? content.results : undefined;
+        let metricsSource: any | undefined;
+
+        if (fromResults && fromResults.length > 0) {
+            metricsSource = sampleId
+                ? fromResults.find((r: any) => r.sampleId === sampleId)
+                : fromResults[0];
+        }
+
+        // Fallback to older schema
+        if (!metricsSource && content.samples?.[0]) {
+            metricsSource = content.samples[0].metrics ?? content.samples[0];
+        }
+
+        const m = metricsSource?.metrics ?? metricsSource;
+        if (!m) return {};
+
         return {
             flickerFrameCount: m.temporalCoherence?.flickerFrameCount,
             jitterScore: m.motionConsistency?.jitterScore,
@@ -1111,15 +1318,27 @@ function extractBenchmarkMetrics(benchmarkPath: string): Partial<NarrativeShotMe
 /**
  * Extract metrics from Vision QA JSON file.
  */
-function extractVisionQAMetrics(visionQaPath: string): Partial<NarrativeShotMetrics> {
+function extractVisionQAMetrics(visionQaPath: string, sampleId?: string): Partial<NarrativeShotMetrics> {
     try {
         if (!fs.existsSync(visionQaPath)) return {};
         const content = JSON.parse(fs.readFileSync(visionQaPath, 'utf-8'));
-        
+        // vision-qa-latest.json stores per-sample entries at top level
+        const sampleEntry = sampleId && content[sampleId]
+            ? content[sampleId]
+            : Object.entries(content).find(([key]) => !key.startsWith('_'))?.[1];
+
+        const agg = (sampleEntry as any)?.aggregatedMetrics;
+        if (!sampleEntry || !agg) return {};
+
+        const statusRaw = (sampleEntry as any)?.status;
+        const status = typeof statusRaw === 'string'
+            ? (statusRaw.toUpperCase() === 'SUCCESS' ? 'PASS' : statusRaw.toUpperCase())
+            : undefined;
+
         return {
-            visionQaOverall: content.overall?.score,
-            visionQaArtifacts: content.artifacts?.score,
-            visionQaStatus: content.status,
+            visionQaOverall: agg.overall?.mean ?? agg.overall?.max,
+            visionQaArtifacts: agg.artifactSeverity?.mean ?? agg.artifactSeverity?.max,
+            visionQaStatus: status,
         };
     } catch {
         return {};
@@ -1144,6 +1363,13 @@ export function generateNarrativeSummary(
     const shotMetrics: NarrativeShotMetrics[] = [];
     let successfulShots = 0;
     let failedShots = 0;
+    const preflight = ctx.preflight as {
+        ffmpegVersion?: string;
+        tmixNormalizeSupported?: boolean;
+        vlmReachable?: boolean;
+        vlmEndpoint?: string;
+        warnings?: string[];
+    } | undefined;
     
     for (const shot of script.shots) {
         const artifact = shotArtifacts.find(s => s.shotId === shot.id);
@@ -1155,15 +1381,16 @@ export function generateNarrativeSummary(
         }
         
         const metrics: NarrativeShotMetrics = { shotId: shot.id };
+        const sampleId = artifact?.sampleId;
         
         // Extract benchmark metrics
         if (artifact?.benchmarkPath) {
-            Object.assign(metrics, extractBenchmarkMetrics(artifact.benchmarkPath));
+            Object.assign(metrics, extractBenchmarkMetrics(artifact.benchmarkPath, sampleId));
         }
         
         // Extract Vision QA metrics
         if (artifact?.visionQaPath) {
-            Object.assign(metrics, extractVisionQAMetrics(artifact.visionQaPath));
+            Object.assign(metrics, extractVisionQAMetrics(artifact.visionQaPath, sampleId));
         }
         
         shotMetrics.push(metrics);
@@ -1185,6 +1412,7 @@ export function generateNarrativeSummary(
         status: failedShots === 0 ? 'succeeded' : 'failed',
         // Build QA summary with per-shot and overall verdicts (N2)
         qaSummary: buildNarrativeQASummary(shotMetrics, shotArtifacts),
+        preflight,
     };
 }
 
@@ -1196,8 +1424,49 @@ export function writeJsonSummary(summary: NarrativeRunSummary, projectRoot: stri
     const dir = path.join(projectRoot, NARRATIVE_DATA_DIR, summary.narrativeId);
     const filePath = path.join(dir, `narrative-run-${timestamp}.json`);
     
+    // Collect top-level warnings from preflight and shot artifacts
+    const warnings: string[] = [
+        ...(summary.preflight?.warnings ?? []),
+        ...summary.shotArtifacts
+            .filter(a => a.temporalWarning || a.temporalSkipReason)
+            .map(a => `Shot ${a.shotId}: ${a.temporalWarning || a.temporalSkipReason}`),
+    ];
+    
+    // Write full summary with top-level warnings
+    const fullSummary = {
+        ...summary,
+        warnings,
+    };
+    
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(summary, null, 2));
+    fs.writeFileSync(filePath, JSON.stringify(fullSummary, null, 2));
+
+    // Latest pointer for dashboards
+    const publicDir = path.join(projectRoot, 'public');
+    fs.mkdirSync(publicDir, { recursive: true });
+    const latestPath = path.join(publicDir, `latest-narrative-summary.json`);
+    fs.writeFileSync(latestPath, JSON.stringify(fullSummary, null, 2));
+
+    // Lite feed for dashboards
+    const lite = {
+        narrativeId: summary.narrativeId,
+        title: summary.title,
+        startedAt: summary.startedAt,
+        finishedAt: summary.finishedAt,
+        status: summary.status,
+        finalVideoPath: summary.finalVideoPath,
+        preflight: summary.preflight,
+        warnings,
+        shots: summary.shotArtifacts.map(a => ({
+            shotId: a.shotId,
+            temporalApplied: !!a.temporalRegularizationApplied,
+            videoPath: a.videoPath,
+            originalVideoPath: a.originalVideoPath,
+            temporalWarning: a.temporalWarning || a.temporalSkipReason,
+        })),
+    };
+    const latestLitePath = path.join(publicDir, `latest-narrative-summary-lite.json`);
+    fs.writeFileSync(latestLitePath, JSON.stringify(lite, null, 2));
     
     return filePath;
 }
@@ -1230,6 +1499,11 @@ export function writeMarkdownReport(summary: NarrativeRunSummary, projectRoot: s
     md += `**Duration**: ${durationStr}\n`;
     md += `**Status**: ${summary.status === 'succeeded' ? '✅ Succeeded' : '❌ Failed'}\n`;
     md += `**Shots**: ${summary.successfulShots}/${summary.shotCount} successful\n\n`;
+
+    if (summary.preflight) {
+        const pf = summary.preflight;
+        md += `**Preflight**: ffmpeg=${pf.ffmpegVersion || 'n/a'}, tmixNormalize=${pf.tmixNormalizeSupported ? 'yes' : 'no'}, VLM=${pf.vlmReachable ? 'reachable' : 'unreachable'}\n\n`;
+    }
     
     if (summary.finalVideoPath) {
         md += `**Final Video**: \`${summary.finalVideoPath}\`\n\n`;
@@ -1279,7 +1553,17 @@ export function writeMarkdownReport(summary: NarrativeRunSummary, projectRoot: s
         }
         md += `\n`;
     }
-    
+
+    md += `## Sources\n\n`;
+    md += `| Shot | Original | Smoothed | Temporal | Warning/Skip |\n`;
+    md += `|------|----------|----------|----------|--------------|\n`;
+    for (const artifact of summary.shotArtifacts) {
+        const temporal = artifact.temporalRegularizationApplied ? '✓' : '—';
+        const warning = artifact.temporalWarning || artifact.temporalSkipReason || '—';
+        md += `| ${artifact.shotId} | \`${artifact.originalVideoPath || 'n/a'}\` | \`${artifact.videoPath || 'n/a'}\` | ${temporal} | ${warning} |\n`;
+    }
+    md += `\n`;
+
     md += `## Shot Summary\n\n`;
     md += `| Shot | Pipeline | Temporal | Quality | Flicker | QA Status |\n`;
     md += `|------|----------|----------|---------|---------|----------|\n`;
@@ -1384,6 +1668,9 @@ export function getNarrativePipeline(scriptPath: string): PipelineDefinition {
     const script = loadNarrativeScript(scriptPath);
     
     const steps: PipelineStep[] = [];
+
+    // Preflight
+    steps.push(createPreflightStep());
     
     // Add per-shot steps
     for (let i = 0; i < script.shots.length; i++) {

@@ -68,6 +68,22 @@ test-results*.json
 test-run*.json
 /public/artifacts/
 /public/videos/
+/public/preflight-status.json
+/public/run-status.json
+/public/run-history.json
+/public/latest-run-summary.json
+/public/latest-run-summary-lite.json
+/public/latest-narrative-summary.json
+/public/latest-narrative-summary-lite.json
+
+# Pipeline generated data
+/data/run-registry.json
+/data/run-summaries/
+/data/narratives/
+/data/benchmarks/*.csv
+/data/benchmarks/*.json
+/data/manifests/
+/output/
 
 # Python virtual environments (FastVideo)
 fastvideo-env/

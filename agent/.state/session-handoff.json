@@ -1,119 +1,84 @@
 {
-  "timestamp": "2025-12-05T17:45:00.000Z",
-  "agent": "Copilot",
-  "sessionSummary": "H1-H3 High-Impact Features Complete. Created experimentHistoryService, RunHistoryPanel for browsing past experiments. Added 5 camera motion templates with cameraTemplateService. Created Cinematic Gold pipeline profile. H4 (External Orchestrator PoC) not started - stretch goal.",
+  "timestamp": "2025-12-07T03:20:00Z",
+  "agent": "Implementer",
+  "sessionSummary": "Fixed ESM __dirname issues, wired preflight-status.json to UI, aligned summary schemas, fixed sample validation, fixed spawn EINVAL on Windows, updated ProductionCard to use mergedPreflight. Ran both pipelines to regenerate summaries. Integrated PipelineTelemetryPanel into App.tsx - now displays Production/Narrative cards with preflight badges and Run History table.",
   "filesModified": [
-    "services/experimentHistoryService.ts",
-    "services/cameraTemplateService.ts",
-    "components/RunHistoryPanel.tsx",
-    "components/UsageDashboard.tsx",
-    "components/ProductionQualityPreviewPanel.tsx",
-    "config/camera-templates/static-center.json",
-    "config/camera-templates/slow-pan-left-to-right.json",
-    "config/camera-templates/slow-dolly-in.json",
-    "config/camera-templates/orbit-around-center.json",
-    "config/camera-templates/gentle-float-down.json",
-    "config/pipelines/cinematic-gold.json",
-    "types/abCompare.ts",
-    "Documentation/Guides/PIPELINE_CONFIGS.md",
-    "services/__tests__/experimentHistoryService.test.ts",
-    "services/__tests__/cameraTemplateService.test.ts"
+    "scripts/utils/runRegistry.ts",
+    "scripts/run-controller.ts",
+    "scripts/cleanup-runs.ts",
+    "scripts/utils/runControllerUtils.ts",
+    "types/pipelineSummary.ts",
+    "hooks/usePipelineSummaries.ts",
+    "hooks/__tests__/usePipelineSummaries.test.ts",
+    "components/PipelineTelemetryPanel.tsx",
+    "pipelines/productionQaGoldenPipeline.ts",
+    "pipelines/narrativePipeline.ts",
+    "App.tsx"
   ],
   "decisions": [
     {
-      "decision": "Created unified experimentHistoryService for manifests and narratives",
-      "rationale": "Single service provides consistent API for loading history from different artifact types. Filters and sorts work across all experiment types.",
-      "alternatives": [
-        "Separate services per artifact type (inconsistent API)",
-        "Client-side filtering only (slower, more memory)"
-      ]
+      "decision": "Used import.meta.url pattern for ESM-compatible __dirname",
+      "rationale": "Standard Node.js ESM pattern that works with tsx and native ESM",
+      "alternatives": ["Use process.cwd() - less portable", "Use require.resolve - not available in ESM"]
     },
     {
-      "decision": "Camera templates stored as JSON files in config/camera-templates/",
-      "rationale": "JSON files are version-controlled, easy to edit, and can be loaded in browser via fetch or Node via fs.",
-      "alternatives": [
-        "Hardcode templates in service (not user-extensible)",
-        "Store in database (overkill for static configs)"
-      ]
+      "decision": "Added shell: true to spawn on Windows",
+      "rationale": "Fixes EINVAL error when spawning npx.cmd on Windows",
+      "alternatives": ["Use execSync - blocks", "Use cross-spawn package - adds dependency"]
     },
     {
-      "decision": "Cinematic Gold uses 4-second duration as default",
-      "rationale": "4 seconds provides better narrative flow than 3 seconds for hero-quality final renders.",
-      "alternatives": [
-        "Keep 3 seconds (matches other presets)",
-        "Make duration configurable per-shot (more complex)"
-      ]
+      "decision": "Accept context.json as valid sample config",
+      "rationale": "Samples use context.json not sample.json - maintains backward compatibility",
+      "alternatives": ["Rename all context.json to sample.json - breaks existing samples"]
+    },
+    {
+      "decision": "ProductionCard receives mergedPreflight prop",
+      "rationale": "Always shows most current preflight (standalone takes precedence over stale summary preflight)",
+      "alternatives": ["Keep showing production.preflight - loses visibility of newer preflight-status.json"]
+    },
+    {
+      "decision": "Integrated PipelineTelemetryPanel as a new collapsible section in App.tsx",
+      "rationale": "Keeps existing ArtifactViewer while adding new Production/Narrative summary display with preflight badges",
+      "alternatives": ["Replace ArtifactViewer entirely - breaks existing functionality"]
     }
   ],
   "currentState": {
     "phase": "complete",
-    "progress": "75%",
-    "status": "H1-H3 complete, H4 not started (stretch goal)"
+    "progress": "100%",
+    "status": "All acceptance criteria met and verified in browser - ESM fixed, preflight wired, schemas aligned, registry populated, UI displaying correctly"
   },
   "nextSteps": [
-    "H4: Create orchestrator-poc/ folder for Temporal/Prefect/Dagster demo (optional)",
-    "Wire up RunHistoryPanel action buttons to actual navigation",
-    "Add camera template preview thumbnails in dropdown"
-  ],
-  "blockers": [],
-  "openQuestions": [
-    "Should H4 external orchestrator use Temporal, Prefect, or Dagster?",
-    "Should camera templates support dynamic parameter overrides (e.g., different durations)?"
-  ],
-  "relatedIssues": [
-    "AGENT_HANDOFF_H1H4_FEATURES_20251205.md"
-  ]
-}
-    "status": "Task C1.1 complete. Manifests persist to data/manifests/, E2E pipeline integrated, Git LFS configured."
-  },
-  "nextSteps": [
-    "1. Run full E2E test with ComfyUI to verify manifest writing in practice",
-    "2. Consider adding manifest viewer/browser UI component",
-    "3. Continue with Task C1.2: Git state capture (commit hash) in manifests"
+    "Consider removing redundant ArtifactViewer if PipelineTelemetryPanel covers all use cases",
+    "Add preflight gating to Run Launcher (gate run button if preflight fails)",
+    "Add temporal UX (Phase 3) - show countdown for stale summaries"
   ],
   "blockers": [],
   "openQuestions": [],
-  "relatedIssues": [
-    "generationManifestNodeWriter.ts provides writeManifest(), writeManifestSync(), listManifests()",
-    "write-manifest.ts CLI supports --build, --manifest, --file, --dry-run modes",
-    "generate-scene-videos-wan2.ps1 now calls manifest writer after successful video copy",
-    ".gitattributes tracks golden samples, vision baselines, artifacts with Git LFS"
-  ],
+  "relatedIssues": [],
   "testMetrics": {
-    "typescript": "0 errors - clean build",
-    "unitTests": "2053 passed | 1 skipped (103 test files)",
-    "manifestCLI": "Tested with --dry-run and actual write",
-    "e2eTests": "Not run this session - manifest integration needs live ComfyUI"
+    "unitTests": "2511 passed, 1 skipped",
+    "typescriptCheck": "No errors",
+    "registryVerified": "run-history.json shows 2 runs (1 cancelled, 1 succeeded)",
+    "dryRunVerified": "Dry-run pipeline executes 8 steps successfully"
   },
-  "implementationDetails": {
-    "newFiles": [
-      "services/generationManifestNodeWriter.ts - Node.js fs-based manifest writer",
-      "scripts/write-manifest.ts - CLI tool for PowerShell integration",
-      "data/manifests/README.md - Directory documentation",
-      "data/manifests/.gitkeep - Keep directory in git",
-      ".gitattributes - Git LFS configuration"
-    ],
-    "modifiedFiles": [
-      "scripts/generate-scene-videos-wan2.ps1 - Added manifest writing after video success",
-      "Documentation/Guides/VERSIONING_AND_MANIFESTS.md - Added disk persistence and LFS docs"
-    ],
-    "manifestNamingScheme": "manifest_<type>_<scene>_<shot>_<timestamp>.json",
-    "lfsTrackedPatterns": [
-      "data/bookend-golden-samples/**/*.{png,jpg,mp4}",
-      "data/vision-qa-baselines/**/*.{png,jpg}",
-      "artifacts/**/*.{mp4,png,zip}",
-      "*.safetensors, *.ckpt, *.pth"
-    ],
-    "acceptance": {
-      "manifestsPersistToDisk": "✅ data/manifests/ directory with deterministic paths",
-      "e2ePipelineIntegrated": "✅ generate-scene-videos-wan2.ps1 calls write-manifest.ts",
-      "manifestLocationDocumented": "✅ VERSIONING_AND_MANIFESTS.md updated with paths and examples",
-      "gitLFSConfigured": "✅ .gitattributes tracks large binary assets",
-      "noBrowserBreakingChanges": "✅ Node writer is separate service, browser uses in-memory store"
-    }
+  "changesVerified": {
+    "esmFix": "run-controller.ts --status, --list, --dry-run all work without ReferenceError",
+    "cleanupFix": "cleanup-runs.ts --dry-run works without ReferenceError",
+    "sampleValidation": "context.json now accepted as valid sample config",
+    "spawnFix": "shell: true on Windows fixes EINVAL spawn error",
+    "summarySchemaFix": "Production summary now includes status field, narrative includes preflight/warnings",
+    "preflightWiring": "usePipelineSummaries fetches preflight-status.json, merges with summary preflight",
+    "productionCardFix": "ProductionCard now uses mergedPreflight for consistent preflight display"
+  },
+  "registryState": {
+    "runHistoryPath": "public/run-history.json",
+    "runRegistryPath": "data/run-registry.json",
+    "totalRuns": 2,
+    "successfulRuns": 1,
+    "cancelledRuns": 1
   },
   "previousSession": {
-    "summary": "Task B2 - Preset Simplification & Safe Defaults Mode. Simplified stability presets, created SAFE_DEFAULTS_FLAGS.",
+    "summary": "Test Playbook Validation & Pipeline Bug Fixes",
     "agent": "Copilot"
   }
 }
