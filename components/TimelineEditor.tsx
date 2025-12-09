@@ -213,7 +213,10 @@ const TimelineItem: React.FC<{
     // Show shot-level keyframe status
                     const hasShotKeyframe = !!shot.keyframeStart;
                     const hasBothBookends = !!(shot.keyframeStart && shot.keyframeEnd);
+                    
+                    // Optimization: Memoize validation result to avoid re-running regex on every render
                     const shotValidation = useMemo(() => validateShotDescription(shot.description), [shot.description]);
+                    
                     const shotNeedsAttention = shotValidation.errorCount > 0;
                     const shotHasWarnings = shotValidation.warningCount > 0 && !shotNeedsAttention;
                     const shotStatusLabel = shotNeedsAttention

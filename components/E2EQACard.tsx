@@ -36,6 +36,8 @@ const E2EQACard: React.FC<E2EQACardProps> = ({
     generatedVideos = {},
     className = ''
 }) => {
+    // Optimization: Memoize metrics calculation to prevent re-computation on every render
+    // Dependencies: scenes array, generatedImages object, generatedVideos object
     const metrics = useMemo<E2EQAMetrics>(() => {
         const totalScenes = scenes.length;
         

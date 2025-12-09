@@ -67,6 +67,8 @@ const GenerationControls: React.FC<Props> = ({
   const shotLifecycleRef = useRef<Record<string, { queuedSeen: boolean }>>({});
 
   // Memoized shot list with enhancers
+  // Optimization: Only recompute when shots array reference or shotEnhancers object reference changes
+  // Note: timeline.shots is an array, so we depend on it directly.
   const shotsWithEnhancers = useMemo(
     () =>
       timeline.shots.map((shot) => ({

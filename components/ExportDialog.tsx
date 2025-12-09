@@ -15,6 +15,7 @@ const ExportDialog: React.FC<ExportDialogProps> = ({ data, recommendations, isOp
     const [status, setStatus] = useState<'idle' | 'exporting' | 'success' | 'error'>('idle');
     const [error, setError] = useState<string | null>(null);
 
+    // Optimization: Memoize summary calculation to avoid re-processing large telemetry datasets
     const summary = useMemo(() => {
         if (data.length === 0) {
             return null;

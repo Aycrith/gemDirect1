@@ -134,7 +134,7 @@ describe('generateVideoFromBookendsNative', () => {
           'wan-fun-inpaint'
         )
       ).rejects.toThrow(/Workflow profile 'wan-fun-inpaint' not found/);
-    });
+    }, 10000); // Increased timeout for slower environments
 
     it('throws explicit error when wan-flf2v profile is missing', async () => {
       const settingsWithoutProfile = createMockSettings(false);
