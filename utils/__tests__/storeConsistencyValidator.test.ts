@@ -249,6 +249,119 @@ describe('storeConsistencyValidator', () => {
             expect(result.consistencyPercentage).toBe(100);
             expect(result.itemsCompared).toBeGreaterThan(0);
         });
+
+        describe('migration phase handling', () => {
+            it('should skip validation entirely for zustand-only phase', () => {
+                const scene = createTestScene({ id: 'scene-1' });
+                const old: OldStoreSnapshot = {
+                    scenes: [],
+                    activeSceneId: null,
+                    generatedImages: {},
+                    generatedShotImages: {},
+                    sceneImageStatuses: {},
+                };
+                const newState: NewStoreSnapshot = {
+                    scenes: [scene],
+                    selectedSceneId: 'scene-1',
+                    generatedImages: {},
+                    generatedShotImages: {},
+                    sceneImageStatuses: {},
+                };
+                
+                const result = validateStoreConsistency(old, newState, {
+                    migrationPhase: 'zustand-only',
+                });
+                
+                expect(result.consistent).toBe(true);
+                expect(result.differences.length).toBe(0);
+                expect(result.criticalCount).toBe(0);
+            });
+
+            it('should downgrade missing_in_old to info in zustand-primary phase', () => {
+                const scene = createTestScene({ id: 'scene-new', title: 'New Scene' });
+                const old: OldStoreSnapshot = {
+                    scenes: [],
+                    activeSceneId: null,
+                    generatedImages: {},
+                    generatedShotImages: {},
+                    sceneImageStatuses: {},
+                };
+                const newState: NewStoreSnapshot = {
+                    scenes: [scene],
+                    selectedSceneId: 'scene-new',
+                    generatedImages: {},
+                    generatedShotImages: {},
+                    sceneImageStatuses: {},
+                };
+                
+                const result = validateStoreConsistency(old, newState, {
+                    migrationPhase: 'zustand-primary',
+                });
+                
+                // Should have differences but no critical ones
+                expect(result.differences.length).toBeGreaterThan(0);
+                expect(result.criticalCount).toBe(0);
+                
+                // Check that missing_in_old is now info severity
+                const missingDiff = result.differences.find(d => d.type === 'missing_in_old');
+                expect(missingDiff).toBeDefined();
+                expect(missingDiff?.severity).toBe('info');
+                expect(missingDiff?.description).toContain('[Migration Expected]');
+            });
+
+            it('should downgrade selectedSceneId null-to-value mismatch in zustand-primary phase', () => {
+                const scene = createTestScene({ id: 'scene-1' });
+                const old: OldStoreSnapshot = {
+                    scenes: [scene],
+                    activeSceneId: null,
+                    generatedImages: {},
+                    generatedShotImages: {},
+                    sceneImageStatuses: {},
+                };
+                const newState: NewStoreSnapshot = {
+                    scenes: [scene],
+                    selectedSceneId: 'scene-1',
+                    generatedImages: {},
+                    generatedShotImages: {},
+                    sceneImageStatuses: {},
+                };
+                
+                const result = validateStoreConsistency(old, newState, {
+                    migrationPhase: 'zustand-primary',
+                });
+                
+                // Should have the mismatch but as info, not warning
+                const sceneIdDiff = result.differences.find(d => d.path === 'selectedSceneId');
+                expect(sceneIdDiff).toBeDefined();
+                expect(sceneIdDiff?.severity).toBe('info');
+                expect(sceneIdDiff?.description).toContain('[Migration Expected]');
+            });
+
+            it('should still report critical for missing_in_new even in zustand-primary phase', () => {
+                const scene = createTestScene({ id: 'scene-1', title: 'Important Scene' });
+                const old: OldStoreSnapshot = {
+                    scenes: [scene],
+                    activeSceneId: 'scene-1',
+                    generatedImages: {},
+                    generatedShotImages: {},
+                    sceneImageStatuses: {},
+                };
+                const newState: NewStoreSnapshot = {
+                    scenes: [],
+                    selectedSceneId: null,
+                    generatedImages: {},
+                    generatedShotImages: {},
+                    sceneImageStatuses: {},
+                };
+                
+                const result = validateStoreConsistency(old, newState, {
+                    migrationPhase: 'zustand-primary',
+                });
+                
+                // missing_in_new is still critical (data loss from Zustand store)
+                expect(result.criticalCount).toBeGreaterThan(0);
+            });
+        });
     });
 
     describe('compareScenes', () => {

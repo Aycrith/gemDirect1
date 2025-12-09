@@ -365,7 +365,7 @@ function parseVisionResponse(
                 overall: Number(parsed.scores?.overall) || 50
             },
             issues: Array.isArray(parsed.issues) 
-                ? parsed.issues.map((issue: any) => ({
+                ? parsed.issues.map((issue: { severity?: string; category?: string; message?: string }) => ({
                     severity: issue.severity || 'info',
                     category: issue.category || 'technical',
                     message: String(issue.message || '')
@@ -488,7 +488,7 @@ export async function checkVisionLLMHealth(
         }
         
         const data = await response.json();
-        const models = data?.data?.map((m: any) => m.id) || [];
+        const models = data?.data?.map((m: { id: string }) => m.id) || [];
         
         // Check if our target model is available
         const hasVisionModel = models.some((m: string) => 

@@ -207,3 +207,36 @@ describe('ComfyUIEventManager', () => {
     });
   });
 });
+
+describe('trackPromptViaEventManager', () => {
+  let trackPromptViaEventManager: typeof import('../comfyUIEventManager').trackPromptViaEventManager;
+  let eventManager: typeof import('../comfyUIEventManager').comfyEventManager;
+
+  beforeEach(async () => {
+    const module = await import('../comfyUIEventManager');
+    trackPromptViaEventManager = module.trackPromptViaEventManager;
+    eventManager = module.comfyEventManager;
+  });
+
+  it('should subscribe to the event manager', () => {
+    const callback = vi.fn();
+    const unsubscribe = trackPromptViaEventManager('test-prompt-123', callback);
+    
+    // Verify subscription was added
+    expect(eventManager.subscriptionCount).toBeGreaterThan(0);
+    
+    // Clean up
+    unsubscribe();
+  });
+
+  it('should unsubscribe when called', () => {
+    const callback = vi.fn();
+    const initialCount = eventManager.subscriptionCount;
+    
+    const unsubscribe = trackPromptViaEventManager('test-prompt-456', callback);
+    expect(eventManager.subscriptionCount).toBe(initialCount + 1);
+    
+    unsubscribe();
+    expect(eventManager.subscriptionCount).toBe(initialCount);
+  });
+});

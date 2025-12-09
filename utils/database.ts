@@ -19,7 +19,7 @@ interface MyDB extends DBSchema {
   };
   [MISC_STORE]: {
     key: string;
-    value: any;
+    value: unknown;
   }
 }
 
@@ -119,7 +119,7 @@ export const getAllScenes = async () => {
 };
 
 // Misc Data (Director's Vision, Generated Images/Prompts)
-export const saveData = async (key: string, data: any) => {
+export const saveData = async (key: string, data: unknown) => {
   try {
     return await (await getDB()).put(MISC_STORE, data, key);
   } catch (error) {

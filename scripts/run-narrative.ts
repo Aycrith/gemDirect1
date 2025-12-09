@@ -47,6 +47,7 @@ interface CliArgs {
     dryRun?: boolean;
     list?: boolean;
     help?: boolean;
+    temporalRegularization?: 'on' | 'off' | 'auto';
 }
 
 function parseArgs(): CliArgs {
@@ -62,6 +63,13 @@ function parseArgs(): CliArgs {
             case '-s':
                 args.script = next;
                 i++;
+                break;
+            case '--temporal':
+            case '--temporal-regularization':
+                if (next === 'on' || next === 'off' || next === 'auto') {
+                    args.temporalRegularization = next;
+                    i++;
+                }
                 break;
             case '--verbose':
             case '-v':
@@ -102,6 +110,7 @@ Usage:
 
 Options:
   --script, -s <path>      Path to narrative script JSON (required unless --list)
+  --temporal <mode>        Force temporal regularization: on | off | auto (default: auto per shot)
   --verbose, -v            Enable verbose logging
   --dry-run, -d            Print steps without executing
   --list, -l               List available narrative scripts
@@ -347,6 +356,14 @@ async function main(): Promise<void> {
         console.log(`   ID: ${script.id}`);
         console.log(`   Title: ${script.title || 'Untitled'}`);
         console.log(`   Shots: ${script.shots.length}`);
+
+        // Optional override: force temporal regularization mode for all shots
+        if (args.temporalRegularization) {
+            for (const shot of script.shots) {
+                shot.temporalRegularization = args.temporalRegularization;
+            }
+            console.log(`   Temporal override: ${args.temporalRegularization}`);
+        }
     } catch (error) {
         console.error(`\n❌ Failed to load script: ${error instanceof Error ? error.message : String(error)}`);
         process.exit(1);

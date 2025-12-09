@@ -204,7 +204,10 @@ export async function runPipeline(
     
     const startedAt = new Date().toISOString();
     const stepResults: Record<string, PipelineStepResult> = {};
-    let context: PipelineStepContext = { ...initialContext };
+    let context: PipelineStepContext = {
+        ...initialContext,
+        pipelineStartedAt: initialContext.pipelineStartedAt ?? startedAt,
+    };
     const failedSteps = new Set<string>();
 
     logger(`Starting pipeline: ${def.id}`, 'info');
@@ -256,6 +259,7 @@ export async function runPipeline(
                 status: 'skipped',
                 errorMessage: 'Skipped due to failed dependency',
             };
+            // Mark this step as effectively failed so downstream steps also skip
             failedSteps.add(step.id);
             continue;
         }
@@ -301,9 +305,6 @@ export async function runPipeline(
             } else {
                 // Handle other statuses (skipped, pending)
                 logger(`⚠️  Step "${step.id}" ended with status: ${result.status}`, 'warn');
-                if (result.status === 'skipped') {
-                    failedSteps.add(step.id);
-                }
             }
         } catch (error) {
             const durationMs = Date.now() - stepStart;

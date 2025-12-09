@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import * as db from './database';
 import { StoryBible, Scene, WorkflowStage, ToastMessage, Suggestion, TimelineData, Shot, SceneStatus, SceneGenerationStatus, VisualBible, ComfyUIStatusSummary, KeyframeData } from '../types';
+import type { HistoricalRun, RunFilterCriteria, StoredRecommendation } from '../services/runHistoryService';
+import type { ComfyUIWorkflowEvent } from '../services/comfyUICallbackService';
 import { useApiStatus } from '../contexts/ApiStatusContext';
 import { useUsage } from '../contexts/UsageContext';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
@@ -168,7 +170,7 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
         // For Sets, compare contents to avoid infinite loops
         if (state instanceof Set && prevStateRef.current instanceof Set) {
             const stateArray = Array.from(state).sort();
-            const prevArray = Array.from(prevStateRef.current as Set<any>).sort();
+            const prevArray = Array.from(prevStateRef.current as Set<unknown>).sort();
             const isSame = stateArray.length === prevArray.length && 
                           stateArray.every((val, idx) => val === prevArray[idx]);
             
@@ -1379,9 +1381,10 @@ export function useInteractiveSpotlight<T extends HTMLElement>() {
  * Hook for accessing historical run data with filtering and comparison
  */
 export function useRunHistory() {
-    const [historicalRuns, setHistoricalRuns] = useState<any[]>([]);
+    const [historicalRuns, setHistoricalRuns] = useState<HistoricalRun[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Note: Using any for dynamically imported RunHistoryDatabase
     const dbRef = useRef<any>(null);
 
     // Initialize database on mount
@@ -1407,7 +1410,7 @@ export function useRunHistory() {
     }, []);
 
     // Fetch historical runs
-    const fetchRuns = useCallback(async (criteria?: any, limit = 100) => {
+    const fetchRuns = useCallback(async (criteria?: RunFilterCriteria, limit = 100) => {
         if (!dbRef.current) {
             setError('Database not initialized');
             return;
@@ -1427,7 +1430,7 @@ export function useRunHistory() {
     }, []);
 
     // Save a new run
-    const saveRun = useCallback(async (run: any) => {
+    const saveRun = useCallback(async (run: HistoricalRun) => {
         if (!dbRef.current) {
             setError('Database not initialized');
             return;
@@ -1492,8 +1495,15 @@ export function useRunHistory() {
     }, [fetchRuns]);
 
     // Calculate comparison metrics
-    const compareWithHistorical = useCallback((currentRun: any) => {
+    // Note: Uses 'any' to support both HistoricalRun and ArtifactMetadata (different structures)
+    // TODO: Create proper adapter or unified type for comparison data
+    const compareWithHistorical = useCallback((currentRun: { metadata?: { totalDuration?: number; successRate?: number } }) => {
         if (historicalRuns.length === 0) return null;
+        
+        // Guard against missing metadata
+        if (!currentRun.metadata?.totalDuration || !currentRun.metadata?.successRate) {
+            return null;
+        }
 
         // Calculate statistics from historical runs
         const durations = historicalRuns.map(r => r.metadata.totalDuration);
@@ -1557,7 +1567,8 @@ export function useRunHistory() {
 export function useComfyUICallbackManager() {
     const [isInitialized, setIsInitialized] = useState(false);
     const [subscriptionId] = useState(`subscriber-${Date.now()}`);
-    const [lastWorkflow, setLastWorkflow] = useState<any | null>(null);
+    const [lastWorkflow, setLastWorkflow] = useState<ComfyUIWorkflowEvent | null>(null);
+    // Note: Using any for dynamically imported ComfyUICallbackManager
     const callbackManagerRef = useRef<any>(null);
 
     // Initialize callback manager on mount
@@ -1589,7 +1600,7 @@ export function useComfyUICallbackManager() {
     useEffect(() => {
         if (!isInitialized || !callbackManagerRef.current) return;
 
-        const handleWorkflowCompletion = (event: any) => {
+        const handleWorkflowCompletion = (event: ComfyUIWorkflowEvent) => {
             setLastWorkflow(event);
             // Trigger a potential UI refresh (useRunHistory will pick up the new data)
             console.log('✓ Workflow completed and saved to historical data:', event.runId);
@@ -1605,7 +1616,7 @@ export function useComfyUICallbackManager() {
     }, [isInitialized, subscriptionId]);
 
     // Public method to manually trigger workflow processing (for testing)
-    const processWorkflowEvent = useCallback(async (event: any) => {
+    const processWorkflowEvent = useCallback(async (event: ComfyUIWorkflowEvent) => {
         if (!callbackManagerRef.current) {
             console.warn('Callback manager not initialized');
             return;
@@ -1639,9 +1650,10 @@ export function useRecommendations(options?: {
   severity?: 'critical' | 'warning' | 'info' | 'all';
   limit?: number;
 }) {
-  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [recommendations, setRecommendations] = useState<StoredRecommendation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Note: Using any for dynamically imported RunHistoryDatabase
   const dbRef = useRef<any>(null);
 
   // Initialize database on mount

@@ -28,10 +28,10 @@ describe('scripts/preflight-mappings.ts', () => {
       stdio: 'pipe',
     });
 
-    // Note: The script checks the first workflow it finds (wan-t2i), which doesn't have LoadImage
-    // This is expected - wan-t2i is for keyframe generation only and doesn't need LoadImage
-    // Exit code 3 indicates missing LoadImage mapping (expected for wan-t2i)
-    expect(result.status).toBe(3);
+    // Note: buildMappingSummary now checks ALL workflow profiles (wan-t2i and wan-i2v)
+    // Since wan-i2v has the keyframe_image mapping, the combined check passes
+    // Exit code 0 indicates all required mappings are present across profiles
+    expect(result.status).toBe(0);
 
     const summaryPath = path.join(summaryDir, 'mapping-preflight.json');
     expect(fs.existsSync(summaryPath)).toBe(true);
@@ -41,12 +41,12 @@ describe('scripts/preflight-mappings.ts', () => {
     expect(typeof json.workflows.hasWanT2I).toBe('boolean');
     expect(typeof json.workflows.hasWanI2V).toBe('boolean');
     expect(typeof json.mappings.wanT2I.clipText).toBe('boolean');
-    // The script checks wan-t2i first, so loadImage will be false (expected)
+    // wan-i2v profile has loadImage mapping, so combined check passes
     expect(json.mappings.wanI2V.clipNodePresent).toBeDefined();
     expect(json.mappings.wanI2V.loadNodePresent).toBeDefined();
     expect(Array.isArray(json.missingWanI2VRequirements)).toBe(true);
-    // LoadImage is missing from wan-t2i workflow (expected - it's not needed for T2I)
-    expect(json.missingWanI2VRequirements).toContain('loadImage');
+    // With profile-aware mapping, loadImage is found in wan-i2v profile
+    expect(json.missingWanI2VRequirements).not.toContain('loadImage');
     expect(Array.isArray(json.warnings)).toBe(true);
 
     const unitPath = path.join(summaryDir, 'unit', 'mapping-preflight.json');

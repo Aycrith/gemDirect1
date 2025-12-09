@@ -3,7 +3,7 @@
  * Provides comprehensive validation checks and troubleshooting guidance
  */
 
-import { LocalGenerationSettings } from '../types';
+import { LocalGenerationSettings, WorkflowProfile } from '../types';
 
 export interface ValidationResult {
     valid: boolean;
@@ -114,8 +114,8 @@ export const ERROR_MESSAGES = {
 /**
  * Parse error into user-friendly message with fixes
  */
-export function parseError(error: any): { title: string; description: string; fixes: string[]; helpUrl?: string } {
-    const errorStr = error?.message || String(error);
+export function parseError(error: unknown): { title: string; description: string; fixes: string[]; helpUrl?: string } {
+    const errorStr = error instanceof Error ? error.message : String(error);
     
     // Network timeout
     if (errorStr.includes('timeout') || errorStr.includes('aborted')) {
@@ -155,12 +155,12 @@ export function parseError(error: any): { title: string; description: string; fi
  */
 export function validateWorkflowProfile(
     profileId: string,
-    profile: any
+    profile: Partial<WorkflowProfile> | null | undefined
 ): ValidationResult {
     const issues: string[] = [];
     const fixes: string[] = [];
 
-    if (!profile.workflowJson) {
+    if (!profile || !profile.workflowJson) {
         issues.push(`Profile "${profileId}" has no workflow JSON configured`);
         fixes.push('Import workflow JSON from localGenSettings.json or ComfyUI');
         return {
@@ -268,12 +268,38 @@ export function validateWorkflows(settings: LocalGenerationSettings): Validation
 }
 
 /**
+ * LLM model info from connection test
+ */
+export interface LLMModelInfo {
+    id: string;
+    [key: string]: unknown;
+}
+
+/**
+ * Result from LLM connection test
+ */
+export interface LLMConnectionTestResult {
+    success: boolean;
+    models?: LLMModelInfo[];
+    error?: unknown;
+}
+
+/**
+ * Result from ComfyUI connection test
+ */
+export interface ComfyUIConnectionTestResult {
+    success: boolean;
+    gpu?: string;
+    error?: unknown;
+}
+
+/**
  * Comprehensive system validation
  */
 export async function validateSystem(
     settings: LocalGenerationSettings,
-    llmConnectionTest: () => Promise<{ success: boolean; models?: any[]; error?: any }>,
-    comfyuiConnectionTest: () => Promise<{ success: boolean; gpu?: string; error?: any }>
+    llmConnectionTest: () => Promise<LLMConnectionTestResult>,
+    comfyuiConnectionTest: () => Promise<ComfyUIConnectionTestResult>
 ): Promise<SystemValidation> {
     const results: SystemValidation = {
         llm: { valid: false, message: 'Not tested' },

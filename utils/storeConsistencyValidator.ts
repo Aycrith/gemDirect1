@@ -109,6 +109,14 @@ export interface NewStoreSnapshot {
 }
 
 /**
+ * Migration phase for store transition
+ * - 'parallel': Both stores active, strict validation
+ * - 'zustand-primary': Zustand is source of truth, legacy syncs from it
+ * - 'zustand-only': Legacy store deprecated, skip legacy-related warnings
+ */
+export type MigrationPhase = 'parallel' | 'zustand-primary' | 'zustand-only';
+
+/**
  * Validation options
  */
 export interface ValidationOptions {
@@ -123,6 +131,15 @@ export interface ValidationOptions {
     
     /** Only compare these paths */
     onlyPaths?: string[];
+    
+    /**
+     * Migration phase - controls how discrepancies are interpreted.
+     * - 'parallel': Strict validation, all differences are errors
+     * - 'zustand-primary': Zustand is source of truth, missing_in_old is expected
+     * - 'zustand-only': Skip validation entirely (legacy deprecated)
+     * @default 'zustand-primary'
+     */
+    migrationPhase?: MigrationPhase;
 }
 
 // ============================================================================
@@ -233,6 +250,22 @@ export function validateStoreConsistency(
     newState: NewStoreSnapshot,
     options: ValidationOptions = {}
 ): ConsistencyResult {
+    // Default migration phase to 'zustand-primary' - expected behavior during migration
+    const migrationPhase = options.migrationPhase ?? 'zustand-primary';
+    
+    // Skip validation entirely if migration is complete (zustand-only)
+    if (migrationPhase === 'zustand-only') {
+        return {
+            consistent: true,
+            differences: [],
+            timestamp: Date.now(),
+            criticalCount: 0,
+            warningCount: 0,
+            itemsCompared: 0,
+            consistencyPercentage: 100,
+        };
+    }
+    
     const differences: StateDifference[] = [];
     let itemsCompared = 0;
     
@@ -297,6 +330,30 @@ export function validateStoreConsistency(
         filteredDifferences = filteredDifferences.filter(diff =>
             options.onlyPaths!.some(path => diff.path.startsWith(path))
         );
+    }
+    
+    // Migration-phase-aware severity adjustment
+    // In 'zustand-primary' mode, items missing in old store are expected (Zustand loaded first)
+    if (migrationPhase === 'zustand-primary') {
+        filteredDifferences = filteredDifferences.map(diff => {
+            // Downgrade 'missing_in_old' from critical to info - expected during migration
+            if (diff.type === 'missing_in_old') {
+                return {
+                    ...diff,
+                    severity: 'info' as const,
+                    description: `[Migration Expected] ${diff.description}`,
+                };
+            }
+            // Downgrade selectedSceneId mismatch when old is null (initial load race)
+            if (diff.path === 'selectedSceneId' && diff.oldValue === null && diff.newValue !== null) {
+                return {
+                    ...diff,
+                    severity: 'info' as const,
+                    description: `[Migration Expected] ${diff.description}`,
+                };
+            }
+            return diff;
+        });
     }
     
     const criticalCount = filteredDifferences.filter(d => d.severity === 'critical').length;

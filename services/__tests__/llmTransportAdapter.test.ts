@@ -888,3 +888,102 @@ describe('Integration Tests', () => {
         expect(r2.text).toBe('From mock 2');
     });
 });
+
+// ============================================================================
+// sendLLMRequestWithAdapter Integration Tests
+// ============================================================================
+
+describe('sendLLMRequestWithAdapter', () => {
+    // Import at test runtime to avoid circular dependencies
+    let sendLLMRequestWithAdapter: typeof import('../geminiService').sendLLMRequestWithAdapter;
+
+    beforeEach(async () => {
+        resetTransports();
+        const geminiService = await import('../geminiService');
+        sendLLMRequestWithAdapter = geminiService.sendLLMRequestWithAdapter;
+    });
+
+    afterEach(() => {
+        resetTransports();
+    });
+
+    it('should use transport adapter when feature flag is enabled', async () => {
+        const mock = createMockTransport();
+        mock.addResponse({
+            match: /test/i,
+            response: { text: '{"result": "from adapter"}', model: 'mock' },
+        });
+        setActiveTransport(mock);
+
+        const request: LLMRequest = {
+            model: 'test-model',
+            messages: [{ role: 'user', content: 'test message' }],
+            responseFormat: 'json',
+        };
+
+        const logApiCall = vi.fn();
+        const onStateChange = vi.fn();
+
+        const response = await sendLLMRequestWithAdapter(
+            request,
+            { useLLMTransportAdapter: true },
+            logApiCall,
+            onStateChange
+        );
+
+        expect(response.text).toBe('{"result": "from adapter"}');
+        expect(mock.getRequestLog()).toHaveLength(1);
+        expect(logApiCall).toHaveBeenCalledWith(expect.objectContaining({
+            status: 'success',
+        }));
+    });
+
+    it('should call onStateChange callbacks when using adapter', async () => {
+        const mock = createMockTransport();
+        mock.addResponse({
+            match: /.*/,
+            response: { text: '{}', model: 'mock' },
+        });
+        setActiveTransport(mock);
+
+        const onStateChange = vi.fn();
+
+        await sendLLMRequestWithAdapter(
+            { model: 'test', messages: [{ role: 'user', content: 'hi' }] },
+            { useLLMTransportAdapter: true },
+            vi.fn(),
+            onStateChange
+        );
+
+        // Should have called with 'loading' and 'success'
+        expect(onStateChange).toHaveBeenCalledWith('loading', expect.any(String));
+        expect(onStateChange).toHaveBeenCalledWith('success', expect.any(String));
+    });
+
+    it('should log error on adapter failure', async () => {
+        // Create a failing transport
+        const failingTransport = {
+            id: 'failing',
+            name: 'Failing Transport',
+            send: vi.fn().mockRejectedValue(new Error('Simulated failure')),
+            isAvailable: vi.fn().mockResolvedValue(true),
+            getStatus: () => ({ available: true, requestCount: 0 }),
+        };
+        setActiveTransport(failingTransport as any);
+
+        const logApiCall = vi.fn();
+        const onStateChange = vi.fn();
+
+        await expect(sendLLMRequestWithAdapter(
+            { model: 'test', messages: [{ role: 'user', content: 'hi' }] },
+            { useLLMTransportAdapter: true },
+            logApiCall,
+            onStateChange
+        )).rejects.toThrow('Simulated failure');
+
+        expect(logApiCall).toHaveBeenCalledWith(expect.objectContaining({
+            status: 'error',
+        }));
+        expect(onStateChange).toHaveBeenCalledWith('error', 'Simulated failure');
+    });
+});

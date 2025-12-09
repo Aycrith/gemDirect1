@@ -5,6 +5,8 @@
  * Shows green/amber/red indicators with actionable error messages.
  * Includes "copy diagnostics" functionality for troubleshooting.
  * 
+ * Now also fetches narrative summary for additional preflight context.
+ * 
  * Part of G1 - Self-Diagnostics & Environment Health Panel
  * 
  * @module components/EnvironmentHealthPanel
@@ -23,6 +25,19 @@ import {
     type HealthCheckResult,
     type HealthStatus,
 } from '../services/environmentHealthService';
+import {
+    ProductionSummary,
+    NarrativeSummary,
+    formatAge,
+    calculateSummaryAge,
+    isSummaryStale,
+    DEFAULT_STALENESS_THRESHOLD_MS,
+} from '../types/pipelineSummary';
+import { fetchAllRunSummaries } from '../services/staticDataService';
+
+type RunSummary = ProductionSummary;
+
+type NarrativeSummaryState = NarrativeSummary | null;
 
 // ============================================================================
 // Types
@@ -131,6 +146,8 @@ const EnvironmentHealthPanel: React.FC<EnvironmentHealthPanelProps> = ({
     const [report, setReport] = useState<EnvironmentHealthReport | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'copied-json'>('idle');
+    const [runSummary, setRunSummary] = useState<RunSummary | null>(null);
+    const [narrativeSummary, setNarrativeSummary] = useState<NarrativeSummaryState>(null);
     
     // Run health check
     const runCheck = useCallback(async () => {
@@ -164,6 +181,47 @@ const EnvironmentHealthPanel: React.FC<EnvironmentHealthPanelProps> = ({
     useEffect(() => {
         runCheck();
     }, [runCheck]);
+
+    // Fetch latest run summaries for preflight info (both production and narrative)
+    useEffect(() => {
+        // Use service layer to fetch both summaries in parallel
+        fetchAllRunSummaries()
+            .then(({ production, narrative }) => {
+                if (production) setRunSummary(production);
+                if (narrative) setNarrativeSummary(narrative);
+            })
+            .catch(() => {
+                setRunSummary(null);
+                setNarrativeSummary(null);
+            });
+    }, []);
+    
+    // Determine which summary to use for preflight display
+    // Prefer production if available and fresh, else fall back to narrative
+    const preflightSource = (() => {
+        const prodAge = calculateSummaryAge(runSummary?.finishedAt);
+        const narrAge = calculateSummaryAge(narrativeSummary?.finishedAt);
+        const prodStale = isSummaryStale(runSummary?.finishedAt, DEFAULT_STALENESS_THRESHOLD_MS);
+        const narrStale = isSummaryStale(narrativeSummary?.finishedAt, DEFAULT_STALENESS_THRESHOLD_MS);
+        
+        // If production has preflight and is not stale, use it
+        if (runSummary?.preflight && !prodStale) {
+            return { source: 'production' as const, summary: runSummary, age: prodAge };
+        }
+        // If narrative has preflight and is not stale, use it
+        if (narrativeSummary?.preflight && !narrStale) {
+            return { source: 'narrative' as const, summary: narrativeSummary, age: narrAge };
+        }
+        // Fall back to production preflight even if stale
+        if (runSummary?.preflight) {
+            return { source: 'production' as const, summary: runSummary, age: prodAge, stale: true };
+        }
+        // Fall back to narrative preflight even if stale
+        if (narrativeSummary?.preflight) {
+            return { source: 'narrative' as const, summary: narrativeSummary, age: narrAge, stale: true };
+        }
+        return null;
+    })();
     
     // Auto-refresh
     useEffect(() => {
@@ -252,6 +310,55 @@ const EnvironmentHealthPanel: React.FC<EnvironmentHealthPanelProps> = ({
                         <HealthCheckRow check={report.checks.ffmpeg} />
                         <HealthCheckRow check={report.checks.directories} />
                     </div>
+
+                    {/* Preflight info from recent pipeline runs */}
+                    {preflightSource && preflightSource.summary?.preflight ? (
+                        <div className={`bg-gray-800/40 border rounded-lg p-3 space-y-1 ${preflightSource.stale ? 'border-amber-700/60' : 'border-gray-700/60'}`}>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-semibold text-gray-200">Recent Pipeline Preflight</span>
+                                    {preflightSource.stale && (
+                                        <span className="text-[10px] px-1.5 py-0.5 bg-amber-900/50 text-amber-300 rounded">stale</span>
+                                    )}
+                                    <span className="text-[10px] text-gray-500">
+                                        ({preflightSource.source === 'production' ? '📹 production' : '🎬 narrative'})
+                                    </span>
+                                </div>
+                                <span className="text-[10px] text-gray-500">
+                                    {preflightSource.age !== null ? formatAge(preflightSource.age) : ''}
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-300">
+                                <div>ffmpeg: {preflightSource.summary.preflight.ffmpegVersion || 'n/a'}</div>
+                                <div>tmix normalize: {preflightSource.summary.preflight.tmixNormalizeSupported ? 'supported' : 'fallback'}</div>
+                                <div>VLM: {preflightSource.summary.preflight.vlmReachable ? 'reachable' : 'unreachable'}{preflightSource.summary.preflight.vlmEndpoint ? ` (${preflightSource.summary.preflight.vlmEndpoint})` : ''}</div>
+                            </div>
+                            {preflightSource.source === 'production' && (preflightSource.summary as ProductionSummary).videoPath && (
+                                <div className="text-[11px] text-gray-400 truncate">Last video: {(preflightSource.summary as ProductionSummary).videoPath}</div>
+                            )}
+                            {preflightSource.source === 'narrative' && (preflightSource.summary as NarrativeSummary).finalVideoPath && (
+                                <div className="text-[11px] text-gray-400 truncate">Last video: {(preflightSource.summary as NarrativeSummary).finalVideoPath}</div>
+                            )}
+                            {preflightSource.summary.warnings && preflightSource.summary.warnings.length > 0 && (
+                                <ul className="text-[11px] text-amber-300 list-disc list-inside">
+                                    {preflightSource.summary.warnings.map((w, idx) => (
+                                        <li key={idx}>{w}</li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="bg-gray-800/40 border border-gray-700/60 rounded-lg p-3">
+                            <div className="text-sm text-gray-500">
+                                No recent pipeline preflight data available.
+                                {narrativeSummary && !narrativeSummary.preflight && !runSummary?.preflight && (
+                                    <span className="block text-xs text-gray-600 mt-1">
+                                        Pipeline runs found, but no preflight data. Preflight is captured during pipeline execution.
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    )}
                     
                     {/* Actions */}
                     <div className="flex items-center justify-between pt-2 border-t border-gray-700/50">

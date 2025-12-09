@@ -88,6 +88,8 @@ export interface QueuedTask<T = unknown> extends GenerationTask<T> {
     resolve: (value: T) => void;
     /** Internal rejector for the promise */
     reject: (error: Error) => void;
+    /** AbortSignal for cancellation support */
+    abortSignal?: AbortSignal;
 }
 
 export interface QueueState {
@@ -151,6 +153,9 @@ export class GenerationQueue {
     private listeners: Set<(state: QueueState) => void> = new Set();
     private vramCheckFn?: () => Promise<VRAMStatus>;
     private _preflightConfig: PreflightConfig = {};
+    
+    /** AbortControllers for running tasks - enables cancellation of in-flight operations */
+    private abortControllers: Map<string, AbortController> = new Map();
 
     constructor(options?: {
         vramCheck?: () => Promise<VRAMStatus>;
@@ -232,7 +237,7 @@ export class GenerationQueue {
 
     /**
      * Cancel a pending task
-     * @returns true if task was cancelled, false if not found or already running
+     * @returns true if task was cancelled, false if not found
      */
     cancel(taskId: string): boolean {
         const taskIndex = this.queue.findIndex(t => t.id === taskId);
@@ -246,12 +251,28 @@ export class GenerationQueue {
             return false;
         }
         
-        // Can't cancel currently running task (would need AbortController - deferred)
+        // If task is running, abort it using the AbortController
         if (task.status === 'running') {
-            if (DEBUG_QUEUE) {
-                console.debug(`[GenerationQueue] Cannot cancel running task ${taskId}`);
+            const abortController = this.abortControllers.get(taskId);
+            if (abortController) {
+                if (DEBUG_QUEUE) {
+                    console.debug(`[GenerationQueue] Aborting running task ${taskId}`);
+                }
+                abortController.abort();
+                this.abortControllers.delete(taskId);
             }
-            return false;
+            // Note: The task will be cleaned up in processQueue when the abort signal triggers
+            // We still mark it as cancelled here for immediate state update
+            task.status = 'cancelled';
+            task.completedAt = Date.now();
+            task.onStatusChange?.('cancelled');
+            this.stats.totalCancelled++;
+            
+            if (DEBUG_QUEUE) {
+                console.debug(`[GenerationQueue] Cancelled running task ${taskId}`);
+            }
+            this.notifyListeners();
+            return true;
         }
 
         // Remove from queue and reject promise
@@ -456,6 +477,11 @@ export class GenerationQueue {
         nextTask.startedAt = Date.now();
         nextTask.onStatusChange?.('running');
         
+        // Create AbortController for this task
+        const abortController = new AbortController();
+        this.abortControllers.set(nextTask.id, abortController);
+        nextTask.abortSignal = abortController.signal;
+        
         const waitTime = nextTask.startedAt - nextTask.queuedAt;
         this.stats.totalWaitTimeMs += waitTime;
 
@@ -519,6 +545,8 @@ export class GenerationQueue {
             }
         } finally {
             timeout.cancel();
+            // Clean up AbortController
+            this.abortControllers.delete(nextTask.id);
         }
 
         // Remove task from queue and continue processing

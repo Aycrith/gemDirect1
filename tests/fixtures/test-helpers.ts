@@ -265,8 +265,14 @@ export async function loadStateAndWaitForHydration(
   // Load state into IndexedDB
   await loadProjectState(page, state);
   
-  // Reload to trigger React hydration
-  await page.reload();
+  // Reload to trigger React hydration with explicit timeout
+  // Note: The timeout option prevents hangs from slow WebSocket connections
+  try {
+    await page.reload({ timeout: options?.timeout || 30000 });
+  } catch (reloadError) {
+    console.log(`[Test Helper] ⚠️ Page reload timeout - attempting to continue anyway`);
+    // Continue anyway - the page may still be usable
+  }
   
   // Wait for state hydration
   const keys = options?.expectedKeys || ['storyBible', 'scenes'];

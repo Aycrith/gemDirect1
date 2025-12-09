@@ -359,8 +359,9 @@ describe('getProductionQaGoldenPipeline', () => {
         const sorted = topologicalSort(pipeline.steps);
         expect(sorted.length).toBe(pipeline.steps.length);
         
-        // Generate step should come first
-        expect(sorted[0]!.id).toBe('generate-golden-video');
+        // Preflight check should come first, then generate step
+        expect(sorted[0]!.id).toBe('preflight-check');
+        expect(sorted[1]!.id).toBe('generate-golden-video');
     });
 });
 

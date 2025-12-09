@@ -32,7 +32,7 @@
  * @module scripts/temporal-regularizer
  */
 
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -76,6 +76,75 @@ const MIN_WINDOW_FRAMES = 2;
 
 /** Maximum window size */
 const MAX_WINDOW_FRAMES = 7;
+
+/** Cache for tmix normalize=1 capability detection */
+let normalizeSupportCache: boolean | undefined;
+
+// ============================================================================
+// FFmpeg Capability Detection
+// ============================================================================
+
+/**
+ * Detect whether the current ffmpeg supports tmix normalize=1.
+ * Tries version parsing first, then a tiny probe command. Result is cached.
+ */
+function supportsNormalize(verbose = false): boolean {
+    if (normalizeSupportCache !== undefined) {
+        return normalizeSupportCache;
+    }
+
+    try {
+        const versionResult = spawnSync('ffmpeg', ['-version'], { encoding: 'utf-8' });
+        const versionText = versionResult.stdout || '';
+        const match = versionText.match(/ffmpeg version\s+(\d+)\.(\d+)/i);
+        if (match) {
+            const major = parseInt(match[1] ?? '0', 10);
+            const minor = parseInt(match[2] ?? '0', 10);
+            // tmix normalize appeared after early 4.x; be conservative and assume 4.4+
+            if (major > 4 || (major === 4 && minor >= 4)) {
+                normalizeSupportCache = true;
+                if (verbose) {
+                    console.log(`[temporal-regularizer] ffmpeg ${major}.${minor} detected; tmix normalize=1 assumed supported.`);
+                }
+                return normalizeSupportCache;
+            }
+        }
+    } catch (err) {
+        if (verbose) {
+            console.warn(`[temporal-regularizer] Unable to parse ffmpeg version: ${(err as Error).message}`);
+        }
+    }
+
+    // Fallback: run a fast probe with tmix normalize=1 against a tiny synthetic input.
+    try {
+        const probeArgs = [
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-f',
+            'lavfi',
+            '-i',
+            'color=c=black:s=16x16:d=0.05',
+            '-frames:v',
+            '2',
+            '-vf',
+            "tmix=frames=2:weights='1 1':normalize=1",
+            '-f',
+            'null',
+            '-',
+        ];
+        const probeResult = spawnSync('ffmpeg', probeArgs, { stdio: 'ignore' });
+        normalizeSupportCache = probeResult.status === 0;
+    } catch {
+        normalizeSupportCache = false;
+    }
+
+    if (verbose) {
+        console.log(`[temporal-regularizer] tmix normalize=1 support: ${normalizeSupportCache ? 'available' : 'limited (using non-normalized tmix)'}`);
+    }
+
+    return normalizeSupportCache;
+}
 
 // ============================================================================
 // FFmpeg Command Builder
@@ -128,12 +197,14 @@ export function buildFfmpegCommand(
     input: string,
     output: string,
     strength: number,
-    windowFrames: number
+    windowFrames: number,
+    useNormalize = true
 ): string[] {
     const weights = computeTmixWeights(strength, windowFrames);
     
     // Build the tmix filter string
-    const tmixFilter = `tmix=frames=${windowFrames}:weights='${weights}':normalize=1`;
+    const normalizePart = useNormalize ? ':normalize=1' : '';
+    const tmixFilter = `tmix=frames=${windowFrames}:weights='${weights}'${normalizePart}`;
     
     return [
         '-i', input,
@@ -282,7 +353,7 @@ export async function runTemporalRegularization(
     strength: number,
     windowFrames: number,
     options: { dryRun?: boolean; verbose?: boolean } = {}
-): Promise<TemporalRegularizerResult> {
+    ): Promise<TemporalRegularizerResult> {
     const startTime = Date.now();
     
     // Validate input exists
@@ -295,25 +366,118 @@ export async function runTemporalRegularization(
         };
     }
     
-    // Build the command
-    const ffmpegArgs = buildFfmpegCommand(input, output, strength, windowFrames);
-    const fullCommand = ['ffmpeg', ...ffmpegArgs];
+    // Helper to run ffmpeg once with or without normalize
+    const runOnce = (useNormalize: boolean): Promise<{ result: TemporalRegularizerResult; stderr: string }> => {
+        return new Promise((resolve) => {
+            const ffmpegArgs = buildFfmpegCommand(input, output, strength, windowFrames, useNormalize);
+            const fullCommand = ['ffmpeg', ...ffmpegArgs];
+            
+            if (options.verbose) {
+                console.log(`[temporal-regularizer] Input: ${input}`);
+                console.log(`[temporal-regularizer] Output: ${output}`);
+                console.log(`[temporal-regularizer] Strength: ${strength}`);
+                console.log(`[temporal-regularizer] Window Frames: ${windowFrames}`);
+                console.log(`[temporal-regularizer] Normalize: ${useNormalize ? 'on' : 'off'}`);
+                console.log(`[temporal-regularizer] Command: ${fullCommand.join(' ')}`);
+            }
+            
+            let stderr = '';
+            
+            const proc = spawn('ffmpeg', ffmpegArgs, {
+                stdio: options.verbose ? 'inherit' : 'pipe',
+            });
+            
+            if (!options.verbose && proc.stderr) {
+                proc.stderr.on('data', (data: Buffer) => {
+                    stderr += data.toString();
+                });
+            }
+            
+            proc.on('close', (code) => {
+                const durationMs = Date.now() - startTime;
+                
+                if (code !== 0) {
+                    resolve({
+                        stderr,
+                        result: {
+                            success: false,
+                            inputPath: input,
+                            command: fullCommand,
+                            durationMs,
+                            error: `ffmpeg exited with code ${code}${stderr ? `: ${stderr.slice(-500)}` : ''}`,
+                        },
+                    });
+                    return;
+                }
+                
+                if (!fs.existsSync(output)) {
+                    resolve({
+                        stderr,
+                        result: {
+                            success: false,
+                            inputPath: input,
+                            command: fullCommand,
+                            durationMs,
+                            error: 'ffmpeg completed but output file was not created',
+                        },
+                    });
+                    return;
+                }
+                
+                const stats = fs.statSync(output);
+                if (!stats || stats.size === 0) {
+                    resolve({
+                        stderr,
+                        result: {
+                            success: false,
+                            inputPath: input,
+                            command: fullCommand,
+                            durationMs,
+                            error: 'ffmpeg produced zero-byte output file',
+                        },
+                    });
+                    return;
+                }
+                
+                resolve({
+                    stderr,
+                    result: {
+                        success: true,
+                        inputPath: input,
+                        outputPath: output,
+                        command: fullCommand,
+                        durationMs,
+                    },
+                });
+            });
+            
+            proc.on('error', (error) => {
+                resolve({
+                    stderr,
+                    result: {
+                        success: false,
+                        inputPath: input,
+                        command: fullCommand,
+                        durationMs: Date.now() - startTime,
+                        error: `Failed to spawn ffmpeg: ${error.message}`,
+                    },
+                });
+            });
+        });
+    };
     
-    if (options.verbose) {
-        console.log(`[temporal-regularizer] Input: ${input}`);
-        console.log(`[temporal-regularizer] Output: ${output}`);
-        console.log(`[temporal-regularizer] Strength: ${strength}`);
-        console.log(`[temporal-regularizer] Window Frames: ${windowFrames}`);
-        console.log(`[temporal-regularizer] Command: ${fullCommand.join(' ')}`);
-    }
+    // Build a default command for dry-run / error reporting (assume normalize path by default)
+    const defaultArgs = buildFfmpegCommand(input, output, strength, windowFrames, true);
+    const defaultCommand = ['ffmpeg', ...defaultArgs];
     
     if (options.dryRun) {
-        console.log(`[DRY RUN] Would execute: ${fullCommand.join(' ')}`);
+        console.log(`[DRY RUN] Would execute: ${defaultCommand.join(' ')}`);
+        console.log(`[DRY RUN] Note: On older ffmpeg versions, this script will automatically retry without tmix normalize=1 if needed.`);
         return {
             success: true,
             inputPath: input,
             outputPath: output,
-            command: fullCommand,
+            command: defaultCommand,
         };
     }
     
@@ -323,7 +487,7 @@ export async function runTemporalRegularization(
         return {
             success: false,
             inputPath: input,
-            command: fullCommand,
+            command: defaultCommand,
             error: 'ffmpeg not found in PATH. Please install ffmpeg: https://ffmpeg.org/download.html',
         };
     }
@@ -333,66 +497,58 @@ export async function runTemporalRegularization(
     if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
     }
+
+    // Determine whether to prefer normalize=1 based on capability detection
+    const normalizeSupported = supportsNormalize(options.verbose ?? false);
+    const firstAttemptUsesNormalize = normalizeSupported;
+
+    if (options.verbose) {
+        console.log(`[temporal-regularizer] Using tmix normalize=${firstAttemptUsesNormalize ? '1' : 'off'} for first attempt.`);
+    }
+
+    // Build command reflecting the first attempt mode
+    const plannedArgs = buildFfmpegCommand(input, output, strength, windowFrames, firstAttemptUsesNormalize);
+    const plannedCommand = ['ffmpeg', ...plannedArgs];
     
-    // Execute ffmpeg
-    return new Promise((resolve) => {
-        const proc = spawn('ffmpeg', ffmpegArgs, {
-            stdio: options.verbose ? 'inherit' : 'pipe',
-        });
-        
-        let stderr = '';
-        
-        if (!options.verbose && proc.stderr) {
-            proc.stderr.on('data', (data: Buffer) => {
-                stderr += data.toString();
-            });
-        }
-        
-        proc.on('close', (code) => {
-            const durationMs = Date.now() - startTime;
-            
-            if (code !== 0) {
-                resolve({
-                    success: false,
-                    inputPath: input,
-                    command: fullCommand,
-                    durationMs,
-                    error: `ffmpeg exited with code ${code}${stderr ? `: ${stderr.slice(-500)}` : ''}`,
-                });
-                return;
-            }
-            
-            // Verify output was created
-            if (!fs.existsSync(output)) {
-                resolve({
-                    success: false,
-                    inputPath: input,
-                    command: fullCommand,
-                    durationMs,
-                    error: 'ffmpeg completed but output file was not created',
-                });
-                return;
-            }
-            
-            resolve({
-                success: true,
-                inputPath: input,
-                outputPath: output,
-                command: fullCommand,
-                durationMs,
-            });
-        });
-        
-        proc.on('error', (error) => {
-            resolve({
-                success: false,
-                inputPath: input,
-                command: fullCommand,
-                durationMs: Date.now() - startTime,
-                error: `Failed to spawn ffmpeg: ${error.message}`,
-            });
-        });
-    });
+    // First attempt: use normalize=1 if supported, otherwise skip normalize
+    const firstAttempt = await runOnce(firstAttemptUsesNormalize);
+    if (firstAttempt.result.success) {
+        return firstAttempt.result;
+    }
+    
+    const firstAttemptError = firstAttempt.result.error || firstAttempt.stderr || '';
+    if (!options.verbose) {
+        const truncated = firstAttemptError ? firstAttemptError.slice(-300) : '';
+        console.warn(`[temporal-regularizer] Temporal regularization attempt (normalize=${firstAttemptUsesNormalize ? '1' : 'off'}) failed${truncated ? `: ${truncated}` : ''}`);
+    }
+
+    if (!firstAttemptUsesNormalize) {
+        return {
+            success: false,
+            inputPath: input,
+            command: plannedCommand,
+            durationMs: firstAttempt.result.durationMs,
+            error: firstAttempt.result.error,
+        };
+    }
+    
+    console.warn('[temporal-regularizer] First attempt with normalize=1 failed. Retrying without normalize for better ffmpeg 4.2.x compatibility...');
+    
+    // Second attempt: without normalize (for older ffmpeg versions)
+    const secondAttempt = await runOnce(false);
+    if (secondAttempt.result.success) {
+        return secondAttempt.result;
+    }
+    
+    // Both attempts failed - return combined error
+    return {
+        success: false,
+        inputPath: input,
+        command: secondAttempt.result.command.length ? secondAttempt.result.command : plannedCommand,
+        durationMs: secondAttempt.result.durationMs,
+        error: `First attempt (normalize=1) failed: ${firstAttempt.result.error ?? 'unknown error'}; ` +
+               `Second attempt (no normalize) failed: ${secondAttempt.result.error ?? 'unknown error'}`,
+    };
 }
 
 // ============================================================================

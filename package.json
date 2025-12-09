@@ -43,6 +43,7 @@
     "bookend:vision-qa:trend": "pwsh -File scripts/vision-qa-trend-report.ps1",
     "benchmark:video-quality": "npx tsx scripts/benchmarks/video-quality-benchmark.ts",
     "benchmark:video-quality:verbose": "npx tsx scripts/benchmarks/video-quality-benchmark.ts --verbose",
+    "check:ffmpeg": "npx tsx scripts/check-ffmpeg.ts",
     "bookend:ci:core": "npx tsc --noEmit && npx vitest run --reporter=verbose && npm run bookend:regression",
     "bookend:ci:vision": "pwsh -File scripts/run-bookend-vision-qa.ps1 -Runs 3",
     "pipeline": "npx tsx scripts/run-pipeline.ts",
@@ -67,7 +68,6 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
-    "tsx": "^4.19.4",
     "@playwright/test": "^1.56.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
@@ -77,9 +77,11 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.0",
     "@vitest/ui": "^4.0.8",
+    "fake-indexeddb": "^6.2.5",
     "happy-dom": "^20.0.10",
     "playwright": "^1.56.1",
     "ts-node": "^10.9.1",
+    "tsx": "^4.19.4",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vitest": "^4.0.8"

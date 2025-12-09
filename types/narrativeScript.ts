@@ -154,8 +154,16 @@ export interface NarrativeShotArtifacts {
     benchmarkPath?: string;
     /** Path to Vision QA results */
     visionQaPath?: string;
+    /** Sample ID used for generation */
+    sampleId?: string;
     /** Whether temporal regularization was applied */
     temporalRegularizationApplied?: boolean;
+    /** Original (pre-temporal) video path */
+    originalVideoPath?: string;
+    /** Warning message if temporal failed or skipped */
+    temporalWarning?: string;
+    /** Skip reason when temporal was not applied */
+    temporalSkipReason?: string;
     /** Generation status */
     status: 'pending' | 'succeeded' | 'failed' | 'skipped';
     /** Error message if failed */
@@ -245,6 +253,14 @@ export interface NarrativeRunSummary {
     status: 'succeeded' | 'failed';
     /** Aggregated QA summary with per-shot and overall verdicts (N2) */
     qaSummary?: NarrativeQASummary;
+    /** Preflight checks captured at run start (ffmpeg/VLM) */
+    preflight?: {
+        ffmpegVersion?: string;
+        tmixNormalizeSupported?: boolean;
+        vlmReachable?: boolean;
+        vlmEndpoint?: string;
+        warnings?: string[];
+    };
 }
 
 // ============================================================================

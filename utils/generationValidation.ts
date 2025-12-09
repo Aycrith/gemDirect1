@@ -55,7 +55,7 @@ export function validateStoryGenerationCapability(
 
     // Check LLM configuration
     const effectiveLLMUrl = localGenSettings?.llmProviderUrl || 
-                           (typeof window !== 'undefined' && (window as any).LOCAL_STORY_PROVIDER_URL);
+                           (typeof window !== 'undefined' && (window as Window & { LOCAL_STORY_PROVIDER_URL?: string }).LOCAL_STORY_PROVIDER_URL);
 
     if (!effectiveLLMUrl) {
         blockers.push('LLM Provider URL not configured');
@@ -269,7 +269,7 @@ export function formatValidationError(check: ValidationCheck, operationType: 'st
  */
 export function hasMinimumLocalSetup(localGenSettings?: LocalGenerationSettings): boolean {
     const effectiveLLMUrl = localGenSettings?.llmProviderUrl || 
-                           (typeof window !== 'undefined' && (window as any).LOCAL_STORY_PROVIDER_URL);
+                           (typeof window !== 'undefined' && (window as Window & { LOCAL_STORY_PROVIDER_URL?: string }).LOCAL_STORY_PROVIDER_URL);
     
     return !!effectiveLLMUrl;
 }

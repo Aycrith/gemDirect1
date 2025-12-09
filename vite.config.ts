@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    // Vision LLM URL - use dedicated env var or fallback to local LLM (P2.3 CORS fix)
+    const visionLLMUrl = env.VITE_VISION_LLM_URL || env.VITE_LOCAL_STORY_PROVIDER_URL;
     return {
       server: {
         port: 3000,
@@ -27,6 +29,22 @@ export default defineConfig(({ mode }) => {
                   target: env.VITE_LOCAL_STORY_PROVIDER_URL.replace('/v1/chat/completions', ''),
                   changeOrigin: true,
                   rewrite: (path) => path.replace(/^\/api\/local-llm-models/, '/v1/models'),
+                  configure: (proxy) => {
+                    proxy.on('proxyReq', (proxyReq) => {
+                      proxyReq.setHeader('Content-Type', 'application/json');
+                    });
+                  },
+                },
+              }
+            : {}),
+          // P2.3: Proxy for Vision LLM API (fixes CORS for keyframe pair analysis)
+          // Uses VITE_VISION_LLM_URL or falls back to VITE_LOCAL_STORY_PROVIDER_URL
+          ...(visionLLMUrl
+            ? {
+                '/api/vision': {
+                  target: visionLLMUrl.replace('/v1/chat/completions', ''),
+                  changeOrigin: true,
+                  rewrite: (path) => path.replace(/^\/api\/vision/, '/v1/chat/completions'),
                   configure: (proxy) => {
                     proxy.on('proxyReq', (proxyReq) => {
                       proxyReq.setHeader('Content-Type', 'application/json');

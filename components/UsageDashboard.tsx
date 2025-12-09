@@ -14,6 +14,7 @@ import NarrativeDashboard from './NarrativeDashboard';
 import EnvironmentHealthPanel from './EnvironmentHealthPanel';
 import RunHistoryPanel from './RunHistoryPanel';
 import { calculateSampleVerdict, WARNING_MARGIN } from '../services/visionThresholdConfig';
+import { fetchVisionQAResults, fetchVisionThresholds } from '../services/staticDataService';
 
 /**
  * QualityStatusWidget - Compact quality status indicator in header
@@ -30,21 +31,18 @@ const QualityStatusWidget: React.FC<{ onScrollToVisionQA?: () => void }> = ({ on
     });
 
     useEffect(() => {
-        // Load Vision QA results from public file
+        // Load Vision QA results from public file using service layer
         const loadResults = async () => {
             try {
-                const [resultsRes, thresholdsRes] = await Promise.all([
-                    fetch('/vision-qa-latest.json'),
-                    fetch('/vision-thresholds.json'),
+                const [results, { thresholds, isFallback }] = await Promise.all([
+                    fetchVisionQAResults(),
+                    fetchVisionThresholds(),
                 ]);
                 
-                if (!resultsRes.ok || !thresholdsRes.ok) {
+                if (!results || isFallback) {
                     setStatus({ pass: 0, warn: 0, fail: 0, loading: false });
                     return;
                 }
-                
-                const results = await resultsRes.json();
-                const thresholds = await thresholdsRes.json();
                 
                 // Calculate verdicts for each sample using unified logic
                 let pass = 0, warn = 0, fail = 0;

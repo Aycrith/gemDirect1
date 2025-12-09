@@ -89,10 +89,23 @@ export const KEYFRAME_PAIR_THRESHOLDS = {
 // Default Configuration
 // ============================================================================
 
+/**
+ * Get the vision LLM URL, using Vite proxy in dev mode to bypass CORS.
+ * In production, CORS headers are expected to be configured on the server.
+ */
+const getVisionProviderUrl = (): string => {
+    // In dev mode, use Vite proxy to bypass CORS
+    if (import.meta.env.DEV) {
+        return '/api/vision';
+    }
+    // In production, use direct URL (assumes CORS is configured)
+    return import.meta.env.VITE_VISION_LLM_URL || 
+           import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL || 
+           'http://192.168.50.192:1234/v1/chat/completions';
+};
+
 const DEFAULT_CONFIG: VisionServiceConfig = {
-    providerUrl: import.meta.env.VITE_VISION_LLM_URL || 
-                 import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL || 
-                 'http://192.168.50.192:1234/v1/chat/completions',
+    providerUrl: getVisionProviderUrl(),
     modelId: import.meta.env.VITE_VISION_LLM_MODEL || 'qwen/qwen3-vl-8b',
     timeoutMs: Number(import.meta.env.VITE_VISION_LLM_TIMEOUT_MS || 15000), // 15 seconds - fail fast for optional preflight
     temperature: 0.3,

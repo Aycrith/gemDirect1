@@ -328,7 +328,7 @@ describe('GenerationQueue', () => {
             });
         });
 
-        it('should not cancel a running task', async () => {
+        it('should cancel a running task via AbortController', async () => {
             const runningTask = createDelayedTask('running', 1000, { id: 'running-task' });
             trackEnqueue(runningTask);
 
@@ -336,7 +336,11 @@ describe('GenerationQueue', () => {
             await vi.advanceTimersByTimeAsync(10);
 
             const cancelled = queue.cancel('running-task');
-            expect(cancelled).toBe(false);
+            expect(cancelled).toBe(true);
+            
+            // Verify the task status was updated to cancelled
+            const state = queue.getState();
+            expect(state.stats.totalCancelled).toBe(1);
         });
 
         it('should return false for non-existent task', () => {

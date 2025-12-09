@@ -24,6 +24,16 @@ export interface LMStudioModelState {
     error?: string;
 }
 
+/**
+ * LM Studio model info from API response
+ */
+interface LMStudioModelInfo {
+    id?: string;
+    path?: string;
+    state?: 'loaded' | 'loading' | 'unloaded' | string;
+    [key: string]: unknown;
+}
+
 export interface UnloadResult {
     /** Whether unload was successful */
     success: boolean;
@@ -81,13 +91,13 @@ export async function getLMStudioModelState(
         
         if (response.ok) {
             const data = await response.json();
-            const loadedModels = (data.data || []).filter(
-                (m: any) => m.state === 'loaded' || m.state === 'loading'
+            const loadedModels = ((data.data || []) as LMStudioModelInfo[]).filter(
+                (m) => m.state === 'loaded' || m.state === 'loading'
             );
             
             return {
                 hasLoadedModels: loadedModels.length > 0,
-                loadedModelIds: loadedModels.map((m: any) => m.id || m.path)
+                loadedModelIds: loadedModels.map((m) => m.id || m.path || '')
             };
         }
         
@@ -100,12 +110,12 @@ export async function getLMStudioModelState(
         
         if (fallbackResponse.ok) {
             const data = await fallbackResponse.json();
-            const models = data.data || [];
+            const models = (data.data || []) as LMStudioModelInfo[];
             
             // OpenAI endpoint doesn't show load state, assume loaded if listed
             return {
                 hasLoadedModels: models.length > 0,
-                loadedModelIds: models.map((m: any) => m.id)
+                loadedModelIds: models.map((m) => m.id || '')
             };
         }
         
@@ -142,7 +152,7 @@ export async function unloadAllModels(
     const startTime = Date.now();
     
     logCorrelation(
-        { correlationId, timestamp: startTime, source: 'lmstudio' as any },
+        { correlationId, timestamp: startTime, source: 'lmstudio' },
         'unload-models-start',
         { baseUrl: cfg.baseUrl }
     );
@@ -198,7 +208,7 @@ export async function unloadAllModels(
                 const durationMs = Date.now() - startTime;
                 
                 logCorrelation(
-                    { correlationId, timestamp: Date.now(), source: 'lmstudio' as any },
+                    { correlationId, timestamp: Date.now(), source: 'lmstudio' },
                     'unload-models-success',
                     { unloadedCount: modelsToUnload.length, durationMs }
                 );
@@ -219,7 +229,7 @@ export async function unloadAllModels(
         const durationMs = Date.now() - startTime;
         
         logCorrelation(
-            { correlationId, timestamp: Date.now(), source: 'lmstudio' as any },
+            { correlationId, timestamp: Date.now(), source: 'lmstudio' },
             'unload-models-timeout',
             { remainingModels: (await getLMStudioModelState(cfg)).loadedModelIds }
         );
@@ -236,7 +246,7 @@ export async function unloadAllModels(
         const errorMessage = error instanceof Error ? error.message : String(error);
         
         logCorrelation(
-            { correlationId, timestamp: Date.now(), source: 'lmstudio' as any },
+            { correlationId, timestamp: Date.now(), source: 'lmstudio' },
             'unload-models-error',
             { error: errorMessage }
         );

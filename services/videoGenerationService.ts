@@ -13,6 +13,61 @@ import {
 import { checkSystemResources } from './comfyUIService';
 
 /**
+ * Shot data in the interleaved timeline
+ */
+interface TimelineShotEntry {
+    type: 'shot';
+    shot_number: number;
+    description: string;
+    enhancers: Record<string, unknown>;
+}
+
+/**
+ * Transition data in the interleaved timeline
+ */
+interface TimelineTransitionEntry {
+    type: 'transition';
+    transition_type: string;
+}
+
+/**
+ * Union type for interleaved timeline entries
+ */
+type InterleavedTimelineEntry = TimelineShotEntry | TimelineTransitionEntry;
+
+/**
+ * Payload structure for video generation
+ */
+interface VideoGenerationPayloads {
+    json: string;
+    text: string;
+    structured?: Record<string, unknown>[];
+    negativePrompt?: string;
+}
+
+/**
+ * Response from video generation queue (covers both ComfyUI and FastVideo)
+ */
+export interface VideoGenerationResponse {
+    /** ComfyUI prompt ID for tracking */
+    prompt_id?: string;
+    /** Direct video path (FastVideo) */
+    videoPath?: string;
+    /** FastVideo output path */
+    outputVideoPath?: string;
+    /** Generation status */
+    status?: 'complete' | 'error' | 'queued';
+    /** Error message if failed */
+    error?: string;
+    /** Frame count (FastVideo) */
+    frames?: number;
+    /** Duration in ms (FastVideo) */
+    durationMs?: number;
+    /** Warnings from generation */
+    warnings?: string[];
+}
+
+/**
  * Generates a structured JSON payload and a human-readable text prompt from timeline data.
  * @param timeline The scene's timeline data.
  * @param directorsVision The overall visual style guide.
@@ -25,8 +80,8 @@ export const generateVideoRequestPayloads = (
     sceneSummary: string
 ): { json: string; text: string } => {
 
-    const interleavedTimeline = timeline.shots.reduce((acc: any[], shot, index) => {
-        const shotData = {
+    const interleavedTimeline = timeline.shots.reduce<InterleavedTimelineEntry[]>((acc, shot, index) => {
+        const shotData: TimelineShotEntry = {
             type: 'shot',
             shot_number: index + 1,
             description: shot.description,
@@ -35,9 +90,9 @@ export const generateVideoRequestPayloads = (
         acc.push(shotData);
 
         if (index < timeline.transitions.length) {
-            const transitionData = {
+            const transitionData: TimelineTransitionEntry = {
                 type: 'transition',
-                transition_type: timeline.transitions[index]
+                transition_type: timeline.transitions[index] || ''
             };
             acc.push(transitionData);
         }
@@ -210,7 +265,7 @@ export const queueComfyUIPrompt = async (
             const node = promptPayload[nodeId];
             
             if (node && node.inputs) {
-                let dataToInject: any = null;
+                let dataToInject: string | null = null;
                 switch (dataType) {
                     case 'human_readable_prompt':
                         dataToInject = payloads.text;
@@ -257,6 +312,59 @@ export const queueComfyUIPrompt = async (
         }
         throw new Error(`Failed to process ComfyUI workflow. Error: ${error instanceof Error ? error.message : String(error)}`);
     }
+};
+
+// ============================================================================
+// Queue-Safe ComfyUI Integration
+// ============================================================================
+
+import type { GenerationPriority } from './generationQueue';
+
+/**
+ * Queue-safe wrapper for ComfyUI prompt submission.
+ * Routes video generation through GenerationQueue to prevent VRAM exhaustion.
+ * 
+ * @param settings - LocalGenerationSettings with ComfyUI config
+ * @param payloads - Generated JSON and text prompts
+ * @param base64Image - Base64-encoded keyframe image
+ * @param options - Queue options (sceneId, shotId, priority, progress callback)
+ * @returns Promise resolving to ComfyUI response
+ */
+export const queueComfyUIPromptSafe = async (
+    settings: LocalGenerationSettings,
+    payloads: { json: string; text: string },
+    base64Image: string,
+    options?: {
+        sceneId?: string;
+        shotId?: string;
+        priority?: GenerationPriority;
+        onProgress?: (progress: number, message?: string) => void;
+        onStatusChange?: (status: GenerationStatus) => void;
+    }
+): Promise<unknown> => {
+    const queue = getGenerationQueue();
+    
+    // Check feature flag - if disabled, call directly without queue
+    const useQueue = isFeatureEnabled({ useGenerationQueue: true } as FeatureFlags, 'useGenerationQueue');
+    if (!useQueue) {
+        console.log('[queueComfyUIPromptSafe] Queue disabled, calling directly');
+        return queueComfyUIPrompt(settings, payloads, base64Image);
+    }
+    
+    const task = createVideoTask(
+        () => queueComfyUIPrompt(settings, payloads, base64Image),
+        {
+            sceneId: options?.sceneId ?? 'unknown',
+            shotId: options?.shotId,
+            priority: options?.priority ?? 'normal',
+            onProgress: options?.onProgress,
+            onStatusChange: options?.onStatusChange,
+        }
+    );
+    
+    console.log(`[queueComfyUIPromptSafe] Enqueuing video task: ${task.id}`);
+    
+    return queue.enqueue(task);
 };
 
 // ============================================================================
@@ -415,11 +523,11 @@ export function resetSceneVideoManager(): void {
  */
 export const queueVideoGeneration = async (
     settings: LocalGenerationSettings,
-    payloads: { json: string; text: string; structured?: any[]; negativePrompt?: string },
+    payloads: VideoGenerationPayloads,
     base64Image: string,
     profileId?: string,
     logCallback?: (message: string, level?: 'info' | 'warn' | 'error') => void
-): Promise<any> => {
+): Promise<VideoGenerationResponse | null> => {
     const provider = settings.videoProvider || 'comfyui-local';
     const log = logCallback || console.log;
 
@@ -442,13 +550,24 @@ export const queueVideoGeneration = async (
 
         log(`[VideoGen] Queuing FastVideo generation`, 'info');
         
-        return await queueFastVideoPrompt(
+        const fastVideoResponse = await queueFastVideoPrompt(
             settings,
             prompt,
             negativePrompt,
             cleanedImage,
             logCallback
         );
+        
+        // Convert FastVideo response to VideoGenerationResponse
+        return {
+            status: fastVideoResponse.status,
+            videoPath: fastVideoResponse.outputVideoPath,
+            outputVideoPath: fastVideoResponse.outputVideoPath,
+            frames: fastVideoResponse.frames,
+            durationMs: fastVideoResponse.durationMs,
+            error: fastVideoResponse.error,
+            warnings: fastVideoResponse.warnings,
+        };
     } else {
         // Default: Route to ComfyUI
         log(`[VideoGen] Queuing ComfyUI generation (profile: ${profileId || 'default'})`, 'info');
@@ -512,11 +631,11 @@ export interface QueuedVideoGenerationOptions {
  */
 export const queueVideoGenerationWithQueue = async (
     settings: LocalGenerationSettings,
-    payloads: { json: string; text: string; structured?: any[]; negativePrompt?: string },
+    payloads: VideoGenerationPayloads,
     base64Image: string,
     profileId?: string,
     options?: QueuedVideoGenerationOptions
-): Promise<any> => {
+): Promise<VideoGenerationResponse | null> => {
     const useQueue = isFeatureEnabled(options?.featureFlags, 'useGenerationQueue');
     const log = options?.logCallback || console.log;
     
@@ -1056,7 +1175,7 @@ export const waitForChainedVideoComplete = async (
                     
                     tryReject(new Error('Completion detected but no video output found'), 'polling');
                 } else if (status?.status_str === 'error') {
-                    const errorMsg = status.messages?.find((m: any) => m[0] === 'execution_error')?.[1]?.exception_message || 'ComfyUI execution failed';
+                    const errorMsg = status.messages?.find((m: [string, { exception_message?: string }]) => m[0] === 'execution_error')?.[1]?.exception_message || 'ComfyUI execution failed';
                     tryReject(new Error(errorMsg), 'polling');
                 }
             } catch (error) {

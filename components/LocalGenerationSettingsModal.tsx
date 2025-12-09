@@ -20,6 +20,14 @@ import {
     checkFlagDependencies,
     validateFlagCombination,
 } from '../utils/featureFlags';
+
+// Extend Window interface for environment variables
+declare global {
+    interface Window {
+        LOCAL_STORY_PROVIDER_URL?: string;
+    }
+}
+
 import {
     STABILITY_PROFILE_LIST,
     STABILITY_PROFILES,
@@ -136,7 +144,9 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
 
     if (!isOpen) return null;
 
-    const handleInputChange = (field: keyof LocalGenerationSettings, value: any) => {
+    // Type for setting field values - uses unknown for flexibility since form handlers 
+    // pass partial objects that get merged with existing state
+    const handleInputChange = (field: keyof LocalGenerationSettings, value: unknown) => {
         setFormData(prev => ({ ...prev, [field]: value }));
         setHasChanges(true);
         
@@ -161,7 +171,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
     };
 
     // Helper to update post-processing options for the selected bookend workflow profile
-    const handlePostProcessingChange = (field: keyof WorkflowPostProcessingOptions, value: any) => {
+    const handlePostProcessingChange = (field: keyof WorkflowPostProcessingOptions, value: unknown) => {
         const profileId = formData.sceneBookendWorkflowProfile || 'wan-flf2v';
         setFormData(prev => {
             const currentProfile = prev.workflowProfiles?.[profileId];
@@ -210,7 +220,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                 // In production, use the configured URL or default
                 providerUrl = formData.llmProviderUrl || 
                            import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL || 
-                           (typeof window !== 'undefined' && (window as any).LOCAL_STORY_PROVIDER_URL) || 
+                           (typeof window !== 'undefined' && window.LOCAL_STORY_PROVIDER_URL) || 
                            'http://192.168.50.192:1234/v1/chat/completions';
             }
             
@@ -265,7 +275,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                 }));
                 addToast(`LM Studio connected: ${result.modelCount} model(s) ready`, 'success');
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             const errorInfo = parseError(error);
             setConnectionStatus(prev => ({ 
                 ...prev, 
@@ -349,7 +359,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                 }));
                 addToast(`Vision LLM connected (${result.modelCount} models)`, 'success');
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             const errorInfo = parseError(error);
             setConnectionStatus(prev => ({
                 ...prev,
@@ -395,7 +405,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                 }
             }));
             addToast(`ComfyUI connected: ${result.gpu}`, 'success');
-        } catch (error: any) {
+        } catch (error: unknown) {
             const errorInfo = parseError(error);
             setConnectionStatus(prev => ({ 
                 ...prev, 
@@ -427,7 +437,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
         // Validate required fields - check effective URL (including fallbacks)
         const effectiveLLMUrl = formData.llmProviderUrl || 
                                import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL || 
-                               (typeof window !== 'undefined' && (window as any).LOCAL_STORY_PROVIDER_URL) || 
+                               (typeof window !== 'undefined' && window.LOCAL_STORY_PROVIDER_URL) || 
                                '';
         
         if (!effectiveLLMUrl) {
@@ -1178,12 +1188,13 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                         } 
                                                     }));
                                                     addToast('FastVideo connection successful', 'success');
-                                                } catch (error: any) {
+                                                } catch (error: unknown) {
+                                                    const errorMessage = error instanceof Error ? error.message : 'Connection failed';
                                                     setConnectionStatus(prev => ({ 
                                                         ...prev, 
                                                         comfyui: { 
                                                             status: 'error', 
-                                                            message: error.message || 'Connection failed' 
+                                                            message: errorMessage 
                                                         } 
                                                     }));
                                                     addToast('FastVideo connection failed', 'error');
@@ -1382,7 +1393,7 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                     // GUI export format: nodes as array (e.g., exported from ComfyUI GUI)
                                                     const hasGUIExportFormat = 'nodes' in data && 
                                                         Array.isArray(data.nodes) &&
-                                                        data.nodes.some((n: any) => n?.type || n?.class_type);
+                                                        data.nodes.some((n: { type?: string; class_type?: string } | null) => n?.type || n?.class_type);
                                                     
                                                     const looksLikeSettingsFile = 'comfyUIUrl' in data || 'workflowProfiles' in data || 'mapping' in data;
                                                     

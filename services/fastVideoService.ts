@@ -60,11 +60,12 @@ export const checkFastVideoHealth = async (
         }
 
         return await response.json();
-    } catch (error: any) {
-        if (error.name === 'AbortError' || error.message.includes('timeout')) {
+    } catch (error: unknown) {
+        const err = error as Error;
+        if (err.name === 'AbortError' || err.message?.includes('timeout')) {
             throw new Error('FastVideo server timeout - is it running?');
         }
-        throw new Error(`FastVideo health check failed: ${error.message}`);
+        throw new Error(`FastVideo health check failed: ${err.message || 'Unknown error'}`);
     }
 };
 
@@ -232,16 +233,17 @@ export const queueFastVideoPrompt = async (
 
         return result;
 
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const err = error as Error;
         telemetry.status = 'error';
         telemetry.durationMs = Date.now() - startTime;
-        telemetry.error = error.message;
-        if (error.name === 'AbortError' || error.message.includes('timeout')) {
+        telemetry.error = err.message || 'Unknown error';
+        if (err.name === 'AbortError' || err.message?.includes('timeout')) {
             log('[FastVideo] Generation timeout (10 min) - server may still be processing', 'error');
             throw new Error('FastVideo generation timeout - try reducing numFrames or resolution');
         }
 
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
             log('[FastVideo] Network error - is server running?', 'error');
             telemetry.error = 'Cannot connect to FastVideo server';
             await writeTelemetrySummary(telemetry, fastVideoConfig.outputDir);
@@ -249,8 +251,8 @@ export const queueFastVideoPrompt = async (
         }
 
         await writeTelemetrySummary(telemetry, fastVideoConfig.outputDir);
-        log(`[FastVideo] Error: ${error.message}`, 'error');
-        throw error;
+        log(`[FastVideo] Error: ${err.message}`, 'error');
+        throw err;
     }
 };
 

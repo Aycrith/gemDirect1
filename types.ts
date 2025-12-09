@@ -712,7 +712,7 @@ export interface PreflightResult {
 }
 
 export interface LocalGenerationStatus {
-      status: 'idle' | 'queued' | 'running' | 'complete' | 'error';
+      status: 'idle' | 'queued' | 'running' | 'complete' | 'error' | 'warning';
       message: string;
       progress: number; // 0-100
       promptId?: string;
@@ -721,6 +721,8 @@ export interface LocalGenerationStatus {
       final_output?: LocalGenerationOutput;
       /** Result of last preflight analysis (keyframe pair check) */
       preflightResult?: PreflightResult;
+      /** Phase indicator for multi-step operations (bookend generation, preflight) */
+      phase?: 'bookend-start-video' | 'bookend-end-video' | 'splicing' | 'native-bookend-video' | 'preflight';
   }
 
 // ============================================================================

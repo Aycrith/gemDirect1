@@ -167,7 +167,7 @@ export class ComfyUIQueueMonitor {
    */
   private transformHistoryEntryToEvent(
     runId: string,
-    entry: any
+    entry: ComfyUIHistory[string]
   ): ComfyUIWorkflowEvent | null {
     try {
       const now = Date.now();
@@ -179,15 +179,15 @@ export class ComfyUIQueueMonitor {
       if (entry.outputs) {
         // Look for typical output keys
         const imageOutputs = Object.entries(entry.outputs).filter(
-          ([_key, value]: [string, any]) =>
-            Array.isArray(value) || (typeof value === 'object' && value.frames)
+          ([_key, value]: [string, unknown]) =>
+            Array.isArray(value) || (typeof value === 'object' && value !== null && 'frames' in value)
         );
 
         for (const [, outputValue] of imageOutputs) {
           if (Array.isArray(outputValue)) {
             frameCount = Math.max(frameCount, outputValue.length);
           } else if (typeof outputValue === 'object' && outputValue !== null && 'frames' in outputValue) {
-            const framesData = (outputValue as any).frames;
+            const framesData = (outputValue as { frames: unknown }).frames;
             frameCount = Math.max(frameCount, Array.isArray(framesData) ? framesData.length : 0);
           }
         }

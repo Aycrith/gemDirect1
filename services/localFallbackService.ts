@@ -798,23 +798,25 @@ export const generateWorkflowMapping = async (workflowJson: string): Promise<Wor
     const mapping: WorkflowMapping = {};
     if (!workflowJson.trim()) return mapping;
 
-    let workflow: any;
+    let workflow: unknown;
     try {
         workflow = JSON.parse(workflowJson);
     } catch {
         return mapping;
     }
 
-    const prompt = workflow.prompt || workflow;
+    const workflowObj = workflow as Record<string, unknown>;
+    const prompt = (workflowObj.prompt || workflowObj) as Record<string, unknown>;
     if (typeof prompt !== 'object') return mapping;
 
     let positiveAssigned = false;
     let negativeAssigned = false;
 
-    Object.entries(prompt).forEach(([nodeId, node]: [string, any]) => {
+    Object.entries(prompt).forEach(([nodeId, node]: [string, unknown]) => {
         if (!node || typeof node !== 'object') return;
-        const classType = String(node.class_type || '').toLowerCase();
-        const inputs = node.inputs || {};
+        const nodeObj = node as Record<string, unknown>;
+        const classType = String(nodeObj.class_type || '').toLowerCase();
+        const inputs = (nodeObj.inputs || {}) as Record<string, unknown>;
 
         if (classType.includes('cliptextencode') || classType.includes('textencode')) {
             if (inputs.text || inputs.prompt) {

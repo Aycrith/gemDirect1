@@ -1,5 +1,6 @@
 import React from 'react';
-import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion, KeyframeData, LocalGenerationStatus, isBookendKeyframe, getActiveKeyframeImage, isVersionedKeyframe } from '../types';
+import { Scene, StoryBible, SceneContinuityData, ToastMessage, Suggestion, KeyframeData, LocalGenerationStatus, isBookendKeyframe, getActiveKeyframeImage, isVersionedKeyframe, ApiCallLog } from '../types';
+import { ApiStatus } from '../contexts/ApiStatusContext';
 import { extractFramesFromVideo } from '../utils/videoUtils';
 import { extractVideoFromLocalStatus } from '../utils/videoValidation';
 
@@ -28,8 +29,8 @@ interface ContinuityCardProps {
   data: SceneContinuityData;
   setContinuityData: (updater: (prev: SceneContinuityData | undefined) => SceneContinuityData | SceneContinuityData) => void;
   addToast: (message: string, type: ToastMessage['type']) => void;
-  onApiStateChange: (status: any, message: string) => void;
-  onApiLog: (log: any) => void;
+  onApiStateChange: (status: ApiStatus, message: string) => void;
+  onApiLog: (log: Omit<ApiCallLog, 'id' | 'timestamp'>) => void;
   onApplySuggestion: (suggestion: Suggestion, sceneId: string) => void;
   isRefined: boolean;
   onUpdateSceneSummary: (sceneId: string) => Promise<boolean>;

@@ -460,3 +460,96 @@ export class ComfyUIEventManager {
  * Use this singleton to manage WebSocket connections across the application
  */
 export const comfyEventManager = new ComfyUIEventManager();
+
+// ============================================================================
+// Helper Functions for Migration (P2.2)
+// ============================================================================
+
+/**
+ * Simple progress callback compatible with existing trackPromptExecution callers
+ */
+export interface PromptProgressUpdate {
+  promptId?: string;
+  status: 'queued' | 'running' | 'complete' | 'error';
+  message?: string;
+  progress?: number;
+  queue_position?: number;
+  node_title?: string;
+}
+
+/**
+ * Track a prompt execution via the global WebSocket manager
+ * 
+ * This is a migration helper that provides a similar interface to trackPromptExecution
+ * but uses the centralized comfyEventManager instead of creating a new WebSocket.
+ * 
+ * Note: This does NOT handle asset fetching on completion - callers should use
+ * the history API or fetch assets separately.
+ * 
+ * @param promptId - The ComfyUI prompt ID to track
+ * @param onProgress - Callback for progress updates
+ * @returns Unsubscribe function
+ */
+export function trackPromptViaEventManager(
+  promptId: string,
+  onProgress: (update: PromptProgressUpdate) => void
+): () => void {
+  return comfyEventManager.subscribe(promptId, (event) => {
+    // Convert ComfyEvent to PromptProgressUpdate
+    const update: PromptProgressUpdate = {
+      promptId: event.promptId,
+      status: 'running',
+    };
+
+    switch (event.type) {
+      case 'status':
+        if (event.data.queue_remaining !== undefined) {
+          update.status = 'queued';
+          update.message = `In queue... Position: ${event.data.queue_remaining}`;
+          update.queue_position = event.data.queue_remaining;
+        }
+        break;
+
+      case 'execution_start':
+        update.status = 'running';
+        update.message = 'Execution started.';
+        break;
+
+      case 'executing':
+        if (event.data.node) {
+          update.status = 'running';
+          update.message = `Executing: Node ${event.data.node}`;
+          update.node_title = String(event.data.node);
+        }
+        break;
+
+      case 'progress':
+        if (event.data.value !== undefined && event.data.max !== undefined) {
+          update.status = 'running';
+          update.progress = Math.round((event.data.value / event.data.max) * 100);
+        }
+        break;
+
+      case 'execution_error':
+        update.status = 'error';
+        update.message = event.data.exception_message || 'Execution error';
+        break;
+
+      case 'execution_interrupted':
+        update.status = 'error';
+        update.message = 'Execution interrupted';
+        break;
+
+      case 'execution_cached':
+        // Cached execution is still "complete" from user's perspective
+        update.status = 'complete';
+        update.message = 'Using cached result';
+        break;
+
+      default:
+        return; // Don't dispatch for unknown event types
+    }
+
+    onProgress(update);
+  });
+}

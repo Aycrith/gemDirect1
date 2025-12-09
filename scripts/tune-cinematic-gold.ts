@@ -17,6 +17,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import type { GoldenSetReport } from '../services/goldenSetService';
 import type { ABExperimentReport } from './run-ab-experiments';
 
@@ -132,6 +134,10 @@ function parseArgs(): CliArgs {
 // ============================================================================
 // Data Loading
 // ============================================================================
+
+// ESM-safe __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const REPORTS_DIR = path.resolve(__dirname, '..', 'reports');
 

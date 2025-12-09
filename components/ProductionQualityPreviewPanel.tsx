@@ -29,6 +29,7 @@ import {
 } from '../services/pipelineConfigService';
 import type { ResolvedPipelineConfig } from '../types/pipelineConfig';
 import { listCameraTemplates, type CameraTemplateInfo } from '../services/cameraTemplateService';
+import { loadImageAsBase64, checkComfyUIAvailable } from '../services/staticDataService';
 
 interface ProductionQualityPreviewPanelProps {
     settings: LocalGenerationSettings | null;
@@ -136,21 +137,6 @@ const PIPELINE_PRESETS: PipelinePreset[] = [
 const PREVIEW_KEYFRAME_START = '/artifacts/preview-sample/start.png';
 const PREVIEW_KEYFRAME_END = '/artifacts/preview-sample/end.png';
 
-// Helper to load an image and convert to base64
-async function loadImageAsBase64(url: string): Promise<string> {
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to load image: ${url}`);
-    }
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
-}
-
 // Create a minimal scene for preview generation
 function createPreviewScene(): Scene {
     const shot: Shot = {
@@ -246,15 +232,7 @@ const ProductionQualityPreviewPanel: React.FC<ProductionQualityPreviewPanelProps
     // Check if ComfyUI is available
     const checkComfyUIStatus = useCallback(async (): Promise<boolean> => {
         if (!settings?.comfyUIUrl) return false;
-        try {
-            const response = await fetch(`${settings.comfyUIUrl}/system_stats`, { 
-                method: 'GET',
-                signal: AbortSignal.timeout(5000)
-            });
-            return response.ok;
-        } catch {
-            return false;
-        }
+        return checkComfyUIAvailable(settings.comfyUIUrl);
     }, [settings?.comfyUIUrl]);
 
     const handleRunPreview = useCallback(async () => {

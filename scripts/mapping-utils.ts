@@ -38,7 +38,19 @@ export function extractWorkflowNodes(settings: any): Record<string, any> | null 
 }
 
 export function buildMappingSummary(settings: any, nodes: Record<string, any> | null): MappingSummary {
+  // Collect mappings from top-level AND from workflow profiles (esp. wan-i2v)
+  // Updated 2025-12-08: Check profile-specific mappings for wan-i2v
   const mapping: Record<string, string> = { ...(settings?.mapping || {}) };
+  
+  // Also merge mappings from workflow profiles (wan-t2i and wan-i2v)
+  const profiles = settings?.workflowProfiles || {};
+  for (const profileId of ['wan-t2i', 'wan-i2v']) {
+    const profile = profiles[profileId];
+    if (profile?.mapping) {
+      Object.assign(mapping, profile.mapping);
+    }
+  }
+  
   let clipText = false;
   let loadImage = false;
   let inferredClipNode: string | null = null;

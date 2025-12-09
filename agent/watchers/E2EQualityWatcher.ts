@@ -111,13 +111,14 @@ export class E2EQualityWatcher {
     logger.info('  Auditing data flow...');
 
     // Define the expected pipeline stages and their key files
+    // Updated 2025-12-08: Aligned with actual project file structure
     const pipelineFiles: Record<PipelineStage, string[]> = {
-      'story-idea': ['components/StoryIdeaForm.tsx', 'components/StoryIdeaSection.tsx'],
+      'story-idea': ['components/StoryIdeaForm.tsx'],
       'story-bible': ['services/geminiService.ts', 'components/StoryBibleEditor.tsx'],
-      'directors-vision': ['components/DirectorsVision.tsx', 'components/DirectorsVisionEditor.tsx'],
-      'scenes': ['services/planExpansionService.ts', 'components/SceneEditor.tsx'],
-      'shots': ['services/planExpansionService.ts', 'components/ShotEditor.tsx'],
-      'keyframes': ['services/comfyUIService.ts', 'services/keyframeBookendService.ts'],
+      'directors-vision': ['components/DirectorsVisionForm.tsx'],
+      'scenes': ['services/planExpansionService.ts', 'components/TimelineEditor.tsx'],
+      'shots': ['services/planExpansionService.ts', 'components/TimelineEditor.tsx'],
+      'keyframes': ['services/comfyUIService.ts', 'services/payloadService.ts'],
       'videos': ['services/comfyUIService.ts', 'services/videoGenerationService.ts'],
       'artifacts': ['utils/database.ts', 'components/ArtifactViewer.tsx'],
     };
@@ -194,12 +195,12 @@ export class E2EQualityWatcher {
     logger.info('  Auditing validation guardrails...');
 
     // Check for validation patterns in form components
+    // Updated 2025-12-08: Aligned with actual project file structure
     const formComponents = [
       'components/StoryIdeaForm.tsx',
       'components/StoryBibleEditor.tsx',
-      'components/DirectorsVisionEditor.tsx',
-      'components/SceneEditor.tsx',
-      'components/ShotEditor.tsx',
+      'components/DirectorsVisionForm.tsx',
+      'components/TimelineEditor.tsx',
     ];
 
     for (const file of formComponents) {
@@ -245,14 +246,15 @@ export class E2EQualityWatcher {
     }
 
     // Check for prompt validation service
-    const promptValidatorPath = path.join(this.config.projectRoot, 'validation/promptValidator.ts');
+    // Updated 2025-12-08: promptValidator exists in services/, not validation/
+    const promptValidatorPath = path.join(this.config.projectRoot, 'services/promptValidator.ts');
     if (!fs.existsSync(promptValidatorPath)) {
       issues.push(this.createIssue({
         id: 'e2e-missing-prompt-validator',
         type: 'gap',
         severity: 'high',
         message: 'Missing prompt validation service',
-        suggestedFix: 'Create validation/promptValidator.ts to validate LLM prompts before sending',
+        suggestedFix: 'Create services/promptValidator.ts to validate LLM prompts before sending',
       }));
     }
 
@@ -339,47 +341,32 @@ export class E2EQualityWatcher {
 
     logger.info('  Auditing bookend workflows...');
 
-    // Check for bookend service
-    const bookendServicePath = path.join(this.config.projectRoot, 'services/keyframeBookendService.ts');
+    // Check for bookend payload generation in payloadService.ts
+    // Updated 2025-12-08: Bookend functionality is in payloadService.ts, not a separate service
+    const payloadServicePath = path.join(this.config.projectRoot, 'services/payloadService.ts');
     
-    if (!fs.existsSync(bookendServicePath)) {
+    if (!fs.existsSync(payloadServicePath)) {
       issues.push(this.createIssue({
-        id: 'e2e-missing-bookend-service',
+        id: 'e2e-missing-payload-service',
         type: 'gap',
         severity: 'critical',
-        message: 'Missing keyframe bookend service for start/end image workflows',
+        message: 'Missing payload service for bookend workflows',
         pipelineStage: 'keyframes',
-        suggestedFix: 'Create services/keyframeBookendService.ts with ensureBookendKeyframe, getStartKeyframe, getEndKeyframe',
+        suggestedFix: 'Create services/payloadService.ts with generateBookendPayloads function',
       }));
     } else {
-      const content = fs.readFileSync(bookendServicePath, 'utf-8');
+      const content = fs.readFileSync(payloadServicePath, 'utf-8');
 
-      // Check for required functions
-      const requiredFunctions = ['ensureBookendKeyframe', 'getStartKeyframe', 'getEndKeyframe'];
-      for (const fn of requiredFunctions) {
-        if (!content.includes(fn)) {
-          issues.push(this.createIssue({
-            id: `e2e-missing-bookend-fn-${fn}`,
-            type: 'gap',
-            severity: 'high',
-            message: `Bookend service missing required function: ${fn}`,
-            file: 'services/keyframeBookendService.ts',
-            pipelineStage: 'keyframes',
-            suggestedFix: `Implement ${fn} function for bookend workflow`,
-          }));
-        }
-      }
-
-      // Check for aspect ratio validation
-      if (!content.includes('aspectRatio') && !content.includes('aspect')) {
+      // Check for bookend payload generation function
+      if (!content.includes('generateBookendPayloads')) {
         issues.push(this.createIssue({
-          id: 'e2e-bookend-no-aspect-ratio',
-          type: 'improvement',
-          severity: 'medium',
-          message: 'Bookend service may not validate consistent aspect ratios between start/end images',
-          file: 'services/keyframeBookendService.ts',
+          id: 'e2e-missing-bookend-payloads',
+          type: 'gap',
+          severity: 'high',
+          message: 'Payload service missing generateBookendPayloads function for start/end image workflows',
+          file: 'services/payloadService.ts',
           pipelineStage: 'keyframes',
-          suggestedFix: 'Add aspect ratio validation to ensure start/end images match',
+          suggestedFix: 'Implement generateBookendPayloads function for bookend workflow',
         }));
       }
 
@@ -390,7 +377,7 @@ export class E2EQualityWatcher {
           type: 'improvement',
           severity: 'medium',
           message: 'Bookend workflow may not include explicit transition descriptions',
-          file: 'services/keyframeBookendService.ts',
+          file: 'services/payloadService.ts',
           pipelineStage: 'keyframes',
           suggestedFix: 'Include explicit transition description in prompts for coherent video generation',
         }));
@@ -461,7 +448,8 @@ export class E2EQualityWatcher {
     }
 
     // Check for coherence gate
-    const coherenceGatePath = path.join(this.config.projectRoot, 'services/coherenceGate.ts');
+    // Updated 2025-12-08: coherenceGate exists in utils/, not services/
+    const coherenceGatePath = path.join(this.config.projectRoot, 'utils/coherenceGate.ts');
     if (!fs.existsSync(coherenceGatePath)) {
       issues.push(this.createIssue({
         id: 'e2e-missing-coherence-gate',
@@ -469,7 +457,7 @@ export class E2EQualityWatcher {
         severity: 'medium',
         message: 'Missing coherence gate for validating generation outputs',
         pipelineStage: 'scenes',
-        suggestedFix: 'Create services/coherenceGate.ts with validateCoherence function',
+        suggestedFix: 'Create utils/coherenceGate.ts with validateCoherence function',
       }));
     }
 

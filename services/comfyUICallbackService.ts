@@ -337,13 +337,32 @@ export class ComfyUICallbackManager {
 }
 
 /**
+ * Scene data input structure for workflow event creation
+ */
+interface SceneDataInput {
+  sceneId?: string;
+  name?: string;
+  frameCount?: number;
+  duration?: number;
+  attempts?: number;
+  status?: 'success' | 'failed' | 'timeout' | 'skipped';
+}
+
+/**
+ * System stats from ComfyUI for VRAM tracking
+ */
+interface SystemStatsInput {
+  devices?: Array<{ vram_total?: number }>;
+}
+
+/**
  * Creates a workflow event from ComfyUI queue history
  * Helper function to construct events from various data sources
  */
 export function createWorkflowEvent(
   runId: string,
-  sceneData: any[],
-  systemStats: any
+  sceneData: SceneDataInput[],
+  systemStats: SystemStatsInput | null
 ): ComfyUIWorkflowEvent {
   const now = Date.now();
   
@@ -360,7 +379,7 @@ export function createWorkflowEvent(
       frameCount: scene.frameCount || 0,
       durationMs: scene.duration || 0,
       attempts: scene.attempts || 1,
-      status: scene.status || 'success',
+      status: scene.status ?? 'success',
       gpuVramBefore: systemStats?.devices?.[0]?.vram_total || 0,
       timestamp: now
     }))

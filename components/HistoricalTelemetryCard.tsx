@@ -8,23 +8,13 @@
 
 import React, { useState } from 'react';
 import { useRunHistory } from '../utils/hooks';
+import type { HistoricalRun } from '../services/runHistoryService';
 
 interface HistoricalTelemetryCardProps {
   storyId?: string;
   title?: string;
   compact?: boolean;
   onRefresh?: () => void;
-}
-
-// Interface for run history entries
-interface RunHistoryEntry {
-  runId: string;
-  timestamp: number;
-  scenes?: Array<{ id: string; title: string }>;
-  metadata?: {
-    successRate: number;
-    totalDuration: number;
-  };
 }
 
 // Interface for computed stats
@@ -46,22 +36,21 @@ const HistoricalTelemetryCard: React.FC<HistoricalTelemetryCardProps> = ({
   const { historicalRuns, loading, error, fetchRuns } = useRunHistory();
   
   // Compute stats from historical runs
-  const runs: RunHistoryEntry[] = historicalRuns as RunHistoryEntry[];
   const stats: ComputedStats = React.useMemo(() => {
-    if (runs.length === 0) {
+    if (historicalRuns.length === 0) {
       return { totalRuns: 0, successRate: 0, totalFrames: 0, averageDuration: 0, minDuration: 0, maxDuration: 0 };
     }
-    const durations = runs.map((r: RunHistoryEntry) => r.metadata?.totalDuration ?? 0);
-    const successRates = runs.map((r: RunHistoryEntry) => r.metadata?.successRate ?? 0);
+    const durations = historicalRuns.map((r: HistoricalRun) => r.metadata?.totalDuration ?? 0);
+    const successRates = historicalRuns.map((r: HistoricalRun) => r.metadata?.successRate ?? 0);
     return {
-      totalRuns: runs.length,
+      totalRuns: historicalRuns.length,
       successRate: successRates.reduce((a, b) => a + b, 0) / successRates.length,
       totalFrames: 0, // Not tracked in current data
       averageDuration: durations.reduce((a, b) => a + b, 0) / durations.length,
       minDuration: Math.min(...durations),
       maxDuration: Math.max(...durations),
     };
-  }, [runs]);
+  }, [historicalRuns]);
   
   const refresh = React.useCallback(async () => {
     await fetchRuns();
@@ -78,16 +67,16 @@ const HistoricalTelemetryCard: React.FC<HistoricalTelemetryCardProps> = ({
 
   // Calculate trend based on most recent runs
   const calculateTrend = (): { trend: 'improving' | 'degrading' | 'stable'; confidence: number } => {
-    if (runs.length < 2) return { trend: 'stable', confidence: 0 };
+    if (historicalRuns.length < 2) return { trend: 'stable', confidence: 0 };
 
-    const recentRuns = runs.slice(-5); // Last 5 runs
-    const successRates = recentRuns.map((r: RunHistoryEntry) => r.metadata?.successRate || 0);
+    const recentRuns = historicalRuns.slice(-5); // Last 5 runs
+    const successRates = recentRuns.map((r: HistoricalRun) => r.metadata?.successRate || 0);
     
     const firstHalf = successRates.slice(0, Math.floor(successRates.length / 2)).reduce((a: number, b: number) => a + b, 0) / Math.ceil(successRates.length / 2);
     const secondHalf = successRates.slice(Math.floor(successRates.length / 2)).reduce((a: number, b: number) => a + b, 0) / Math.floor(successRates.length / 2);
 
     const delta = secondHalf - firstHalf;
-    const confidence = Math.min(100, Math.abs(delta) * 10 * runs.length);
+    const confidence = Math.min(100, Math.abs(delta) * 10 * historicalRuns.length);
 
     if (Math.abs(delta) < 5) return { trend: 'stable', confidence: Math.min(confidence, 50) };
     return {
@@ -115,7 +104,7 @@ const HistoricalTelemetryCard: React.FC<HistoricalTelemetryCardProps> = ({
   };
 
   // Loading state
-  if (loading && runs.length === 0) {
+  if (loading && historicalRuns.length === 0) {
     return (
       <div className="p-4 rounded border border-gray-600/50 bg-gray-900/20">
         <div className="flex items-center justify-between">
@@ -144,7 +133,7 @@ const HistoricalTelemetryCard: React.FC<HistoricalTelemetryCardProps> = ({
   }
 
   // Empty state
-  if (runs.length === 0) {
+  if (historicalRuns.length === 0) {
     return (
       <div className="p-4 rounded border border-gray-600/50 bg-gray-900/20">
         <div className="flex items-center justify-between">
@@ -281,11 +270,11 @@ const HistoricalTelemetryCard: React.FC<HistoricalTelemetryCardProps> = ({
       </div>
 
       {/* Recent Runs Summary */}
-      {runs.length > 0 && (
+      {historicalRuns.length > 0 && (
         <div className="space-y-2 pt-2 border-t border-cyan-600/20">
           <div className="text-xs font-semibold text-cyan-300">Recent Runs</div>
           <div className="space-y-1 max-h-32 overflow-y-auto">
-            {runs.slice(-5).reverse().map((run: RunHistoryEntry) => (
+            {historicalRuns.slice(-5).reverse().map((run: HistoricalRun) => (
               <div
                 key={run.runId}
                 className="text-xs p-2 rounded bg-gray-800/30 border border-gray-700/30 flex justify-between items-center"

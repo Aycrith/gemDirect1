@@ -1,18 +1,15 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import SparklesIcon from './icons/SparklesIcon';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
+import { VideoPayloadItem } from '../services/payloadService';
 
-interface StructuredPayloadItem {
-    shotNumber: number;
-    text: string;
-    image: string | null;
-    transition: string | null;
-}
+// Re-export for backward compatibility
+export type { VideoPayloadItem as StructuredPayloadItem };
 
 interface FinalPromptModalProps {
     isOpen: boolean;
     onClose: () => void;
-    payloads: { json: string; text: string; structured: StructuredPayloadItem[]; negativePrompt: string } | null;
+    payloads: { json: string; text: string; structured: VideoPayloadItem[]; negativePrompt: string } | null;
     /** When true, renders as a slide-in drawer instead of centered modal (UI Refresh mode) */
     asDrawer?: boolean;
 }

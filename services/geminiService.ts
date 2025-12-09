@@ -443,6 +443,162 @@ export const getPrunedContextForBatchProcessing = async (
 
 // --- Core Story Generation ---
 
+/**
+ * Schema for Story Bible V2 response - used by both direct SDK and adapter paths
+ */
+const storyBibleV2Schema = {
+    type: 'object',
+    properties: {
+        logline: { type: 'string' },
+        characters: { type: 'string' },
+        characterProfiles: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string' },
+                    name: { type: 'string' },
+                    age: { type: 'string' },
+                    appearance: {
+                        type: 'object',
+                        properties: {
+                            height: { type: 'string' },
+                            build: { type: 'string' },
+                            hair: { type: 'string' },
+                            eyes: { type: 'string' },
+                            distinguishingFeatures: { type: 'array', items: { type: 'string' } },
+                            typicalAttire: { type: 'string' },
+                        },
+                    },
+                    personality: { type: 'array', items: { type: 'string' } },
+                    backstory: { type: 'string' },
+                    motivations: { type: 'array', items: { type: 'string' } },
+                    role: { type: 'string' },
+                    visualDescriptor: { type: 'string' },
+                },
+                required: ['id', 'name', 'role', 'visualDescriptor'],
+            },
+        },
+        setting: { type: 'string' },
+        plotOutline: { type: 'string' },
+        plotScenes: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    actNumber: { type: 'number' },
+                    sceneNumber: { type: 'number' },
+                    summary: { type: 'string' },
+                    visualCues: { type: 'array', items: { type: 'string' } },
+                    characterArcs: { type: 'array', items: { type: 'string' } },
+                    pacing: { type: 'string' },
+                    location: { type: 'string' },
+                    timeOfDay: { type: 'string' },
+                    emotionalTone: { type: 'string' },
+                },
+                required: ['actNumber', 'sceneNumber', 'summary', 'visualCues', 'pacing'],
+            },
+        },
+    },
+    required: ['logline', 'characters', 'setting', 'plotOutline', 'characterProfiles', 'plotScenes'],
+} as const;
+
+/**
+ * Generate Story Bible via the LLM Transport Adapter
+ * This enables testability via MockLLMTransport
+ */
+const generateStoryBibleViaAdapter = async (
+    prompt: string,
+    genre: string,
+    logApiCall: ApiLogCallback,
+    onStateChange?: ApiStateChangeCallback
+): Promise<StoryBibleV2> => {
+    const context = 'generate Story Bible (adapter)';
+    const correlationId = generateCorrelationId();
+    
+    const request: LLMRequest = {
+        model: proModel,
+        messages: [{ role: 'user', content: prompt }],
+        responseFormat: 'json',
+        schema: storyBibleV2Schema,
+        metadata: { context, correlationId },
+    };
+    
+    const response = await sendLLMRequestWithAdapter(
+        request,
+        loadFeatureFlags(),
+        logApiCall,
+        onStateChange
+    );
+    
+    if (!response.text) {
+        throw new Error("The model returned an empty response for Story Bible.");
+    }
+    
+    const parsed = response.json || JSON.parse(response.text.trim());
+    
+    // If Gemini returned V1 format (missing structured data), convert it
+    if (!parsed.characterProfiles || parsed.characterProfiles.length === 0 ||
+        !parsed.plotScenes || parsed.plotScenes.length === 0) {
+        console.info('[generateStoryBible] Adapter returned incomplete V2 data, converting from markdown');
+        const v2 = convertToStoryBibleV2(parsed as StoryBible);
+        v2.genre = genre;
+        return v2;
+    }
+    
+    // Build full V2 result
+    const result: StoryBibleV2 = {
+        logline: parsed.logline,
+        characters: parsed.characters,
+        setting: parsed.setting,
+        plotOutline: parsed.plotOutline,
+        version: '2.0',
+        characterProfiles: (parsed.characterProfiles || []).map((p: Partial<CharacterProfile>, i: number) => ({
+            id: p.id || `char-${i + 1}`,
+            name: p.name || 'Unknown',
+            age: p.age,
+            appearance: p.appearance || {},
+            personality: p.personality || [],
+            backstory: p.backstory || '',
+            motivations: p.motivations || [],
+            relationships: [],
+            role: (p.role as CharacterProfile['role']) || 'supporting',
+            visualDescriptor: p.visualDescriptor || p.name || 'Unknown character',
+        })),
+        plotScenes: (parsed.plotScenes || []).map((s: Partial<PlotScene>, i: number) => ({
+            actNumber: (s.actNumber || 1) as 1 | 2 | 3,
+            sceneNumber: s.sceneNumber || i + 1,
+            summary: s.summary || '',
+            visualCues: s.visualCues || [],
+            characterArcs: s.characterArcs || [],
+            pacing: (s.pacing as PlotScene['pacing']) || 'medium',
+            location: s.location,
+            timeOfDay: s.timeOfDay,
+            emotionalTone: s.emotionalTone,
+        })),
+        tokenMetadata: {
+            loglineTokens: estimateTokens(parsed.logline || ''),
+            charactersTokens: estimateTokens(parsed.characters || ''),
+            settingTokens: estimateTokens(parsed.setting || ''),
+            plotOutlineTokens: estimateTokens(parsed.plotOutline || ''),
+            totalTokens: response.usage?.totalTokens || 0,
+            lastUpdated: Date.now(),
+        },
+        genre,
+    };
+    
+    // Calculate total tokens
+    if (result.tokenMetadata) {
+        result.tokenMetadata.totalTokens = 
+            result.tokenMetadata.loglineTokens + 
+            result.tokenMetadata.charactersTokens + 
+            result.tokenMetadata.settingTokens + 
+            result.tokenMetadata.plotOutlineTokens;
+    }
+    
+    return result;
+};
+
 export const generateStoryBible = async (idea: string, genre: string = 'sci-fi', logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBibleV2> => {
     const context = 'generate Story Bible';
     
@@ -461,7 +617,102 @@ ${template.content}`;
         // Continue without template guidance if loading fails
     }
     
-    const prompt = `You are a master storyteller and screenwriter with a deep understanding of multiple narrative structures. Your task is to analyze a user's idea and generate a "Story Bible" using the most fitting narrative framework.
+    // Build the prompt (shared between adapter and direct SDK paths)
+    const prompt = buildStoryBiblePrompt(idea, templateGuidance);
+    
+    // Check feature flag - route to adapter if enabled
+    const flags = loadFeatureFlags();
+    if (isFeatureEnabled(flags, 'useLLMTransportAdapter')) {
+        console.log('[generateStoryBible] Using LLM Transport Adapter');
+        return generateStoryBibleViaAdapter(prompt, genre, logApiCall, onStateChange);
+    }
+    
+    // Legacy path: direct SDK call
+    const responseSchema = buildStoryBibleSchema();
+    
+    const apiCall = async () => {
+        const response = await getAI().models.generateContent({
+            model: proModel,
+            contents: prompt,
+            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
+        });
+        const text = response.text;
+        if (!text) {
+            throw new Error("The model returned an empty response for Story Bible.");
+        }
+        const parsed = JSON.parse(text.trim());
+        const tokens = response.usageMetadata?.totalTokenCount || 0;
+        
+        // If Gemini returned V1 format (missing structured data), convert it
+        if (!parsed.characterProfiles || parsed.characterProfiles.length === 0 ||
+            !parsed.plotScenes || parsed.plotScenes.length === 0) {
+            console.info('[generateStoryBible] Gemini returned incomplete V2 data, converting from markdown');
+            const v2 = convertToStoryBibleV2(parsed as StoryBible);
+            v2.genre = genre;
+            return { result: v2, tokens };
+        }
+        
+        // Build full V2 result with token metadata
+        const result: StoryBibleV2 = {
+            logline: parsed.logline,
+            characters: parsed.characters,
+            setting: parsed.setting,
+            plotOutline: parsed.plotOutline,
+            version: '2.0',
+            characterProfiles: (parsed.characterProfiles || []).map((p: Partial<CharacterProfile>, i: number) => ({
+                id: p.id || `char-${i + 1}`,
+                name: p.name || 'Unknown',
+                age: p.age,
+                appearance: p.appearance || {},
+                personality: p.personality || [],
+                backstory: p.backstory || '',
+                motivations: p.motivations || [],
+                relationships: [],
+                role: (p.role as CharacterProfile['role']) || 'supporting',
+                visualDescriptor: p.visualDescriptor || p.name || 'Unknown character',
+            })),
+            plotScenes: (parsed.plotScenes || []).map((s: Partial<PlotScene>, i: number) => ({
+                actNumber: (s.actNumber || 1) as 1 | 2 | 3,
+                sceneNumber: s.sceneNumber || i + 1,
+                summary: s.summary || '',
+                visualCues: s.visualCues || [],
+                characterArcs: s.characterArcs || [],
+                pacing: (s.pacing as PlotScene['pacing']) || 'medium',
+                location: s.location,
+                timeOfDay: s.timeOfDay,
+                emotionalTone: s.emotionalTone,
+            })),
+            tokenMetadata: {
+                loglineTokens: estimateTokens(parsed.logline || ''),
+                charactersTokens: estimateTokens(parsed.characters || ''),
+                settingTokens: estimateTokens(parsed.setting || ''),
+                plotOutlineTokens: estimateTokens(parsed.plotOutline || ''),
+                totalTokens: 0,
+                lastUpdated: Date.now(),
+            },
+            genre,
+        };
+        
+        // Calculate total tokens
+        if (result.tokenMetadata) {
+            result.tokenMetadata.totalTokens = 
+                result.tokenMetadata.loglineTokens + 
+                result.tokenMetadata.charactersTokens + 
+                result.tokenMetadata.settingTokens + 
+                result.tokenMetadata.plotOutlineTokens;
+        }
+        
+        return { result, tokens };
+    };
+
+    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
+};
+
+/**
+ * Build the Story Bible prompt (extracted for reuse between paths)
+ */
+function buildStoryBiblePrompt(idea: string, templateGuidance: string): string {
+    return `You are a master storyteller and screenwriter with a deep understanding of multiple narrative structures. Your task is to analyze a user's idea and generate a "Story Bible" using the most fitting narrative framework.
 
     **CRITICAL WORD COUNT LIMITS (ENFORCED BY VALIDATOR):**
     These limits are enforced by validation. Content exceeding limits will be rejected.
@@ -558,9 +809,13 @@ ${template.content}`;
     }
     
     This approach ensures narrative depth while maintaining the required format for downstream video generation.`;
+}
 
-    // V2 Response Schema with structured character profiles and plot scenes
-    const responseSchema = {
+/**
+ * Build the Story Bible V2 response schema (for SDK path)
+ */
+function buildStoryBibleSchema() {
+    return {
         type: Type.OBJECT,
         properties: {
             logline: { type: Type.STRING },
@@ -616,84 +871,7 @@ ${template.content}`;
         },
         required: ['logline', 'characters', 'setting', 'plotOutline', 'characterProfiles', 'plotScenes'],
     };
-    
-    const apiCall = async () => {
-        const response = await getAI().models.generateContent({
-            model: proModel,
-            contents: prompt,
-            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
-        });
-        const text = response.text;
-        if (!text) {
-            throw new Error("The model returned an empty response for Story Bible.");
-        }
-        const parsed = JSON.parse(text.trim());
-        const tokens = response.usageMetadata?.totalTokenCount || 0;
-        
-        // If Gemini returned V1 format (missing structured data), convert it
-        if (!parsed.characterProfiles || parsed.characterProfiles.length === 0 ||
-            !parsed.plotScenes || parsed.plotScenes.length === 0) {
-            console.info('[generateStoryBible] Gemini returned incomplete V2 data, converting from markdown');
-            const v2 = convertToStoryBibleV2(parsed as StoryBible);
-            v2.genre = genre;
-            return { result: v2, tokens };
-        }
-        
-        // Build full V2 result with token metadata
-        const result: StoryBibleV2 = {
-            logline: parsed.logline,
-            characters: parsed.characters,
-            setting: parsed.setting,
-            plotOutline: parsed.plotOutline,
-            version: '2.0',
-            characterProfiles: (parsed.characterProfiles || []).map((p: Partial<CharacterProfile>, i: number) => ({
-                id: p.id || `char-${i + 1}`,
-                name: p.name || 'Unknown',
-                age: p.age,
-                appearance: p.appearance || {},
-                personality: p.personality || [],
-                backstory: p.backstory || '',
-                motivations: p.motivations || [],
-                relationships: [],
-                role: (p.role as CharacterProfile['role']) || 'supporting',
-                visualDescriptor: p.visualDescriptor || p.name || 'Unknown character',
-            })),
-            plotScenes: (parsed.plotScenes || []).map((s: Partial<PlotScene>, i: number) => ({
-                actNumber: (s.actNumber || 1) as 1 | 2 | 3,
-                sceneNumber: s.sceneNumber || i + 1,
-                summary: s.summary || '',
-                visualCues: s.visualCues || [],
-                characterArcs: s.characterArcs || [],
-                pacing: (s.pacing as PlotScene['pacing']) || 'medium',
-                location: s.location,
-                timeOfDay: s.timeOfDay,
-                emotionalTone: s.emotionalTone,
-            })),
-            tokenMetadata: {
-                loglineTokens: estimateTokens(parsed.logline || ''),
-                charactersTokens: estimateTokens(parsed.characters || ''),
-                settingTokens: estimateTokens(parsed.setting || ''),
-                plotOutlineTokens: estimateTokens(parsed.plotOutline || ''),
-                totalTokens: 0,
-                lastUpdated: Date.now(),
-            },
-            genre,
-        };
-        
-        // Calculate total tokens
-        if (result.tokenMetadata) {
-            result.tokenMetadata.totalTokens = 
-                result.tokenMetadata.loglineTokens + 
-                result.tokenMetadata.charactersTokens + 
-                result.tokenMetadata.settingTokens + 
-                result.tokenMetadata.plotOutlineTokens;
-        }
-        
-        return { result, tokens };
-    };
-
-    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
-};
+}
 
 /**
  * Validates Story Bible for content uniqueness and quality.

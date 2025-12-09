@@ -15,6 +15,15 @@
 import { WorkflowProfile, WorkflowMapping, MappableData, WorkflowCategory } from '../types';
 
 /**
+ * Minimal interface for a workflow node during category detection.
+ * This captures the subset of properties we inspect.
+ */
+interface WorkflowNode {
+    type?: string;
+    [key: string]: unknown;
+}
+
+/**
  * Template for CCC (Character Consistency Control) workflow profiles
  * 
  * The CCC workflow uses VAE embeddings to maintain character consistency
@@ -220,29 +229,29 @@ export function createUpscalerProfile(
 export function detectWorkflowCategory(workflowJson: string): WorkflowCategory | null {
     try {
         const workflow = JSON.parse(workflowJson);
-        const nodes = workflow.nodes || Object.values(workflow.prompt || workflow);
+        const nodes: WorkflowNode[] = workflow.nodes || Object.values(workflow.prompt || workflow);
         
         // Check for CCC-specific nodes
-        const hasCCCNodes = nodes.some((node: any) => 
+        const hasCCCNodes = nodes.some((node: WorkflowNode) => 
             node.type?.includes('VAE') && 
-            nodes.some((n: any) => n.type === 'LoadImage')
+            nodes.some((n: WorkflowNode) => n.type === 'LoadImage')
         );
         
         // Check for upscaler nodes
-        const hasUpscalerNodes = nodes.some((node: any) =>
+        const hasUpscalerNodes = nodes.some((node: WorkflowNode) =>
             node.type?.includes('Upscale') || 
             node.type?.includes('ESRGAN') ||
             node.type?.includes('RealESRGAN')
         );
         
         // Check for video input nodes
-        const hasVideoInput = nodes.some((node: any) =>
+        const hasVideoInput = nodes.some((node: WorkflowNode) =>
             node.type?.includes('LoadVideo') ||
             node.type?.includes('VHS_Load')
         );
         
         // Check for scene builder patterns
-        const hasSceneBuilder = nodes.some((node: any) =>
+        const hasSceneBuilder = nodes.some((node: WorkflowNode) =>
             node.type?.includes('Composite') ||
             node.type?.includes('Blend') ||
             node.type?.includes('Layer')

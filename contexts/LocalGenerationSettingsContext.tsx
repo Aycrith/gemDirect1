@@ -61,7 +61,7 @@ const ZustandBackedProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Make settings globally available for services (backward compat)
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            (window as any).__localGenSettings = settings;
+            (window as Window & { __localGenSettings?: LocalGenerationSettings }).__localGenSettings = settings;
         }
     }, [settings]);
     
@@ -150,7 +150,7 @@ const LegacyProvider: React.FC<LegacyProviderProps> = ({ children, settings, set
     // Make settings globally available for services
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            (window as any).__localGenSettings = settings;
+            (window as Window & { __localGenSettings?: LocalGenerationSettings }).__localGenSettings = settings;
         }
     }, [settings]);
 

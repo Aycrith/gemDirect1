@@ -84,7 +84,7 @@ describe('payloadService', () => {
             expect(result.text).toBeTruthy();
             expect(result.json).toBeTruthy();
             expect(result.structured).toHaveLength(1);
-            expect(result.structured[0].type).toBe('keyframe');
+            expect((result.structured[0] as Record<string, unknown>).type).toBe('keyframe');
         });
 
         it('should include scene information in metadata', () => {
@@ -135,8 +135,9 @@ describe('payloadService', () => {
             const result = generateShotPayloads(shot, scene, bible, 'Fantasy style');
             
             expect(result.text).toContain('Hero draws sword');
-            expect(result.structured[0].type).toBe('shot');
-            expect(result.structured[0].shotId).toBe('shot-1');
+            const firstStructured = result.structured[0] as Record<string, unknown>;
+            expect(firstStructured.type).toBe('shot');
+            expect(firstStructured.shotId).toBe('shot-1');
         });
 
         it('should include enhancers in prompt', () => {

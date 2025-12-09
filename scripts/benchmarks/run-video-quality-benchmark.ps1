@@ -45,7 +45,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ScriptRoot = $PSScriptRoot
-$RepoRoot = (Resolve-Path (Join-Path $ScriptRoot "..")).Path
+# Repo root is two levels up from scripts/benchmarks (C:\...\repo\scripts\benchmarks -> C:\...\repo)
+$RepoRoot = (Resolve-Path (Join-Path $ScriptRoot ".." "..")).Path
 
 Write-Host "`n=== Video Quality Benchmark ===" -ForegroundColor Cyan
 Write-Host "Task A2: Workstream A - QA & Quality Signal Alignment" -ForegroundColor Gray

@@ -23,6 +23,7 @@ import type { QAVerdict } from '../types/narrativeScript';
 import ReplayViewerModal from './ReplayViewerModal';
 import type { ReplayUiResult, ReplayStatus } from '../services/replayUiService';
 import { replayFromManifestForUi } from '../services/replayUiService';
+import { findFirstExistingFile } from '../services/staticDataService';
 
 // ============================================================================
 // Types
@@ -582,22 +583,14 @@ const AbCompareDashboard: React.FC<AbCompareDashboardProps> = ({
         
         const findLatest = async (): Promise<void> => {
             setLatestReportState('loading');
-            for (const candidate of candidates) {
-                try {
-                    const response = await fetch(candidate, { method: 'HEAD' });
-                    if (response.ok) {
-                        if (!cancelled) {
-                            setLatestAbReportPath(candidate);
-                            setLatestReportState('idle');
-                        }
-                        return;
-                    }
-                } catch {
-                    // Continue searching other candidates
-                }
-            }
+            const foundPath = await findFirstExistingFile(candidates);
             if (!cancelled) {
-                setLatestReportState('not-found');
+                if (foundPath) {
+                    setLatestAbReportPath(foundPath);
+                    setLatestReportState('idle');
+                } else {
+                    setLatestReportState('not-found');
+                }
             }
         };
         

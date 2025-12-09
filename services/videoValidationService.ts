@@ -284,8 +284,8 @@ export async function getVideoMetadata(videoPath: string): Promise<VideoMetadata
 
       try {
         const data = JSON.parse(stdout);
-        const videoStream = data.streams?.find((s: any) => s.codec_type === 'video');
-        const audioStream = data.streams?.find((s: any) => s.codec_type === 'audio');
+        const videoStream = data.streams?.find((s: { codec_type?: string }) => s.codec_type === 'video');
+        const audioStream = data.streams?.find((s: { codec_type?: string }) => s.codec_type === 'audio');
         const format = data.format;
 
         if (!videoStream) {

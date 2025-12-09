@@ -411,7 +411,11 @@ const geminiActions: PlanExpansionActions = {
 /**
  * Creates a fallback-wrapped action that tries Gemini first, then falls back to local on failure.
  * This provides automatic resilience when Gemini API has issues.
+ * 
+ * Note: Uses `any` in the generic constraint intentionally - this is a generic wrapper that must
+ * work with arbitrary function signatures while preserving type inference for T.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const createFallbackAction = <T extends (...args: any[]) => Promise<any>>(
     geminiAction: T,
     localAction: T,

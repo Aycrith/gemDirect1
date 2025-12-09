@@ -150,8 +150,34 @@ async function runPowerShell(
  * Extract run directory from script output
  */
 function extractRunDir(stdout: string): string | undefined {
+    // Primary: explicit RunDir line
     const match = stdout.match(/RunDir:\s*(.+)/);
-    return match?.[1]?.trim();
+    if (match?.[1]) {
+        return match[1].trim();
+    }
+    
+    // Fallback: look for test-results/bookend-regression/run-* patterns in stdout
+    const fallbackMatch = stdout.match(/test-results[/\\]bookend-regression[/\\](run-[\w-]+)/);
+    if (fallbackMatch?.[1]) {
+        return path.join(PROJECT_ROOT, 'test-results', 'bookend-regression', fallbackMatch[1]);
+    }
+    
+    // Last resort: pick the most recent run-* directory from test-results/bookend-regression
+    try {
+        const baseDir = path.join(PROJECT_ROOT, 'test-results', 'bookend-regression');
+        if (!fs.existsSync(baseDir)) return undefined;
+        const dirs = fs.readdirSync(baseDir)
+            .filter(name => name.startsWith('run-'))
+            .map(name => {
+                const fullPath = path.join(baseDir, name);
+                const stat = fs.statSync(fullPath);
+                return { name, fullPath, mtime: stat.mtimeMs };
+            })
+            .sort((a, b) => b.mtime - a.mtime);
+        return dirs[0]?.fullPath;
+    } catch {
+        return undefined;
+    }
 }
 
 /**

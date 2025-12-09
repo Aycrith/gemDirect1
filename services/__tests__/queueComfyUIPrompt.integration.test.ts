@@ -58,8 +58,9 @@ describe('queueComfyUIPrompt integration', () => {
     });
 
     const response = await queueComfyUIPrompt(settings, payloads, 'data:image/jpeg;base64,IMG');
-    expect(response.prompt_id).toBe('queue-555');
-  expect(response.systemResources).toContain('GPU: RTX');
+    expect(response).not.toBeNull();
+    expect(response!.prompt_id).toBe('queue-555');
+  expect(response!.systemResources).toContain('GPU: RTX');
   expect(systemStatsCallCount).toBeGreaterThanOrEqual(2);
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/upload/image'), expect.anything());
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/prompt'), expect.anything());

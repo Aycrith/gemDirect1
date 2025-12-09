@@ -75,6 +75,7 @@ import UploadCloudIcon from './components/icons/UploadCloudIcon';
 import BookOpenIcon from './components/icons/BookOpenIcon';
 import ProgressBar from './components/ProgressBar';
 import GlobalProgressIndicator from './components/GlobalProgressIndicator';
+import GenerationQueuePanel from './components/GenerationQueuePanel';
 import ComfyUICallbackProvider from './components/ComfyUICallbackProvider.clean';
 import { clearProjectData } from './utils/database';
 
@@ -358,10 +359,13 @@ const AppContent: React.FC = () => {
                 sceneImageStatuses: newStoreSceneImageStatuses,
             });
             
-            // Run validation
+            // Run validation with migration phase awareness
+            // 'zustand-primary' = Zustand is source of truth, legacy syncs from it
+            // This downgrades "missing in old store" warnings to info level
             const result = validateStoreConsistency(oldSnapshot, newSnapshot, {
                 logToConsole: true,
                 trackMetrics: true,
+                migrationPhase: 'zustand-primary',
             });
             
             // Alert on critical inconsistencies (data loss scenarios)
@@ -1136,6 +1140,7 @@ const App: React.FC = () => (
                                                 <ComfyUICallbackProvider>
                                                     <HydrationGate>
                                                         <GlobalProgressIndicator />
+                                                        <GenerationQueuePanel position="bottom-right" />
                                                         <AppContent />
                                                     </HydrationGate>
                                                 </ComfyUICallbackProvider>

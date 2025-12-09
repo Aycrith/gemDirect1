@@ -29,55 +29,13 @@ import {
     WARNING_MARGIN,
     type Verdict
 } from '../services/visionThresholdConfig';
-
-// Types for vision QA results
-interface VisionQAScores {
-    overall: number;
-    focusStability: number;
-    artifactSeverity: number;
-    objectConsistency: number;
-    startFrameMatch?: number;
-    endFrameMatch?: number;
-    motionQuality?: number;
-    promptAdherence?: number;
-}
-
-interface AggregatedMetric {
-    mean: number;
-    median: number;
-    min: number;
-    max: number;
-    stdDev: number;
-    count: number;
-}
-
-interface AggregatedMetrics {
-    overall?: AggregatedMetric;
-    focusStability?: AggregatedMetric;
-    artifactSeverity?: AggregatedMetric;
-    objectConsistency?: AggregatedMetric;
-    runsSuccessful?: number;
-    runsTotal?: number;
-}
-
-interface FrameAnalysis {
-    hasBlackFrames: boolean;
-    hasHardFlicker: boolean;
-    frameArtifactScore: number;
-}
-
-interface VisionQASample {
-    scores: VisionQAScores;
-    aggregatedMetrics?: AggregatedMetrics | null;
-    frameAnalysis?: FrameAnalysis;
-    status: 'success' | 'error' | 'parse_error';
-    summary?: string;
-    timestamp?: string;
-}
-
-interface VisionQAResults {
-    [sampleId: string]: VisionQASample;
-}
+import {
+    fetchVisionQAResults,
+    fetchVisionThresholds,
+    fetchVisionQAHistory,
+    type VisionQAResults,
+    type VisionQASample,
+} from '../services/staticDataService';
 
 // Threshold interface (simplified for display)
 interface VisionThresholds {
@@ -264,88 +222,34 @@ const BookendVisionQAPanel: React.FC<BookendVisionQAPanelProps> = ({
         setLastBaseline(null);
         
         try {
-            // Try to load results from public directory
-            const resultsResponse = await fetch('/vision-qa-latest.json');
-            if (!resultsResponse.ok) {
+            // Try to load results from public directory using service layer
+            const resultsData = await fetchVisionQAResults();
+            if (!resultsData) {
                 // Not an error - just no results available
                 setResults(null);
                 setLoading(false);
                 return;
             }
             
-            const resultsData: VisionQAResults = await resultsResponse.json();
             setResults(resultsData);
             setLastUpdate(new Date());
             
             // Load thresholds from published JSON so UI matches gating config
-            try {
-                const thresholdsResponse = await fetch('/vision-thresholds.json');
-                if (thresholdsResponse.ok) {
-                    const thresholdsData = await thresholdsResponse.json();
-                    if (thresholdsData && thresholdsData.globalDefaults) {
-                        setThresholds({
-                            version: thresholdsData.version ?? 'unknown',
-                            globalDefaults: thresholdsData.globalDefaults,
-                            perSampleOverrides: thresholdsData.perSampleOverrides ?? undefined,
-                            thresholdStrategy: thresholdsData.thresholdStrategy ?? undefined,
-                        });
-                        setUsingFallbackThresholds(false);
-                    } else {
-                        // Fallback to sane defaults if structure is unexpected
-                        setThresholds({
-                            version: 'fallback',
-                            globalDefaults: {
-                                minOverall: 80,
-                                minFocusStability: 85,
-                                maxArtifactSeverity: 40,
-                                minObjectConsistency: 85,
-                            },
-                        });
-                        setUsingFallbackThresholds(true);
-                    }
-                } else {
-                    // If thresholds file not found, fall back to defaults
-                    setThresholds({
-                        version: 'fallback',
-                        globalDefaults: {
-                            minOverall: 80,
-                            minFocusStability: 85,
-                            maxArtifactSeverity: 40,
-                            minObjectConsistency: 85,
-                        },
-                    });
-                    setUsingFallbackThresholds(true);
-                }
-            } catch {
-                // On any fetch/parse error, fall back to defaults
-                setThresholds({
-                    version: 'fallback',
-                    globalDefaults: {
-                        minOverall: 80,
-                        minFocusStability: 85,
-                        maxArtifactSeverity: 40,
-                        minObjectConsistency: 85,
-                    },
-                });
-                setUsingFallbackThresholds(true);
-            }
+            const { thresholds: thresholdsData, isFallback } = await fetchVisionThresholds();
+            setThresholds(thresholdsData);
+            setUsingFallbackThresholds(isFallback);
             
             // Try to load history for baseline info
-            try {
-                const historyResponse = await fetch('/vision-qa-history.json');
-                if (historyResponse.ok) {
-                    const historyData = await historyResponse.json();
-                    if (historyData?.entries?.length > 0) {
-                        const lastEntry = historyData.entries[historyData.entries.length - 1];
-                        setLastBaseline({
-                            timestamp: lastEntry.timestamp,
-                            thresholdVersion: lastEntry.thresholdVersion ?? 'unknown',
-                            runId: lastEntry.runId ?? 'unknown',
-                        });
-                    }
+            const historyData = await fetchVisionQAHistory();
+            if (historyData?.entries?.length) {
+                const lastEntry = historyData.entries[historyData.entries.length - 1];
+                if (lastEntry) {
+                    setLastBaseline({
+                        timestamp: lastEntry.timestamp,
+                        thresholdVersion: lastEntry.thresholdVersion ?? 'unknown',
+                        runId: lastEntry.runId ?? 'unknown',
+                    });
                 }
-            } catch {
-                // History not available - not an error
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load vision QA results');

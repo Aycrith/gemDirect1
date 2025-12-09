@@ -121,7 +121,7 @@ interface ArtifactViewerProps {
 
 const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
     const { artifact, error, loading, refresh } = useArtifactMetadata();
-    const { historicalRuns, compareWithHistorical, dbInitialized } = useRunHistory();
+    const { historicalRuns, dbInitialized } = useRunHistory();
     const [showWarningsOnly, setShowWarningsOnly] = useState(false);
     const [_comparison, setComparison] = useState<any>(null);
     const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
@@ -165,14 +165,24 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
     }, [artifact]);
 
     // Calculate comparison with historical data when artifact or historicalRuns change
+    // Note: Currently disabled - ArtifactMetadata structure is incompatible with compareWithHistorical
+    // TODO: Create adapter to convert ArtifactMetadata to HistoricalRun format for comparison
     useEffect(() => {
-        if (dbInitialized && artifact && historicalRuns.length > 0 && compareWithHistorical) {
-            const comp = compareWithHistorical(artifact);
-            setComparison(comp);
-        } else {
-            setComparison(null);
-        }
-    }, [artifact, historicalRuns, dbInitialized, compareWithHistorical]);
+        // Comparison is disabled until ArtifactMetadata -> HistoricalRun adapter is implemented
+        // The ArtifactMetadata type lacks the 'metadata' property structure that compareWithHistorical expects
+        setComparison(null);
+    }, [artifact, historicalRuns, dbInitialized]);
+
+    // Transform HistoricalRun[] to ChartDataPoint[] for chart rendering
+    const chartDataPoints = useMemo(() => {
+        return historicalRuns.map((run) => ({
+            id: run.runId,
+            timestamp: run.timestamp,
+            duration: run.metadata?.totalDuration,
+            successRate: run.metadata?.successRate,
+            gpuUsage: run.metadata?.gpuPeakUsage,
+        }));
+    }, [historicalRuns]);
 
     const scenesToDisplay = useMemo(() => {
         if (!artifact) {
@@ -969,7 +979,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                         <div className="mb-6">
                             <div className="text-gray-500 text-[11px] uppercase tracking-wide mb-2">Duration Trend</div>
                             <TelemetryComparisonChart
-                                data={historicalRuns}
+                                data={chartDataPoints}
                                 metric="duration"
                             />
                         </div>
@@ -978,7 +988,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                         <div className="mb-6">
                             <div className="text-gray-500 text-[11px] uppercase tracking-wide mb-2">Success Rate Trend</div>
                             <TelemetryComparisonChart
-                                data={historicalRuns}
+                                data={chartDataPoints}
                                 metric="successRate"
                             />
                         </div>
@@ -998,7 +1008,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
                                         }
 
                                         const avgDuration =
-                                            sceneHistory.reduce((sum, s) => sum + (s.durationMs || 0), 0) / sceneHistory.length;
+                                            sceneHistory.reduce((sum, s) => sum + (s.duration || 0), 0) / sceneHistory.length;
                                         const currentDuration = (scene.Telemetry as { durationMs?: number } | undefined)?.durationMs;
                                         const delta = currentDuration ? currentDuration - avgDuration : null;
 

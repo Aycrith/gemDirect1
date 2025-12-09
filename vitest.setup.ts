@@ -1,6 +1,11 @@
 import { afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
+// P2.5: Enable fake-indexeddb for test mocking
+// This provides a proper IndexedDB implementation in the test environment,
+// avoiding "security context" errors when tests try to use IndexedDB.
+import 'fake-indexeddb/auto';
+
 // Ensure cleanup after each test
 afterEach(() => {
   cleanup();

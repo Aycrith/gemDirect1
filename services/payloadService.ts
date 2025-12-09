@@ -11,13 +11,41 @@ const logger = createLogger('Payload');
 
 /**
  * Payload shape expected by ComfyUI integration.
+ * 
+ * The `structured` field can contain different payload shapes depending on
+ * the generation type (keyframe, shot, video). Each payload type has its own
+ * structure but all are arrays of objects.
  */
 export interface ComfyUIPayloads {
     json: string;
     text: string;
-    structured: any[];
+    /** Structured payload data - shape varies by generation type */
+    structured: Record<string, unknown>[];
     negativePrompt: string;
 }
+
+/**
+ * Shot data in the interleaved timeline
+ */
+interface TimelineShotEntry {
+    type: 'shot';
+    shot_number: number;
+    description: string;
+    enhancers: Record<string, unknown>;
+}
+
+/**
+ * Transition data in the interleaved timeline
+ */
+interface TimelineTransitionEntry {
+    type: 'transition';
+    transition_type: string;
+}
+
+/**
+ * Union type for interleaved timeline entries
+ */
+type InterleavedTimelineEntry = TimelineShotEntry | TimelineTransitionEntry;
 
 /**
  * Validation result for payload shape checking.
@@ -127,6 +155,18 @@ const generateHumanReadablePromptForShot = (
 
 
 /**
+ * Structured payload item for video generation
+ * Index signature allows compatibility with ComfyUIPayloads.structured
+ */
+export interface VideoPayloadItem {
+    shotNumber: number;
+    text: string;
+    image: string | null;
+    transition: string | null;
+    [key: string]: unknown;  // Index signature for Record compatibility
+}
+
+/**
  * Generates a structured JSON payload and a human-readable text prompt from timeline data.
  * @param timeline The scene's timeline data.
  * @param directorsVision The overall visual style guide.
@@ -138,10 +178,10 @@ export const generateVideoRequestPayloads = (
     directorsVision: string,
     sceneSummary: string,
     generatedShotImages: Record<string, string>
-): { json: string; text: string; structured: any[]; negativePrompt: string } => {
+): { json: string; text: string; structured: VideoPayloadItem[]; negativePrompt: string } => {
 
-    const interleavedTimeline = timeline.shots.reduce((acc: any[], shot, index) => {
-        const shotData = {
+    const interleavedTimeline = timeline.shots.reduce<InterleavedTimelineEntry[]>((acc, shot, index) => {
+        const shotData: TimelineShotEntry = {
             type: 'shot',
             shot_number: index + 1,
             description: shot.description,
@@ -150,11 +190,14 @@ export const generateVideoRequestPayloads = (
         acc.push(shotData);
 
         if (index < timeline.transitions.length) {
-            const transitionData = {
-                type: 'transition',
-                transition_type: timeline.transitions[index]
-            };
-            acc.push(transitionData);
+            const transitionValue = timeline.transitions[index];
+            if (transitionValue !== undefined) {
+                const transitionData: TimelineTransitionEntry = {
+                    type: 'transition',
+                    transition_type: transitionValue
+                };
+                acc.push(transitionData);
+            }
         }
 
         return acc;
@@ -177,7 +220,7 @@ export const generateVideoRequestPayloads = (
     const json = JSON.stringify(payload, null, 2);
     
     let fullTextPrompt = `Create a cinematic sequence. The scene is about: "${sceneSummary}". The overall visual style should be "${directorsVision}".\n\n`;
-    const structuredPayload = timeline.shots.map((shot, index) => {
+    const structuredPayload: VideoPayloadItem[] = timeline.shots.map((shot, index) => {
         const text = generateHumanReadablePromptForShot(shot, timeline.shotEnhancers[shot.id] || {}, index);
         const image = generatedShotImages[shot.id] || null;
         const transition = index < timeline.transitions.length ? timeline.transitions[index] : null;
@@ -191,7 +234,7 @@ export const generateVideoRequestPayloads = (
             shotNumber: index + 1,
             text,
             image,
-            transition,
+            transition: transition ?? null,
         };
     });
     
@@ -216,19 +259,13 @@ const BOOKEND_END_PREFIX =
   'Show the CONCLUDING STATE after action completes. ' +
   'WIDE ESTABLISHING SHOT: EXACTLY ONE UNIFIED CINEMATIC SCENE...';
 
+/**
+ * Bookend payloads for start/end keyframe generation.
+ * Each bookend payload matches the ComfyUIPayloads structure.
+ */
 export interface BookendPayloads {
-  start: {
-    json: string;
-    text: string;
-    structured: Record<string, any>;
-    negativePrompt: string;
-  };
-  end: {
-    json: string;
-    text: string;
-    structured: Record<string, any>;
-    negativePrompt: string;
-  };
+  start: ComfyUIPayloads;
+  end: ComfyUIPayloads;
 }
 
 /**
@@ -276,11 +313,11 @@ ${baseContext}`;
         }
       }),
       text: startPrompt,
-      structured: { 
+      structured: [{ 
         prompt: startPrompt,
         type: 'bookend_start',
         moment: temporalContext.startMoment
-      },
+      }],
       negativePrompt
     },
     end: {
@@ -293,11 +330,11 @@ ${baseContext}`;
         }
       }),
       text: endPrompt,
-      structured: { 
+      structured: [{ 
         prompt: endPrompt,
         type: 'bookend_end',
         moment: temporalContext.endMoment
-      },
+      }],
       negativePrompt
     }
   };

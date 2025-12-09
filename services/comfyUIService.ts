@@ -1,4 +1,4 @@
-import { LocalGenerationSettings, LocalGenerationStatus, TimelineData, Shot, Scene, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight, StoryBible, VisualBible } from '../types';
+import { LocalGenerationSettings, LocalGenerationStatus, LocalGenerationOutput, TimelineData, Shot, Scene, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight, StoryBible, VisualBible } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 import { getVisualBible } from './visualBibleContext';
 import { generateCorrelationId, logCorrelation, networkTap } from '../utils/correlation';
@@ -48,6 +48,8 @@ import {
     validateCameraPathForGeneration,
     type CameraNodeOverrides,
 } from './cameraPathToComfyNodes';
+// Payload service for ComfyUI prompt payloads
+import { type ComfyUIPayloads } from './payloadService';
 // Phase 7: Video upscaling post-processing (imported when needed)
 // Generation Queue for serial VRAM-safe execution
 import { getGenerationQueue, createVideoTask, GenerationStatus } from './generationQueue';
@@ -66,6 +68,15 @@ import {
     type BuildManifestOptions,
 } from './generationManifestService';
 
+// Extend Window interface for debug flags and global settings
+declare global {
+    interface Window {
+        DEBUG_MANIFESTS?: boolean;
+        LOCAL_STORY_PROVIDER_URL?: string;
+        __localGenSettings?: LocalGenerationSettings;
+    }
+}
+
 // Interface for ComfyUI workflow nodes
 interface WorkflowNode {
   class_type?: string;
@@ -73,6 +84,47 @@ interface WorkflowNode {
   _meta?: { title?: string };
   label?: string;
 }
+
+/**
+ * ComfyUI system_stats GPU device structure
+ */
+interface ComfyUIDevice {
+  name: string;
+  type: string;
+  vram_total: number;
+  vram_free: number;
+}
+
+/**
+ * ComfyUI output file entry (images, videos, gifs)
+ */
+interface ComfyUIOutputEntry {
+  filename: string;
+  subfolder: string;
+  type?: string;
+}
+
+/**
+ * ComfyUI node output structure
+ */
+interface ComfyUINodeOutput {
+  videos?: ComfyUIOutputEntry[];
+  images?: ComfyUIOutputEntry[];
+  gifs?: ComfyUIOutputEntry[];
+}
+
+/**
+ * Type alias for state change callback used in generation functions.
+ * Receives partial status updates during generation.
+/**
+ * State change callback type for generation progress
+ */
+type StateChangeCallback = (state: Partial<LocalGenerationStatus>) => void;
+
+/**
+ * ComfyUI payloads for prompt injection - re-exported from payloadService for compatibility
+ */
+type ComfyUIPromptPayloads = ComfyUIPayloads;
 
 export const DEFAULT_NEGATIVE_PROMPT = 'blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, oversaturated, undersaturated, motion blur';
 
@@ -149,7 +201,7 @@ function emitManifest(manifest: GenerationManifest): string {
     });
     
     // Log full manifest at debug level
-    if (typeof window !== 'undefined' && (window as any).DEBUG_MANIFESTS) {
+    if (typeof window !== 'undefined' && window.DEBUG_MANIFESTS) {
         console.debug(`[Manifest] Full content:\n${json}`);
     }
     
@@ -420,7 +472,7 @@ export const checkSystemResources = async (url: string): Promise<string> => {
             return `Could not retrieve system stats (status: ${response.status}).`;
         }
         const stats = await response.json();
-        const gpuDevice = stats.devices?.find((d: any) => ['cuda', 'dml', 'mps', 'xpu', 'rocm'].includes(d.type.toLowerCase()));
+        const gpuDevice = stats.devices?.find((d: ComfyUIDevice) => ['cuda', 'dml', 'mps', 'xpu', 'rocm'].includes(d.type.toLowerCase()));
 
         if (gpuDevice) {
             const vramTotalGB = gpuDevice.vram_total / (1024 ** 3);
@@ -1047,7 +1099,7 @@ const ensureWorkflowMappingDefaults = (workflowNodes: Record<string, any>, exist
     const clipEntries = Object.entries(workflowNodes).filter(
         ([, node]) => node?.class_type === 'CLIPTextEncode' && node.inputs?.text !== undefined
     );
-    const findClipEntry = (predicate: (node: any) => boolean, excludeNodeId?: string) =>
+    const findClipEntry = (predicate: (node: WorkflowNode) => boolean, excludeNodeId?: string) =>
         clipEntries.find(([nodeId, node]) => nodeId !== excludeNodeId && predicate(node));
 
     const positiveEntry = findClipEntry(node => /positive/i.test(node._meta?.title || '')) || clipEntries[0];
@@ -1239,12 +1291,12 @@ export interface QueuePromptOptions {
 
 export const queueComfyUIPrompt = async (
     settings: LocalGenerationSettings,
-    payloads: { json: string; text: string; structured: any[]; negativePrompt: string },
+    payloads: ComfyUIPromptPayloads,
     base64Image: string,
     profileId: string = DEFAULT_WORKFLOW_PROFILE_ID,
     profileOverride?: WorkflowProfile,
     options?: QueuePromptOptions
-): Promise<any> => {
+): Promise<ComfyUIPromptResult | null> => {
     // ========================================================================
     // Entry Diagnostics - helps identify why requests never reach ComfyUI
     // ========================================================================
@@ -1445,7 +1497,7 @@ export const queueComfyUIPrompt = async (
                     method: 'POST',
                     body: formData,
                 }, 45000);
-                pushDiagnostic({ profileId, action: 'uploadImage:attempt', uploadFormFields: Array.from((formData as any).keys ? (formData as any).keys() : []), base64Length: base64Image.length });
+                pushDiagnostic({ profileId, action: 'uploadImage:attempt', uploadFormFields: ['image', 'overwrite'], base64Length: base64Image.length });
 
                 if (!uploadResponse.ok) throw new Error(`Failed to upload image to ComfyUI. Status: ${uploadResponse.status}`);
                 const uploadResult = await uploadResponse.json();
@@ -1803,7 +1855,7 @@ export const queueComfyUIPrompt = async (
  */
 export const queueComfyUIPromptValidated = async (
     settings: LocalGenerationSettings,
-    payloads: { json: string; text: string; structured: any[]; negativePrompt: string },
+    payloads: ComfyUIPromptPayloads,
     base64Image: string,
     profileId: string = DEFAULT_WORKFLOW_PROFILE_ID,
     profileOverride?: WorkflowProfile
@@ -1838,6 +1890,15 @@ export const queueComfyUIPromptValidated = async (
             profileId,
             profileOverride
         );
+
+        if (!result) {
+            return validationFailure([
+                createValidationError(
+                    ValidationErrorCodes.PROVIDER_CONNECTION_FAILED,
+                    'ComfyUI prompt queue returned null response'
+                )
+            ]);
+        }
 
         // Convert warnings from metadata to validation warnings (kept for future use)
         // Note: Currently unused but preserved for potential future integration
@@ -2025,10 +2086,10 @@ export const trackPromptExecution = (
                     
                     // FIXED: Iterate through node outputs like polling handler does
                     // ComfyUI executed event has outputs keyed by node ID, not flat videos/images
-                    const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [];
+                    const assetSources: Array<{ entries?: ComfyUIOutputEntry[]; resultType: LocalGenerationAsset['type'] }> = [];
                     
                     for (const [nodeId, nodeOutput] of Object.entries(outputs)) {
-                        const output = nodeOutput as any;
+                        const output = nodeOutput as ComfyUINodeOutput;
                         if (output.videos && Array.isArray(output.videos)) {
                             console.log(`[trackPromptExecution] Found ${output.videos.length} videos in node ${nodeId}`);
                             assetSources.push({ entries: output.videos, resultType: 'video' });
@@ -2044,7 +2105,7 @@ export const trackPromptExecution = (
                     }
 
                     const fetchAssetCollection = async (
-                        entries: any[],
+                        entries: ComfyUIOutputEntry[],
                         resultType: LocalGenerationAsset['type']
                     ): Promise<LocalGenerationAsset[]> => {
                         return Promise.all(
@@ -2328,7 +2389,7 @@ export const generateVideoFromShot = async (
 
         // Step 3: Queue prompt in ComfyUI
         reportProgress({ status: 'running', message: 'Queuing prompt in ComfyUI...' });
-        let promptResponse;
+        let promptResponse: ComfyUIPromptResult | null;
         try {
             promptResponse = await queuePrompt(
                 settings, 
@@ -2346,7 +2407,7 @@ export const generateVideoFromShot = async (
         }
         const resourceMessage =
             promptResponse && typeof promptResponse === 'object'
-                ? (promptResponse as { systemResources?: string }).systemResources
+                ? promptResponse.systemResources
                 : undefined;
 
         if (resourceMessage && resourceMessage.trim().length > 0) {
@@ -2372,13 +2433,13 @@ export const generateVideoFromShot = async (
             // ============================================================================
             // STATE TRACKING - Shared mutable state for WebSocket/Polling coordination
             // ============================================================================
-            let outputData: any = null;
+            let outputData: LocalGenerationOutput | null = null;
             let frameSequence: string[] = [];
             let isAssetDownloadComplete = false;  // Set true when WebSocket delivers valid data URL
             let gracePeriodStartTime: number | null = null;  // Timestamp when grace period started
             let isResolved = false;  // Prevent double resolution
             
-            const logPipeline = (tag: string, message: string, data?: any) => {
+            const logPipeline = (tag: string, message: string, data?: unknown) => {
                 if (DEBUG_VIDEO_PIPELINE) {
                     const timestamp = new Date().toISOString().slice(11, 23);
                     const dataStr = data ? ` | ${JSON.stringify(data)}` : '';
@@ -2482,10 +2543,10 @@ export const generateVideoFromShot = async (
                     
                     // Extract outputs from history
                     const outputs = promptHistory.outputs || {};
-                    const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [];
+                    const assetSources: Array<{ entries?: ComfyUIOutputEntry[]; resultType: LocalGenerationAsset['type'] }> = [];
                     
                     for (const [_nodeId, nodeOutput] of Object.entries(outputs)) {
-                        const output = nodeOutput as any;
+                        const output = nodeOutput as ComfyUINodeOutput;
                         if (output.images) assetSources.push({ entries: output.images, resultType: 'image' });
                         if (output.videos) assetSources.push({ entries: output.videos, resultType: 'video' });
                         if (output.gifs) assetSources.push({ entries: output.gifs, resultType: 'video' });
@@ -2609,8 +2670,8 @@ export const generateVideoFromShot = async (
                             duration: frameDuration,
                             filename: outputData.filename || `gemdirect1_shot_${shot.id}.mp4`,
                             frames: frameSequence.length > 0 ? frameSequence : undefined,
-                            workflowMeta: (promptResponse as any)?.workflowMeta,
-                            queueSnapshot: (promptResponse as any)?.queueSnapshot,
+                            workflowMeta: promptResponse?.workflowMeta,
+                            queueSnapshot: promptResponse?.queueSnapshot,
                             systemResources: resourceMessage,
                         });
                         return;
@@ -2656,8 +2717,8 @@ export const generateVideoFromShot = async (
                                     duration: frameDuration,
                                     filename: outputData.filename || `gemdirect1_shot_${shot.id}.mp4`,
                                     frames: frameSequence.length > 0 ? frameSequence : undefined,
-                                    workflowMeta: (promptResponse as any)?.workflowMeta,
-                                    queueSnapshot: (promptResponse as any)?.queueSnapshot,
+                                    workflowMeta: promptResponse?.workflowMeta,
+                                    queueSnapshot: promptResponse?.queueSnapshot,
                                     systemResources: resourceMessage,
                                 });
                                 return;
@@ -3326,11 +3387,11 @@ const waitForComfyCompletion = (
                     console.log(`[waitForComfyCompletion] 📊 Polling detected completion for ${promptId.slice(0,8)}... (WebSocket events: ${wsReceivedEvents ? 'received' : 'MISSING'})`);
                     
                     const outputs = promptHistory.outputs || {};
-                    const assetSources: Array<{ entries?: any[]; resultType: LocalGenerationAsset['type'] }> = [];
+                    const assetSources: Array<{ entries?: ComfyUIOutputEntry[]; resultType: LocalGenerationAsset['type'] }> = [];
                     
                     // Check all output nodes for images/videos
                     for (const [_nodeId, nodeOutput] of Object.entries(outputs)) {
-                        const output = nodeOutput as any;
+                        const output = nodeOutput as ComfyUINodeOutput;
                         if (output.images) assetSources.push({ entries: output.images, resultType: 'image' });
                         if (output.videos) assetSources.push({ entries: output.videos, resultType: 'video' });
                         if (output.gifs) assetSources.push({ entries: output.gifs, resultType: 'video' });
@@ -3406,7 +3467,7 @@ const waitForComfyCompletion = (
                         tryReject(new Error('Generation completed but no output files found.'), 'polling');
                     }
                 } else if (status?.status_str === 'error') {
-                    const rawError = status.messages?.find((m: any) => m[0] === 'execution_error')?.[1]?.exception_message || 'ComfyUI generation failed.';
+                    const rawError = status.messages?.find((m: [string, { exception_message?: string }]) => m[0] === 'execution_error')?.[1]?.exception_message || 'ComfyUI generation failed.';
                     const userFriendlyError = parseComfyUIError(rawError);
                     tryReject(new Error(userFriendlyError), 'polling');
                 }
@@ -3599,7 +3660,7 @@ export async function generateSceneBookendsLocally(
     directorsVision: string,
     negativePrompt: string,
     _logApiCall: ApiLogCallback,
-    onStateChange: (state: any) => void
+    onStateChange: StateChangeCallback
 ): Promise<{ start: string; end: string }> {
     console.log(`[Bookend Generation] Starting dual keyframe generation for scene ${scene.id}`);
     
@@ -3627,7 +3688,7 @@ export async function generateSceneBookendsLocally(
     
     const startResponse = await queueComfyUIPrompt(
         settings,
-        payloads.start as any,
+        payloads.start,
         '', // No input image for T2I
         settings.imageWorkflowProfile || 'wan-t2i'
     );
@@ -3658,7 +3719,7 @@ export async function generateSceneBookendsLocally(
     
     const endResponse = await queueComfyUIPrompt(
         settings,
-        payloads.end as any,
+        payloads.end,
         '', // No input image for T2I
         settings.imageWorkflowProfile || 'wan-t2i'
     );
@@ -3710,7 +3771,7 @@ export async function generateSingleBookendLocally(
     which: 'start' | 'end',
     existingBookend: { start?: string; end?: string } | null,
     _logApiCall: ApiLogCallback,
-    onStateChange: (state: any) => void
+    onStateChange: StateChangeCallback
 ): Promise<{ start: string; end: string }> {
     console.log(`[Bookend Generation] Starting ${which.toUpperCase()} keyframe generation for scene ${scene.id}`);
     
@@ -3739,7 +3800,7 @@ export async function generateSingleBookendLocally(
     const payload = which === 'start' ? payloads.start : payloads.end;
     const response = await queueComfyUIPrompt(
         settings,
-        payload as any,
+        payload,
         '', // No input image for T2I
         settings.imageWorkflowProfile || 'wan-t2i'
     );
@@ -3794,7 +3855,7 @@ export async function generateVideoFromBookends(
     bookends: { start: string; end: string },
     directorsVision: string,
     _logApiCall: ApiLogCallback,
-    onStateChange: (state: any) => void
+    onStateChange: StateChangeCallback
 ): Promise<string> {
     console.log(`[Bookend Video] Starting video generation with dual keyframes for scene ${scene.id}`);
     
@@ -3864,7 +3925,7 @@ export async function generateVideoFromBookendsSequential(
     bookends: { start: string; end: string },
     directorsVision: string,
     _logApiCall: ApiLogCallback,
-    onStateChange: (state: any) => void
+    onStateChange: StateChangeCallback
 ): Promise<string> {
     console.log(`[Sequential Bookend] Starting sequential generation for scene ${scene.id}`);
     
@@ -4097,7 +4158,7 @@ export async function generateVideoFromBookendsNative(
     bookends: { start: string; end: string },
     directorsVision: string,
     _logApiCall: ApiLogCallback,
-    onStateChange: (state: any) => void,
+    onStateChange: StateChangeCallback,
     profileId: string = 'wan-fun-inpaint'
 ): Promise<string> {
     console.log(`[Native Bookend] Starting native dual-keyframe generation for scene ${scene.id} using ${profileId}`);
@@ -4216,11 +4277,11 @@ export async function generateVideoFromBookendsNative(
  */
 export const queueComfyUIPromptDualImage = async (
     settings: LocalGenerationSettings,
-    payloads: { json: string; text: string; structured: any[]; negativePrompt: string },
+    payloads: ComfyUIPromptPayloads,
     images: { start: string; end: string },
     profileId: string = 'wan-flf2v',
     temporalContext?: { startMoment?: string; endMoment?: string; motionDescription?: string }
-): Promise<any> => {
+): Promise<ComfyUIPromptResult | null> => {
     console.log(`[${profileId}] Queueing dual-image workflow with start and end keyframes`);
     
     // ========================================================================
@@ -4683,7 +4744,7 @@ export async function generateVideoFromBookendsSmart(
     bookends: { start: string; end: string },
     directorsVision: string,
     logApiCall: ApiLogCallback,
-    onStateChange: (state: any) => void
+    onStateChange: StateChangeCallback
 ): Promise<string> {
     // Check for native dual-keyframe support
     const nativeProfiles = ['wan-flf2v', 'wan-fun-inpaint'];
@@ -4856,15 +4917,21 @@ export const fetchLatestWorkflowHistory = async (baseUrl: string): Promise<strin
         throw new Error(`Server responded with status ${response.status}`);
     }
     
-    const history = await response.json() as Record<string, any>;
+    // ComfyUI history response structure
+    interface HistoryEntry {
+        prompt?: [number, string, Record<string, unknown>];
+        outputs?: Record<string, unknown>;
+    }
+    
+    const history = await response.json() as Record<string, HistoryEntry>;
     const historyEntries = Object.values(history);
     
     if (historyEntries.length === 0) {
         return null;
     }
     
-    const latestEntry = historyEntries[historyEntries.length - 1] as any;
-    return JSON.stringify(latestEntry.prompt?.[2], null, 2) ?? null;
+    const latestEntry = historyEntries[historyEntries.length - 1];
+    return latestEntry?.prompt?.[2] ? JSON.stringify(latestEntry.prompt[2], null, 2) : null;
 };
 
 /**
@@ -5019,7 +5086,7 @@ export async function generateVideoFromBookendsWithPreflight(
     bookends: { start: string; end: string },
     directorsVision: string,
     logApiCall: ApiLogCallback,
-    onStateChange: (state: any) => void,
+    onStateChange: StateChangeCallback,
     profileId: string = 'wan-fun-inpaint',
     options: PreflightVideoGenerationOptions = {}
 ): Promise<string> {

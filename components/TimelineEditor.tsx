@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
-import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible } from '../types';
+import { Scene, Shot, TimelineData, CreativeEnhancers, BatchShotTask, ShotEnhancers, Suggestion, LocalGenerationSettings, LocalGenerationStatus, DetailedShotResult, StoryBible, VisualBible } from '../types';
 import CreativeControls from './CreativeControls';
 import TransitionSelector from './TransitionSelector';
 // P2 Performance: Lazy load CoDirector (only shown when user requests suggestions)
@@ -10,7 +10,7 @@ import SparklesIcon from './icons/SparklesIcon';
 import ImageIcon from './icons/ImageIcon';
 import StatusChip from './StatusChip';
 import ShotCardSkeleton from './ShotCardSkeleton';
-import { generateVideoRequestPayloads } from '../services/payloadService';
+import { generateVideoRequestPayloads, VideoPayloadItem } from '../services/payloadService';
 import { generateTimelineVideos, stripDataUrlPrefix, validateWorkflowAndMappings, generateVideoFromBookendsNative, generateSceneBookendsLocally, generateSingleBookendLocally, checkNodeDependencies } from '../services/comfyUIService';
 import { generateSceneVideoChained } from '../services/videoGenerationService';
 import { generateSceneTransitionContext } from '../services/sceneTransitionService';
@@ -191,7 +191,7 @@ const TimelineItem: React.FC<{
     onGenerateImage: (shotId: string) => void;
     onLinkToVisualBible: (shotId: string, imageData: string) => void;
     isDragging: boolean;
-    visualBible: any;
+    visualBible: VisualBible | null;
 }> = ({ shot, index, enhancers, imageUrl, isGeneratingImage, onDescriptionChange, onEnhancersChange, onDeleteShot, onGenerateImage, onLinkToVisualBible, isDragging, visualBible }) => {
     const [isControlsVisible, setIsControlsVisible] = useState(false);
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
@@ -374,7 +374,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [coDirectorResult, setCoDirectorResult] = useState<any | null>(null);
     const [isCoDirectorLoading, setIsCoDirectorLoading] = useState(false);
     const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
-    const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string; structured: any[]; negativePrompt: string } | null>(null);
+    const [promptsToExport, setPromptsToExport] = useState<{ json: string; text: string; structured: VideoPayloadItem[]; negativePrompt: string } | null>(null);
     const [isGeneratingShotImage, setIsGeneratingShotImage] = useState<Record<string, boolean>>({});
     const [isSummaryUpdating, setIsSummaryUpdating] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
@@ -1051,7 +1051,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             
             const timelineSummary = timeline.shots.map((shot, index) => {
                 const enhancers = timeline.shotEnhancers[shot.id] || {};
-                const enhancerKeys = Object.keys(enhancers).filter(k => (enhancers as any)[k]?.length > 0);
+                const enhancerKeys = Object.keys(enhancers).filter(k => {
+                    const value = enhancers[k as keyof typeof enhancers];
+                    return Array.isArray(value) && value.length > 0;
+                });
                 const enhancerString = enhancerKeys.length > 0 ? ` (Style: ${enhancerKeys.join(', ')})` : '';
                 return `Shot ${index + 1} (ID: ${shot.id}): ${shot.description}${enhancerString}`;
             }).join('\n');
