@@ -73,7 +73,12 @@ export const loadProjectFromFile = (file: File): Promise<ProjectSaveState> => {
                 if (typeof result !== 'string') {
                     return reject(new Error('File content is not a string.'));
                 }
-                const projectData: any = JSON.parse(result);
+                const projectData = JSON.parse(result) as {
+                    version?: number;
+                    continuityData?: Record<string, { videoFileBase64?: string; videoFileType?: string } & Record<string, unknown>>;
+                    scenesToReview?: string[];
+                    [key: string]: unknown;
+                };
                 
                 if (!projectData.version) {
                     return reject(new Error(
@@ -90,6 +95,7 @@ export const loadProjectFromFile = (file: File): Promise<ProjectSaveState> => {
                 
                 for (const sceneId in loadedContinuityData) {
                     const data = loadedContinuityData[sceneId];
+                    if (!data) continue;
                     const { videoFileBase64, videoFileType, ...rest } = data;
                     
                     let videoFile: File | undefined;
@@ -106,19 +112,23 @@ export const loadProjectFromFile = (file: File): Promise<ProjectSaveState> => {
                     }
 
                     rehydratedContinuityData[sceneId] = {
-                        ...rest,
+                        status: 'idle',
+                        ...(rest as any),
                         videoFile,
                         videoSrc,
-                    };
+                    } as SceneContinuityData;
                 }
-                projectData.continuityData = rehydratedContinuityData;
                 
-                // Convert scenesToReview back to a Set for in-app use
-                if (Array.isArray(projectData.scenesToReview)) {
-                    projectData.scenesToReview = new Set(projectData.scenesToReview);
-                }
+                // Construct final state
+                const finalState = {
+                    ...projectData,
+                    continuityData: rehydratedContinuityData,
+                    scenesToReview: Array.isArray(projectData.scenesToReview) 
+                        ? new Set(projectData.scenesToReview) 
+                        : new Set()
+                } as unknown as ProjectSaveState;
 
-                resolve(projectData as ProjectSaveState);
+                resolve(finalState);
             } catch (e) {
                 reject(new Error(`Failed to parse project file: ${e instanceof Error ? e.message : 'Unknown error'}`));
             }

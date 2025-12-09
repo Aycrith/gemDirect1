@@ -9,6 +9,7 @@
  */
 
 import { ValidationResult, validationSuccess, validationFailure, createValidationError, createValidationWarning } from '../types/validation';
+import { Migration, MigrationState, MigrationResult } from '../types/migrations';
 
 /**
  * Current project schema version
@@ -16,37 +17,6 @@ import { ValidationResult, validationSuccess, validationFailure, createValidatio
  */
 export const CURRENT_PROJECT_VERSION = 2;
 
-/**
- * Migration definition
- */
-export interface Migration {
-    /** Target version after migration */
-    version: number;
-    /** Human-readable name */
-    name: string;
-    /** Description of changes */
-    description: string;
-    /** Migrate from previous version to this version */
-    up: (state: any) => any;
-    /** Rollback from this version to previous version */
-    down: (state: any) => any;
-}
-
-/**
- * Migration result with details
- */
-export interface MigrationResult {
-    /** Original version */
-    fromVersion: number;
-    /** Final version */
-    toVersion: number;
-    /** Migrations applied */
-    migrationsApplied: string[];
-    /** Warnings during migration */
-    warnings: string[];
-    /** Migrated state */
-    state: any;
-}
 
 /**
  * Registered migrations (ordered by version)
@@ -59,7 +29,7 @@ const migrations: Migration[] = [
         version: 2,
         name: 'add-feature-flags-and-enhanced-profiles',
         description: 'Adds featureFlags to LocalGenerationSettings, extends WorkflowProfile with category/chainPosition, adds character tracking fields to VisualBibleCharacter',
-        up: (state: any) => {
+        up: (state: MigrationState) => {
             const migrated = { ...state, version: 2 };
             
             // Initialize featureFlags if not present
@@ -75,12 +45,13 @@ const migrations: Migration[] = [
                     providerHealthPolling: false,
                     promptQualityGate: false,
                     characterAppearanceTracking: false,
-                };
+                } as any;
             }
             
             // Remove legacy bookendKeyframes from featureFlags if present (migrated to keyframeMode)
-            if (migrated.localGenSettings?.featureFlags?.bookendKeyframes !== undefined) {
-                delete migrated.localGenSettings.featureFlags.bookendKeyframes;
+            const flags = migrated.localGenSettings?.featureFlags as Record<string, unknown> | undefined;
+            if (flags?.bookendKeyframes !== undefined) {
+                delete flags.bookendKeyframes;
             }
             
             // Add healthCheckIntervalMs default if not present
@@ -91,19 +62,18 @@ const migrations: Migration[] = [
             // Add category to existing workflow profiles
             if (migrated.localGenSettings?.workflowProfiles) {
                 for (const [profileId, profile] of Object.entries(migrated.localGenSettings.workflowProfiles)) {
-                    const p = profile as any;
-                    if (!p.category) {
+                    if (!profile.category) {
                         // Infer category from profile ID
                         if (profileId.includes('t2i') || profileId.includes('text-to-image')) {
-                            p.category = 'keyframe';
+                            profile.category = 'keyframe';
                         } else if (profileId.includes('i2v') || profileId.includes('video')) {
-                            p.category = 'video';
+                            profile.category = 'video';
                         } else if (profileId.includes('upscale')) {
-                            p.category = 'upscaler';
+                            profile.category = 'upscaler';
                         } else if (profileId.includes('character') || profileId.includes('ccc')) {
-                            p.category = 'character';
+                            profile.category = 'character';
                         } else {
-                            p.category = 'video'; // Default
+                            profile.category = 'video'; // Default
                         }
                     }
                 }
@@ -141,7 +111,7 @@ const migrations: Migration[] = [
             
             // Add new pipeline flags to existing featureFlags
             if (migrated.localGenSettings?.featureFlags) {
-                const flags = migrated.localGenSettings.featureFlags;
+                const flags = migrated.localGenSettings.featureFlags as any;
                 if (typeof flags.sceneListContextV2 === 'undefined') flags.sceneListContextV2 = false;
                 if (typeof flags.actContextV2 === 'undefined') flags.actContextV2 = false;
                 if (typeof flags.keyframePromptPipeline === 'undefined') flags.keyframePromptPipeline = false;
@@ -153,7 +123,7 @@ const migrations: Migration[] = [
             
             return migrated;
         },
-        down: (state: any) => {
+        down: (state: MigrationState) => {
             const migrated = { ...state, version: 1 };
             
             // Remove featureFlags
@@ -201,7 +171,7 @@ const migrations: Migration[] = [
             
             // Remove new pipeline flags
             if (migrated.localGenSettings?.featureFlags) {
-                const flags = migrated.localGenSettings.featureFlags;
+                const flags = migrated.localGenSettings.featureFlags as any;
                 delete flags.sceneListContextV2;
                 delete flags.actContextV2;
                 delete flags.keyframePromptPipeline;
@@ -249,7 +219,7 @@ export function getMigrationsToApply(fromVersion: number, toVersion: number): Mi
  * @returns Validation result with migrated state
  */
 export function migrateProject(
-    state: any,
+    state: MigrationState,
     targetVersion: number = CURRENT_PROJECT_VERSION
 ): ValidationResult<MigrationResult> {
     const fromVersion = state.version ?? 1;
@@ -332,7 +302,7 @@ export function migrateProject(
  * @param state - Project state to check
  * @returns True if migration is needed
  */
-export function needsMigration(state: any): boolean {
+export function needsMigration(state: MigrationState): boolean {
     const version = state.version ?? 1;
     return version !== CURRENT_PROJECT_VERSION;
 }
@@ -343,7 +313,7 @@ export function needsMigration(state: any): boolean {
  * @param state - Project state
  * @returns Version info object
  */
-export function getVersionInfo(state: any): {
+export function getVersionInfo(state: MigrationState): {
     currentVersion: number;
     latestVersion: number;
     needsMigration: boolean;
@@ -369,7 +339,7 @@ export function getVersionInfo(state: any): {
  * @param migratedState - State after migration
  * @returns State with unknown fields preserved
  */
-export function preserveUnknownFields(state: any, migratedState: any): any {
+export function preserveUnknownFields<T extends MigrationState>(state: T, migratedState: T): T {
     const result = { ...migratedState };
     
     // Recursively copy unknown fields from original state
@@ -401,7 +371,7 @@ export function preserveUnknownFields(state: any, migratedState: any): any {
  * @param state - Migrated project state
  * @returns Validation result
  */
-export function validateMigratedProject(state: any): ValidationResult {
+export function validateMigratedProject(state: MigrationState): ValidationResult {
     const errors = [];
     const warnings = [];
     
@@ -417,6 +387,7 @@ export function validateMigratedProject(state: any): ValidationResult {
         // Validate each scene
         for (let i = 0; i < state.scenes.length; i++) {
             const scene = state.scenes[i];
+            if (!scene) continue;
             if (!scene.id) {
                 warnings.push(createValidationWarning('SCENE_MISSING_ID', `Scene at index ${i} missing id`));
             }

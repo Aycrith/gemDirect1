@@ -39,11 +39,11 @@ describe('migrations', () => {
         });
 
         it('should return true for projects without version', () => {
-            expect(needsMigration({})).toBe(true);
+            expect(needsMigration({} as any)).toBe(true);
         });
 
         it('should return false for current version projects', () => {
-            expect(needsMigration({ version: CURRENT_PROJECT_VERSION })).toBe(false);
+            expect(needsMigration({ version: CURRENT_PROJECT_VERSION } as any)).toBe(false);
         });
     });
 
@@ -77,7 +77,7 @@ describe('migrations', () => {
 
     describe('getVersionInfo', () => {
         it('should return correct info for v1 project', () => {
-            const info = getVersionInfo({ version: 1 });
+            const info = getVersionInfo({ version: 1 } as any);
             
             expect(info.currentVersion).toBe(1);
             expect(info.latestVersion).toBe(CURRENT_PROJECT_VERSION);
@@ -86,7 +86,7 @@ describe('migrations', () => {
         });
 
         it('should return correct info for current version project', () => {
-            const info = getVersionInfo({ version: CURRENT_PROJECT_VERSION });
+            const info = getVersionInfo({ version: CURRENT_PROJECT_VERSION } as any);
             
             expect(info.currentVersion).toBe(CURRENT_PROJECT_VERSION);
             expect(info.needsMigration).toBe(false);
@@ -94,7 +94,7 @@ describe('migrations', () => {
         });
 
         it('should treat missing version as v1', () => {
-            const info = getVersionInfo({});
+            const info = getVersionInfo({} as any);
             
             expect(info.currentVersion).toBe(1);
             expect(info.needsMigration).toBe(true);
@@ -146,7 +146,7 @@ describe('migrations', () => {
             const result = migrateProject(v1Project, 2);
             
             expect(result.success).toBe(true);
-            const migrated = result.data?.state;
+            const migrated = result.data?.state as any;
             expect(migrated.localGenSettings.featureFlags).toBeDefined();
             expect(migrated.localGenSettings.featureFlags.promptQualityGate).toBe(false);
         });
@@ -154,14 +154,14 @@ describe('migrations', () => {
         it('should add healthCheckIntervalMs during migration', () => {
             const result = migrateProject(v1Project, 2);
             
-            const migrated = result.data?.state;
+            const migrated = result.data?.state as any;
             expect(migrated.localGenSettings.healthCheckIntervalMs).toBe(30000);
         });
 
         it('should add category to workflow profiles', () => {
             const result = migrateProject(v1Project, 2);
             
-            const migrated = result.data?.state;
+            const migrated = result.data?.state as any;
             expect(migrated.localGenSettings.workflowProfiles['wan-t2i'].category).toBe('keyframe');
             expect(migrated.localGenSettings.workflowProfiles['wan-i2v'].category).toBe('video');
         });
@@ -169,28 +169,28 @@ describe('migrations', () => {
         it('should add autoGenerateSuggestions to continuityData', () => {
             const result = migrateProject(v1Project, 2);
             
-            const migrated = result.data?.state;
+            const migrated = result.data?.state as any;
             expect(migrated.continuityData['scene-1'].autoGenerateSuggestions).toBe(false);
         });
 
         it('should add keyframeMode to scenes', () => {
             const result = migrateProject(v1Project, 2);
             
-            const migrated = result.data?.state;
+            const migrated = result.data?.state as any;
             expect(migrated.scenes[0].keyframeMode).toBe('single');
         });
 
         it('should set version to target version', () => {
             const result = migrateProject(v1Project, 2);
             
-            const migrated = result.data?.state;
+            const migrated = result.data?.state as any;
             expect(migrated.version).toBe(2);
         });
 
         it('should preserve existing data during migration', () => {
             const result = migrateProject(v1Project, 2);
             
-            const migrated = result.data?.state;
+            const migrated = result.data?.state as any;
             expect(migrated.scenes[0].id).toBe('scene-1');
             expect(migrated.localGenSettings.comfyUIUrl).toBe('http://localhost:8188');
         });
@@ -201,7 +201,7 @@ describe('migrations', () => {
             const original = { version: 1, customField: 'value', anotherCustom: 123 };
             const migrated = { version: 2 };
             
-            const result = preserveUnknownFields(original, migrated);
+            const result = preserveUnknownFields(original as any, migrated as any) as any;
             
             expect(result.customField).toBe('value');
             expect(result.anotherCustom).toBe(123);
@@ -216,7 +216,7 @@ describe('migrations', () => {
                 settings: { knownField: 'a-updated' },
             };
             
-            const result = preserveUnknownFields(original, migrated);
+            const result = preserveUnknownFields(original as any, migrated as any) as any;
             
             expect(result.settings.knownField).toBe('a-updated');
             expect(result.settings.unknownField).toBe('b');
@@ -230,7 +230,7 @@ describe('migrations', () => {
                 deep: { nested: {} },
             };
             
-            const result = preserveUnknownFields(original, migrated);
+            const result = preserveUnknownFields(original as any, migrated as any) as any;
             
             expect(result.deep.nested.unknown).toBe('value');
         });
@@ -240,7 +240,7 @@ describe('migrations', () => {
             const original: any = { l1: { l2: { l3: { l4: { l5: { l6: { deep: 'value' } } } } } } };
             const migrated: any = { l1: { l2: { l3: { l4: { l5: { l6: {} } } } } } };
             
-            const result = preserveUnknownFields(original, migrated);
+            const result = preserveUnknownFields(original, migrated) as any;
             
             // Deep value should not be copied due to depth limit
             expect(result.l1.l2.l3.l4.l5.l6.deep).toBeUndefined();
@@ -260,7 +260,7 @@ describe('migrations', () => {
                 },
             };
             
-            const result = validateMigratedProject(project);
+            const result = validateMigratedProject(project as any);
             expect(result.success).toBe(true);
         });
 
@@ -269,7 +269,7 @@ describe('migrations', () => {
                 scenes: [],
             };
             
-            const result = validateMigratedProject(project);
+            const result = validateMigratedProject(project as any);
             expect(result.success).toBe(false);
             expect(result.errors?.some(e => e.code === 'MISSING_VERSION')).toBe(true);
         });
@@ -280,7 +280,7 @@ describe('migrations', () => {
                 scenes: 'not an array',
             };
             
-            const result = validateMigratedProject(project);
+            const result = validateMigratedProject(project as any);
             expect(result.success).toBe(false);
             expect(result.errors?.some(e => e.code === 'INVALID_SCENES')).toBe(true);
         });
@@ -291,7 +291,7 @@ describe('migrations', () => {
                 scenes: [{ timeline: { shots: [] } }],
             };
             
-            const result = validateMigratedProject(project);
+            const result = validateMigratedProject(project as any);
             // Note: Current implementation doesn't include warnings in success result
             // This test validates the success case - warnings are not included in the response
             expect(result.success).toBe(true);
@@ -303,7 +303,7 @@ describe('migrations', () => {
                 scenes: [{ id: 'scene-1' }],
             };
             
-            const result = validateMigratedProject(project);
+            const result = validateMigratedProject(project as any);
             // Note: Current implementation doesn't include warnings in success result
             expect(result.success).toBe(true);
         });
@@ -317,7 +317,7 @@ describe('migrations', () => {
                 },
             };
             
-            const result = validateMigratedProject(project);
+            const result = validateMigratedProject(project as any);
             // Note: Current implementation doesn't include warnings in success result
             // Validation passes since there are no errors
             expect(result.success).toBe(true);
