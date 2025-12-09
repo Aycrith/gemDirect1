@@ -1,14 +1,26 @@
 import React from 'react';
+import { StoryToVideoResult } from '../services/storyToVideoPipeline';
 
 type Props = {
-    onOpenInDirectorMode?: (result?: any, prompt?: string) => void;
+    onOpenInDirectorMode?: (result: StoryToVideoResult, prompt?: string) => void;
 };
 
 const PipelineGenerator: React.FC<Props> = ({ onOpenInDirectorMode }) => {
     const handleOpen = () => {
         if (onOpenInDirectorMode) {
             // Provide a minimal stub result so callers can import it as a quick-project
-            const stubResult = { title: 'Quick Generate (stub)', scenes: [] };
+            const stubResult: StoryToVideoResult = {
+                storyId: 'stub-story',
+                storyBible: {
+                    logline: 'Stub logline',
+                    characters: 'Stub characters',
+                    setting: 'Stub setting',
+                    plotOutline: 'Stub plot'
+                },
+                scenes: [],
+                totalDuration: 0,
+                status: 'complete'
+            };
             onOpenInDirectorMode(stubResult, 'quick generate (stub)');
         }
     };

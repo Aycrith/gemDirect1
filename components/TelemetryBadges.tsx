@@ -83,7 +83,7 @@ const TelemetryBadges: React.FC<TelemetryBadgesProps> = ({
   }
 
   // Helper function to determine status color
-  const getStatusColor = (field: string, value: any): string => {
+  const getStatusColor = (field: string, value: unknown): string => {
     // Errors: red
     if (value === 'error' || value === 'failed' || value === false) {
       return 'bg-red-900/20 text-red-300 border-red-700/50';

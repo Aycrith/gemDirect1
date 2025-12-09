@@ -6,11 +6,20 @@
  * same observable behavior without executing PowerShell.
  */
 
+export interface TelemetryGpuStats {
+  FallbackSource?: string;
+  [key: string]: unknown;
+}
+
+export interface TelemetrySystemStats {
+  [key: string]: unknown;
+}
+
 export function generateFallbackNotes(
-  systemBefore: any,
-  systemAfter: any,
-  gpuBefore: any,
-  gpuAfter: any,
+  systemBefore: TelemetrySystemStats | null | undefined,
+  systemAfter: TelemetrySystemStats | null | undefined,
+  gpuBefore: TelemetryGpuStats | null | undefined,
+  gpuAfter: TelemetryGpuStats | null | undefined,
   frameStabilityWarnings?: string[] | null,
   forcedCopyNote?: string | null,
   doneMarkerWarnings?: string[] | null
