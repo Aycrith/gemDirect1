@@ -122,7 +122,9 @@ const AppContent: React.FC = () => {
     const [refinedSceneIds, setRefinedSceneIds] = useState(new Set<string>());
     const [continuityModal, setContinuityModal] = useState<{ sceneId: string, lastFrame: string } | null>(null);
     const [isExtending, setIsExtending] = useState(false);
-    const [_hasSeenWelcome, setHasSeenWelcome] = usePersistentState('hasSeenWelcome', false);
+    const [_hasSeenWelcome, setHasSeenWelcome] = usePersistentState('hasSeenWelcome', 
+        import.meta.env.VITE_PLAYWRIGHT_SKIP_WELCOME === 'true'
+    );
     const [mode, setMode] = usePersistentState<'quick' | 'director'>('mode', 'director');
     const [isVisualBibleOpen, setIsVisualBibleOpen] = useState(false);
     const [isNewProjectConfirmOpen, setIsNewProjectConfirmOpen] = useState(false);
@@ -698,6 +700,11 @@ const AppContent: React.FC = () => {
     }, [scenes, activeSceneId, workflowStage, setActiveSceneId]);
 
     const activeScene = scenes.find(s => s.id === activeSceneId);
+
+    // Debug workflow stage
+    useEffect(() => {
+        console.log('[App] Current workflow stage:', workflowStage);
+    }, [workflowStage]);
 
     const renderCurrentStage = () => {
         switch (workflowStage) {

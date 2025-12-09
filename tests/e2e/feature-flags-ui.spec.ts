@@ -61,7 +61,7 @@ test.describe('Feature Flags UI', () => {
         
         // Verify all category headers are present
         await expect(page.locator('text=Quality Enhancement')).toBeVisible();
-        await expect(page.locator('text=Workflow').first()).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Workflow' })).toBeVisible();
         await expect(page.locator('text=Continuity').first()).toBeVisible();
         await expect(page.locator('text=Experimental').first()).toBeVisible();
     });
