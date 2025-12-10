@@ -63,10 +63,14 @@ export function computeSceneContinuityScore(
     const vb = normalizeVisualBible(visualBible);
     const keyframes = vb.sceneKeyframes?.[scene.id] ?? [];
     const shotLinks = Object.keys(vb.shotReferences ?? {}).filter((shotId) => shotId.startsWith(scene.id)).length;
-    const visualCoverage = Math.min(1, (keyframes.length + shotLinks) / Math.max(1, scene.timeline.shots.length || 1));
+    
+    const shotCount = scene.timeline?.shots?.length || 0;
+    const transitionCount = scene.timeline?.transitions?.length || 0;
+
+    const visualCoverage = Math.min(1, (keyframes.length + shotLinks) / Math.max(1, shotCount || 1));
 
     const styleBoardReuseCount = vb.styleBoards.length;
-    const structuralContinuity = Math.min(1, 0.4 + (scene.timeline.shots.length > 0 ? scene.timeline.shots.length / 12 : 0));
+    const structuralContinuity = Math.min(1, 0.4 + (shotCount > 0 ? shotCount / 12 : 0));
     // Arc alignment: reward scenes whose heroArcOrder aligns with their position in the story
     // Normalized scene position and arc order (12-beat hero's journey)
     const sceneIndex = Math.max(0, allScenes.findIndex((s) => s.id === scene.id));
@@ -75,8 +79,8 @@ export function computeSceneContinuityScore(
     const arcOrder = typeof scene.heroArcOrder === 'number' ? scene.heroArcOrder : sceneIndex + 1;
     const arcNorm = Math.min(1, Math.max(0, (arcOrder - 1) / 11));
     const arcAlignment = 1 - Math.min(1, Math.abs(posNorm - arcNorm));
-    const transitionQuality = Math.min(1, 0.5 + (scene.timeline.transitions.length / 10));
-    const durationConsistency = Math.min(1, 0.5 + scene.timeline.shots.length / Math.max(6, allScenes.length || 1));
+    const transitionQuality = Math.min(1, 0.5 + (transitionCount / 10));
+    const durationConsistency = Math.min(1, 0.5 + shotCount / Math.max(6, allScenes.length || 1));
 
     const availableScores = [visualCoverage, structuralContinuity, transitionQuality, durationConsistency, arcAlignment];
     const overallScore = availableScores.reduce((sum, val) => sum + val, 0) / availableScores.length;

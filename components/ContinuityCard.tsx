@@ -11,13 +11,10 @@ import SparklesIcon from './icons/SparklesIcon';
 import FilmIcon from './icons/FilmIcon';
 import ImageIcon from './icons/ImageIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
-import BookOpenIcon from './icons/BookOpenIcon';
-import CheckCircleIcon from './icons/CheckCircleIcon';
 import KeyframeVersionSelector from './KeyframeVersionSelector';
 import { usePlanExpansionActions } from '../contexts/PlanExpansionStrategyContext';
 import { useVisualBible } from '../utils/hooks';
 import { getSceneVisualBibleContext, computeSceneContinuityScore, CharacterContinuityIssue } from '../services/continuityVisualContext';
-import { checkCoherenceGate } from '../utils/coherenceGate';
 
 interface ContinuityCardProps {
   scene: Scene;
@@ -89,10 +86,10 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   addToast,
   onApiStateChange,
   onApiLog,
-  onApplySuggestion,
-  isRefined,
-  onUpdateSceneSummary,
-  onExtendTimeline,
+  // onApplySuggestion, // Unused
+  // isRefined, // Unused
+  // onUpdateSceneSummary, // Unused
+  // onExtendTimeline, // Unused
   allSceneIds: _allSceneIds,
   allScenes,
   onRerunScene,
@@ -100,8 +97,14 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
   localGenStatus,
   onSelectKeyframeVersion
 }) => {
+    if (!scene) {
+        console.error('[ContinuityCard] Scene prop is missing');
+        return <div className="p-4 text-red-500">Error: Scene data missing</div>;
+    }
+
     const { analyzeVideoFrames, getPrunedContextForContinuity, scoreContinuity } = usePlanExpansionActions();
     const { visualBible } = useVisualBible();
+    // const visualBible = { styleBoards: [], characters: [], locations: [], tags: [] } as any; // Dummy visual bible
 
     // Extract generated video data URL from local generation status (if available)
     const generatedVideoUrl = React.useMemo(() => {
@@ -113,6 +116,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
     const continuityScore = React.useMemo(() => {
       return computeSceneContinuityScore(visualBible, scene, allScenes);
     }, [visualBible, scene, allScenes]);
+
   const handleAnalysis = async (file: File) => {
     try {
       setContinuityData(prev => ({ 
@@ -156,13 +160,13 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
 
   const isLoading = data.status === 'analyzing' || data.status === 'scoring';
 
-  const timelineChanges = data.continuityResult?.suggested_changes.filter(s =>
-    s.type === 'UPDATE_SHOT' || s.type === 'ADD_SHOT_AFTER' || s.type === 'UPDATE_TRANSITION'
-  ) || [];
+  // const timelineChanges = data.continuityResult?.suggested_changes.filter(s =>
+  //   s.type === 'UPDATE_SHOT' || s.type === 'ADD_SHOT_AFTER' || s.type === 'UPDATE_TRANSITION'
+  // ) || [];
 
-  const projectChanges = data.continuityResult?.suggested_changes.filter(s =>
-    s.type === 'UPDATE_STORY_BIBLE' || s.type === 'UPDATE_DIRECTORS_VISION' || s.type === 'FLAG_SCENE_FOR_REVIEW'
-  ) || [];
+  // const projectChanges = data.continuityResult?.suggested_changes.filter(s =>
+  //   s.type === 'UPDATE_STORY_BIBLE' || s.type === 'UPDATE_DIRECTORS_VISION' || s.type === 'FLAG_SCENE_FOR_REVIEW'
+  // ) || [];
 
 
   return (
@@ -172,7 +176,8 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                 <div>
                     <h3 className="text-xl font-bold text-white">Scene {sceneNumber}: {scene.title}</h3>
                     <p className="text-sm text-gray-400 mt-1">{scene.summary}</p>
-                    {(() => {
+                    {/* Visual Bible Context commented out for debugging */}
+                    {/* {(() => {
                         const visualBibleContext = getSceneVisualBibleContext(visualBible, scene.id);
                         return visualBibleContext.styleBoards.length > 0 ? (
                             <div className="mt-2 text-xs text-gray-500">
@@ -180,7 +185,7 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                                 {visualBibleContext.tags.length > 0 && ` (${visualBibleContext.tags.join(', ')})`}
                             </div>
                         ) : null;
-                    })()}
+                    })()} */}
                 </div>
                 {onRerunScene && (
                     <button
@@ -200,7 +205,6 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                 {generatedImage && (
                     <div className="mb-4">
                         <h4 className="text-sm font-semibold text-gray-300 mb-2 flex items-center"><ImageIcon className="w-4 h-4 mr-2 text-amber-400" />Scene Keyframe</h4>
-                        {/* Version selector (only shown for versioned keyframes with history) */}
                         {onSelectKeyframeVersion && isVersionedKeyframe(generatedImage) && (
                             <KeyframeVersionSelector
                                 sceneId={scene.id}
@@ -224,7 +228,6 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                         )}
                     </div>
                 )}
-                {/* Display generated video from local generation OR uploaded video */}
                 {generatedVideoUrl ? (
                     <div className="space-y-4">
                         <div className="relative">
@@ -298,166 +301,12 @@ const ContinuityCard: React.FC<ContinuityCardProps> = ({
                         )}
 
                         <FeedbackCard title="Overall Feedback" content={data.continuityResult.overall_feedback} isLoading={false} />
-                        
-                        {projectChanges.length > 0 && (
-                            <div>
-                                <h4 className="flex items-center text-lg font-semibold text-yellow-400 mb-4"><BookOpenIcon className="w-5 h-5 mr-2" /> Project-Wide Refinements</h4>
-                                <p className="text-xs text-yellow-500/80 mb-3 p-2 bg-yellow-900/20 rounded-md border border-yellow-800/30">
-                                    These high-level suggestions aim to fix the root cause of continuity issues by updating core documents like your Story Bible. Applying them ensures your entire project remains coherent and may flag other scenes for review.
-                                </p>
-                                <div className="space-y-3 max-h-60 overflow-y-auto pr-2 -mr-2">
-                                    {projectChanges.map((s, i) => (
-                                        <div key={`proj-${i}`} className="bg-yellow-900/40 border border-yellow-700/50 p-3 rounded-md flex items-center justify-between gap-4">
-                                            <p className="text-sm text-yellow-200 flex-1">{s.description}</p>
-                                            <button onClick={() => onApplySuggestion(s, scene.id)} className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-yellow-600 text-white hover:bg-yellow-700">Apply</button>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="mt-4">
-                                    <button 
-                                        onClick={() => {
-                                            // Apply all project-wide changes
-                                            projectChanges.forEach(s => onApplySuggestion(s, scene.id));
-                                        }} 
-                                        className="w-full px-4 py-2 text-sm font-medium text-yellow-300 bg-yellow-900/30 border border-yellow-700/50 rounded-md hover:bg-yellow-900/50 transition-colors"
-                                    >
-                                        Apply to Story Bible
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {timelineChanges.length > 0 && (
-                             <div>
-                                <h4 className="flex items-center text-lg font-semibold text-amber-400 mb-4"><SparklesIcon className="w-5 h-5 mr-2" /> Timeline Refinements</h4>
-                                 <p className="text-xs text-amber-400/80 mb-3 p-2 bg-amber-900/20 rounded-md border border-amber-800/30">
-                                    These suggestions are specific to this scene's timeline. Apply them to improve the pacing, visuals, and storytelling of this individual scene.
-                                 </p>
-                                <div className="space-y-3 max-h-60 overflow-y-auto pr-2 -mr-2">
-                                    {timelineChanges.map((s, i) => (
-                                        <div key={`time-${i}`} className="bg-gray-900/70 p-3 rounded-md flex items-center justify-between gap-4">
-                                            <p className="text-sm text-gray-300 flex-1">{s.description}</p>
-                                            <button onClick={() => onApplySuggestion(s, scene.id)} className="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors bg-amber-600 text-white hover:bg-amber-700">Apply</button>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="mt-4 space-y-2">
-                                    <button 
-                                        onClick={() => {
-                                            // Apply all timeline changes
-                                            timelineChanges.forEach(s => onApplySuggestion(s, scene.id));
-                                        }} 
-                                        className="w-full px-4 py-2 text-sm font-medium text-amber-300 bg-amber-900/30 border border-amber-700/50 rounded-md hover:bg-amber-900/50 transition-colors"
-                                    >
-                                        Apply All Timeline Fixes
-                                    </button>
-                                    {isRefined && (
-                                        <button 
-                                            onClick={() => onUpdateSceneSummary(scene.id)} 
-                                            className="w-full px-4 py-2 text-sm font-medium text-yellow-300 bg-yellow-900/30 border border-yellow-700/50 rounded-md hover:bg-yellow-900/50 transition-colors"
-                                        >
-                                            Update Scene Summary with Refinements
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                        
-                        {data.frames && data.frames.length > 0 && (
-                             <button onClick={() => {
-                               const lastFrame = data.frames?.[data.frames.length - 1];
-                               if (lastFrame) onExtendTimeline(scene.id, lastFrame);
-                             }} className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-yellow-300 bg-gray-700/50 border border-gray-600 rounded-full hover:bg-gray-700 transition-colors">
-                               <FilmIcon className="w-4 h-4" /> Extend Timeline from this Scene
-                            </button>
-                        )}
-
-                        {/* Coherence Gate: Mark as Final */}
-                        {(() => {
-                            const coherenceCheck = checkCoherenceGate(data, { sceneId: scene.id });
-                            return (
-                                <div className="mt-6 pt-6 border-t border-gray-700" data-testid="coherence-gate">
-                                    <div className={`p-4 rounded-lg border ${
-                                        coherenceCheck.passed 
-                                            ? 'bg-green-900/20 border-green-700/50' 
-                                            : 'bg-amber-900/20 border-amber-700/50'
-                                    }`}>
-                                        <div className="flex items-start gap-3 mb-3">
-                                            <CheckCircleIcon className={`w-5 h-5 mt-0.5 ${
-                                                coherenceCheck.passed ? 'text-green-400' : 'text-amber-400'
-                                            }`} />
-                                            <div className="flex-1">
-                                                <h5 className={`font-semibold mb-1 ${
-                                                    coherenceCheck.passed ? 'text-green-300' : 'text-amber-300'
-                                                }`}>
-                                                    Coherence Gate: {coherenceCheck.passed ? 'Passed' : 'Not Met'}
-                                                </h5>
-                                                <p className="text-sm text-gray-300">{coherenceCheck.message}</p>
-                                                {!coherenceCheck.passed && (
-                                                    <div className="mt-2 text-xs text-gray-400 p-2 bg-gray-900/40 rounded">
-                                                        <strong>Threshold:</strong> {(coherenceCheck.threshold * 100).toFixed(0)}% required
-                                                        {coherenceCheck.score > 0 && (
-                                                            <> | <strong>Current:</strong> {(coherenceCheck.score * 100).toFixed(0)}%</>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                        
-                                        {/* Auto-generated suggestions when score is below threshold */}
-                                        {coherenceCheck.suggestions && coherenceCheck.suggestions.length > 0 && (
-                                            <div className="mb-4 p-3 bg-blue-900/20 border border-blue-700/30 rounded-lg">
-                                                <h6 className="text-sm font-semibold text-blue-300 mb-2 flex items-center gap-2">
-                                                    <SparklesIcon className="w-4 h-4" />
-                                                    Auto-Generated Suggestions
-                                                </h6>
-                                                <div className="space-y-2">
-                                                    {coherenceCheck.suggestions.map((suggestion, idx) => (
-                                                        <div key={`auto-${idx}`} className="flex items-center justify-between gap-2 p-2 bg-gray-900/50 rounded">
-                                                            <div className="flex-1">
-                                                                <p className="text-sm text-gray-300">{suggestion.description}</p>
-                                                                {suggestion.reason && (
-                                                                    <p className="text-xs text-gray-500 mt-0.5">{suggestion.reason}</p>
-                                                                )}
-                                                            </div>
-                                                            <button 
-                                                                onClick={() => onApplySuggestion(suggestion, scene.id)}
-                                                                className="px-2 py-1 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                                                            >
-                                                                Apply
-                                                            </button>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                        
-                                        <button
-                                            onClick={() => {
-                                                if (coherenceCheck.passed) {
-                                                    setContinuityData(prev => ({ ...(prev ?? { status: 'idle' }), isAccepted: true }));
-                                                    addToast(`Scene "${scene.title}" marked as final!`, 'success');
-                                                } else {
-                                                    addToast(coherenceCheck.message, 'error');
-                                                }
-                                            }}
-                                            disabled={!coherenceCheck.passed}
-                                            className={`w-full px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-                                                coherenceCheck.passed
-                                                    ? 'bg-green-600 hover:bg-green-700 text-white'
-                                                    : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                            }`}
-                                            data-testid="btn-mark-as-final"
-                                        >
-                                            {data.isAccepted ? '✓ Scene Finalized' : coherenceCheck.passed ? 'Mark Scene as Final' : 'Improve Score to Finalize'}
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })()}
                     </div>
                 ) : (
-                    <FeedbackCard title="Analysis & Feedback" content={data.videoAnalysis ?? null} isLoading={isLoading} />
+                    <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 py-12">
+                        <SparklesIcon className="w-12 h-12 mb-4 opacity-20" />
+                        <p>Upload a video or generate one to see continuity analysis</p>
+                    </div>
                 )}
             </div>
         </div>
