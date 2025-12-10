@@ -1,52 +1,36 @@
 {
-  "timestamp": "2025-12-09T23:30:00Z",
+  "timestamp": "2025-12-09T23:55:00Z",
   "agent": "Implementer",
-  "sessionSummary": "Completed P4.4 Pipeline Orchestration implementation with real executors and UI integration. Verified with unit tests.",
+  "sessionSummary": "Fixed critical stability issues in ContinuityCard (crash on missing timeline) and PipelineEngine (stuck state on failure). Added E2E regression tests for both.",
   "filesModified": [
-    "services/pipelineTaskRegistry.ts",
+    "components/ContinuityCard.tsx",
     "services/pipelineEngine.ts",
-    "components/ContinuityDirector.tsx",
-    "services/__tests__/pipelineTaskRegistry.test.ts",
-    "AGENT_HANDOFF_CURRENT.md"
+    "tests/e2e/continuity-crash.spec.ts",
+    "tests/e2e/pipeline-export.spec.ts",
+    "AGENT_HANDOFF_SESSION_20251209_V5.md"
   ],
   "decisions": [
     {
-      "decision": "Pass dependency context to TaskExecutors",
-      "rationale": "Tasks like video generation need outputs (keyframes) from previous tasks. Passing context allows executors to resolve these dependencies dynamically.",
-      "alternatives": ["Update task payload in engine before execution"]
-    },
-    {
-      "decision": "Use trackPromptExecution for waiting",
-      "rationale": "queueComfyUIPrompt is async but returns early. We need to wait for actual completion to mark the task as done in the pipeline."
+      "decision": "Fail pipeline on task failure",
+      "rationale": "To prevent the UI from getting stuck in 'Pipeline Active' state when tasks fail and no further progress is possible.",
+      "alternatives": ["Allow partial completion (complex UI handling needed)"]
     }
   ],
   "currentState": {
     "phase": "implementing",
-    "progress": "95%",
-    "status": "Implementation complete and unit tested. Pending E2E verification."
+    "progress": "98%",
+    "status": "Stability fixes applied and verified with E2E tests."
   },
   "nextSteps": [
-    "Run E2E verification with real ComfyUI",
     "Implement upscale task executor",
-    "Refine error handling"
+    "Verify full successful pipeline run"
   ],
   "blockers": [],
   "openQuestions": [],
   "relatedIssues": [],
   "testMetrics": {
     "typescript": "0 errors",
-    "unitTests": "2554 passed, 2 failed (unrelated timeouts), 1 skipped",
-    "e2eTests": "Not run this session"
-  },
-  "implementationDetails": {
-    "newTypes": {
-      "Pipeline": "types/pipeline.ts",
-      "PipelineTask": "types/pipeline.ts"
-    },
-    "newComponents": [
-      "components/PipelineStatusPanel.tsx",
-      "components/PipelineEngineController.tsx"
-    ],
-    "keyPatterns": "PipelineEngine uses TaskRegistry to execute tasks, delegating heavy ones to GenerationQueue."
+    "unitTests": "2556 passed",
+    "e2eTests": "2 new tests passed (continuity-crash, pipeline-export)"
   }
 }
