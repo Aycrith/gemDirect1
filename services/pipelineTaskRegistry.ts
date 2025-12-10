@@ -5,6 +5,11 @@ import {
     trackPromptExecution, 
     ComfyUIPromptPayloads 
 } from './comfyUIService';
+import { 
+    upscaleVideo, 
+    DEFAULT_UPSCALE_CONFIG, 
+    UpscaleConfig 
+} from './videoUpscalingService';
 
 export type TaskExecutor = (task: PipelineTask, context?: { dependencies: Record<string, PipelineTask> }) => Promise<any>;
 
@@ -101,11 +106,38 @@ export const executeVideoGeneration: TaskExecutor = async (task, context) => {
     return waitForCompletion(settings, result.prompt_id);
 };
 
-export const executeUpscaleVideo: TaskExecutor = async (task) => {
+export const executeUpscaleVideo: TaskExecutor = async (task, context) => {
     console.log(`[TaskRegistry] Executing upscale for task ${task.id}`);
-    // Placeholder for upscale logic - similar to video generation but different workflow
-    // For now, we'll simulate it or implement if we have the upscale service details
-    return new Promise(resolve => setTimeout(resolve, 1500));
+    
+    let { videoPath, config } = task.payload;
+    const settings = useSettingsStore.getState();
+
+    // Resolve video path from dependencies if not provided
+    if (!videoPath && context?.dependencies) {
+        for (const dep of Object.values(context.dependencies)) {
+            if (dep.type === 'generate_video' && dep.output?.videos?.[0]) {
+                videoPath = dep.output.videos[0];
+                console.log(`[TaskRegistry] Resolved video path from dependency ${dep.id}`);
+                break;
+            }
+        }
+    }
+
+    if (!videoPath) throw new Error('Missing video path in task payload (or dependency)');
+
+    const upscaleConfig: UpscaleConfig = {
+        ...DEFAULT_UPSCALE_CONFIG,
+        ...config
+    };
+
+    const result = await upscaleVideo(settings, videoPath, upscaleConfig);
+
+    if (!result.success || !result.promptId) {
+        throw new Error(result.error || 'Failed to queue upscale job');
+    }
+
+    console.log(`[TaskRegistry] Upscale queued with ID: ${result.promptId}`);
+    return waitForCompletion(settings, result.promptId);
 };
 
 export const TaskRegistry: Record<PipelineTaskType, TaskExecutor> = {
