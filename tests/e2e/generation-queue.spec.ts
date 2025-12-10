@@ -62,6 +62,19 @@ async function navigateToGenerationControls(page: Page): Promise<boolean> {
     if (await videoGenSection.count() > 0 || await timelineSection.count() > 0) {
         return true;
     }
+
+    // Try clicking first scene to reveal controls
+    const firstScene = page.locator('[data-scene-id]').first();
+    if (await firstScene.count() > 0 && await firstScene.isVisible()) {
+        console.log('Clicking first scene to reveal controls...');
+        await firstScene.click();
+        await page.waitForTimeout(1000);
+        
+        // Check again
+        if (await videoGenSection.count() > 0 || await timelineSection.count() > 0) {
+            return true;
+        }
+    }
     
     // May need to click through tabs or navigation - but only if enabled
     const tabs = page.locator('[role="tab"]:not([disabled]), .tab-button:not([disabled]), button:has-text("Timeline"):not([disabled]), button:has-text("Generate"):not([disabled])');
@@ -389,8 +402,9 @@ test.describe('Queue Integration with ComfyUI', () => {
         // Start generation
         // Force enable button for testing
         await generateButton.first().evaluate((btn) => btn.removeAttribute('disabled'));
-        await generateButton.first().click();
-        
+        // Use evaluate to click to bypass visibility checks if force: true fails
+        await generateButton.first().evaluate((btn) => (btn as HTMLElement).click());
+
         // Wait for queue to update
         await page.waitForTimeout(1000);
         

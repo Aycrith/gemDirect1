@@ -2,7 +2,7 @@ import { TimelineData, LocalGenerationSettings, Shot } from '../types';
 import { base64ToBlob } from '../utils/videoUtils';
 import type { ArtifactSceneMetadata, SceneVideoMetadata } from '../utils/hooks';
 import { isFeatureEnabled, FeatureFlags } from '../utils/featureFlags';
-import { getGenerationQueue, createVideoTask, GenerationStatus } from './generationQueue';
+import { getGenerationQueue, createVideoTask, GenerationStatus, configureQueuePreflight } from './generationQueue';
 import {
     startPipeline,
     recordShotQueued,
@@ -10,7 +10,9 @@ import {
     completePipeline,
     type PipelineMetrics,
 } from './pipelineMetrics';
-import { checkSystemResources } from './comfyUIService';
+import { 
+    checkSystemResources
+} from './comfyUIService';
 
 /**
  * Shot data in the interleaved timeline
@@ -648,6 +650,15 @@ export const queueVideoGenerationWithQueue = async (
     // Feature flag enabled: route through GenerationQueue
     log('[VideoGen] GenerationQueue enabled, queueing video generation task', 'info');
     
+    // Configure queue preflight if settings available
+    if (settings.comfyUIUrl) {
+        configureQueuePreflight({
+            comfyUIUrl: settings.comfyUIUrl,
+            minVRAMMB: 4096, // Default 4GB required
+            vramWaitTimeoutMs: 60000 // Wait up to 60s for VRAM
+        });
+    }
+
     const queue = getGenerationQueue();
     
     const task = createVideoTask(
@@ -1223,3 +1234,5 @@ export const waitForChainedVideoComplete = async (
         }
     });
 };
+
+

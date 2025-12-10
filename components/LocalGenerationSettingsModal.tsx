@@ -529,13 +529,9 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
     };
 
     const handleSave = () => {
-        console.log('[LocalGenSettings] handleSave called');
-        console.log('[LocalGenSettings] Current formData:', formData);
-        console.log('[LocalGenSettings] Validation state:', validationState);
         
         // Run comprehensive validation to show warnings, but don't block save
         const isValid = validateAllSettings();
-        console.log('[LocalGenSettings] Validation result:', isValid);
         
         // Show validation panel if there are warnings, but allow save to proceed
         if (!isValid) {
@@ -561,17 +557,14 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
             llmWarnings: validationState.llm.warnings || []
         };
         
-        console.log('[LocalGenSettings] Validation snapshot:', validationSnapshot);
         
         try {
             localStorage.setItem('gemDirect_validationState', JSON.stringify(validationSnapshot));
-            console.log('[LocalGenSettings] Validation snapshot saved to localStorage');
         } catch (error) {
             console.warn('[LocalGenSettings] Failed to save validation state to localStorage (browser storage blocked):', error);
             // Continue anyway - validation state is supplementary
         }
 
-        console.log('[LocalGenSettings] Calling onSave with formData');
         onSave(formData);
         setHasChanges(false);
         
@@ -581,7 +574,6 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
         } else {
             addToast('Settings validated and saved. Local generation is configured.', 'success');
         }
-        console.log('[LocalGenSettings] Closing modal');
         onClose();
     };
 
@@ -1333,20 +1325,22 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                             const input = document.createElement('input');
                                             input.type = 'file';
                                             input.accept = '.json';
+                                            input.id = 'workflow-import-input';
+                                            input.style.display = 'none';
+                                            document.body.appendChild(input);
+                                            
                                             input.onchange = async (e) => {
                                                 const file = (e.target as HTMLInputElement).files?.[0];
-                                                if (!file) return;
+                                                if (!file) {
+                                                    document.body.removeChild(input);
+                                                    return;
+                                                }
                                                 try {
                                                     const text = await file.text();
                                                     const data = JSON.parse(text);
                                                     
-                                                    console.log('[Workflow Import] File loaded:', file.name);
-                                                    console.log('[Workflow Import] Data keys:', Object.keys(data));
-                                                    console.log('[Workflow Import] Has workflowProfiles?', 'workflowProfiles' in data);
-                                                    
                                     // Case 1: File has workflowProfiles property (localGenSettings.json format)
                                     if (data.workflowProfiles && typeof data.workflowProfiles === 'object') {
-                                        console.log('[Workflow Import] Importing settings file with profiles:', Object.keys(data.workflowProfiles));
                                         
                                         // Import workflow profiles AND the active profile selections
                                         const updatedFormData = { 
@@ -1358,20 +1352,15 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                             ...(data.sceneChainedWorkflowProfile && { sceneChainedWorkflowProfile: data.sceneChainedWorkflowProfile }),
                                             ...(data.sceneBookendWorkflowProfile && { sceneBookendWorkflowProfile: data.sceneBookendWorkflowProfile }),
                                         };
-                                        console.log('[Workflow Import] imageWorkflowProfile:', updatedFormData.imageWorkflowProfile);
-                                        console.log('[Workflow Import] videoWorkflowProfile:', updatedFormData.videoWorkflowProfile);
-                                        console.log('[Workflow Import] sceneChainedWorkflowProfile:', updatedFormData.sceneChainedWorkflowProfile);
-                                        console.log('[Workflow Import] sceneBookendWorkflowProfile:', updatedFormData.sceneBookendWorkflowProfile);
                                         setFormData(updatedFormData);
                                         
                                         // Auto-persist imported workflows immediately
-                                        console.log('[Workflow Import] Auto-saving to IndexedDB...');
                                         onSave(updatedFormData);
                                         setHasChanges(false);
                                         
                                         const count = Object.keys(data.workflowProfiles).length;
-                                        console.log('[Workflow Import] Import complete and persisted to storage!');
                                         addToast(`Imported and saved ${count} workflow profile(s)`, 'success');
+                                        document.body.removeChild(input);
                                         return;
                                     }                                                    // Case 2: Raw ComfyUI workflow file (needs to be wrapped in profile)
                                                     // Check if it looks like a ComfyUI workflow:
@@ -1399,25 +1388,20 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                     
                                                     const isComfyUIWorkflow = (hasNumericKeys || hasPromptStructure || hasEnhancedFormat || hasGUIExportFormat) && !looksLikeSettingsFile;
                                                     
-                                                    console.log('[Workflow Import] Detection:', { hasNumericKeys, hasPromptStructure, hasEnhancedFormat, hasGUIExportFormat, looksLikeSettingsFile, isComfyUIWorkflow });
                                                     
                                                     if (isComfyUIWorkflow) {
-                                                        console.log('[Workflow Import] Prompting for profile ID...');
                                                         // Prompt user for profile ID and label
                                                         const profileId = prompt('Enter a profile ID (e.g., "wan-t2i", "wan-i2v", "custom-workflow"):');
-                                                        console.log('[Workflow Import] Profile ID entered:', profileId);
                                                         if (!profileId || !profileId.trim()) {
-                                                            console.log('[Workflow Import] No profile ID - cancelling');
                                                             addToast('Import cancelled - profile ID required', 'info');
+                                                            document.body.removeChild(input);
                                                             return;
                                                         }
                                                         
-                                                        console.log('[Workflow Import] Prompting for profile label...');
                                                         const profileLabel = prompt('Enter a descriptive label for this workflow:', profileId);
-                                                        console.log('[Workflow Import] Profile label entered:', profileLabel);
                                                         if (!profileLabel || !profileLabel.trim()) {
-                                                            console.log('[Workflow Import] No profile label - cancelling');
                                                             addToast('Import cancelled - profile label required', 'info');
+                                                            document.body.removeChild(input);
                                                             return;
                                                         }
                                                         
@@ -1436,7 +1420,6 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                         };
                                                         
                                                         // Merge with existing profiles
-                                                        console.log('[Workflow Import] Creating profile:', profileId.trim());
                                                         const updatedProfiles = {
                                                             ...(formData.workflowProfiles || {}),
                                                             [profileId.trim()]: newProfile
@@ -1448,27 +1431,27 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                                             workflowProfiles: updatedProfiles
                                                         };
                                                         
-                                                        console.log('[Workflow Import] Saving profiles...', Object.keys(updatedProfiles));
                                                         setFormData(updatedFormData);
                                                         
                                                         // CRITICAL: Auto-persist to IndexedDB immediately (like settings file import does)
-                                                        console.log('[Workflow Import] Auto-saving to IndexedDB...');
                                                         onSave(updatedFormData);
                                                         setHasChanges(false);
                                                         
-                                                        console.log('[Workflow Import] Import complete and persisted!');
                                                         addToast(`Created and saved workflow profile "${profileLabel}" - configure mappings below`, 'success');
+                                                        document.body.removeChild(input);
                                                         return;
                                                     }
                                                     
                                                     // Case 3: Unrecognized format
-                                                    console.error('[Workflow Import] Unrecognized format. Data structure:', data);
+                                                    console.error('Unrecognized format. Data structure:', data);
                                                     const topKeys = Object.keys(data).slice(0, 5).join(', ');
                                                     addToast(`Invalid file format. File has keys: ${topKeys}\n\nExpected:\n1) Settings file with "workflowProfiles" property, or\n2) Raw ComfyUI workflow with numbered nodes`, 'error');
+                                                    document.body.removeChild(input);
                                                     
                                                 } catch (error) {
-                                                    console.error('[Workflow Import] Error:', error);
+                                                    console.error('Error importing workflows:', error);
                                                     addToast('Failed to import workflows: ' + (error as Error).message, 'error');
+                                                    document.body.removeChild(input);
                                                 }
                                             };
                                             input.click();

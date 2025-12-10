@@ -4,7 +4,7 @@ import InfoIcon from './icons/InfoIcon';
 import { TRANSITION_OPTIONS, CINEMATIC_TERMS } from '../utils/cinematicTerms';
 
 interface TransitionSelectorProps {
-    value: string;
+    value: any; // Allow legacy object format {type: string}
     onChange: (newValue: string) => void;
 }
 
@@ -27,7 +27,15 @@ const TransitionSelector: React.FC<TransitionSelectorProps> = ({ value, onChange
         setIsOpen(false);
     }
     
-    const selectedTransition = value || "Select Transition";
+    // Handle legacy object format {type: "Cut"} vs string "Cut"
+    const resolveValue = (val: any): string => {
+        if (typeof val === 'object' && val !== null && 'type' in val) {
+            return val.type;
+        }
+        return val as string;
+    };
+
+    const selectedTransition = resolveValue(value) || "Select Transition";
 
     return (
         <div className="flex justify-center my-2" ref={dropdownRef}>

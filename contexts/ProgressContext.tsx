@@ -17,6 +17,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
+import { HydrationGate } from './HydrationContext';
 
 export type ProgressType = 
   | 'llm'           // LLM text generation (indeterminate)
@@ -246,7 +247,9 @@ export const ProgressProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   return (
     <ProgressContext.Provider value={contextValue}>
-      {children}
+      <HydrationGate>
+        {children}
+      </HydrationGate>
     </ProgressContext.Provider>
   );
 };

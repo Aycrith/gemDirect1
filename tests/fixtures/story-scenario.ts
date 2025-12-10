@@ -18,8 +18,7 @@
 import { Page } from '@playwright/test';
 import { 
   dismissWelcomeDialog, 
-  loadProjectState,
-  waitForStateHydration
+  loadStateAndWaitForHydration
 } from './test-helpers';
 import { 
   mockStoryBible, 
@@ -48,18 +47,9 @@ export async function setupMinimalStory(page: Page): Promise<boolean> {
     timestamp: Date.now()
   };
   
-  await loadProjectState(page, state);
-  await page.reload();
-  
-  // Wait for story bible to hydrate
-  const hydrated = await waitForStateHydration(page, 'storyBible', { timeout: 10000 });
-  if (!hydrated) {
-    console.log('[Fixture] ⚠️ Failed to hydrate story bible');
-    return false;
-  }
-  
-  // Wait for UI to reflect state
-  await page.waitForTimeout(1500);
+  await loadStateAndWaitForHydration(page, state, {
+    expectedKeys: ['storyBible', 'workflowStage']
+  });
   
   console.log('[Fixture] ✅ Minimal story setup complete');
   return true;
@@ -96,18 +86,9 @@ export async function setupSceneWithoutShots(page: Page, _sceneId?: string): Pro
     timestamp: Date.now()
   };
   
-  await loadProjectState(page, state);
-  await page.reload();
-  
-  // Wait for scenes to hydrate
-  const hydrated = await waitForStateHydration(page, 'scenes', { timeout: 10000 });
-  if (!hydrated) {
-    console.log('[Fixture] ⚠️ Failed to hydrate scenes');
-    return false;
-  }
-  
-  // Wait for scene components to render
-  await page.waitForTimeout(1500);
+  await loadStateAndWaitForHydration(page, state, {
+    expectedKeys: ['storyBible', 'scenes', 'workflowStage']
+  });
   
   console.log('[Fixture] ✅ Scenes without shots setup complete');
   return true;
@@ -135,20 +116,10 @@ export async function setupScenesWithShots(page: Page): Promise<boolean> {
     timestamp: Date.now()
   };
   
-  await loadProjectState(page, state);
-  await page.reload();
-  
-  // Wait for both story bible and scenes
-  const bibleHydrated = await waitForStateHydration(page, 'storyBible', { timeout: 10000 });
-  const scenesHydrated = await waitForStateHydration(page, 'scenes', { timeout: 10000 });
-  
-  if (!bibleHydrated || !scenesHydrated) {
-    console.log('[Fixture] ⚠️ Failed to hydrate project state');
-    return false;
-  }
-  
-  // Wait for scene/shot components to render
-  await page.waitForTimeout(1500);
+  await loadStateAndWaitForHydration(page, state, {
+    expectedKeys: ['storyBible', 'scenes', 'workflowStage'],
+    expectedComponent: 'scene-navigator'
+  });
   
   console.log('[Fixture] ✅ Scenes with shots setup complete');
   return true;
@@ -176,84 +147,7 @@ export async function setupKeyframeReady(page: Page): Promise<boolean> {
     timestamp: Date.now()
   };
   
-  await loadProjectState(page, state);
-  
-  // Wait for IndexedDB write to complete before reload
-  await page.waitForTimeout(1000);
-  
-  // Reload page so useProjectData hook runs and loads data from IndexedDB
-  await page.reload();
-  
-  // Wait for app initialization - the useProjectData hook needs time to:
-  // 1. Run its initial useEffect
-  // 2. Load data from IndexedDB (async operations)
-  // 3. usePersistentState to load workflowStage
-  // 4. Sync effect to update workflowStage if needed
-  // 5. Trigger React re-renders to show UI
-  console.log('[Fixture] Waiting for app to initialize and load IndexedDB data...');
-  await page.waitForTimeout(3000);
-  
-  // Verify data actually loaded into IndexedDB (with retry on navigation)
-  let dataCheck: any = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      dataCheck = await page.evaluate(async () => {
-        return new Promise((resolve) => {
-          const request = indexedDB.open('cinematic-story-db', 1);
-          request.onsuccess = () => {
-            const db = request.result;
-            const tx = db.transaction(['storyBible', 'scenes', 'misc'], 'readonly');
-            
-            const storyReq = tx.objectStore('storyBible').get('current');
-            const scenesReq = tx.objectStore('scenes').getAll();
-            const visionReq = tx.objectStore('misc').get('directorsVision');
-            
-            Promise.all([
-              new Promise(r => { storyReq.onsuccess = () => r(storyReq.result); }),
-              new Promise(r => { scenesReq.onsuccess = () => r(scenesReq.result); }),
-              new Promise(r => { visionReq.onsuccess = () => r(visionReq.result); })
-            ]).then(([story, scenes, vision]) => {
-              resolve({
-                hasStory: !!story,
-                sceneCount: (scenes as any[]).length,
-                hasVision: !!vision
-              });
-            });
-          };
-        });
-      });
-      break; // Success, exit retry loop
-    } catch (e) {
-      if (e instanceof Error && e.message.includes('Execution context was destroyed')) {
-        console.log(`[Fixture] Navigation detected (attempt ${attempt + 1}/3), retrying...`);
-        await page.waitForTimeout(2000);
-        continue;
-      }
-      throw e; // Re-throw if it's not a navigation error
-    }
-  }
-  
-  if (!dataCheck) {
-    console.log('[Fixture] ⚠️ Failed to verify IndexedDB after 3 attempts');
-    return false;
-  }
-  
-  console.log(`[Fixture] IndexedDB check: story=${dataCheck.hasStory}, scenes=${dataCheck.sceneCount}, vision=${dataCheck.hasVision}`);
-  
-  if (!dataCheck.hasStory || dataCheck.sceneCount === 0 || !dataCheck.hasVision) {
-    console.log('[Fixture] ⚠️ Data not found in IndexedDB - fixture load may have failed');
-    return false;
-  }
-  
-  // Now verify React state hydrated
-  const bibleHydrated = await waitForStateHydration(page, 'storyBible', { timeout: 10000 });
-  const scenesHydrated = await waitForStateHydration(page, 'scenes', { timeout: 10000 });
-  const visionHydrated = await waitForStateHydration(page, 'directorsVision', { timeout: 10000 });
-  
-  if (!bibleHydrated || !scenesHydrated || !visionHydrated) {
-    console.log('[Fixture] ⚠️ React state not hydrated - useProjectData may not have run');
-    return false;
-  }
+  await loadStateAndWaitForHydration(page, state);
   
   console.log('[Fixture] ✅ Keyframe-ready state setup complete');
   console.log(`[Fixture]    Scenes: ${mockScenes.length}`);
@@ -283,22 +177,7 @@ export async function setupVideoReady(page: Page): Promise<boolean> {
     timestamp: Date.now()
   };
   
-  await loadProjectState(page, state);
-  await page.reload();
-  
-  // Wait for complete hydration including images
-  const bibleHydrated = await waitForStateHydration(page, 'storyBible', { timeout: 10000 });
-  const scenesHydrated = await waitForStateHydration(page, 'scenes', { timeout: 10000 });
-  const imagesHydrated = await waitForStateHydration(page, 'generatedImages', { timeout: 10000 });
-  
-  if (!bibleHydrated || !scenesHydrated || !imagesHydrated) {
-    console.log('[Fixture] ⚠️ Failed to hydrate video-ready state');
-    return false;
-  }
-  
-  // Wait for useProjectData hook to complete workflowStage determination and render keyframes
-  console.log('[Fixture] Waiting for app to reach Director workflow stage...');
-  await page.waitForTimeout(3000);
+  await loadStateAndWaitForHydration(page, state);
   
   console.log('[Fixture] ✅ Video-ready state setup complete');
   console.log(`[Fixture]    Keyframes loaded: ${Object.keys(mockGeneratedImages).length}`);
@@ -333,17 +212,7 @@ export async function setupSingleScene(page: Page, sceneIndex: number = 0): Prom
     timestamp: Date.now()
   };
   
-  await loadProjectState(page, state);
-  await page.reload();
-  
-  // Wait for hydration
-  const scenesHydrated = await waitForStateHydration(page, 'scenes', { timeout: 10000 });
-  if (!scenesHydrated) {
-    console.log('[Fixture] ⚠️ Failed to hydrate single scene');
-    return false;
-  }
-  
-  await page.waitForTimeout(1500);
+  await loadStateAndWaitForHydration(page, state);
   
   console.log('[Fixture] ✅ Single scene setup complete');
   console.log(`[Fixture]    Scene: ${singleScene[0]?.title ?? 'Unknown'}`);
@@ -372,27 +241,7 @@ export async function setupBatchReady(page: Page, withKeyframes: boolean = false
     timestamp: Date.now()
   };
   
-  await loadProjectState(page, state);
-  await page.reload();
-  
-  // Wait for hydration
-  const scenesHydrated = await waitForStateHydration(page, 'scenes', { timeout: 10000 });
-  if (withKeyframes) {
-    const imagesHydrated = await waitForStateHydration(page, 'generatedImages', { timeout: 10000 });
-    if (!imagesHydrated) {
-      console.log('[Fixture] ⚠️ Failed to hydrate images for batch video generation');
-      return false;
-    }
-  }
-  
-  if (!scenesHydrated) {
-    console.log('[Fixture] ⚠️ Failed to hydrate scenes for batch generation');
-    return false;
-  }
-  
-  // Wait for useProjectData hook to complete workflowStage determination
-  console.log('[Fixture] Waiting for app to reach Director workflow stage...');
-  await page.waitForTimeout(3000);
+  await loadStateAndWaitForHydration(page, state);
   
   console.log('[Fixture] ✅ Batch-ready state setup complete');
   console.log(`[Fixture]    Scenes: ${mockScenes.length}`);
@@ -430,17 +279,7 @@ export async function setupGenerationInProgress(page: Page, generationType: 'key
     timestamp: Date.now()
   };
   
-  await loadProjectState(page, state);
-  await page.reload();
-  
-  // Wait for hydration
-  const statusHydrated = await waitForStateHydration(page, 'localGenStatus', { timeout: 10000 });
-  if (!statusHydrated) {
-    console.log('[Fixture] ⚠️ Failed to hydrate generation status');
-    return false;
-  }
-  
-  await page.waitForTimeout(1500);
+  await loadStateAndWaitForHydration(page, state);
   
   console.log('[Fixture] ✅ In-progress generation state setup complete');
   console.log(`[Fixture]    Type: ${generationType}`);

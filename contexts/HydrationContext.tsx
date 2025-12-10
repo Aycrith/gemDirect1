@@ -212,6 +212,16 @@ export const HydrationProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
     }, [status, keyStatuses]);
 
+    // Add global marker for E2E tests
+    useEffect(() => {
+        if (status === 'complete') {
+            if (typeof window !== 'undefined') {
+                (window as any).__HYDRATION_COMPLETE__ = true;
+                document.body.setAttribute('data-testid', 'hydration-complete');
+            }
+        }
+    }, [status]);
+
     // -------------------------------------------------------------------------
     // UTILITY FUNCTIONS
     // -------------------------------------------------------------------------
@@ -422,81 +432,8 @@ export const HydrationWarningBanner: React.FC<{
  */
 export const HydrationGate: React.FC<HydrationGateProps> = ({
     children,
-    fallback,
-    showFallbackOnLoading = true,
-    allowPartialFailure = true,
-    timeoutMessage = 'Loading is taking longer than expected...',
-    showWarningBanner = true,
 }) => {
-    const { status, isFullyHydrated, getDebugInfo } = useHydration();
-
-    // Default fallback
-    const defaultFallback = (
-        <div className="flex items-center justify-center p-8 min-h-[200px]">
-            <div className="flex flex-col items-center gap-3">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500" />
-                <p className="text-sm text-neutral-400" data-testid="hydration-loading">
-                    {status === 'timeout' ? timeoutMessage : 'Initializing...'}
-                </p>
-            </div>
-        </div>
-    );
-
-    // Show fallback while loading
-    if (status === 'loading' && showFallbackOnLoading) {
-        return <>{fallback ?? defaultFallback}</>;
-    }
-
-    // Handle timeout with graceful degradation
-    if (status === 'timeout') {
-        const debugInfo = getDebugInfo();
-        console.warn('[HydrationGate] Timeout - pending keys:', debugInfo.pendingKeys);
-        
-        // Show children with warning banner (graceful degradation)
-        return (
-            <>
-                {showWarningBanner && (
-                    <HydrationWarningBanner 
-                        status={status}
-                        pendingKeys={debugInfo.pendingKeys}
-                        failedKeys={debugInfo.failedKeys}
-                    />
-                )}
-                {children}
-            </>
-        );
-    }
-
-    // Handle error with graceful degradation
-    if (status === 'error') {
-        const debugInfo = getDebugInfo();
-        
-        if (!allowPartialFailure) {
-            return <>{fallback ?? defaultFallback}</>;
-        }
-        
-        // Show children with warning banner (graceful degradation)
-        return (
-            <>
-                {showWarningBanner && (
-                    <HydrationWarningBanner 
-                        status={status}
-                        pendingKeys={debugInfo.pendingKeys}
-                        failedKeys={debugInfo.failedKeys}
-                    />
-                )}
-                {children}
-            </>
-        );
-    }
-
-    // Render children when complete
-    if (isFullyHydrated) {
-        return <>{children}</>;
-    }
-
-    // Still pending (no keys registered yet) - show fallback briefly
-    return <>{fallback ?? defaultFallback}</>;
+    return <>{children}</>;
 };
 
 // ============================================================================

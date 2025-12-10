@@ -222,25 +222,23 @@ export async function upscaleVideo(
     });
     
     try {
-        // Import ComfyUI service for queueing
-        const { queueComfyUIPrompt } = await import('./comfyUIService');
+        // Import videoGenerationService for safe queueing (avoid circular dependency)
+        const { queueComfyUIPromptSafe } = await import('./videoGenerationService');
         
         // Build payload
         const payload = buildUpscalePayload(videoPath, config);
         
         // Queue the upscale job
         // Note: This uses a custom workflow profile for upscaling
-        const response = await queueComfyUIPrompt(
+        const response = await queueComfyUIPromptSafe(
             settings,
             {
                 json: JSON.stringify(payload),
                 text: `Upscale video ${config.scaleFactor}x using ${config.model}`,
-                structured: [],
-                negativePrompt: '',
             },
             '', // No keyframe needed for upscaling
-            'video-upscaler'
-        );
+            { sceneId: 'upscale' } // Provide dummy sceneId for queue tracking
+        ) as any;
         
         if (!response?.prompt_id) {
             return {

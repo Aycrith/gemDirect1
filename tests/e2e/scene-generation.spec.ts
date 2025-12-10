@@ -18,17 +18,20 @@ test.describe('Scene Generation', () => {
     // Pre-populate with story bible to skip generation step (using improved helper)
     await loadStateAndWaitForHydration(page, {
       storyBible: mockStoryBible,
-      workflowStage: 'vision' // Start at director's vision stage
+      scenes: [], // Ensure scenes are initialized as empty array
+      workflowStage: 'vision', // Start at director's vision stage
+      mode: 'director',
+      directorsVision: '' // Initialize as empty string
     }, {
       expectedKeys: ['storyBible', 'workflowStage'],
-      timeout: 10000
+      timeout: 30000
     });
   });
 
   test('displays director vision form when story bible exists', async ({ page }) => {
     // Should show director's vision form
-    const visionTextarea = page.locator('textarea').first();
-    await expect(visionTextarea).toBeVisible({ timeout: 10000 });
+    const visionTextarea = page.locator('[data-testid="directors-vision-input"]');
+    await expect(visionTextarea).toBeVisible({ timeout: 20000 });
     
     // Verify we can type in vision field
     await visionTextarea.fill('Cinematic noir aesthetic with cyberpunk elements');

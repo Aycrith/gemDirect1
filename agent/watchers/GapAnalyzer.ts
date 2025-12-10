@@ -8,6 +8,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import type { Issue, ScanResult, AgentConfig } from '../core/types.js';
 import { getLogger } from '../core/Logger.js';
+import { rules } from '../rules/index.js';
 
 export class GapAnalyzer {
   constructor(private config: AgentConfig) {}
@@ -180,50 +181,74 @@ export class GapAnalyzer {
 
   private async findServiceLayerViolations(): Promise<Issue[]> {
     const issues: Issue[] = [];
+    
+    // 1. Legacy checks for components (fetch, Gemini)
     const componentsDir = path.join(this.config.projectRoot, 'components');
+    if (fs.existsSync(componentsDir)) {
+      const files = this.findFiles(componentsDir, /\.tsx$/);
 
-    if (!fs.existsSync(componentsDir)) {
-      return issues;
+      for (const file of files) {
+        // Skip test files
+        if (file.includes('.test.')) continue;
+
+        const content = fs.readFileSync(file, 'utf-8');
+        const relativePath = path.relative(this.config.projectRoot, file);
+
+        // Check for direct fetch calls
+        if (/\bfetch\s*\(/.test(content)) {
+          issues.push({
+            id: `service-violation-fetch-${this.sanitizePath(relativePath)}`,
+            type: 'improvement',
+            severity: 'high',
+            category: 'service-layer',
+            file: relativePath,
+            message: 'Direct fetch() call in component. Should use service layer.',
+            suggestedFix: 'Move API call to appropriate service in services/',
+            autoFixable: false,
+            timestamp: new Date(),
+          });
+        }
+
+        // Check for direct Gemini API usage
+        if (/GoogleGenerativeAI|@google\/generative-ai|@google\/genai/.test(content)) {
+          issues.push({
+            id: `service-violation-gemini-${this.sanitizePath(relativePath)}`,
+            type: 'improvement',
+            severity: 'high',
+            category: 'service-layer',
+            file: relativePath,
+            message: 'Direct Gemini API usage in component. Should use geminiService.',
+            suggestedFix: 'Use geminiService.ts with withRetry wrapper',
+            autoFixable: false,
+            timestamp: new Date(),
+          });
+        }
+      }
     }
 
-    const files = this.findFiles(componentsDir, /\.tsx$/);
-
-    for (const file of files) {
-      // Skip test files
-      if (file.includes('.test.')) continue;
-
-      const content = fs.readFileSync(file, 'utf-8');
-      const relativePath = path.relative(this.config.projectRoot, file);
-
-      // Check for direct fetch calls
-      if (/\bfetch\s*\(/.test(content)) {
-        issues.push({
-          id: `service-violation-fetch-${this.sanitizePath(relativePath)}`,
-          type: 'improvement',
-          severity: 'medium',
-          category: 'service-layer',
-          file: relativePath,
-          message: 'Direct fetch() call in component. Should use service layer.',
-          suggestedFix: 'Move API call to appropriate service in services/',
-          autoFixable: false,
-          timestamp: new Date(),
-        });
-      }
-
-      // Check for direct Gemini API usage
-      if (/GoogleGenerativeAI|@google\/generative-ai|@google\/genai/.test(content)) {
-        issues.push({
-          id: `service-violation-gemini-${this.sanitizePath(relativePath)}`,
-          type: 'improvement',
-          severity: 'high',
-          category: 'service-layer',
-          file: relativePath,
-          message: 'Direct Gemini API usage in component. Should use geminiService.',
-          suggestedFix: 'Use geminiService.ts with withRetry wrapper',
-          autoFixable: false,
-          timestamp: new Date(),
-        });
-      }
+    // 2. Run new Rule-based checks
+    const dirsToScan = ['services', 'components', 'contexts', 'hooks', 'utils'];
+    
+    for (const dir of dirsToScan) {
+        const fullDir = path.join(this.config.projectRoot, dir);
+        if (!fs.existsSync(fullDir)) continue;
+        
+        const files = this.findFiles(fullDir, /\.(ts|tsx)$/);
+        for (const file of files) {
+            // Skip node_modules just in case
+            if (file.includes('node_modules')) continue;
+            
+            const content = fs.readFileSync(file, 'utf-8');
+            const context = {
+                projectRoot: this.config.projectRoot,
+                filePath: file,
+                content
+            };
+            
+            for (const rule of rules) {
+                issues.push(...rule.check(context));
+            }
+        }
     }
 
     return issues;

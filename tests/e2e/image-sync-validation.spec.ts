@@ -17,11 +17,13 @@ import { dismissWelcomeDialog, ensureDirectorMode, loadStateAndWaitForHydration 
 
 const mockStoryBible = {
   title: 'Image Sync Test Story',
+  logline: 'A test story about image synchronization.',
   premise: 'A story to validate image synchronization between ComfyUI and React',
   genre: 'Drama',
   setting: 'Test Environment',
-  characters: ['Alice', 'Bob'],
-  themes: ['Testing', 'Validation']
+  characters: '**Alice**: A tester.\n**Bob**: A validator.',
+  themes: ['Testing', 'Validation'],
+  plotOutline: 'Act I\n- Scene 1: Setup\nAct II\n- Scene 2: Conflict\nAct III\n- Scene 3: Resolution'
 };
 
 const mockScenes = [
@@ -52,9 +54,21 @@ test.describe('Image Synchronization (ComfyUI → React)', () => {
     await ensureDirectorMode(page);
   });
 
-  test.skip('validates keyframe images sync to UI after generation', async ({ page }) => {
+  test('validates keyframe images sync to UI after generation', async ({ page }) => {
+    const syncLogs: string[] = [];
+    page.on('console', msg => {
+      const text = msg.text();
+      if (text.includes('[ImageSync]') || text.includes('✅')) {
+        syncLogs.push(text);
+      }
+    });
+
     // SKIP: Requires real ComfyUI server and workflows configured
     // Enable with: RUN_REAL_WORKFLOWS=1 npx playwright test image-sync-validation.spec.ts
+    test.skip(!process.env.RUN_REAL_WORKFLOWS, 'Requires real ComfyUI server (RUN_REAL_WORKFLOWS=1)');
+    
+    // Increase timeout for real generation (5 minutes)
+    test.setTimeout(300000);
     
     // Load test data
     await loadStateAndWaitForHydration(page, {
@@ -62,20 +76,13 @@ test.describe('Image Synchronization (ComfyUI → React)', () => {
       scenes: mockScenes,
       workflowStage: 'director',
       directorsVision: 'Cinematic, photorealistic, high contrast'
-    });
-
-    // Listen for sync diagnostic logs
-    const syncLogs: string[] = [];
-    page.on('console', msg => {
-      const text = msg.text();
-      if (text.includes('[Image Sync]')) {
-        syncLogs.push(text);
-        console.log(`📋 ${text}`);
-      }
+    }, {
+        expectedComponent: 'scene-navigator',
+        expectedKeys: ['storyBible', 'scenes', 'workflowStage']
     });
 
     // Find and click "Generate Keyframes" button
-    const generateButton = page.locator('button', { hasText: /Generate.*Keyframe/i });
+    const generateButton = page.locator('[data-testid="generate-keyframes"]').first();
     await expect(generateButton).toBeVisible({ timeout: 5000 });
     await expect(generateButton).toBeEnabled();
     
@@ -97,7 +104,13 @@ test.describe('Image Synchronization (ComfyUI → React)', () => {
       const sceneImage = page.locator(`img[alt*="${scene.title}"]`).first();
       
       try {
-        await sceneImage.waitFor({ state: 'visible', timeout: 45000 });
+        // Check for error toasts first
+        const errorToast = page.locator('.toast-error');
+        if (await errorToast.isVisible()) {
+            console.error('❌ Error toast detected:', await errorToast.textContent());
+        }
+
+        await sceneImage.waitFor({ state: 'visible', timeout: 120000 });
         console.log(`✅ Scene ${i + 1} image appeared in UI`);
 
         // Verify image has valid data URL
@@ -107,7 +120,7 @@ test.describe('Image Synchronization (ComfyUI → React)', () => {
         console.log(`✅ Scene ${i + 1} has valid base64 data URL (${imgSrc?.slice(0, 50)}...)`);
 
       } catch (error) {
-        console.error(`❌ Scene ${i + 1} image did not appear in UI within 45s`);
+        console.error(`❌ Scene ${i + 1} image did not appear in UI within 120s`);
         
         // Diagnostic: Check if image exists in IndexedDB
         const dbImages = await page.evaluate(async () => {

@@ -671,6 +671,14 @@ export interface LocalGenerationSettings {
     sceneChainedWorkflowProfile?: string; // Profile ID for chain-of-frames scene generation (optional)
     sceneBookendWorkflowProfile?: string; // Profile ID for bookend (first-last-frame) video generation (default: 'wan-flf2v')
     
+    // Bookend QA Mode
+    bookendQAMode?: {
+        enabled: boolean;
+        enforceKeyframePassthrough: boolean;
+        overrideAISuggestions: boolean;
+        notes?: string;
+    };
+    
     // ComfyUI Fetch Settings (for video/image retrieval robustness)
     comfyUIFetchMaxRetries?: number;   // Max retry attempts for fetching assets (default: 3)
     comfyUIFetchTimeoutMs?: number;    // Timeout in ms for each fetch attempt (default: 15000)

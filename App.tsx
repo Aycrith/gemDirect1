@@ -13,10 +13,11 @@ import { PipelineProvider } from './contexts/PipelineContext';
 import { LocalGenerationProvider } from './contexts/LocalGenerationContext';
 import { GenerationMetricsProvider } from './contexts/GenerationMetricsContext';
 import { createMediaGenerationActions, LOCAL_COMFY_ID } from './services/mediaGenerationService';
-import { HydrationProvider, HydrationGate } from './contexts/HydrationContext';
+import { HydrationProvider } from './contexts/HydrationContext';
 
 // Phase 1 State Management: Unified scene store with feature flag support
 import { useSceneStateStore, useSceneStoreHydrated } from './services/sceneStateStore';
+import { useSettingsStore } from './services/settingsStore';
 import { getFeatureFlag } from './utils/featureFlags';
 import { 
     validateStoreConsistency, 
@@ -47,6 +48,7 @@ const ContinuityModal = lazy(() => import('./components/ContinuityModal'));
 const VisualBiblePanel = lazy(() => import('./components/VisualBiblePanel'));
 const ArtifactViewer = lazy(() => import('./components/ArtifactViewer'));
 const PipelineTelemetryPanel = lazy(() => import('./components/PipelineTelemetryPanel'));
+const ManifestHistory = lazy(() => import('./components/ManifestHistory'));
 
 // P1 Optimization (2025-11-20): Additional lazy loading for conditional components
 const PipelineGenerator = lazy(() => import('./components/PipelineGenerator')); // Only used in Quick Generate mode
@@ -76,6 +78,7 @@ import BookOpenIcon from './components/icons/BookOpenIcon';
 import ProgressBar from './components/ProgressBar';
 import GlobalProgressIndicator from './components/GlobalProgressIndicator';
 import GenerationQueuePanel from './components/GenerationQueuePanel';
+import { PipelineEngineController } from './components/PipelineEngineController';
 import ComfyUICallbackProvider from './components/ComfyUICallbackProvider.clean';
 import { clearProjectData } from './utils/database';
 
@@ -119,6 +122,7 @@ const AppContent: React.FC = () => {
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const [isUsageDashboardOpen, setIsUsageDashboardOpen] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+    const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [refinedSceneIds, setRefinedSceneIds] = useState(new Set<string>());
     const [continuityModal, setContinuityModal] = useState<{ sceneId: string, lastFrame: string } | null>(null);
     const [isExtending, setIsExtending] = useState(false);
@@ -132,7 +136,13 @@ const AppContent: React.FC = () => {
     const { sceneStatuses, updateSceneStatus } = useSceneGenerationWatcher(scenes);
 
     const { settings: localGenSettings, setSettings: setLocalGenSettings } = useLocalGenerationSettings();
+    const setSettingsStore = useSettingsStore(state => state.setSettings);
     const [generatedImages, setGeneratedImages] = usePersistentState<Record<string, KeyframeData>>('generatedImages', {});
+
+    // Debug logging for generatedImages
+    useEffect(() => {
+        console.log('[App] generatedImages state keys:', Object.keys(generatedImages));
+    }, [generatedImages]);
     const [sceneImageStatuses, setSceneImageStatuses] = usePersistentState<Record<string, SceneImageGenerationStatus>>('sceneImageStatuses', {});
     const [generatedShotImages, setGeneratedShotImages] = usePersistentState<Record<string, string>>('generatedShotImages', {});
     const [continuityData, setContinuityData] = usePersistentState<Record<string, SceneContinuityData>>('continuityData', {});
@@ -899,6 +909,9 @@ const AppContent: React.FC = () => {
                                 <BookOpenIcon className="w-6 h-6 text-gray-400" />
                             </button>
                         )}
+                        <button onClick={() => setIsHistoryOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" aria-label="Open history" data-testid="history-button">
+                            <span className="text-xl">📜</span>
+                        </button>
                         <button onClick={() => setIsSettingsModalOpen(true)} className="p-2 rounded-full hover:bg-gray-700 transition-colors" aria-label="Open settings" data-testid="settings-button">
                             <SettingsIcon className="w-6 h-6 text-gray-400" />
                         </button>
@@ -1017,7 +1030,7 @@ const AppContent: React.FC = () => {
                         onClose={() => setIsSettingsModalOpen(false)}
                         settings={localGenSettings}
                         onSave={(newSettings) => {
-                            console.log('[App] onSave received newSettings:', JSON.stringify(newSettings, null, 2));
+                            console.log('[App] onSave received newSettings. wan-t2i length:', newSettings.workflowProfiles?.['wan-t2i']?.workflowJson?.length);
                             
                             // Detect keyframe mode change and clear incompatible keyframes
                             const oldMode = localGenSettings.keyframeMode ?? 'single';
@@ -1048,9 +1061,9 @@ const AppContent: React.FC = () => {
                                 }
                             }
                             
-                            console.log('[App] Calling setLocalGenSettings...');
-                            setLocalGenSettings(newSettings);
-                            console.log('[App] setLocalGenSettings called');
+                            console.log('[App] Calling setSettingsStore directly...');
+                            setSettingsStore(newSettings);
+                            console.log('[App] setSettingsStore called');
                             addToast('Settings saved!', 'success');
                         }}
                         addToast={addToast}
@@ -1128,6 +1141,15 @@ const AppContent: React.FC = () => {
                     />
                 </Suspense>
             )}
+            {isHistoryOpen && (
+                <Suspense fallback={null}>
+                    <ManifestHistory
+                        onClose={() => setIsHistoryOpen(false)}
+                        addToast={addToast}
+                        generatedImages={generatedImages}
+                    />
+                </Suspense>
+            )}
         </div>
     );
 };
@@ -1145,11 +1167,12 @@ const App: React.FC = () => (
                                         <GenerationMetricsProvider>
                                             <TemplateContextProvider>
                                                 <ComfyUICallbackProvider>
-                                                    <HydrationGate>
+                                                    {/* <HydrationGate> */}
                                                         <GlobalProgressIndicator />
                                                         <GenerationQueuePanel position="bottom-right" />
+                                                        <PipelineEngineController />
                                                         <AppContent />
-                                                    </HydrationGate>
+                                                    {/* </HydrationGate> */}
                                                 </ComfyUICallbackProvider>
                                             </TemplateContextProvider>
                                         </GenerationMetricsProvider>

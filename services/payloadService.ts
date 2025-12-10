@@ -354,7 +354,7 @@ ${baseContext}`;
  * @param storyBible - Story bible with character profiles
  * @param directorsVision - Director's visual styling notes
  * @param negativePrompts - Negative prompts to include
- * @returns Payloads formatted for queueComfyUIPrompt
+ * @returns Payloads formatted for queueComfyUIPromptSafe
  */
 export function generateKeyframePayloads(
     scene: Scene,
@@ -401,7 +401,7 @@ export function generateKeyframePayloads(
  * @param directorsVision - Director's visual styling notes
  * @param enhancers - Shot-specific enhancers
  * @param negativePrompts - Negative prompts to include
- * @returns Payloads formatted for queueComfyUIPrompt
+ * @returns Payloads formatted for queueComfyUIPromptSafe
  */
 export function generateShotPayloads(
     shot: Shot,

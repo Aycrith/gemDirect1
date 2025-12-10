@@ -45,11 +45,11 @@ const __dirname = path.dirname(__filename);
 
 export interface FrameMetrics {
   frameIndex: number;
-  meanBrightness: number;
-  meanR: number;
-  meanG: number;
-  meanB: number;
-  fileSize: number;
+  timestamp: number;
+  yAvg: number; // Brightness (0-255)
+  yVar: number; // Luma Variance (Complexity/Texture)
+  uAvg: number; // Color U (0-255)
+  vAvg: number; // Color V (0-255)
 }
 
 interface TemporalCoherenceMetrics {
@@ -463,11 +463,14 @@ export function computeObservedPositions(
     
     // Use normalized brightness as a proxy for vertical position
     // (brighter scenes tend to have more sky/upper content)
-    const normalizedBrightness = fm.meanBrightness / 255;
+    const normalizedBrightness = fm.yAvg / 255;
     
     // Use color balance to estimate horizontal position
     // (warmer colors often indicate subject focus)
-    const colorBalance = (fm.meanR - fm.meanB) / 255;
+    // U is Blue-Luma, V is Red-Luma.
+    // High V = Red, Low U = Yellow/Green?
+    // Let's use V - U as a proxy for "Warmth" vs "Coolness"
+    const colorBalance = (fm.vAvg - fm.uAvg) / 255;
     
     positions.push({
       frameIndex: fm.frameIndex,
@@ -605,84 +608,77 @@ async function getVideoMetadata(videoPath: string): Promise<{
 }
 
 /**
- * Extract frames from video and compute per-frame metrics
+ * Analyze video using ffmpeg signalstats filter to get per-frame metrics
  */
-async function extractFrameMetrics(
+export async function analyzeVideoMetrics(
   videoPath: string,
-  frameCount: number,
   verbose: boolean
 ): Promise<FrameMetrics[]> {
-  const metrics: FrameMetrics[] = [];
-  const tempDir = path.join(REPO_ROOT, 'temp', 'benchmark-frames', Date.now().toString());
-  
-  fs.mkdirSync(tempDir, { recursive: true });
+  log(`Analyzing video metrics for ${path.basename(videoPath)}...`, verbose);
+
+  // Run ffmpeg with signalstats filter
+  // We use metadata filter to print specific keys to stdout (file=-)
+  const args = [
+    '-i', videoPath,
+    '-vf', 'signalstats,metadata=mode=print:key=lavfi.signalstats.YAVG:file=-,metadata=mode=print:key=lavfi.signalstats.YVAR:file=-,metadata=mode=print:key=lavfi.signalstats.UAVG:file=-,metadata=mode=print:key=lavfi.signalstats.VAVG:file=-',
+    '-f', 'null',
+    '-'
+  ];
 
   try {
-    // Sample frames at regular intervals (max 20 frames for efficiency)
-    const sampleCount = Math.min(frameCount, 20);
-    const interval = Math.max(1, Math.floor(frameCount / sampleCount));
-
-    log(`Extracting ${sampleCount} sample frames from ${frameCount} total frames...`, verbose);
-
-    for (let i = 0; i < sampleCount; i++) {
-      const frameIndex = i * interval;
-      const outputPath = path.join(tempDir, `frame_${frameIndex.toString().padStart(4, '0')}.png`);
-
-      try {
-        // Extract frame
-        await runFFCommand('ffmpeg', [
-          '-v', 'error',
-          '-i', videoPath,
-          '-vf', `select=eq(n\\,${frameIndex})`,
-          '-vframes', '1',
-          '-f', 'image2',
-          outputPath
-        ]);
-
-        if (fs.existsSync(outputPath)) {
-          const stats = fs.statSync(outputPath);
-          
-          // Try to extract brightness using signalstats if available
-          // Fallback to file size heuristic
-          const brightness = estimateBrightness(stats.size);
-          
-          metrics.push({
-            frameIndex,
-            meanBrightness: brightness,
-            meanR: brightness * 0.9 + Math.random() * 20, // Estimate
-            meanG: brightness * 0.95 + Math.random() * 20,
-            meanB: brightness * 0.85 + Math.random() * 20,
-            fileSize: stats.size,
-          });
-        }
-      } catch (err) {
-        log(`Failed to extract frame ${frameIndex}: ${err}`, verbose);
-      }
-    }
-  } finally {
-    // Cleanup temp directory
-    try {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
+    const output = await runFFCommand('ffmpeg', args);
+    return parseFFmpegSignalStats(output);
+  } catch (err) {
+    log(`Failed to analyze video: ${err}`, true);
+    return [];
   }
-
-  return metrics;
 }
 
-/**
- * Estimate brightness from file size (heuristic)
- * Larger files typically have more detail/color variation
- */
-function estimateBrightness(fileSize: number): number {
-  // Typical frame is 20-100KB, map to 0-255 brightness estimate
-  const sizeKB = fileSize / 1024;
-  if (sizeKB < 5) return 15;  // Very dark (black frame)
-  if (sizeKB < 15) return 60;
-  if (sizeKB < 30) return 100;
-  if (sizeKB < 60) return 140;
-  return 180;  // Bright/detailed frame
+function parseFFmpegSignalStats(output: string): FrameMetrics[] {
+    const stats: FrameMetrics[] = [];
+    const lines = output.split('\n');
+    let currentFrameIndex = -1;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        
+        if (trimmed.startsWith('frame:')) {
+            const match = trimmed.match(/frame:(\d+)/);
+            if (match && match[1]) {
+                currentFrameIndex = parseInt(match[1], 10);
+                if (!stats[currentFrameIndex]) {
+                    stats[currentFrameIndex] = {
+                        frameIndex: currentFrameIndex,
+                        timestamp: 0,
+                        yAvg: 0,
+                        yVar: 0,
+                        uAvg: 0,
+                        vAvg: 0
+                    };
+                }
+            }
+            const timeMatch = trimmed.match(/pts_time:([\d.]+)/);
+            if (timeMatch && timeMatch[1] && stats[currentFrameIndex]) {
+                stats[currentFrameIndex]!.timestamp = parseFloat(timeMatch[1]);
+            }
+        } else if (currentFrameIndex >= 0 && stats[currentFrameIndex]) {
+            const frame = stats[currentFrameIndex]!;
+            if (trimmed.startsWith('lavfi.signalstats.YAVG=')) {
+                frame.yAvg = parseFloat(trimmed.split('=')[1] || '0');
+            }
+            if (trimmed.startsWith('lavfi.signalstats.YVAR=')) {
+                frame.yVar = parseFloat(trimmed.split('=')[1] || '0');
+            }
+            if (trimmed.startsWith('lavfi.signalstats.UAVG=')) {
+                frame.uAvg = parseFloat(trimmed.split('=')[1] || '0');
+            }
+            if (trimmed.startsWith('lavfi.signalstats.VAVG=')) {
+                frame.vAvg = parseFloat(trimmed.split('=')[1] || '0');
+            }
+        }
+    }
+    
+    return stats.filter(s => s !== undefined);
 }
 
 /**
@@ -699,7 +695,7 @@ function computeTemporalCoherence(frameMetrics: FrameMetrics[]): TemporalCoheren
     };
   }
 
-  const brightnesses = frameMetrics.map(f => f.meanBrightness);
+  const brightnesses = frameMetrics.map(f => f.yAvg);
   
   // Calculate brightness variance
   const meanBrightness = brightnesses.reduce((a, b) => a + b, 0) / brightnesses.length;
@@ -727,8 +723,16 @@ function computeTemporalCoherence(frameMetrics: FrameMetrics[]): TemporalCoheren
     ? differences.reduce((a, b) => a + b, 0) / differences.length 
     : 0;
 
-  // Color consistency (inverse of variance, normalized to 0-100)
-  const colorConsistency = Math.max(0, Math.min(100, 100 - (brightnessVariance / 255) * 100));
+  // Color consistency (variance of U and V)
+  const uValues = frameMetrics.map(f => f.uAvg);
+  const vValues = frameMetrics.map(f => f.vAvg);
+  
+  const uVar = calculateVariance(uValues);
+  const vVar = calculateVariance(vValues);
+  const colorVariance = (uVar + vVar) / 2;
+
+  // Normalize to 0-100
+  const colorConsistency = Math.max(0, Math.min(100, 100 - (Math.sqrt(colorVariance) / 50) * 100));
 
   return {
     brightnessVariance: round(brightnessVariance, 2),
@@ -737,6 +741,12 @@ function computeTemporalCoherence(frameMetrics: FrameMetrics[]): TemporalCoheren
     flickerFrameCount: flickerCount,
     frameDifferenceScore: round(frameDifferenceScore, 2),
   };
+}
+
+function calculateVariance(values: number[]): number {
+    if (values.length === 0) return 0;
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    return values.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / values.length;
 }
 
 /**
@@ -752,7 +762,7 @@ function computeMotionConsistency(frameMetrics: FrameMetrics[]): MotionConsisten
     };
   }
 
-  const brightnesses = frameMetrics.map(f => f.meanBrightness);
+  const brightnesses = frameMetrics.map(f => f.yAvg);
   
   // Calculate second derivative (acceleration) to detect jitter
   const accelerations: number[] = [];
@@ -771,7 +781,7 @@ function computeMotionConsistency(frameMetrics: FrameMetrics[]): MotionConsisten
     : 0;
 
   // Transition smoothness: inverse of jitter, normalized
-  const transitionSmoothness = Math.max(0, Math.min(100, 100 - (jitterScore / 50) * 100));
+  const transitionSmoothness = Math.max(0, Math.min(100, 100 - (jitterScore / 10) * 100));
 
   // Determine motion intensity based on overall brightness changes
   const totalChange = Math.abs((brightnesses[brightnesses.length - 1] ?? 0) - (brightnesses[0] ?? 0));
@@ -816,34 +826,36 @@ function computeIdentityStability(frameMetrics: FrameMetrics[]): IdentityStabili
     };
   }
 
-  const fileSizes = frameMetrics.map(f => f.fileSize);
+  // Use Y Variance (texture detail) as proxy for identity features
+  const variances = frameMetrics.map(f => f.yVar);
+  const meanVar = variances.reduce((a, b) => a + b, 0) / variances.length;
   
-  // Use file size variance as proxy for identity stability
-  // Consistent identity = consistent visual complexity = consistent file size
-  const meanSize = fileSizes.reduce((a, b) => a + b, 0) / fileSizes.length;
-  const sizeVariance = fileSizes.reduce((acc, s) => acc + Math.pow(s - meanSize, 2), 0) / fileSizes.length;
-  const centerRegionVariance = Math.sqrt(sizeVariance);
+  // Calculate stability of the variance itself (how much detail fluctuates)
+  const varianceOfVariance = calculateVariance(variances);
+  const centerRegionVariance = Math.sqrt(varianceOfVariance); // Standard deviation of texture variance
+  
+  // Identity score: if texture amount is constant, identity is likely preserved
+  // Normalize: if stdDev is 10% of mean, score is 90.
+  const stabilityRatio = meanVar > 0 ? centerRegionVariance / meanVar : 1;
+  const identityScore = Math.max(0, Math.min(100, 100 - (stabilityRatio * 100)));
 
-  // Detect identity breaks (sudden large changes in visual complexity)
-  let breakCount = 0;
-  const breakThreshold = meanSize * 0.4; // 40% change threshold
-  
-  for (let i = 1; i < fileSizes.length; i++) {
-    const prev = fileSizes[i - 1] ?? 0;
-    const curr = fileSizes[i] ?? 0;
-    if (Math.abs(curr - prev) > breakThreshold) {
-      breakCount++;
+  // Detect identity breaks (sudden large changes in texture/detail)
+  let identityBreakCount = 0;
+  for (let i = 1; i < variances.length; i++) {
+    const prev = variances[i - 1] ?? 0;
+    const curr = variances[i] ?? 0;
+    // If texture variance changes by more than 50%, it might be a scene cut or identity morph
+    if (Math.abs(curr - prev) > (meanVar * 0.5)) {
+      identityBreakCount++;
     }
   }
 
-  // Identity score: based on consistency
-  const normalizedVariance = centerRegionVariance / meanSize;
-  const identityScore = Math.max(0, Math.min(100, 100 - normalizedVariance * 200));
+  const regionsStable = identityBreakCount < 3;
 
   return {
     identityScore: round(identityScore, 1),
-    regionsStable: breakCount < 2,
-    identityBreakCount: breakCount,
+    regionsStable,
+    identityBreakCount,
     centerRegionVariance: round(centerRegionVariance, 2),
   };
 }
@@ -968,7 +980,7 @@ async function analyzeVideo(
   // Extract and analyze frames
   let frameMetrics: FrameMetrics[] = [];
   try {
-    frameMetrics = await extractFrameMetrics(videoPath, metadata.frameCount, verbose);
+    frameMetrics = await analyzeVideoMetrics(videoPath, verbose);
     log(`  Extracted ${frameMetrics.length} frame samples`, verbose);
   } catch (err) {
     const msg = `Failed to extract frames: ${err}`;

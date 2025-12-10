@@ -618,6 +618,8 @@ export const useSettingsStore = create<SettingsStore>()(
                 },
                 onRehydrateStorage: () => (state) => {
                     if (state) {
+                        console.log('[SettingsStore] Rehydrating. Raw profiles keys:', Object.keys(state.workflowProfiles || {}));
+                        
                         // Normalize workflow profiles on hydration
                         const normalized = normalizeProfiles(state.workflowProfiles || {});
                         

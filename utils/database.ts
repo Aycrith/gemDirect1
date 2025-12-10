@@ -2,10 +2,11 @@ import { openDB, DBSchema } from 'idb';
 import { StoryBible, Scene } from '../types';
 
 const DB_NAME = 'cinematic-story-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORY_BIBLE_STORE = 'storyBible';
 const SCENES_STORE = 'scenes';
 const MISC_STORE = 'misc'; // For storing vision, prompts, etc.
+const MANIFESTS_STORE = 'manifests';
 
 interface MyDB extends DBSchema {
   [STORY_BIBLE_STORE]: {
@@ -20,7 +21,12 @@ interface MyDB extends DBSchema {
   [MISC_STORE]: {
     key: string;
     value: unknown;
-  }
+  };
+  [MANIFESTS_STORE]: {
+    key: string;
+    value: any; // GenerationManifest
+    indexes: { 'by-timestamp': string };
+  };
 }
 
 // In-memory fallback cache when IndexedDB is blocked
@@ -48,11 +54,17 @@ const getDB = async () => {
   if (!dbPromise) {
     try {
       dbPromise = openDB<MyDB>(DB_NAME, DB_VERSION, {
-        upgrade(db) {
-          db.createObjectStore(STORY_BIBLE_STORE);
-          const sceneStore = db.createObjectStore(SCENES_STORE, { keyPath: 'id' });
-          sceneStore.createIndex('by-order', 'order');
-          db.createObjectStore(MISC_STORE);
+        upgrade(db, oldVersion, _newVersion, _transaction) {
+          if (oldVersion < 1) {
+            db.createObjectStore(STORY_BIBLE_STORE);
+            const sceneStore = db.createObjectStore(SCENES_STORE, { keyPath: 'id' });
+            sceneStore.createIndex('by-order', 'order');
+            db.createObjectStore(MISC_STORE);
+          }
+          if (oldVersion < 2) {
+            const manifestStore = db.createObjectStore(MANIFESTS_STORE, { keyPath: 'manifestId' });
+            manifestStore.createIndex('by-timestamp', 'timestamp');
+          }
         },
       });
       await dbPromise; // Test access
@@ -160,6 +172,18 @@ export const saveData = async (key: string, data: unknown) => {
 export const getData = async (key: string) => {
   try {
     const data = await (await getDB()).get(MISC_STORE, key);
+    
+    if (key === 'gemDirect-settings-store') {
+        console.log(`[Database] Loaded settings store. Data type: ${typeof data}`);
+        if (data && typeof data === 'object') {
+             // @ts-ignore
+             const profiles = data.state?.workflowProfiles;
+             if (profiles && profiles['wan-t2i']) {
+                 console.log(`[Database] Loaded wan-t2i length: ${profiles['wan-t2i'].workflowJson?.length}`);
+             }
+        }
+    }
+
     // If data is in IndexedDB, return it
     if (data !== undefined && data !== null) {
       return data;
@@ -199,6 +223,45 @@ export const getData = async (key: string) => {
   }
 };
 
+// Manifests
+export const saveManifestToDB = async (manifest: any) => {
+  try {
+    return await (await getDB()).put(MANIFESTS_STORE, manifest);
+  } catch (error) {
+    if ((error as Error).message === 'DB_ACCESS_BLOCKED') {
+      inMemoryCache.set(`manifest_${manifest.manifestId}`, manifest);
+      return;
+    }
+    throw error;
+  }
+};
+
+export const getManifestFromDB = async (manifestId: string) => {
+  try {
+    return await (await getDB()).get(MANIFESTS_STORE, manifestId);
+  } catch (error) {
+    if ((error as Error).message === 'DB_ACCESS_BLOCKED') {
+      return inMemoryCache.get(`manifest_${manifestId}`);
+    }
+    throw error;
+  }
+};
+
+export const getAllManifestsFromDB = async () => {
+  try {
+    return await (await getDB()).getAllFromIndex(MANIFESTS_STORE, 'by-timestamp');
+  } catch (error) {
+    if ((error as Error).message === 'DB_ACCESS_BLOCKED') {
+      // Return all cached manifests
+      return Array.from(inMemoryCache.entries())
+        .filter(([k]) => k.startsWith('manifest_'))
+        .map(([, v]) => v)
+        .sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+    }
+    throw error;
+  }
+};
+
 // Clear All Data
 export const clearProjectData = async () => {
   try {
@@ -206,7 +269,8 @@ export const clearProjectData = async () => {
     await Promise.all([
       db.clear(STORY_BIBLE_STORE),
       db.clear(SCENES_STORE),
-      db.clear(MISC_STORE)
+      db.clear(MISC_STORE),
+      db.clear(MANIFESTS_STORE)
     ]);
   } catch (error) {
     if ((error as Error).message === 'DB_ACCESS_BLOCKED') {
@@ -216,3 +280,4 @@ export const clearProjectData = async () => {
     throw error;
   }
 };
+

@@ -468,7 +468,7 @@ export async function executeReplay(
     // TODO: Actually invoke generation
     // For now, this is a placeholder that shows the integration point.
     // Real implementation would call:
-    // - queueComfyUIPrompt() for basic generation
+    // - queueComfyUIPromptSafe() for basic generation
     // - generateVideoFromBookendsWithPreflight() for bookend workflows
     // - The appropriate pipeline based on manifest.generationType
     

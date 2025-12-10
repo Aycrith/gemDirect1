@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import { HydrationGate } from './HydrationContext';
 import { MediaGenerationProvider } from '../types';
 import { usePersistentState } from '../utils/hooks';
 import { createMediaGenerationActions, MediaGenerationActions } from '../services/mediaGenerationService';
@@ -197,7 +198,9 @@ export const MediaGenerationProviderProvider: React.FC<{ children: React.ReactNo
 
     return (
         <MediaGenerationProviderContext.Provider value={value}>
-            {children}
+            <HydrationGate>
+                {children}
+            </HydrationGate>
         </MediaGenerationProviderContext.Provider>
     );
 };

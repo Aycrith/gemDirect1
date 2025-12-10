@@ -1,12 +1,18 @@
 # Project Status - Consolidated (Single Source of Truth)
 
-**Last Updated**: December 2, 2025 (Bookend QA Infrastructure Validation)  
-**Version**: 1.0.0-rc7  
+**Last Updated**: December 9, 2025 (Guardian Remediation Complete)  
+**Version**: 1.0.0-rc8  
 **Status**: ✅ Production-Ready (100% Complete)
 
 > **Note**: This document consolidates information from `CURRENT_STATUS.md`, `START_HERE.md`, and recent session summaries into a single authoritative reference. For detailed history, see `Development_History/Sessions/`.
 
-> **Latest Session**: Bookend QA Infrastructure Validation (2025-12-02) - **✅ COMPLETE** - Validated and fixed all 4 bookend npm scripts. Fixed video output detection (images array + animated flag), similarity JSON parsing, image upload to ComfyUI input. Calibrated thresholds (fail=25%, warn=35%) to match actual FLF2V model behavior (~35-40% pixel similarity). Parameter sweep now includes frame similarity metrics. Wired `bookendQAMode` flag to TimelineEditor and videoQualityGateService. Unit tests **1908 passed**, 1 skipped ✅. TypeScript: **Zero build errors** ✅.
+> **Latest Session**: Phase 3 Remediation Complete (2025-12-09) - **✅ COMPLETE** - Implemented Guardian rules (P3.4). Remediated all violations: Refactored `videoUpscalingService.ts` to use safe queue. Added `<HydrationGate>` to 9 Context Providers. Fixed TypeScript errors in benchmark scripts. Guardian Scan: **No issues**. TypeScript: **Zero errors**.
+
+> **Previous Session**: Generation Queue Integration (2025-12-09) - **✅ COMPLETE** - Implemented Generation Queue to prevent VRAM exhaustion. Added `queueComfyUIPromptWithQueue` wrapper in `comfyUIService.ts`. Updated `generateVideoFromShot` to use queue when `useGenerationQueue` flag is enabled. Verified with UI panel integration.
+
+> **Previous Session**: Benchmark Harness Integration (2025-12-09) - **✅ COMPLETE** - Fixed critical bug in FFmpeg output parser (`video-quality-benchmark.ts`) where metrics were returning zero. Verified integration with `productionQaGoldenPipeline.ts`. Validated with integration test. P4.2 complete.
+
+> **Previous Session**: Bookend QA Infrastructure Validation (2025-12-02) - **✅ COMPLETE** - Validated and fixed all 4 bookend npm scripts. Fixed video output detection (images array + animated flag), similarity JSON parsing, image upload to ComfyUI input. Calibrated thresholds (fail=25%, warn=35%) to match actual FLF2V model behavior (~35-40% pixel similarity). Parameter sweep now includes frame similarity metrics. Wired `bookendQAMode` flag to TimelineEditor and videoQualityGateService. Unit tests **1908 passed**, 1 skipped ✅. TypeScript: **Zero build errors** ✅.
 
 > **Previous Session**: Bookend QA Implementation (2025-12-02) - Fixed TypeScript TS2532 blocker via nullish coalescing. Added `bookendQAMode` feature flag with `getEffectiveFlagsForQAMode()` helper. All 97 test files pass. Corrected prior audit findings (all services exist).
 

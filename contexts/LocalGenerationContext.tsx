@@ -10,6 +10,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { HydrationGate } from './HydrationContext';
 import type { LocalGenerationStatus } from '../types';
 
 /**
@@ -138,7 +139,9 @@ export const LocalGenerationProvider: React.FC<LocalGenerationProviderProps> = (
     
     return (
         <LocalGenerationContext.Provider value={value}>
-            {children}
+            <HydrationGate>
+                {children}
+            </HydrationGate>
         </LocalGenerationContext.Provider>
     );
 };

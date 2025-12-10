@@ -17,6 +17,8 @@ import { useSceneStateStore } from '../services/sceneStateStore';
 // Phase 1D: Generation status Zustand store integration
 import { useAllGenStatuses, DEFAULT_GENERATION_STATUS } from '../services/generationStatusStore';
 import { isFeatureEnabled } from '../utils/featureFlags';
+import { usePipelineStore } from '../services/pipelineStore';
+import { PipelineTask } from '../types/pipeline';
 
 interface ContinuityDirectorProps {
   scenes: Scene[];
@@ -173,6 +175,66 @@ CONTEXT FROM ADJACENT SCENES:
       `.trim();
   }, [storyBible, effectiveScenes]);
 
+  // Phase 4.4: Pipeline Orchestration
+  const createPipeline = usePipelineStore(state => state.createPipeline);
+  const activePipelineId = usePipelineStore(state => state.activePipelineId);
+
+  const handleExportAll = useCallback(() => {
+    const tasks: PipelineTask[] = [];
+    
+    effectiveScenes.forEach(scene => {
+      if (!scene.timeline) return;
+      
+      scene.timeline.shots.forEach(shot => {
+        const keyframeTaskId = `keyframe-${scene.id}-${shot.id}`;
+        const videoTaskId = `video-${scene.id}-${shot.id}`;
+        
+        // Keyframe Task
+        tasks.push({
+          id: keyframeTaskId,
+          type: 'generate_keyframe',
+          label: `Keyframe: ${scene.title} - Shot ${shot.id}`,
+          status: 'pending',
+          dependencies: [],
+          retryCount: 0,
+          createdAt: Date.now(),
+          payload: {
+            sceneId: scene.id,
+            shotId: shot.id,
+            prompt: (shot as any).visualPrompt || shot.description,
+            negativePrompt: '', 
+            workflowProfileId: 'wan-t2i'
+          }
+        });
+
+        // Video Task
+        tasks.push({
+          id: videoTaskId,
+          type: 'generate_video',
+          label: `Video: ${scene.title} - Shot ${shot.id}`,
+          status: 'pending',
+          dependencies: [keyframeTaskId],
+          retryCount: 0,
+          createdAt: Date.now(),
+          payload: {
+            sceneId: scene.id,
+            shotId: shot.id,
+            prompt: (shot as any).visualPrompt || shot.description,
+            negativePrompt: '',
+            workflowProfileId: 'wan-i2v',
+          }
+        });
+      });
+    });
+
+    if (tasks.length > 0) {
+      createPipeline('Export All Scenes', tasks);
+      addToast('Export pipeline started', 'success');
+    } else {
+      addToast('No shots to export', 'warning');
+    }
+  }, [effectiveScenes, createPipeline, addToast]);
+
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -185,6 +247,28 @@ CONTEXT FROM ADJACENT SCENES:
           Upload your generated videos for each scene. The AI will analyze them, score them against your creative intent, and provide feedback to refine your story.
           {/* NOTE: Future enhancement - Auto-link latest renders from the canonical pipeline instead of requiring manual upload, and integrate Visual Bible continuity scoring. See Phase 4 roadmap. */}
         </p>
+        
+        <div className="mt-6 flex justify-center">
+          <button
+            onClick={handleExportAll}
+            disabled={!!activePipelineId}
+            className={`px-6 py-3 rounded-lg font-bold text-white transition-colors shadow-lg flex items-center gap-2 ${
+              activePipelineId 
+                ? 'bg-gray-600 cursor-not-allowed' 
+                : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500'
+            }`}
+          >
+            {activePipelineId ? (
+               <>
+                 <span className="animate-spin">⟳</span> Pipeline Active...
+               </>
+            ) : (
+               <>
+                 <span>🚀</span> Export All Scenes
+               </>
+            )}
+          </button>
+        </div>
       </header>
 
       {/* Phase 2.2: Prerequisite warning panel */}

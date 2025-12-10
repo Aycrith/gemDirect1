@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useMemo, useRef } from 'react';
+import { HydrationGate } from './HydrationContext';
 import { TemplateMetadata } from '../services/templateLoader';
 
 export interface TemplateContextValue {
@@ -108,7 +109,9 @@ export const TemplateContextProvider: React.FC<TemplateContextProviderProps> = (
   
   return (
     <TemplateContext.Provider value={value}>
-      {children}
+      <HydrationGate>
+        {children}
+      </HydrationGate>
     </TemplateContext.Provider>
   );
 };

@@ -55,14 +55,14 @@ const createSimpleCameraPath = (keyframes: CameraKeyframe[]): CameraPath => ({
     keyframes,
 });
 
-const createFrameMetrics = (overrides: Partial<FrameMetrics & { frameIndex: number }>[]): Array<{ frameIndex: number; meanBrightness: number; meanR: number; meanG: number; meanB: number; fileSize: number }> =>
+const createFrameMetrics = (overrides: Partial<FrameMetrics>[]): FrameMetrics[] =>
     overrides.map((o, i) => ({
         frameIndex: o.frameIndex ?? i,
-        meanBrightness: o.meanBrightness ?? 128,
-        meanR: o.meanR ?? 120,
-        meanG: o.meanG ?? 130,
-        meanB: o.meanB ?? 125,
-        fileSize: o.fileSize ?? 50000,
+        timestamp: o.timestamp ?? i * 0.04,
+        yAvg: o.yAvg ?? 128,
+        yVar: o.yVar ?? 100,
+        uAvg: o.uAvg ?? 128,
+        vAvg: o.vAvg ?? 128,
     }));
 
 // ============================================================================
@@ -152,9 +152,9 @@ describe('interpolateCameraPosition', () => {
 describe('computeObservedPositions', () => {
     it('computes positions from frame metrics', () => {
         const frames = createFrameMetrics([
-            { frameIndex: 0, meanBrightness: 100, meanR: 100, meanB: 100 },
-            { frameIndex: 10, meanBrightness: 150, meanR: 150, meanB: 100 },
-            { frameIndex: 20, meanBrightness: 200, meanR: 100, meanB: 150 },
+            { frameIndex: 0, yAvg: 100, uAvg: 100, vAvg: 100 },
+            { frameIndex: 10, yAvg: 150, uAvg: 150, vAvg: 100 },
+            { frameIndex: 20, yAvg: 200, uAvg: 100, vAvg: 150 },
         ]);
 
         const positions = computeObservedPositions(frames);

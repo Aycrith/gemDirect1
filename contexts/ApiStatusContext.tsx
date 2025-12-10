@@ -1,4 +1,5 @@
 import React, { useState, createContext, useContext, ReactNode } from 'react';
+import { HydrationGate } from './HydrationContext';
 
 export type ApiStatus = 'idle' | 'bundling' | 'loading' | 'retrying' | 'error' | 'success';
 
@@ -36,7 +37,9 @@ export const ApiStatusProvider: React.FC<{ children: ReactNode }> = ({ children 
   
   return (
     <ApiStatusContext.Provider value={contextValue}>
-      {children}
+      <HydrationGate>
+        {children}
+      </HydrationGate>
     </ApiStatusContext.Provider>
   );
 };

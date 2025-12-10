@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import { HydrationGate } from './HydrationContext';
 import { LocalGenerationSettings } from '../types';
 import { usePersistentState } from '../utils/hooks';
 import { getFeatureFlag } from '../utils/featureFlags';
@@ -78,7 +79,9 @@ const ZustandBackedProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     
     return (
         <LocalGenerationSettingsContext.Provider value={contextValue}>
-            {children}
+            <HydrationGate>
+                {children}
+            </HydrationGate>
         </LocalGenerationSettingsContext.Provider>
     );
 };
@@ -159,7 +162,9 @@ const LegacyProvider: React.FC<LegacyProviderProps> = ({ children, settings, set
 
     return (
         <LocalGenerationSettingsContext.Provider value={contextValue}>
-            {children}
+            <HydrationGate>
+                {children}
+            </HydrationGate>
         </LocalGenerationSettingsContext.Provider>
     );
 };

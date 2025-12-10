@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
+import { HydrationGate } from './HydrationContext';
 import { PlanExpansionStrategy } from '../types';
 import { usePersistentState } from '../utils/hooks';
 import { createPlanExpansionActions, PlanExpansionActions } from '../services/planExpansionService';
@@ -94,7 +95,9 @@ export const PlanExpansionStrategyProvider: React.FC<{ children: React.ReactNode
 
     return (
         <PlanExpansionStrategyContext.Provider value={value}>
-            {children}
+            <HydrationGate>
+                {children}
+            </HydrationGate>
         </PlanExpansionStrategyContext.Provider>
     );
 };

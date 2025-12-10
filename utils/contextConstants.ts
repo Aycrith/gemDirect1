@@ -7,6 +7,12 @@ export const WORKFLOW_PROFILE_DEFINITIONS: Array<{ id: string; label: string }> 
     { id: 'flux-t2i', label: 'FLUX Text→Image (Keyframe)' },
     { id: 'wan-t2i', label: 'WAN Text→Image (Keyframe)' },
     { id: 'wan-i2v', label: 'WAN Text+Image→Video' },
+    { id: 'wan-flf2v', label: 'WAN First/Last Frame→Video' },
+    { id: 'wan-fun-inpaint', label: 'WAN Fun Inpainting' },
+    { id: 'wan-fun-control', label: 'WAN Fun ControlNet' },
+    { id: 'wan-flf2v-feta', label: 'WAN First/Last Frame→Video + FETA' },
+    { id: 'wan-ipadapter', label: 'WAN IPAdapter' },
+    { id: 'video-upscaler', label: 'Video Upscaler' },
 ];
 export const PRIMARY_WORKFLOW_PROFILE_ID = 'wan-i2v';
 

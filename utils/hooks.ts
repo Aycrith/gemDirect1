@@ -67,7 +67,18 @@ export function usePersistentState<T>(key: string, initialValue: T): [T, React.D
     const [state, setState] = useState<T>(getInitialState);
     const [isLoaded, setIsLoaded] = useState(false);
     const prevStateRef = useRef<T>(state);
-    const loadedFromSession = useRef(false);
+    
+    // Initialize loadedFromSession synchronously to prevent race conditions
+    const loadedFromSession = useRef<boolean>(false);
+    // Lazy initialization pattern
+    if (!loadedFromSession.current && typeof window !== 'undefined') {
+        try {
+            if (window.sessionStorage.getItem(`gemDirect_${key}`)) {
+                loadedFromSession.current = true;
+            }
+        } catch {}
+    }
+
     const registeredRef = useRef(false);
     
     // FIX (2025-12-01): Use ref for hydration callbacks to prevent infinite loops.

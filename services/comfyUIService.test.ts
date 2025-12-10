@@ -3,6 +3,7 @@ import type { Shot, CreativeEnhancers, TimelineData, MappableData } from '../typ
 import type { SceneTransitionContext } from './sceneTransitionService';
 import * as comfyUIService from './comfyUIService';
 import { createValidTestSettings } from './__tests__/fixtures';
+import { setGlobalVRAMCheck } from './generationQueue';
 
 const { buildShotPrompt } = comfyUIService;
 
@@ -110,6 +111,8 @@ describe('generateVideoFromShot', () => {
 
   it('queues a prompt and resolves with frame metadata', async () => {
     const settings = createValidTestSettings();
+    // Explicitly disable generation queue to test direct path
+    settings.featureFlags = { useGenerationQueue: false } as any;
     const progressSpy = vi.fn();
 
     const frames = Array.from({ length: 25 }, (_, idx) => `frame-${idx}`);
@@ -180,6 +183,8 @@ describe('generateVideoFromShot', () => {
 
   it('allows overriding the negative prompt per shot', async () => {
     const settings = createValidTestSettings();
+    // Explicitly disable generation queue to test direct path
+    settings.featureFlags = { useGenerationQueue: false } as any;
     const queueMock = vi.fn().mockResolvedValue({ prompt_id: 'shot-override' });
     const queueInfoMock = vi.fn().mockResolvedValue({ queue_running: 0, queue_pending: 0 });
     const trackMock = vi.fn().mockImplementation((_, __, callback) => {
@@ -270,6 +275,13 @@ describe('generateTimelineVideos', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    // Mock VRAM check to always pass
+    setGlobalVRAMCheck(async () => ({
+        available: true,
+        freeMB: 10000,
+        totalMB: 24000,
+        utilizationPercent: 10
+    }));
   });
 
   afterEach(() => {

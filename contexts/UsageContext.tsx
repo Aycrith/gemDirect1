@@ -1,4 +1,5 @@
 import React, { useState, createContext, useContext, ReactNode, useCallback } from 'react';
+import { HydrationGate } from './HydrationContext';
 import { ApiCallLog } from '../types';
 
 // Constants for cost estimation and rate limits
@@ -78,7 +79,9 @@ export const UsageProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   return (
     <UsageContext.Provider value={contextValue}>
-      {children}
+      <HydrationGate>
+        {children}
+      </HydrationGate>
     </UsageContext.Provider>
   );
 };

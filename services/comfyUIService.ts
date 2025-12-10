@@ -6,6 +6,7 @@ import { validatePromptGuardrails } from './promptValidator';
 import { SceneTransitionContext, ShotTransitionContext, formatTransitionContextForPrompt, formatShotTransitionContextForPrompt, buildShotTransitionContext } from './sceneTransitionService';
 import { isFeatureEnabled, FeatureFlags } from '../utils/featureFlags';
 import { ApiLogCallback } from './geminiService';
+import { saveManifestToDB } from '../utils/database';
 // LM Studio model manager - ensures VRAM is freed before ComfyUI generation
 import { ensureModelsUnloaded } from './lmStudioModelManager';
 import {
@@ -52,7 +53,7 @@ import {
 import { type ComfyUIPayloads } from './payloadService';
 // Phase 7: Video upscaling post-processing (imported when needed)
 // Generation Queue for serial VRAM-safe execution
-import { getGenerationQueue, createVideoTask, GenerationStatus } from './generationQueue';
+import { getGenerationQueue, createVideoTask, GenerationStatus, setGlobalVRAMCheck, type VRAMStatus, configureQueuePreflight } from './generationQueue';
 // Error types for queue error extraction
 import { CSGError } from '../types/errors';
 // Endpoint snapping post-processor for bookend video quality
@@ -124,7 +125,7 @@ type StateChangeCallback = (state: Partial<LocalGenerationStatus>) => void;
 /**
  * ComfyUI payloads for prompt injection - re-exported from payloadService for compatibility
  */
-type ComfyUIPromptPayloads = ComfyUIPayloads;
+export type ComfyUIPromptPayloads = ComfyUIPayloads;
 
 export const DEFAULT_NEGATIVE_PROMPT = 'blurry, low-resolution, watermark, text, bad anatomy, distorted, unrealistic, oversaturated, undersaturated, motion blur';
 
@@ -189,6 +190,11 @@ function emitManifest(manifest: GenerationManifest): string {
     
     // Store in memory
     manifestStore.set(manifest.manifestId, manifest);
+    
+    // Persist to IndexedDB (P4.3)
+    saveManifestToDB(manifest).catch(err => {
+        console.warn(`[Manifest] Failed to persist manifest ${manifest.manifestId}:`, err);
+    });
     
     // Log for debugging/tracing
     console.log(`[Manifest] Emitting ${filename}:`, {
@@ -457,6 +463,51 @@ export const checkServerConnection = async (url: string): Promise<void> => {
 };
 
 /**
+ * Gets structured VRAM status for the generation queue
+ */
+export const getVRAMStatus = async (url?: string): Promise<VRAMStatus> => {
+    if (!url) {
+        // If no URL provided, assume available (skip check)
+        return {
+            available: true,
+            freeMB: 99999,
+            totalMB: 99999,
+            utilizationPercent: 0
+        };
+    }
+    const baseUrl = getComfyUIBaseUrl(url);
+    const response = await fetchWithTimeout(`${baseUrl}/system_stats`, undefined, 3000);
+    if (!response.ok) {
+        throw new Error(`Could not retrieve system stats (status: ${response.status}).`);
+    }
+    const stats = await response.json();
+    const gpuDevice = stats.devices?.find((d: ComfyUIDevice) => ['cuda', 'dml', 'mps', 'xpu', 'rocm'].includes(d.type.toLowerCase()));
+
+    if (gpuDevice) {
+        const vramTotalMB = gpuDevice.vram_total / (1024 * 1024);
+        const vramFreeMB = gpuDevice.vram_free / (1024 * 1024);
+        
+        return {
+            available: true,
+            freeMB: vramFreeMB,
+            totalMB: vramTotalMB,
+            utilizationPercent: ((vramTotalMB - vramFreeMB) / vramTotalMB) * 100
+        };
+    }
+    
+    // No GPU or CPU only
+    return {
+        available: true, // CPU is always "available" but slow
+        freeMB: 0,
+        totalMB: 0,
+        utilizationPercent: 0
+    };
+};
+
+// Initialize the global queue with VRAM check
+setGlobalVRAMCheck(getVRAMStatus);
+
+/**
  * Checks the ComfyUI server's system resources, like GPU VRAM.
  * @param url The server URL to check.
  * @returns A promise that resolves to a status message string.
@@ -500,7 +551,7 @@ export const checkSystemResources = async (url: string): Promise<string> => {
  * @param url The server URL to check.
  * @returns A promise that resolves to an object containing running and pending queue counts.
  */
-const DEFAULT_WORKFLOW_PROFILE_ID = 'wan-i2v';
+export const DEFAULT_WORKFLOW_PROFILE_ID = 'wan-i2v';
 
 // Known workflow file names for canonical detection
 // These are used only for friendly logging/metadata, not as hard-coded paths.
@@ -1302,16 +1353,6 @@ export const queueComfyUIPrompt = async (
     // ========================================================================
     const workflowProfileCount = Object.keys(settings.workflowProfiles || {}).length;
     const hasRootWorkflowJson = !!settings.workflowJson;
-    const hasProfileWorkflowJson = !!settings.workflowProfiles?.[profileId]?.workflowJson;
-    console.log('[queueComfyUIPrompt] Entry diagnostics:', {
-        comfyUIUrl: settings.comfyUIUrl,
-        profileId,
-        workflowProfileCount,
-        hasRootWorkflowJson,
-        hasProfileWorkflowJson,
-        hasProfileOverride: !!profileOverride,
-        hasImage: !!base64Image && base64Image.length > 0
-    });
     
     // ========================================================================
     // LM Studio VRAM Release - Unload LLM models to free VRAM for ComfyUI
@@ -1472,6 +1513,7 @@ export const queueComfyUIPrompt = async (
     
     // --- ALL CHECKS PASSED, PROCEED WITH GENERATION ---
     try {
+        console.log('[DEBUG] queueComfyUIPrompt: Starting generation sequence');
         const promptPayload = JSON.parse(JSON.stringify(promptPayloadTemplate));
         const baseUrl = getComfyUIBaseUrl(runtimeSettings.comfyUIUrl);
         const clientId = runtimeSettings.comfyUIClientId || `csg_${Date.now()}`;
@@ -1481,6 +1523,7 @@ export const queueComfyUIPrompt = async (
         let uploadedImageFilename: string | null = null;
         
         // --- STEP 1: UPLOAD ASSETS (IF MAPPED) ---
+        console.log('[DEBUG] queueComfyUIPrompt: Step 1 - Upload Assets');
         const imageMappingKey = Object.keys(runtimeSettings.mapping).find(key => runtimeSettings.mapping[key] === 'keyframe_image');
         if (imageMappingKey && base64Image) {
             const nodeId = imageMappingKey.split(':')[0];
@@ -1684,6 +1727,7 @@ export const queueComfyUIPrompt = async (
         }
 
         // --- STEP 2: INJECT DATA INTO WORKFLOW BASED ON MAPPING ---
+        console.log('[DEBUG] queueComfyUIPrompt: Step 2 - Inject Data');
         for (const [key, dataType] of Object.entries(runtimeSettings.mapping)) {
             if (dataType === 'none') continue;
 
@@ -1741,6 +1785,7 @@ export const queueComfyUIPrompt = async (
         }
         
         // --- STEP 3: QUEUE THE PROMPT ---
+        console.log('[DEBUG] queueComfyUIPrompt: Step 3 - Queue Prompt');
         // Generate correlation ID for request tracking
         const correlationId = generateCorrelationId();
         const startTime = Date.now();
@@ -2384,6 +2429,52 @@ export const generateVideoFromShot = async (
             } catch (ipError) {
                 console.warn(`[generateVideoFromShot] Failed to prepare IP-Adapter payload:`, ipError);
                 // Continue without IP-Adapter - don't fail the generation
+            }
+        }
+
+        // Step 3: Queue prompt in ComfyUI (with optional Generation Queue)
+        const useQueue = isFeatureEnabled(settings.featureFlags, 'useGenerationQueue');
+        
+        if (useQueue) {
+            reportProgress({ status: 'running', message: 'Queuing via Generation Manager...' });
+            try {
+                const result = await queueComfyUIPromptWithQueue(
+                    settings,
+                    payloads,
+                    keyframeImage || '',
+                    videoProfileId,
+                    {
+                        sceneId: overrides?.scene?.id,
+                        shotId: shot.id,
+                        waitForCompletion: true,
+                        onProgress: reportProgress,
+                        priority: 'normal',
+                        extraData: ipAdapterPayload ? { ipAdapter: ipAdapterPayload } : undefined
+                    }
+                );
+                
+                const output = result as LocalGenerationOutput;
+                
+                let frameSequence: string[] = [];
+                if (output.images && output.images.length > 0) {
+                    frameSequence = output.images;
+                }
+                
+                const videoData = output.data;
+                const frameDuration = frameSequence.length > 0 ? frameSequence.length / 24 : 1.04;
+                
+                return {
+                    videoPath: videoData,
+                    duration: frameDuration,
+                    filename: output.filename || `gemdirect1_shot_${shot.id}.mp4`,
+                    frames: frameSequence.length > 0 ? frameSequence : undefined,
+                    workflowMeta: undefined,
+                    queueSnapshot: undefined,
+                    systemResources: undefined,
+                };
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                throw new Error(`${getSceneContext()} failed in generation queue: ${message}`);
             }
         }
 
@@ -3067,6 +3158,15 @@ export const generateTimelineVideos = async (
     const useGenerationQueue = isFeatureEnabled(featureFlags, 'useGenerationQueue');
     if (useGenerationQueue) {
         console.log('[Timeline Batch] GenerationQueue enabled - shots will be queued serially to prevent VRAM exhaustion');
+        
+        // Configure queue preflight with current settings
+        if (settings.comfyUIUrl) {
+            configureQueuePreflight({
+                comfyUIUrl: settings.comfyUIUrl,
+                minVRAMMB: 4096, // Default 4GB required
+                vramWaitTimeoutMs: 60000 // Wait up to 60s for VRAM
+            });
+        }
     }
     
     // Initialize narrative state from story bible if not provided
@@ -3299,7 +3399,7 @@ export const stripDataUrlPrefix = (value: string): string => {
     return base64 ?? value;
 };
 
-const waitForComfyCompletion = (
+export const waitForComfyCompletion = (
     settings: LocalGenerationSettings,
     promptId: string,
     onProgress?: (statusUpdate: Partial<LocalGenerationStatus>) => void
@@ -5019,7 +5119,7 @@ import {
     type PreflightResult,
     PRESET_VRAM_REQUIREMENTS,
 } from './resourcePreflight';
-import { configureQueuePreflight, type PreflightConfig } from './generationQueue';
+import { type PreflightConfig } from './generationQueue';
 import type { StabilityProfileId } from '../utils/stabilityProfiles';
 
 /**
@@ -5270,3 +5370,63 @@ export async function getAvailablePresets(
         };
     }
 }
+
+/**
+ * Queues a ComfyUI prompt via the GenerationQueue for VRAM-safe execution.
+ * Optionally waits for completion.
+ * 
+ * @param settings Local generation settings
+ * @param payloads Prompt payloads
+ * @param base64Image Keyframe image
+ * @param profileId Workflow profile ID
+ * @param options Queue options (waitForCompletion, callbacks)
+ */
+export const queueComfyUIPromptWithQueue = async (
+    settings: LocalGenerationSettings,
+    payloads: ComfyUIPromptPayloads,
+    base64Image: string,
+    profileId: string = DEFAULT_WORKFLOW_PROFILE_ID,
+    options?: {
+        sceneId?: string;
+        shotId?: string;
+        waitForCompletion?: boolean;
+        onProgress?: (statusUpdate: Partial<LocalGenerationStatus>) => void;
+        priority?: 'high' | 'normal' | 'low';
+        extraData?: Record<string, any>;
+    }
+): Promise<ComfyUIPromptResult | LocalGenerationStatus['final_output']> => {
+    const queue = getGenerationQueue();
+    const waitForCompletion = options?.waitForCompletion ?? true;
+
+    const task = createVideoTask(
+        async () => {
+            // 1. Queue the prompt
+            const response = await queueComfyUIPrompt(settings, payloads, base64Image, profileId, undefined, options?.extraData);
+            
+            if (!response || !response.prompt_id) {
+                throw new Error('Failed to queue prompt: No prompt_id returned.');
+            }
+
+            // 2. If waiting, wait for completion
+            if (waitForCompletion) {
+                options?.onProgress?.({ status: 'running', message: 'Waiting for ComfyUI completion...' });
+                const output = await waitForComfyCompletion(settings, response.prompt_id, options?.onProgress);
+                return output;
+            }
+
+            return response;
+        },
+        {
+            sceneId: options?.sceneId || 'unknown',
+            shotId: options?.shotId,
+            priority: options?.priority || 'normal',
+            onProgress: (_progress, message) => options?.onProgress?.({ message }), // Map progress
+            onStatusChange: (status) => {
+                 if (status === 'running') options?.onProgress?.({ status: 'running', message: 'Generation started' });
+                 if (status === 'pending') options?.onProgress?.({ status: 'queued', message: 'Queued for generation' });
+            }
+        }
+    );
+
+    return await queue.enqueue(task);
+};

@@ -5,12 +5,15 @@ import { StoryBible, Scene, WorkflowStage, LocalGenerationStatus } from '../../t
  */
 export const mockStoryBible: StoryBible = {
   logline: 'A hacker uncovers a corporate surveillance conspiracy',
-  characters: `Jordan Chen - Paranoid, brilliant coder, determined
-Alex Rivera - Corporate insider, conflicted, secretly sympathetic`,
+  characters: `**Jordan Chen**: Paranoid, brilliant coder, determined
+**Alex Rivera**: Corporate insider, conflicted, secretly sympathetic`,
   setting: 'Near-future megacity with neon-lit streets and omnipresent surveillance',
-  plotOutline: `Act 1: Discovery of data anomaly
-Act 2: Investigation and alliance building
-Act 3: Race to expose conspiracy`
+  plotOutline: `Act I
+- Scene 1: Discovery of data anomaly
+Act II
+- Scene 2: Investigation and alliance building
+Act III
+- Scene 3: Race to expose conspiracy`
 };
 
 /**

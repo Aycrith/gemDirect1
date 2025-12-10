@@ -1,4 +1,5 @@
 {
+  "version": "v1",
   "storyBible": {
     "logline": "A street musician discovers magic in the subway tunnels.",
     "characters": "- Alex: A talented but struggling musician seeking recognition.\n- The Shadows: Mysterious entities that respond to music.",
@@ -35,8 +36,8 @@
         ],
         "shotEnhancers": {},
         "transitions": [
-          {"type": "Cut"},
-          {"type": "Dissolve"}
+          "Cut",
+          "Dissolve"
         ],
         "negativePrompt": "text, watermark, blurry, low quality, deformed, static image, no movement"
       },

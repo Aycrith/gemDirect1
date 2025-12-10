@@ -8,6 +8,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
+import { HydrationGate } from './HydrationContext';
 import {
     createMetrics,
     type GenerationMetrics,
@@ -123,7 +124,9 @@ export const GenerationMetricsProvider: React.FC<{ children: React.ReactNode }> 
     
     return (
         <GenerationMetricsContext.Provider value={value}>
-            {children}
+            <HydrationGate>
+                {children}
+            </HydrationGate>
         </GenerationMetricsContext.Provider>
     );
 };

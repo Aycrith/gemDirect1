@@ -1,1 +1,98 @@
-{}
+{
+  "ts-scripts-benchmarks-video-quality-benchmark.ts-648-TS2345": {
+    "id": "ts-scripts-benchmarks-video-quality-benchmark.ts-648-TS2345",
+    "type": "error",
+    "severity": "high",
+    "category": "typescript",
+    "file": "scripts/benchmarks/video-quality-benchmark.ts",
+    "line": 648,
+    "column": 46,
+    "message": "TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.",
+    "autoFixable": false,
+    "timestamp": "2025-12-09T18:17:14.322Z"
+  },
+  "ts-scripts-benchmarks-video-quality-benchmark.ts-662-TS2532": {
+    "id": "ts-scripts-benchmarks-video-quality-benchmark.ts-662-TS2532",
+    "type": "error",
+    "severity": "medium",
+    "category": "typescript",
+    "file": "scripts/benchmarks/video-quality-benchmark.ts",
+    "line": 662,
+    "column": 17,
+    "message": "TS2532: Object is possibly 'undefined'.",
+    "autoFixable": false,
+    "timestamp": "2025-12-09T18:17:14.322Z"
+  },
+  "ts-scripts-benchmarks-video-quality-benchmark.ts-662-TS2345": {
+    "id": "ts-scripts-benchmarks-video-quality-benchmark.ts-662-TS2345",
+    "type": "error",
+    "severity": "high",
+    "category": "typescript",
+    "file": "scripts/benchmarks/video-quality-benchmark.ts",
+    "line": 662,
+    "column": 65,
+    "message": "TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.",
+    "autoFixable": false,
+    "timestamp": "2025-12-09T18:17:14.322Z"
+  },
+  "ts-scripts-benchmarks-video-quality-benchmark.ts-667-TS18048": {
+    "id": "ts-scripts-benchmarks-video-quality-benchmark.ts-667-TS18048",
+    "type": "error",
+    "severity": "medium",
+    "category": "typescript",
+    "file": "scripts/benchmarks/video-quality-benchmark.ts",
+    "line": 667,
+    "column": 17,
+    "message": "TS18048: 'frame' is possibly 'undefined'.",
+    "autoFixable": false,
+    "timestamp": "2025-12-09T18:17:14.322Z"
+  },
+  "ts-scripts-benchmarks-video-quality-benchmark.ts-670-TS18048": {
+    "id": "ts-scripts-benchmarks-video-quality-benchmark.ts-670-TS18048",
+    "type": "error",
+    "severity": "medium",
+    "category": "typescript",
+    "file": "scripts/benchmarks/video-quality-benchmark.ts",
+    "line": 670,
+    "column": 17,
+    "message": "TS18048: 'frame' is possibly 'undefined'.",
+    "autoFixable": false,
+    "timestamp": "2025-12-09T18:17:14.322Z"
+  },
+  "ts-scripts-benchmarks-video-quality-benchmark.ts-673-TS18048": {
+    "id": "ts-scripts-benchmarks-video-quality-benchmark.ts-673-TS18048",
+    "type": "error",
+    "severity": "medium",
+    "category": "typescript",
+    "file": "scripts/benchmarks/video-quality-benchmark.ts",
+    "line": 673,
+    "column": 17,
+    "message": "TS18048: 'frame' is possibly 'undefined'.",
+    "autoFixable": false,
+    "timestamp": "2025-12-09T18:17:14.322Z"
+  },
+  "ts-scripts-benchmarks-video-quality-benchmark.ts-676-TS18048": {
+    "id": "ts-scripts-benchmarks-video-quality-benchmark.ts-676-TS18048",
+    "type": "error",
+    "severity": "medium",
+    "category": "typescript",
+    "file": "scripts/benchmarks/video-quality-benchmark.ts",
+    "line": 676,
+    "column": 17,
+    "message": "TS18048: 'frame' is possibly 'undefined'.",
+    "autoFixable": false,
+    "timestamp": "2025-12-09T18:17:14.322Z"
+  },
+  "ts-services-videoUpscalingService.ts-238-TS2353": {
+    "id": "ts-services-videoUpscalingService.ts-238-TS2353",
+    "type": "error",
+    "severity": "medium",
+    "category": "typescript",
+    "file": "services/videoUpscalingService.ts",
+    "line": 238,
+    "column": 17,
+    "message": "TS2353: Object literal may only specify known properties, and 'structured' does not exist in type '{ json: string; text: string; }'.",
+    "autoFixable": false,
+    "timestamp": "2025-12-09T18:17:14.322Z"
+  }
+}

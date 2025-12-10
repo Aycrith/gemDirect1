@@ -46,11 +46,21 @@ test.describe('Video Generation (ComfyUI Integration)', () => {
 
   test('settings modal provides access to local generation settings', async ({ page }) => {
     // ENABLED: Settings button exists and was tested in earlier session
-    const settingsButton = page.locator('button[aria-label="Open settings"]').first();
+    const settingsButton = page.locator('[data-testid="settings-button"]').first();
     
     await expect(settingsButton).toBeVisible({ timeout: 5000 });
-    await settingsButton.click();
-    await page.waitForTimeout(500);
+    await settingsButton.click({ force: true });
+    
+    // Check if loading appears
+    const loading = page.getByText('Loading settings...');
+    if (await loading.isVisible()) {
+        console.log('Waiting for settings to load...');
+        // Increase timeout for lazy loading in CI/test environment
+        await expect(loading).toBeHidden({ timeout: 30000 });
+    }
+    
+    // Wait for modal to load (lazy loaded)
+    await expect(page.getByText('Local Generation Settings')).toBeVisible({ timeout: 10000 });
     
     // Check if settings modal opened with ComfyUI tab
     const comfyUITab = page.locator('button:has-text("ComfyUI Settings")').first();

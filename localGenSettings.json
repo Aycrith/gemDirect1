@@ -296,5 +296,8 @@
       }
     }
   },
-  "modelId": "wan-video"
+  "modelId": "wan-video",
+  "featureFlags": {
+    "useGenerationQueue": true
+  }
 }

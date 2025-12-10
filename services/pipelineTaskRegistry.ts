@@ -1,0 +1,123 @@
+import { PipelineTask, PipelineTaskType } from '../types/pipeline';
+import { useSettingsStore } from './settingsStore';
+import { 
+    queueComfyUIPrompt, 
+    trackPromptExecution, 
+    ComfyUIPromptPayloads 
+} from './comfyUIService';
+
+export type TaskExecutor = (task: PipelineTask, context?: { dependencies: Record<string, PipelineTask> }) => Promise<any>;
+
+const stripDataUrlPrefix = (dataUrl: string): string => {
+    return dataUrl.replace(/^data:image\/\w+;base64,/, "");
+};
+
+const waitForCompletion = (settings: any, promptId: string): Promise<any> => {
+    return new Promise((resolve, reject) => {
+        trackPromptExecution(settings, promptId, (statusUpdate) => {
+            if (statusUpdate.status === 'complete') {
+                resolve(statusUpdate.final_output);
+            } else if (statusUpdate.status === 'error') {
+                reject(new Error(statusUpdate.message || 'Unknown error during execution'));
+            }
+        });
+    });
+};
+
+export const executeKeyframeGeneration: TaskExecutor = async (task) => {
+    console.log(`[TaskRegistry] Executing keyframe generation for task ${task.id}`);
+    
+    const { prompt, negativePrompt, workflowProfileId } = task.payload;
+    const settings = useSettingsStore.getState();
+
+    if (!prompt) {
+        throw new Error('Missing prompt in task payload');
+    }
+
+    const payloads: ComfyUIPromptPayloads = {
+        json: prompt, // Using prompt as JSON for now, assuming it's the full prompt
+        text: prompt,
+        negativePrompt: negativePrompt || '',
+        structured: []
+    };
+
+    // For keyframe generation, we don't usually have an input image
+    const result = await queueComfyUIPrompt(
+        settings,
+        payloads,
+        '', // No input image
+        workflowProfileId || 'wan-t2i' // Default to T2I
+    );
+
+    if (!result) {
+        throw new Error('Failed to queue keyframe generation');
+    }
+
+    console.log(`[TaskRegistry] Keyframe generation queued with ID: ${result.prompt_id}`);
+    return waitForCompletion(settings, result.prompt_id);
+};
+
+export const executeVideoGeneration: TaskExecutor = async (task, context) => {
+    console.log(`[TaskRegistry] Executing video generation for task ${task.id}`);
+    
+    let { prompt, negativePrompt, keyframeImage, workflowProfileId } = task.payload;
+    const settings = useSettingsStore.getState();
+
+    // Resolve keyframe image from dependencies if not provided
+    if (!keyframeImage && context?.dependencies) {
+        for (const dep of Object.values(context.dependencies)) {
+            if (dep.type === 'generate_keyframe' && dep.output?.images?.[0]) {
+                keyframeImage = dep.output.images[0];
+                console.log(`[TaskRegistry] Resolved keyframe image from dependency ${dep.id}`);
+                break;
+            }
+        }
+    }
+
+    if (!prompt) throw new Error('Missing prompt in task payload');
+    if (!keyframeImage) throw new Error('Missing keyframe image in task payload (or dependency)');
+
+    const payloads: ComfyUIPromptPayloads = {
+        json: prompt,
+        text: prompt,
+        negativePrompt: negativePrompt || '',
+        structured: []
+    };
+
+    const cleanImage = stripDataUrlPrefix(keyframeImage);
+
+    const result = await queueComfyUIPrompt(
+        settings,
+        payloads,
+        cleanImage,
+        workflowProfileId || 'wan-i2v' // Default to I2V
+    );
+
+    if (!result) {
+        throw new Error('Failed to queue video generation');
+    }
+
+    console.log(`[TaskRegistry] Video generation queued with ID: ${result.prompt_id}`);
+    return waitForCompletion(settings, result.prompt_id);
+};
+
+export const executeUpscaleVideo: TaskExecutor = async (task) => {
+    console.log(`[TaskRegistry] Executing upscale for task ${task.id}`);
+    // Placeholder for upscale logic - similar to video generation but different workflow
+    // For now, we'll simulate it or implement if we have the upscale service details
+    return new Promise(resolve => setTimeout(resolve, 1500));
+};
+
+export const TaskRegistry: Record<PipelineTaskType, TaskExecutor> = {
+    'generate_keyframe': executeKeyframeGeneration,
+    'generate_video': executeVideoGeneration,
+    'upscale_video': executeUpscaleVideo,
+    'export_timeline': async (task) => {
+        console.log(`[TaskRegistry] Executing export for task ${task.id}`);
+        return new Promise(resolve => setTimeout(resolve, 500));
+    },
+    'generic_action': async (task) => {
+        console.log(`[TaskRegistry] Executing generic action for task ${task.id}`);
+        return new Promise(resolve => setTimeout(resolve, 100));
+    }
+};

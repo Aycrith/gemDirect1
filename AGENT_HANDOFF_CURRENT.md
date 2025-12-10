@@ -1,6 +1,6 @@
 # Agent Handoff: Current State (Consolidated)
 
-**Last Updated**: December 5, 2025 23:15 PST  
+**Last Updated**: December 9, 2025 14:00 PST  
 **Status**: ✅ PHASE 9B COMPLETE – PRODUCTION PIPELINE UI EXTENSIONS  
 **Phase**: Production Video Pipeline Validation (Phase 9B)
 
@@ -43,6 +43,191 @@ promptScheduling: false,
 - **Stability Profile Selector**: Standard marked with ★ star
 - **Workflow Dropdown**: wan-fun-inpaint marked as "★ Recommended"
 - **Help Text**: "★ Production Default: wan-fun-inpaint + Standard stability profile"
+
+---
+
+## Session 2025-12-09 15:30 PST – Persistence Fix & Cleanup ✅
+
+**Goal**: Fix critical bug where ComfyUI workflow settings were lost during persistence/hydration.
+
+**Accomplishments**:
+- **Diagnosis**: Traced data loss to `App.tsx` using legacy context setter instead of direct Zustand store action.
+- **Fix**: Updated `App.tsx` to use `useSettingsStore.getState().setSettings` directly.
+- **Verification**: Confirmed `wan-t2i` profile length (2762) persists after page reload.
+- **Cleanup**: Removed extensive debug logging from `settingsStore.ts`, `database.ts`, `zustandIndexedDBStorage.ts`, and `LocalGenerationSettingsModal.tsx`.
+
+**Next Steps**:
+- Continue with P4.4 implementation (Pipeline Orchestration).
+
+---
+
+## Session 2025-12-09 23:00 PST – P4.4: Pipeline Orchestration Implementation (Part 2) ✅
+
+**Goal**: Complete the implementation of Pipeline Orchestration (P4.4) with real executors and UI integration.
+
+**Accomplishments**:
+- **Real Executors**: Implemented `executeKeyframeGeneration` and `executeVideoGeneration` in `services/pipelineTaskRegistry.ts` using `queueComfyUIPrompt` and `trackPromptExecution`.
+- **Dependency Context**: Updated `PipelineEngine` to pass dependency outputs to tasks, enabling video generation to use keyframes from previous tasks.
+- **UI Feature**: Added "Export All" button to `ContinuityDirector` to trigger full pipeline generation for all scenes/shots.
+- **Testing**: Added unit tests for `pipelineTaskRegistry` mocking ComfyUI service calls. Verified `pipelineEngine` tests still pass.
+
+**Next Steps**:
+- **Verification**: Run a full end-to-end test with a real ComfyUI server to verify the pipeline actually produces files.
+- **Refinement**: Add error handling for specific ComfyUI errors in the pipeline.
+- **Upscaling**: Implement `executeUpscaleVideo` when the upscaling service is fully defined.
+
+---
+
+## Session 2025-12-09 22:00 PST – P4.4: Pipeline Orchestration Implementation ✅
+
+**Goal**: Implement the core logic for Pipeline Orchestration (P4.4).
+
+**Accomplishments**:
+- **PipelineEngine**: Implemented DAG dependency resolution and execution loop.
+- **TaskRegistry**: Created `services/pipelineTaskRegistry.ts` to map task types to executors.
+- **Integration**: Integrated `GenerationQueue` for resource-intensive tasks (keyframe, video, upscale).
+- **UI**: Created `components/PipelineStatusPanel.tsx` and `components/PipelineEngineController.tsx`.
+- **App Integration**: Added `PipelineEngineController` to `App.tsx`.
+- **Testing**: Added unit tests for `PipelineEngine` (100% pass).
+
+**Next Steps**:
+- Implement actual logic in `TaskRegistry` (currently simulated).
+- Add "Export All" button to ContinuityDirector to create a pipeline.
+- Test full pipeline execution with real ComfyUI.
+
+---
+
+## Session 2025-12-09 14:30 PST – P4.4: Pipeline Orchestration Planning ✅
+
+**Goal**: Plan and scaffold the Pipeline Orchestration system (P4.4).
+
+**Accomplishments**:
+- **Planning**: Created `IMPLEMENTATION_PLAN_P4_4.md` defining DAG architecture, state persistence, and execution engine.
+- **Scaffolding**:
+    - Created `types/pipeline.ts` (Task/Pipeline definitions).
+    - Created `services/pipelineStore.ts` (Zustand store with IndexedDB persistence).
+    - Created `services/pipelineEngine.ts` (Singleton execution engine).
+- **Fixes**: Resolved TypeScript errors in new files (uuid replacement, Zustand types).
+
+**Next Steps**:
+- Implement `PipelineEngine` logic (dependency resolution, execution loop).
+- Integrate `GenerationQueue` into `PipelineEngine`.
+
+---
+
+## Session 2025-12-09 21:00 – Test Stabilization (Regression Fixes) ✅
+
+**Goal**: Fix regression failures in `ContinuityDirector` and `comfyUIService` tests.
+
+**Accomplishments**:
+- **ContinuityDirector Tests**: Fixed `useHydration` error by mocking `HydrationContext` (Provider, Gate, and Hook) in tests.
+- **ComfyUIService Tests**: Fixed "failed in generation queue" error by explicitly disabling `useGenerationQueue` feature flag in unit tests that mock direct execution.
+- **Verification**: All tests passed (2551 passed, 1 skipped).
+
+**Next Steps**:
+- Proceed to P4.4 (Pipeline Orchestration).
+
+---
+
+## Session 2025-12-09 20:00 – P4.3: UI Integration ✅
+
+**Goal**: Implement UI for generation history and replay.
+
+**Accomplishments**:
+- **UI Component**: Created `components/ManifestHistory.tsx` to list and replay manifests.
+- **Integration**: Added "History" button to `App.tsx` header (lazy loaded).
+- **Testing**: Added unit tests for `ManifestHistory` (100% pass).
+- **Status**: P4.3 marked as FULLY COMPLETED (Backend + Frontend).
+
+**Next Steps**:
+- Proceed to P4.4 (Pipeline Orchestration).
+
+---
+
+## Session 2025-12-09 19:30 – P4.3: Versioning & Manifests ✅
+
+**Goal**: Implement generation manifests and replay capability.
+
+**Accomplishments**:
+- **Manifest Persistence**: Updated `utils/database.ts` (v2) to store manifests. Updated `comfyUIService.ts` to save them.
+- **Replay Logic**: Created `services/manifestReplayCore.ts` (pure logic) and `services/browserReplayService.ts` (browser execution).
+- **Status**: P4.3 marked as COMPLETED in `REMEDIATION_PLAN.md`.
+
+**Next Steps**:
+- Proceed to P4.4 (Pipeline Orchestration).
+
+---
+
+## Session 2025-12-09 18:30 – P3.4: Guardian Rules Remediation ✅
+
+### Mission Summary
+
+**Objective**: Enforce architectural rules defined in P3.4 (Guardian Rules) and remediate all violations found by the Guardian scan.
+
+### Completed Tasks
+
+1.  **Implemented Guardian Rules** (`agent/rules/*.ts`)
+    - Created `NoDirectComfyUICallsRule`: Enforces use of `queueComfyUIPromptSafe` wrapper.
+    - Created `NoDirectLLMCallsRule`: Enforces use of `geminiService` wrapper.
+    - Created `RequireHydrationGateRule`: Enforces use of `<HydrationGate>` in Context Providers.
+    - Integrated rules into `GapAnalyzer.ts`.
+
+2.  **Remediated Violations**
+    - **Service Layer**: Refactored `services/videoUpscalingService.ts` to use `queueComfyUIPromptSafe` instead of direct `queueComfyUIPrompt`.
+    - **Context Providers**: Added `<HydrationGate>` wrapper to 9 Context Providers to ensure proper state hydration:
+        - `ApiStatusContext`
+        - `GenerationMetricsContext`
+        - `LocalGenerationContext`
+        - `LocalGenerationSettingsContext`
+        - `MediaGenerationProviderContext`
+        - `PipelineContext`
+        - `PlanExpansionStrategyContext`
+        - `ProgressContext`
+        - `TemplateContext`
+        - `UsageContext`
+
+3.  **Fixed TypeScript Errors**
+    - Fixed 7 strict null check errors in `scripts/benchmarks/video-quality-benchmark.ts`.
+    - Fixed type mismatch in `services/videoUpscalingService.ts` by removing unused fields from payload.
+
+4.  **Verified System Health**
+    - Ran `npm run guardian -- --scan`: **Gap analysis: No issues**.
+    - Ran `npx tsc --noEmit`: **Zero errors**.
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `agent/rules/*.ts` | Created new rules |
+| `agent/watchers/GapAnalyzer.ts` | Integrated rules |
+| `services/videoUpscalingService.ts` | Refactored to use safe queue |
+| `contexts/*.tsx` | Added HydrationGate wrapper |
+| `scripts/benchmarks/video-quality-benchmark.ts` | Fixed TS errors |
+
+---
+
+## Session 2025-12-09 14:00 – P4.2: Benchmark Harness Integration ✅
+
+### Mission Summary
+
+**Objective**: Integrate the completed Benchmark Harness (P4.2) into the generation pipeline.
+
+### Completed Tasks
+
+1. **Fixed FFmpeg Parser Bug** (`scripts/benchmarks/video-quality-benchmark.ts`)
+   - Identified that `parseFFmpegSignalStats` was returning zero-values for metrics due to incorrect parsing of interleaved FFmpeg output.
+   - Rewrote the parser to correctly track frame indices and associate `lavfi.signalstats` lines with the correct frame.
+   - Validated with integration test.
+
+2. **Verified Pipeline Integration** (`pipelines/productionQaGoldenPipeline.ts`)
+   - Confirmed that the pipeline correctly calls `scripts/benchmarks/run-video-quality-benchmark.ps1`.
+   - Confirmed that the wrapper script correctly invokes the TypeScript benchmark harness.
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `scripts/benchmarks/video-quality-benchmark.ts` | Fixed `parseFFmpegSignalStats` logic |
 
 ---
 

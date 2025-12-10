@@ -262,6 +262,9 @@ export async function loadStateAndWaitForHydration(
     timeout?: number 
   }
 ): Promise<boolean> {
+  // Clear existing data to ensure clean state
+  await clearProjectData(page);
+
   // Load state into IndexedDB
   await loadProjectState(page, state);
   
@@ -274,6 +277,9 @@ export async function loadStateAndWaitForHydration(
     // Continue anyway - the page may still be usable
   }
   
+  // Wait for HydrationGate (global marker)
+  await waitForHydrationGate(page, { timeout: options?.timeout });
+
   // Wait for state hydration
   const keys = options?.expectedKeys || ['storyBible', 'scenes'];
   for (const key of keys) {
@@ -305,10 +311,37 @@ export async function loadStateAndWaitForHydration(
  */
 export async function clearProjectData(page: Page) {
   await page.evaluate(() => {
+    sessionStorage.clear();
+    localStorage.clear();
     return new Promise((resolve) => {
-      const deleteRequest = indexedDB.deleteDatabase('cinematic-story-db');
-      deleteRequest.onsuccess = () => resolve(true);
-      deleteRequest.onerror = () => resolve(false);
+      const request = indexedDB.open('cinematic-story-db', 1);
+      
+      request.onsuccess = () => {
+        const db = request.result;
+        const storeNames = Array.from(db.objectStoreNames);
+        
+        if (storeNames.length === 0) {
+            db.close();
+            resolve(true);
+            return;
+        }
+
+        const tx = db.transaction(storeNames, 'readwrite');
+        tx.oncomplete = () => {
+            db.close();
+            resolve(true);
+        };
+        tx.onerror = () => {
+            db.close();
+            resolve(false);
+        };
+
+        storeNames.forEach(storeName => {
+            tx.objectStore(storeName).clear();
+        });
+      };
+      
+      request.onerror = () => resolve(false);
     });
   });
 }
@@ -334,29 +367,25 @@ export async function waitForHydrationGate(
   options?: { timeout?: number; expectedVisible?: boolean }
 ): Promise<boolean> {
   const timeout = options?.timeout || 15000;
-  const loadingIndicator = page.locator('[data-testid="hydration-loading"]');
   
   try {
     // First, wait for page to be ready
     await page.waitForLoadState('domcontentloaded');
     
-    // Check if loading indicator appears (HydrationGate is active)
-    const wasVisible = await loadingIndicator.isVisible({ timeout: 2000 }).catch(() => false);
-    
-    if (wasVisible) {
-      // Wait for loading indicator to disappear (hydration complete)
-      await loadingIndicator.waitFor({ state: 'hidden', timeout });
-      console.log('[Test Helper] ✅ HydrationGate completed (loading indicator hidden)');
-    } else {
-      // Hydration may have already completed or HydrationGate isn't used
-      // Wait a brief moment for React to finish rendering
-      await page.waitForTimeout(500);
-      console.log('[Test Helper] ✅ No hydration loading indicator detected (may have completed quickly)');
-    }
-    
+    // Wait for the explicit hydration complete marker
+    // This is set by HydrationContext when all stores are synced
+    await page.waitForSelector('body[data-testid="hydration-complete"]', { timeout });
+    console.log('[Test Helper] ✅ HydrationGate completed (marker detected)');
     return true;
   } catch (error) {
-    console.warn('[Test Helper] ⚠️ HydrationGate timeout - proceeding anyway');
+    console.warn(`[Test Helper] ⚠️ HydrationGate timeout after ${timeout}ms - proceeding anyway`);
+    
+    // Fallback check: is the loading indicator visible?
+    const loadingIndicator = page.locator('[data-testid="hydration-loading"]');
+    if (await loadingIndicator.isVisible().catch(() => false)) {
+        console.error('[Test Helper] ❌ Hydration loading indicator is still visible!');
+    }
+    
     return false;
   }
 }

@@ -42,6 +42,24 @@
 
 ---
 
+## Recently Fixed (2025-12-09)
+
+### Remediation Plan Phase 3 ✅ COMPLETE
+**Scope**: TypeScript Cleanup, E2E Stabilization, Guardian Rules
+**Accomplishments**:
+- **E2E Stabilization**: Fixed `image-sync-validation.spec.ts` (hydration/component mount), verified `ui-state-generation.spec.ts`, `scene-generation.spec.ts`, `timeline-editing.spec.ts`.
+- **Guardian Rules**: Enforced strict service layer boundaries (no direct `fetch` in components) in `GapAnalyzer.ts`.
+- **TypeScript**: Reduced `any` usage in core files to <20.
+
+### E2E Test Stabilization ✅ FIXED
+**Files**: `tests/fixtures/story-scenario.ts`, `tests/fixtures/mock-data.ts`, `tests/e2e/scene-generation.spec.ts`, `components/SceneNavigator.tsx`
+**Issue**: E2E tests failing due to race conditions, invalid V1 mock data, and missing test IDs.
+**Fix**: 
+- Implemented `loadStateAndWaitForHydration` helper.
+- Updated `mockStoryBible` to V2 format.
+- Added `data-testid="scene-navigator"` and improved alt text in `SceneNavigator.tsx`.
+- Categorized tests in `tests/e2e/README.md`.
+
 ## Recently Fixed (2025-11-29)
 
 ### useIpAdapter Undefined Bug ✅ FIXED

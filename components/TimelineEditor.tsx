@@ -402,8 +402,12 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     // Phase 1C: Zustand store integration with feature flag
     // When enabled, prefer reading from the new store for consistency
     // The store returns undefined when flag is disabled (falls back to existing props)
-    const sceneStore = useSceneStateStore.getState;
     const isStoreEnabled = useUnifiedSceneStoreEnabled(localGenSettings);
+
+    // Subscribe to store updates (unconditional hooks)
+    const storeScenes = useSceneStateStore(state => state.scenes);
+    const storeGeneratedImages = useSceneStateStore(state => state.generatedImages);
+    const storeGeneratedShotImages = useSceneStateStore(state => state.generatedShotImages);
     
     // Phase 1D: Generation status store integration with feature flag
     // When enabled, use Zustand store instead of prop-drilled localGenStatus
@@ -431,9 +435,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     
     // Use store data when enabled, otherwise use existing props (prop drilling)
     // Phase 1C: These variables now route through the unified store when flag is enabled
-    const effectiveScenes = isStoreEnabled ? sceneStore().scenes : scenes;
-    const effectiveGeneratedImages = isStoreEnabled ? sceneStore().generatedImages : generatedImages;
-    const effectiveGeneratedShotImages = isStoreEnabled ? sceneStore().generatedShotImages : generatedShotImages;
+    const effectiveScenes = isStoreEnabled ? storeScenes : scenes;
+    const effectiveGeneratedImages = isStoreEnabled ? storeGeneratedImages : generatedImages;
+    const effectiveGeneratedShotImages = isStoreEnabled ? storeGeneratedShotImages : generatedShotImages;
     
     // Log store usage during development for debugging
     useEffect(() => {

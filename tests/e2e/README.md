@@ -91,3 +91,24 @@ Some tests may be skipped if:
 - Feature flags are disabled (e.g., `useSettingsStore`).
 - Required services are not detected.
 - Specific hardware requirements are not met.
+
+## Test Status & Categorization (Dec 2025)
+
+### Always Skipped (Environment Dependent)
+These tests require specific environment configurations (real GPUs, specific models) and are skipped by default in CI/standard runs.
+
+- `manual-generation-real.spec.ts` (Requires `RUN_MANUAL_E2E=1`)
+- `svd-basic.spec.ts` (Requires `RUN_SVD_E2E=1` and SVD model loaded)
+- `image-sync-validation.spec.ts` (Requires `RUN_REAL_WORKFLOWS=1` and ComfyUI server)
+
+### Fixed (Was Skipped)
+These tests were previously skipped due to hydration or timing issues but are now fixed.
+
+- `image-sync-validation.spec.ts` ✅ (Hydration fixed, requires real backend)
+- `ui-state-generation.spec.ts` ✅ (Fixed hydration pattern)
+- `scene-generation.spec.ts` ✅ (Fixed state initialization)
+- `timeline-editing.spec.ts` ✅ (Verified passing)
+
+### Deprecated (Removed)
+- `comprehensive-walkthrough.spec.ts` (Replaced by smaller focused tests)
+

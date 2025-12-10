@@ -151,14 +151,14 @@ export class GenerationQueue {
     };
     
     private listeners: Set<(state: QueueState) => void> = new Set();
-    private vramCheckFn?: () => Promise<VRAMStatus>;
+    private vramCheckFn?: (url?: string) => Promise<VRAMStatus>;
     private _preflightConfig: PreflightConfig = {};
     
     /** AbortControllers for running tasks - enables cancellation of in-flight operations */
     private abortControllers: Map<string, AbortController> = new Map();
 
     constructor(options?: {
-        vramCheck?: () => Promise<VRAMStatus>;
+        vramCheck?: (url?: string) => Promise<VRAMStatus>;
         preflight?: PreflightConfig;
     }) {
         this.vramCheckFn = options?.vramCheck;
@@ -167,6 +167,13 @@ export class GenerationQueue {
         if (DEBUG_QUEUE) {
             console.debug('[GenerationQueue] Initialized', { hasPreflight: !!options?.preflight });
         }
+    }
+
+    /**
+     * Set the VRAM check function
+     */
+    setVRAMCheck(fn: (url?: string) => Promise<VRAMStatus>): void {
+        this.vramCheckFn = fn;
     }
 
     /**
@@ -454,10 +461,10 @@ export class GenerationQueue {
         // VRAM gating (optional)
         if (this.vramCheckFn) {
             try {
-                const vramStatus = await this.vramCheckFn();
-                if (vramStatus.freeMB < MIN_VRAM_MB) {
+                const vramStatus = await this.vramCheckFn(this._preflightConfig.comfyUIUrl);
+                if (vramStatus.freeMB < (this._preflightConfig.minVRAMMB ?? MIN_VRAM_MB)) {
                     if (DEBUG_QUEUE) {
-                        console.debug(`[GenerationQueue] VRAM gate: ${vramStatus.freeMB}MB free < ${MIN_VRAM_MB}MB required. Waiting...`);
+                        console.debug(`[GenerationQueue] VRAM gate: ${vramStatus.freeMB.toFixed(0)}MB free < ${(this._preflightConfig.minVRAMMB ?? MIN_VRAM_MB)}MB required. Waiting...`);
                     }
                     // Retry after a delay
                     setTimeout(() => this.processQueue(), 5000);
@@ -602,6 +609,17 @@ export class GenerationQueue {
 
 let globalQueue: GenerationQueue | null = null;
 let globalPreflightConfig: PreflightConfig = {};
+let globalVRAMCheck: ((url?: string) => Promise<VRAMStatus>) | undefined;
+
+/**
+ * Set the global VRAM check function
+ */
+export function setGlobalVRAMCheck(fn: (url?: string) => Promise<VRAMStatus>): void {
+    globalVRAMCheck = fn;
+    if (globalQueue) {
+        globalQueue.setVRAMCheck(fn);
+    }
+}
 
 /**
  * Configure preflight settings for the global queue
@@ -610,15 +628,9 @@ let globalPreflightConfig: PreflightConfig = {};
 export function configureQueuePreflight(config: PreflightConfig): void {
     globalPreflightConfig = { ...globalPreflightConfig, ...config };
     
-    // If queue already exists, recreate it with new config
+    // If queue already exists, update its config
     if (globalQueue) {
-        const wasRunning = globalQueue.getState().isRunning;
-        if (wasRunning) {
-            console.warn('[GenerationQueue] Cannot reconfigure while task is running');
-            return;
-        }
-        globalQueue.clear();
-        globalQueue = new GenerationQueue({ preflight: globalPreflightConfig });
+        globalQueue.setPreflightConfig(globalPreflightConfig);
     }
     
     if (DEBUG_QUEUE) {
@@ -631,7 +643,10 @@ export function configureQueuePreflight(config: PreflightConfig): void {
  */
 export function getGenerationQueue(): GenerationQueue {
     if (!globalQueue) {
-        globalQueue = new GenerationQueue({ preflight: globalPreflightConfig });
+        globalQueue = new GenerationQueue({ 
+            preflight: globalPreflightConfig,
+            vramCheck: globalVRAMCheck
+        });
     }
     return globalQueue;
 }
@@ -640,7 +655,7 @@ export function getGenerationQueue(): GenerationQueue {
  * Create a new queue instance (for testing)
  */
 export function createGenerationQueue(options?: {
-    vramCheck?: () => Promise<VRAMStatus>;
+    vramCheck?: (url?: string) => Promise<VRAMStatus>;
     preflight?: PreflightConfig;
 }): GenerationQueue {
     return new GenerationQueue(options);

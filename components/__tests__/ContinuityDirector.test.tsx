@@ -4,6 +4,7 @@ import '@testing-library/jest-dom';
 import ContinuityDirector from '../ContinuityDirector';
 import type { Scene, StoryBible, SceneContinuityData, KeyframeData, LocalGenerationSettings, LocalGenerationStatus } from '../../types';
 import { PlanExpansionStrategyProvider } from '../../contexts/PlanExpansionStrategyContext';
+import { HydrationProvider } from '../../contexts/HydrationContext';
 
 // Mock all the hooks and services
 vi.mock('../../utils/hooks', () => ({
@@ -20,6 +21,23 @@ vi.mock('../../utils/hooks', () => ({
     })),
     usePersistentState: vi.fn((_key: string, defaultValue: unknown) => [defaultValue, vi.fn()]),
 }));
+
+// Mock HydrationContext to bypass hydration logic in tests
+vi.mock('../../contexts/HydrationContext', async () => {
+    const actual = await vi.importActual('../../contexts/HydrationContext');
+    return {
+        ...actual,
+        HydrationProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+        HydrationGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+        useHydration: () => ({
+            isFullyHydrated: true,
+            status: 'complete',
+            registerKey: vi.fn(),
+            markKeyHydrated: vi.fn(),
+            markKeyFailed: vi.fn(),
+        }),
+    };
+});
 
 vi.mock('../../hooks/useSceneStore', () => ({
     useUnifiedSceneStoreEnabled: vi.fn(() => false),
@@ -98,9 +116,11 @@ vi.mock('../../services/continuityVisualContext', () => ({
 
 // Wrapper component to provide required context
 const TestWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <PlanExpansionStrategyProvider>
-        {children}
-    </PlanExpansionStrategyProvider>
+    <HydrationProvider>
+        <PlanExpansionStrategyProvider>
+            {children}
+        </PlanExpansionStrategyProvider>
+    </HydrationProvider>
 );
 
 const renderWithProvider = (ui: React.ReactElement) => {

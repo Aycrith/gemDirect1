@@ -60,6 +60,7 @@ vi.mock('../generationQueue', () => ({
         execute,
         ...options,
     })),
+    configureQueuePreflight: vi.fn(),
 }));
 
 vi.mock('../pipelineMetrics', () => ({
