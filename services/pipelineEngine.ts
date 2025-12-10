@@ -42,24 +42,42 @@ export class PipelineEngine {
     const pipeline = store.pipelines[activePipelineId];
     if (!pipeline || pipeline.status !== 'active') return;
 
-    // Check if pipeline is complete
     const allTasks = Object.values(pipeline.tasks);
-    const allComplete = allTasks.every(t => t.status === 'completed' || t.status === 'skipped');
     
+    // Check for completion
+    const allComplete = allTasks.every(t => t.status === 'completed' || t.status === 'skipped');
     if (allComplete) {
       store.updatePipelineStatus(pipeline.id, 'completed');
+      store.setActivePipeline(null);
       console.log(`[PipelineEngine] Pipeline ${pipeline.id} completed`);
       return;
     }
 
+    // Check for failure/stuck state
+    const anyFailed = allTasks.some(t => t.status === 'failed');
+    const pendingTasks = allTasks.filter(t => t.status === 'pending');
+    const runningTasks = allTasks.filter(t => t.status === 'running');
+
+    // If we have failures and no tasks are running, check if we can proceed
+    if (anyFailed && runningTasks.length === 0) {
+        const canRunAny = pendingTasks.some(task => {
+             const deps = task.dependencies.map(depId => pipeline.tasks[depId]);
+             return deps.every(d => d && (d.status === 'completed' || d.status === 'skipped'));
+        });
+
+        if (!canRunAny) {
+             store.updatePipelineStatus(pipeline.id, 'failed');
+             store.setActivePipeline(null);
+             console.log(`[PipelineEngine] Pipeline ${pipeline.id} failed due to task failures`);
+             return;
+        }
+    }
+
     // Find runnable tasks
-    const runnableTasks = allTasks.filter(task => {
-      if (task.status !== 'pending') return false;
-      
+    const runnableTasks = pendingTasks.filter(task => {
       // Check dependencies
       const deps = task.dependencies.map(depId => pipeline.tasks[depId]);
       const depsMet = deps.every(d => d && (d.status === 'completed' || d.status === 'skipped'));
-      
       return depsMet;
     });
 
