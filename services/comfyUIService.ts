@@ -3278,32 +3278,11 @@ export const generateTimelineVideos = async (
                 }
             );
 
-            let result;
-            if (useGenerationQueue) {
-                // Route through GenerationQueue for VRAM-safe serial execution
-                const queue = getGenerationQueue();
-                const task = createVideoTask(
-                    executeShotGeneration,
-                    {
-                        sceneId: scene?.id || 'unknown',
-                        shotId: shot.id,
-                        priority: 'normal',
-                        onProgress: (progress, message) => onProgress?.(shot.id, { progress, message }),
-                        onStatusChange: (status: GenerationStatus) => {
-                            if (status === 'running') {
-                                onProgress?.(shot.id, { status: 'running', message: `Queue: executing shot ${i + 1}` });
-                            } else if (status === 'pending') {
-                                onProgress?.(shot.id, { status: 'queued', message: `Queue: waiting to execute shot ${i + 1}` });
-                            }
-                        },
-                    }
-                );
-                console.log(`[Timeline Batch] Queueing shot ${shot.id} via GenerationQueue`);
-                result = await queue.enqueue(task);
-            } else {
-                // Direct execution (legacy behavior)
-                result = await executeShotGeneration();
-            }
+            // Execute the shot generation
+            // Note: We do NOT wrap this in GenerationQueue here because the underlying
+            // shotExecutor (generateVideoFromShot) already handles queuing if enabled.
+            // Wrapping it here would cause a deadlock (task waiting for sub-task in same serial queue).
+            result = await executeShotGeneration();
 
             // ============================================================================
             // POST-PROCESSING: Endpoint Snapping (if enabled and supported)
