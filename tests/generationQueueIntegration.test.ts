@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { generateTimelineVideos } from '../services/comfyUIService';
 import { getGenerationQueue, createVideoTask } from '../services/generationQueue';
 import { LocalGenerationSettings, TimelineData } from '../types';
@@ -31,7 +31,7 @@ describe('GenerationQueue Integration', () => {
         } as unknown as TimelineData;
 
         // Mock shot generator that uses the queue
-        const mockShotGenerator = async (settings: any, shot: any) => {
+        const mockShotGenerator = async (_settings: any, shot: any) => {
             const q = getGenerationQueue();
             const task = createVideoTask(async () => {
                 return {
@@ -54,7 +54,7 @@ describe('GenerationQueue Integration', () => {
             { shotGenerator: mockShotGenerator }
         );
 
-        expect(result.shot1.videoPath).toBe('video_shot1.mp4');
-        expect(result.shot2.videoPath).toBe('video_shot2.mp4');
+        expect(result.shot1?.videoPath).toBe('video_shot1.mp4');
+        expect(result.shot2?.videoPath).toBe('video_shot2.mp4');
     });
 });

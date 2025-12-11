@@ -158,7 +158,7 @@ export const sendLLMRequestWithAdapter = async (
     logApiCall: ApiLogCallback,
     onStateChange?: ApiStateChangeCallback
 ): Promise<LLMResponse> => {
-    const useAdapter = isFeatureEnabled(featureFlags, 'useLLMTransportAdapter');
+    let useAdapter = isFeatureEnabled(featureFlags, 'useLLMTransportAdapter');
     const context = request.metadata?.context || 'llm-request';
     const correlationId = request.metadata?.correlationId || generateCorrelationId();
     const startTime = Date.now();
@@ -172,6 +172,7 @@ export const sendLLMRequestWithAdapter = async (
         });
         
         if (settings.useMockLLM) {
+            useAdapter = true; // Force adapter usage when Mock LLM is enabled
             const currentTransport = getActiveTransport();
             console.log('[LLM Debug] Current transport:', currentTransport.id);
             
@@ -679,6 +680,7 @@ ${template.content}`;
     
     const flags = getStoredFeatureFlags();
     const settings = useSettingsStore.getState();
+    console.log('[geminiService] generateStoryBible settings:', { useMockLLM: settings.useMockLLM, flags });
     const shouldUseAdapter = settings.useMockLLM || isFeatureEnabled(flags, 'useLLMTransportAdapter');
     if (shouldUseAdapter) {
         return generateStoryBibleViaAdapter(prompt, genre, logApiCall, onStateChange);
@@ -1053,22 +1055,27 @@ export const generateSceneList = async (plotOutline: string, directorsVision: st
         },
     };
 
-    const apiCall = async () => {
-        const response = await getAI().models.generateContent({
-            model: proModel,
-            contents: prompt,
-            config: { responseMimeType: 'application/json', responseSchema: responseSchema },
-        });
-        const text = response.text;
-        if (!text) {
-            throw new Error("The model returned an empty response for scene list.");
-        }
-        const result = JSON.parse(text.trim());
-        const tokens = response.usageMetadata?.totalTokenCount || 0;
-        return { result, tokens };
+    const request: LLMRequest = {
+        model: proModel,
+        messages: [{ role: 'user', content: prompt }],
+        responseFormat: 'json',
+        schema: responseSchema,
+        metadata: { context },
     };
 
-    return withRetry(apiCall, context, proModel, logApiCall, onStateChange);
+    const response = await sendLLMRequestWithAdapter(
+        request,
+        getStoredFeatureFlags(),
+        logApiCall,
+        onStateChange
+    );
+
+    if (!response.text) {
+        throw new Error("The model returned an empty response for scene list.");
+    }
+
+    const result = response.json || JSON.parse(response.text.trim());
+    return result;
 };
 
 const enhancersSchema = {

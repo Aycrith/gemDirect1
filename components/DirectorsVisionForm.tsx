@@ -267,6 +267,7 @@ const DirectorsVisionForm: React.FC<DirectorsVisionFormProps> = ({ onSubmit, isL
                 
                 <button
                     type="submit"
+                    data-testid="generate-scenes-submit"
                     disabled={isLoading || !vision.trim() || !validation.canProceed}
                     className="mt-6 inline-flex items-center justify-center px-8 py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white font-semibold rounded-full shadow-lg transition-all duration-300 ease-in-out hover:from-amber-700 hover:to-orange-700 focus:outline-none focus:ring-4 focus:ring-amber-500 focus:ring-opacity-50 disabled:from-gray-500 disabled:to-gray-600 disabled:cursor-not-allowed transform hover:scale-105 animate-glow"
                 >

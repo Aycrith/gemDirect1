@@ -1,5 +1,5 @@
 import { LocalGenerationSettings, LocalGenerationStatus, LocalGenerationOutput, TimelineData, Shot, Scene, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight, StoryBible, VisualBible } from '../types';
-import { base64ToBlob, blobToBase64 } from '../utils/videoUtils';
+import { base64ToBlob, extractFramesFromVideo } from '../utils/videoUtils';
 import { comfyEventManager } from './comfyUIEventManager';
 import { getVisualBible } from './visualBibleContext';
 import { generateCorrelationId, logCorrelation, networkTap } from '../utils/correlation';
@@ -54,7 +54,7 @@ import {
 import { type ComfyUIPayloads } from './payloadService';
 // Phase 7: Video upscaling post-processing (imported when needed)
 // Generation Queue for serial VRAM-safe execution
-import { getGenerationQueue, createVideoTask, GenerationStatus, setGlobalVRAMCheck, type VRAMStatus, configureQueuePreflight } from './generationQueue';
+import { getGenerationQueue, createVideoTask, setGlobalVRAMCheck, type VRAMStatus, configureQueuePreflight } from './generationQueue';
 // Error types for queue error extraction
 import { CSGError } from '../types/errors';
 // Endpoint snapping post-processor for bookend video quality
@@ -3155,6 +3155,9 @@ export const generateTimelineVideos = async (
         options?.onNarrativeStateUpdate?.(narrativeState);
     }
     
+    // Phase 2: FLF2V - Track the last frame of the previous shot to use as start frame for the next
+    let previousShotLastFrame: string | null = null;
+
     for (let i = 0; i < timeline.shots.length; i++) {
         const shot = timeline.shots[i];
         if (!shot) {
@@ -3162,7 +3165,18 @@ export const generateTimelineVideos = async (
             continue;
         }
         const enhancers = timeline.shotEnhancers[shot.id];
-        const keyframe = keyframeImages[shot.id] || null;
+        
+        // Determine keyframe to use:
+        // 1. If FLF2V is enabled and we have a previous frame, use it (chaining)
+        // 2. Otherwise fall back to the shot's assigned keyframe
+        // 3. Finally fall back to null (will fail if workflow requires it)
+        let keyframe = keyframeImages[shot.id] || null;
+        
+        if (settings.featureFlags?.enableFLF2V && previousShotLastFrame) {
+            console.log(`[Timeline Batch] FLF2V: Using last frame of previous shot as keyframe for ${shot.id}`);
+            keyframe = previousShotLastFrame;
+        }
+
         const allowCharacterContinuity = shouldInjectCharacterContinuity(shot, options?.visualBible, scene?.id);
         
         // Build shot-level transition context if enabled
@@ -3291,6 +3305,34 @@ export const generateTimelineVideos = async (
 
             results[shot.id] = result;
             
+            // Phase 2: FLF2V - Extract last frame for next shot
+            if (settings.featureFlags?.enableFLF2V && result.videoPath) {
+                try {
+                    console.log(`[Timeline Batch] FLF2V: Extracting last frame from shot ${shot.id}...`);
+                    // Convert data URL to blob
+                    const videoBlob = base64ToBlob(
+                        result.videoPath.replace(/^data:video\/[^;]+;base64,/, ''),
+                        'video/mp4'
+                    );
+                    // Extract frames (we only need the last one)
+                    // Note: extractFramesFromVideo returns array of base64 strings (without prefix)
+                    const frames = await extractFramesFromVideo(new File([videoBlob], "temp.mp4", { type: "video/mp4" }), 1);
+                    
+                    if (frames.length > 0) {
+                        const lastFrame = frames[frames.length - 1];
+                        if (lastFrame) {
+                            // Add prefix back for consistency with keyframe format
+                            previousShotLastFrame = `data:image/jpeg;base64,${lastFrame}`;
+                            console.log(`[Timeline Batch] FLF2V: Successfully extracted last frame from ${shot.id}`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[Timeline Batch] FLF2V: Failed to extract last frame from ${shot.id}:`, e);
+                    // Don't fail the batch, just reset chaining
+                    previousShotLastFrame = null;
+                }
+            }
+
             if (onProgress) {
                 onProgress(shot.id, {
                     status: 'complete',

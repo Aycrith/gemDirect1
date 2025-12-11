@@ -53,6 +53,7 @@ const createTestSettings = (useUnifiedSceneStore: boolean): LocalGenerationSetti
         promptABTesting: false,
         showBayesianAnalytics: false,
         providerHealthPolling: false,
+        enableFLF2V: false,
         useUnifiedSceneStore,
         sceneStoreParallelValidation: false,
         enhancedNegativePrompts: false,

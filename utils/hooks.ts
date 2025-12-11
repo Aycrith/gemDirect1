@@ -525,16 +525,12 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         _setGeneratedImages: React.Dispatch<React.SetStateAction<Record<string, KeyframeData>>>,
         updateSceneStatus?: (sceneId: string, status: SceneGenerationStatus, progress?: number, error?: string) => void
     ) => {
-        console.log('[handleGenerateScenes] START - Vision length:', vision?.length || 0);
-        console.log('[handleGenerateScenes] Story Bible present:', !!storyBible);
-        
         if (!storyBible) {
             console.error('[handleGenerateScenes] ABORT - No story bible available');
             addToast('Story Bible is missing. Please generate a Story Bible first.', 'error');
             return;
         }
 
-        console.log('[handleGenerateScenes] Setting loading state and storing vision');
         setIsLoading(true);
         setDirectorsVision(vision);
         
@@ -550,12 +546,10 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
         
         try {
             // Progressive feedback: Step 1 - Analyzing vision
-            console.log('[handleGenerateScenes] Step 1: Analyzing Director\'s Vision');
             updateApiStatus('loading', 'Analyzing your Director\'s Vision...');
             await new Promise(resolve => setTimeout(resolve, 500)); // Brief pause for UX
             
             // Progressive feedback: Step 2 - Generating scene list
-            console.log('[handleGenerateScenes] Step 2: Calling generateSceneList');
             updateApiStatus('loading', 'Generating scene list from plot outline...');
             
             const sceneList = await planActions.generateSceneList(
@@ -565,20 +559,16 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                 updateApiStatus
             );
             
-            console.log('[handleGenerateScenes] Scene list received:', sceneList?.length || 0, 'scenes');
-            
             if (!sceneList || sceneList.length === 0) {
                 console.warn('[handleGenerateScenes] Empty scene list returned');
                 throw new Error('No scenes were generated. Please try again with a different vision.');
             }
             
             // Progressive feedback: Step 3 - Creating scene objects
-            console.log('[handleGenerateScenes] Step 3: Creating scene objects');
             updateApiStatus('loading', `Creating ${sceneList.length} scenes...`);
             setGenerationProgress({ current: 0, total: sceneList.length, task: 'Creating scenes' });
             
             const newScenes: Scene[] = sceneList.map((s, idx) => {
-                console.log(`[handleGenerateScenes] Creating scene ${idx + 1}/${sceneList.length}: "${s.title}"`);
                 setGenerationProgress({ 
                     current: idx + 1, 
                     total: sceneList.length, 
@@ -594,7 +584,6 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                 };
             });
             
-            console.log('[handleGenerateScenes] Step 4: Updating state with new scenes');
             setScenes(newScenes);
             
             // NEW: Validate scene progression
@@ -611,24 +600,16 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
                 // Future enhancement: display in UI via toast or dedicated warnings panel.
             }
             
-            console.log('[Scene Progression] Metadata:', progressionValidation.metadata);
-            
-            console.log('[handleGenerateScenes] Step 5: Transitioning workflow stage to "director"');
             setWorkflowStage('director');
             
             // Mark all scenes as ready for review (no auto-generation)
-            console.log('[handleGenerateScenes] Step 6: Marking scenes as complete');
-            newScenes.forEach((s, idx) => {
+            newScenes.forEach((s) => {
                 updateSceneStatus?.(s.id, 'complete', 100);
-                console.log(`[handleGenerateScenes] Scene ${idx + 1} marked complete: ${s.id}`);
             });
             
-            console.log('[handleGenerateScenes] Step 7: Showing success notification');
             updateApiStatus('success', `${newScenes.length} scenes ready for review!`);
             addToast(`${newScenes.length} scenes generated! Review and refine them, then generate images when ready.`, 'success');
             
-            console.log('[handleGenerateScenes] SUCCESS - Complete');
-
         } catch (e) {
             clearTimeout(safetyTimer);
             console.error('[handleGenerateScenes] ERROR caught:', e);
@@ -641,14 +622,11 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
             addToast(e instanceof Error ? e.message : 'Failed to generate scenes.', 'error');
             
             // Reset to vision stage for retry
-            console.log('[handleGenerateScenes] Resetting to "vision" stage for retry');
             setWorkflowStage('vision');
         } finally {
             clearTimeout(safetyTimer);
-            console.log('[handleGenerateScenes] FINALLY - Cleaning up');
             setIsLoading(false);
             setGenerationProgress({ current: 0, total: 0, task: '' });
-            console.log('[handleGenerateScenes] END');
         }
     }, [storyBible, logApiCall, updateApiStatus, setGenerationProgress, planActions]);
 

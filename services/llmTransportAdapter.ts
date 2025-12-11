@@ -622,7 +622,37 @@ export function resetTransports(): void {
  * Create a mock transport for testing
  */
 export function createMockTransport(): MockLLMTransport {
-    return new MockLLMTransport();
+    const transport = new MockLLMTransport();
+    
+    // Add mock response for Scene List generation
+    const sceneListMock = [
+        {
+            title: "Scene 1: The Meeting",
+            summary: "The Courier meets the Client in a dark alley.",
+            temporalContext: { startMoment: "Courier enters alley", endMoment: "Client hands over package" }
+        },
+        {
+            title: "Scene 2: The Chase",
+            summary: "The Courier flees from drones on a hoverbike.",
+            temporalContext: { startMoment: "Drones appear", endMoment: "Courier escapes into tunnel" }
+        },
+        {
+            title: "Scene 3: The Delivery",
+            summary: "The Courier delivers the package to the resistance leader.",
+            temporalContext: { startMoment: "Courier arrives at base", endMoment: "Leader opens package" }
+        }
+    ];
+
+    transport.addResponse({
+        match: (req) => req.messages.some(m => m.content.includes('generate a JSON array of scene objects')),
+        response: {
+            text: JSON.stringify(sceneListMock),
+            json: sceneListMock,
+            model: 'mock-model-scenes'
+        }
+    });
+
+    return transport;
 }
 
 /**

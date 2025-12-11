@@ -311,6 +311,7 @@ export const createComfyUIHarness = (options: ComfyUIHarnessOptions = {}) => {
       };
 
       emitNext();
+      return () => {};
     },
   );
 

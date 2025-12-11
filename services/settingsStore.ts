@@ -641,6 +641,25 @@ export const useSettingsStore = create<SettingsStore>()(
                         // Exclude metadata: _hasHydrated, _lastSyncTimestamp, _isInitialized
                     };
                 },
+                merge: (persistedState, currentState) => {
+                    console.log('[SettingsStore] Merging state. Persisted keys:', Object.keys(persistedState || {}));
+                    if ((persistedState as any)?.workflowProfiles) {
+                        console.log('[SettingsStore] Persisted profiles:', Object.keys((persistedState as any).workflowProfiles));
+                    }
+                    if ((persistedState as any)?.useMockLLM !== undefined) {
+                        console.log('[SettingsStore] Persisted useMockLLM:', (persistedState as any).useMockLLM);
+                    }
+                    
+                    const merged = { ...currentState, ...(persistedState as object) };
+                    
+                    // Re-apply injected settings if present (they should win over persisted state)
+                    if (typeof window !== 'undefined' && (window as any).__INJECTED_SETTINGS) {
+                        console.log('[SettingsStore] Re-applying injected settings during merge');
+                        return { ...merged, ...(window as any).__INJECTED_SETTINGS };
+                    }
+                    
+                    return merged;
+                },
                 onRehydrateStorage: () => (state) => {
                     if (state) {
                         console.log('[SettingsStore] Rehydrated state keys:', Object.keys(state));

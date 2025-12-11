@@ -617,6 +617,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
     
     // Video quality
     videoUpscaling: false,             // High VRAM requirement
+    enableFLF2V: false,                // First-Last-Frame-to-Video chaining
     
     // Identity/continuity - requires setup
     characterConsistency: false,       // Requires Visual Bible + IP-Adapter models
@@ -1116,6 +1117,13 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         stability: 'experimental',
         dependencies: ['characterConsistency'], // May conflict if not sequenced properly
         // Phase 7: Upscaler workflow implemented in videoUpscalingService.ts
+    },
+    enableFLF2V: {
+        id: 'enableFLF2V',
+        label: 'First-Last-Frame-to-Video',
+        description: 'Use the last frame of the previous shot as the start frame for the next shot (requires wan-flf2v workflow)',
+        category: 'continuity',
+        stability: 'beta',
     },
     characterConsistency: {
         id: 'characterConsistency',

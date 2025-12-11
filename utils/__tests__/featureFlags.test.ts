@@ -47,9 +47,9 @@ describe('featureFlags', () => {
             }
         });
 
-        it('should have 56 flags defined', () => {
+        it('should have 57 flags defined', () => {
             const flagCount = Object.keys(DEFAULT_FEATURE_FLAGS).length;
-            expect(flagCount).toBe(56);
+            expect(flagCount).toBe(57);
         });
 
         it('should have metadata for every flag', () => {
@@ -168,6 +168,7 @@ describe('featureFlags', () => {
                 narrativeStateTracking: true,
                 promptABTesting: true,
                 providerHealthPolling: true,
+                enableFLF2V: true,
                 promptQualityGate: true,
                 characterAppearanceTracking: true,
                 // Quality flags (newly enabled by default)
@@ -246,8 +247,8 @@ describe('featureFlags', () => {
             // interpolationTargetFps is a number not a boolean, so it doesn't count
             // temporalRegularizationStrength is a number not a boolean, so it doesn't count
             // temporalRegularizationWindowFrames is a number not a boolean, so it doesn't count
-            // 42 boolean flags are set to true (40 previous + 2 new: cameraPathDrivenGenerationEnabled, temporalRegularizationAdaptiveMode)
-            expect(enabled.length).toBe(42);
+            // 43 boolean flags are set to true (40 previous + 3 new: cameraPathDrivenGenerationEnabled, temporalRegularizationAdaptiveMode, enableFLF2V)
+            expect(enabled.length).toBe(43);
         });
     });
 

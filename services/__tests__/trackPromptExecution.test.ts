@@ -2,38 +2,24 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { LocalGenerationSettings } from '../../types';
 import { trackPromptExecution } from '../comfyUIService';
 import { createValidTestSettings } from './fixtures';
+import { comfyEventManager } from '../comfyUIEventManager';
 
-class MockWebSocket {
-  static instances: MockWebSocket[] = [];
-  url: string;
-  onopen?: () => void;
-  onmessage?: (event: { data: string }) => void;
-  onerror?: (error: unknown) => void;
-  onclose?: () => void;
-
-  constructor(url: string) {
-    this.url = url;
-    MockWebSocket.instances.push(this);
-  }
-
-  simulateMessage(payload: unknown) {
-    this.onmessage?.({ data: JSON.stringify(payload) });
-  }
-
-  close() {
-    this.onclose?.();
-  }
-}
+// Mock the comfyEventManager
+vi.mock('../comfyUIEventManager', () => ({
+  comfyEventManager: {
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+    connect: vi.fn(),
+  },
+}));
 
 describe('trackPromptExecution', () => {
   beforeEach(() => {
-    MockWebSocket.instances = [];
-    vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
     vi.resetAllMocks();
-    vi.unstubAllGlobals();
   });
 
   const setup = (override?: Partial<LocalGenerationSettings>) => {
@@ -44,10 +30,18 @@ describe('trackPromptExecution', () => {
   it('reports queue status updates', () => {
     const { settings } = setup();
     const onProgress = vi.fn();
-    trackPromptExecution(settings, 'prompt-1', onProgress);
+    const promptId = 'prompt-1';
 
-    const ws = MockWebSocket.instances[0]!;
-    ws.simulateMessage({ type: 'status', data: { queue_remaining: 4 } });
+    trackPromptExecution(settings, promptId, onProgress);
+
+    // Verify subscribe was called
+    expect(comfyEventManager.subscribe).toHaveBeenCalledWith(promptId, expect.any(Function));
+
+    // Get the callback
+    const callback = vi.mocked(comfyEventManager.subscribe).mock.calls[0]![1];
+
+    // Simulate status message
+    callback({ type: 'status', data: { queue_remaining: 4 }, raw: {} });
 
     expect(onProgress).toHaveBeenCalledWith({
       status: 'queued',
@@ -60,72 +54,71 @@ describe('trackPromptExecution', () => {
   it('reports execution progress and node titles', () => {
     const { settings } = setup();
     const onProgress = vi.fn();
-    trackPromptExecution(settings, 'prompt-1', onProgress);
+    const promptId = 'prompt-1';
 
-    const ws = MockWebSocket.instances[0]!;
-    ws.simulateMessage({ type: 'execution_start', data: { prompt_id: 'prompt-1' } });
-    ws.simulateMessage({ type: 'executing', data: { prompt_id: 'prompt-1', node: 'positive_clip' } });
-    ws.simulateMessage({ type: 'progress', data: { prompt_id: 'prompt-1', value: 10, max: 40 } });
+    trackPromptExecution(settings, promptId, onProgress);
 
-    expect(onProgress).toHaveBeenCalledWith({ status: 'running', message: 'Execution started.', promptId: 'prompt-1' });
+    const callback = vi.mocked(comfyEventManager.subscribe).mock.calls[0]![1];
+
+    // Simulate execution start
+    callback({ type: 'execution_start', data: { prompt_id: promptId }, raw: {} });
+    expect(onProgress).toHaveBeenCalledWith({ status: 'running', message: 'Execution started.', promptId });
+
+    // Simulate executing node
+    callback({ type: 'executing', data: { prompt_id: promptId, node: 'positive_clip' }, raw: {} });
     expect(onProgress).toHaveBeenCalledWith(
       expect.objectContaining({
         status: 'running',
         message: 'Executing: CLIPTextEncode - Positive Prompt Layer',
         node_title: 'CLIPTextEncode - Positive Prompt Layer',
-        promptId: 'prompt-1',
+        promptId,
       })
     );
+
+    // Simulate progress
+    callback({ type: 'progress', data: { prompt_id: promptId, value: 10, max: 40 }, raw: {} });
     expect(onProgress).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'running', progress: 25, promptId: 'prompt-1' })
+      expect.objectContaining({ status: 'running', progress: 25, promptId })
     );
   });
 
   it('handles execution errors', () => {
     const { settings } = setup();
     const onProgress = vi.fn();
-    trackPromptExecution(settings, 'prompt-1', onProgress);
+    const promptId = 'prompt-1';
 
-    const ws = MockWebSocket.instances[0]!;
-    ws.simulateMessage({
+    trackPromptExecution(settings, promptId, onProgress);
+
+    const callback = vi.mocked(comfyEventManager.subscribe).mock.calls[0]![1];
+
+    callback({
       type: 'execution_error',
-      data: { prompt_id: 'prompt-1', node_id: 'node-5', exception_message: 'something broke' },
+      data: { prompt_id: promptId, node_id: 'node-5', exception_message: 'something broke' },
+      raw: {}
     });
 
     expect(onProgress).toHaveBeenLastCalledWith({
       status: 'error',
       message: 'ComfyUI error (node node-5): something broke',
-      promptId: 'prompt-1',
+      promptId,
     });
   });
 
   it('reports completion without outputs', () => {
     const { settings } = setup();
     const onProgress = vi.fn();
-    trackPromptExecution(settings, 'prompt-1', onProgress);
+    const promptId = 'prompt-1';
 
-    const ws = MockWebSocket.instances[0]!;
-    ws.simulateMessage({ type: 'executed', data: { prompt_id: 'prompt-1', output: {} } });
+    trackPromptExecution(settings, promptId, onProgress);
+
+    const callback = vi.mocked(comfyEventManager.subscribe).mock.calls[0]![1];
+
+    callback({ type: 'executed', data: { prompt_id: promptId, output: {} }, raw: {} });
 
     expect(onProgress).toHaveBeenLastCalledWith({
       status: 'complete',
       message: 'Generation complete! No visual output found in final node.',
-      promptId: 'prompt-1',
-    });
-  });
-
-  it('reports websocket connection errors', () => {
-    const { settings } = setup();
-    const onProgress = vi.fn();
-    trackPromptExecution(settings, 'prompt-1', onProgress);
-
-    const ws = MockWebSocket.instances[0]!;
-    ws.onerror?.(new Error('connection lost'));
-
-    expect(onProgress).toHaveBeenLastCalledWith({
-      status: 'error',
-      message: expect.stringContaining('WebSocket connection error'),
-      promptId: 'prompt-1',
+      promptId,
     });
   });
 });

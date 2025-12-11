@@ -77,27 +77,29 @@ describe('FLF2V Scaffolding', () => {
       1,
       expect.anything(),
       expect.objectContaining({ id: 'shot-1' }),
-      expect.anything(),
-      expect.anything(),
+      undefined, // enhancers
+      expect.anything(), // directorsVision
       'keyframe-1', // Initial keyframe
-      expect.anything(),
-      expect.anything(),
-      expect.anything()
+      expect.anything(), // progressCallback
+      undefined, // dependencies
+      expect.anything()  // options
     );
 
     // Verify Shot 2 was generated with the LAST FRAME of Shot 1
-    // This expectation will FAIL until we implement the logic
-    // For now, we just document the expectation.
-    
-    // In the real implementation, we expect 'last_frame_base64' (from the mock extractFramesFromVideo)
+    // In the real implementation, we expect 'data:image/jpeg;base64,last_frame_base64' (from the mock extractFramesFromVideo)
     // to be passed as the keyframe for Shot 2.
     
-    // expect(mockGenerateShot).toHaveBeenNthCalledWith(
-    //   2,
-    //   expect.anything(),
-    //   expect.objectContaining({ id: 'shot-2' }),
-    //   expect.anything(),
-    //   expect.anything(),
+    expect(mockGenerateShot).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ id: 'shot-2' }),
+      undefined, // enhancers
+      expect.anything(), // directorsVision
+      'data:image/jpeg;base64,last_frame_base64', // Chained keyframe
+      expect.anything(), // progressCallback
+      undefined, // dependencies
+      expect.anything()  // options
+    );
     //   'last_frame_base64', // The extracted frame
     //   expect.anything(),
     //   expect.anything(),
