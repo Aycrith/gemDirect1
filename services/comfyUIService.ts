@@ -3278,6 +3278,16 @@ export const generateTimelineVideos = async (
                 }
             );
 
+            let result: {
+                videoPath: string;
+                duration: number;
+                filename: string;
+                frames?: string[];
+                workflowMeta?: WorkflowGenerationMetadata;
+                queueSnapshot?: { queue_running: number; queue_pending: number };
+                systemResources?: string;
+            };
+
             // Execute the shot generation
             // Note: We do NOT wrap this in GenerationQueue here because the underlying
             // shotExecutor (generateVideoFromShot) already handles queuing if enabled.
