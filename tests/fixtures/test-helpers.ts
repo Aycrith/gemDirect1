@@ -58,7 +58,10 @@ export async function ensureDirectorMode(page: Page) {
       const classes = await directorButton.getAttribute('class');
       if (!classes?.includes('bg-amber')) {
         await directorButton.click({ force: true });
-        await page.waitForTimeout(500);
+        // Wait for the button to become active (bg-amber class)
+        await page.waitForSelector('[data-testid="mode-director"].bg-amber', { timeout: 5000 });
+        // Wait a bit more for any potential navigation/state settlement
+        await page.waitForTimeout(1000);
       }
     }
   } catch (e) {

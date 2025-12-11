@@ -24,6 +24,7 @@ export interface CliOptions {
     localLLMTemperature?: number;
     llmRequestFormat?: LLMRequestFormat;
     customStoryIdea?: string;
+    useMockLLM?: boolean;
 }
 
 export interface GeneratedScene {
@@ -234,7 +235,19 @@ export const generateStoryAssets = async (options: CliOptions) => {
         llmMetadata.model = DEFAULT_CHAT_MODEL;
     }
 
-    if (llmMetadata.enabled) {
+    if (resolvedOptions.useMockLLM) {
+        llmMetadata.enabled = true;
+        llmMetadata.status = 'success';
+        llmMetadata.model = 'mock-model';
+        llmMetadata.providerUrl = 'mock://internal';
+        llmResponse = {
+            storyId: `mock-story-${crypto.randomUUID()}`,
+            logline: 'A mock story generated for testing purposes.',
+            directorsVision: 'Mock vision with consistent style.',
+            scenes: SAMPLE_SCENES.slice(0, resolvedOptions.sceneCount),
+        };
+        llmMetadata.scenesReceived = llmResponse.scenes.length;
+    } else if (llmMetadata.enabled) {
         if (!llmMetadata.providerUrl) {
             llmMetadata.status = 'error';
             llmMetadata.error = 'LOCAL_STORY_PROVIDER_URL not configured.';

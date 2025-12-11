@@ -15,7 +15,8 @@ param(
     [int]$MaxWaitSeconds = 600,
     [int]$PollIntervalSeconds = 2,
     [string]$LMStudioEndpoint = 'http://192.168.50.192:1234',
-    [switch]$SkipLMStudioUnload
+    [switch]$SkipLMStudioUnload,
+    [switch]$UseMockLLM
 )
 
 $ErrorActionPreference = 'Continue'
@@ -395,6 +396,10 @@ try {
     if ($env:CUSTOM_STORY_IDEA) {
         $storyCmd += " --customStoryIdea `"$env:CUSTOM_STORY_IDEA`""
         Write-Summary "Using custom story idea: $env:CUSTOM_STORY_IDEA"
+    }
+    if ($UseMockLLM) {
+        $storyCmd += " --useMockLLM"
+        Write-Summary "Using Mock LLM for story generation"
     }
     
     Write-Summary "Executing: $storyCmd"

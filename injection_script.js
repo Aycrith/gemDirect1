@@ -5,6 +5,15 @@ async () => {
     if (!settings.workflowProfiles['wan-t2i'] || !settings.workflowProfiles['wan-t2i'].workflowJson || settings.workflowProfiles['wan-t2i'].workflowJson.length === 0) {
         throw new Error("wan-t2i workflowJson is missing or empty");
     }
+    
+    console.log("[Injection] wan-t2i workflowJson length:", settings.workflowProfiles['wan-t2i'].workflowJson.length);
+    console.log("[Injection] wan-t2i workflowJson preview:", settings.workflowProfiles['wan-t2i'].workflowJson.substring(0, 50));
+
+    // Expose for hydration override (Critical for E2E tests)
+    if (typeof window !== 'undefined') {
+        window.__INJECTED_SETTINGS = settings;
+        console.log("[Injection] Set window.__INJECTED_SETTINGS");
+    }
 
     const dbName = 'cinematic-story-db';
     const storeName = 'misc';

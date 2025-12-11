@@ -144,7 +144,14 @@ test.describe('Pipeline Success', () => {
     // 3. Navigate and Inject
     await page.goto('/');
     
-    const injectionScript = fs.readFileSync('injection_script.js', 'utf8');
+    let injectionScript = fs.readFileSync('injection_script.js', 'utf8');
+    if (process.env.VITE_USE_MOCK_LLM === 'true') {
+        console.log('Injecting useMockLLM: true into settings');
+        injectionScript = injectionScript.replace(
+            '"comfyUIUrl":', 
+            '"useMockLLM": true, "comfyUIUrl":'
+        );
+    }
     await page.evaluate(`(${injectionScript})()`);
     
     const storyInjectionScript = fs.readFileSync('tests/e2e/fixtures/inject-story.js', 'utf8');

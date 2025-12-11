@@ -99,6 +99,7 @@ const SceneNavigator: React.FC<SceneNavigatorProps> = ({ scenes, activeSceneId, 
                             >
                                 <button
                                     onClick={() => onSelectScene(scene.id)}
+                                    data-testid={`scene-card-${scene.id}`}
                                     className={`scene-nav-item relative w-full text-left p-3 rounded-md transition-all duration-200 text-sm ring-1 flex items-start gap-3 min-h-[44px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900 ${
                                             effectiveActiveSceneId === scene.id 
                                                 ? 'bg-amber-600 text-white font-semibold shadow-lg shadow-amber-500/20 ring-transparent' 

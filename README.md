@@ -60,6 +60,7 @@ Before diving in, familiarize yourself with these core concepts (detailed guides
 | **QA & Thresholds** | Unified threshold logic (PASS/WARN/FAIL) for Vision QA and video quality gates | [`QA_SEMANTICS.md`](Documentation/QA_SEMANTICS.md) |
 | **Manifests & Versioning** | Generation manifests capture codebase, workflow, model versions, and seeds for reproducibility | [`VERSIONING_AND_MANIFESTS.md`](Documentation/Guides/VERSIONING_AND_MANIFESTS.md) |
 | **Video Benchmarks** | Temporal coherence, motion consistency, and identity stability metrics | [`VIDEO_QUALITY_BENCHMARK_GUIDE.md`](Testing/Benchmarks/VIDEO_QUALITY_BENCHMARK_GUIDE.md) |
+| **Multi-Agent Strategy** | How to use VS Code Agent HQ, Background Agents, and Custom Agents for parallel development | [`MULTI_AGENT_STRATEGY.md`](Documentation/MULTI_AGENT_STRATEGY.md) |
 
 ---
 

@@ -199,6 +199,7 @@ export class GenerationQueue {
      * @returns Promise that resolves when the task completes
      */
     enqueue<T>(task: GenerationTask<T>): Promise<T> {
+        console.log(`[DEBUG] Enqueueing task ${task.id}`);
         // Check queue size limit
         if (this.queue.length >= MAX_QUEUE_SIZE) {
             const error = new CSGError(ErrorCodes.GENERATION_QUEUE_FULL, {
@@ -438,6 +439,7 @@ export class GenerationQueue {
     }
 
     private async processQueue(): Promise<void> {
+        console.log(`[DEBUG] processQueue called. Current task: ${this.currentTask?.id}, Queue length: ${this.queue.length}`);
         // Already processing
         if (this.currentTask !== null) {
             return;
@@ -525,6 +527,14 @@ export class GenerationQueue {
 
         } catch (error) {
             // Failure
+            console.error('[GenerationQueue] Task execution failed with error:', error);
+            if (error instanceof Error) {
+                console.error('[GenerationQueue] Error stack:', error.stack);
+                console.error('[GenerationQueue] Error message:', error.message);
+            } else {
+                console.error('[GenerationQueue] Non-Error object thrown:', JSON.stringify(error));
+            }
+
             const csError = error instanceof CSGError 
                 ? error 
                 : new CSGError(ErrorCodes.GENERATION_FAILED, {

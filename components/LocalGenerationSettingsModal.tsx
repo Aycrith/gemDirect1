@@ -808,6 +808,24 @@ const LocalGenerationSettingsModal: React.FC<LocalGenerationSettingsModalProps> 
                                 </div>
 
                                 <div>
+                                    <div className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-lg mb-4">
+                                        <input
+                                            type="checkbox"
+                                            id="useMockLLM"
+                                            checked={formData.useMockLLM ?? false}
+                                            onChange={(e) => handleInputChange('useMockLLM', e.target.checked)}
+                                            className="w-4 h-4 rounded bg-gray-700 border-gray-600 text-amber-500 focus:ring-amber-500"
+                                        />
+                                        <label htmlFor="useMockLLM" className="text-sm text-gray-300">
+                                            <span className="font-medium">Use Mock LLM (Testing)</span>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                Simulate LLM responses without a running server. Useful for testing pipelines.
+                                            </p>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div>
                                     <label className="block text-sm font-medium text-gray-300 mb-2">
                                         Request Format
                                     </label>

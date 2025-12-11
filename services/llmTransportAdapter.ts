@@ -103,8 +103,72 @@ export class MockLLMTransport implements LLMTransport {
     
     private responses: MockResponse[] = [];
     private defaultResponse: LLMResponse = {
-        text: '{}',
-        json: {},
+        text: JSON.stringify({
+            logline: "Mock Story: The Neon Courier. A courier in a neon city must deliver a package against all odds.",
+            genre: "sci-fi",
+            characters: "Courier: A cyberpunk courier.\nRecipient: The mysterious client.",
+            setting: "The Neon City is a sprawling metropolis of towering skyscrapers and holographic advertisements that never sleep. Rain constantly falls from the smog-choked sky, reflecting the neon lights in the puddles on the grimy streets below. Flying cars zip between buildings, while pedestrians hustle through the crowded markets at street level. The atmosphere is thick with tension and the smell of ozone and street food. It is a world of high tech and low life, where corporations rule and the shadows hide dangerous secrets.",
+            plotOutline: "Act I: Delivery. Act II: Chase. Act III: Resolution.",
+            characterProfiles: [
+                { 
+                    id: "char-1", 
+                    name: "Courier", 
+                    role: "protagonist", 
+                    age: 25, 
+                    visualDescriptor: "Cyberpunk courier with glowing cybernetic arm and leather jacket.",
+                    appearance: { hair: "Short, neon blue", eyes: "Cybernetic red", build: "Lean", typicalAttire: "Leather jacket" }
+                },
+                { 
+                    id: "char-2", 
+                    name: "Recipient", 
+                    role: "antagonist", 
+                    age: 45, 
+                    visualDescriptor: "Corporate executive in a sharp suit with cold, calculating eyes.",
+                    appearance: { hair: "Slicked back gray", eyes: "Cold blue", build: "Tall", typicalAttire: "Sharp suit" }
+                }
+            ],
+            plotScenes: [
+                { actNumber: 1, sceneNumber: 1, summary: "The courier picks up the package from a shady contact in a back alley.", visualCues: ["Neon lights", "Rain", "Shadows"], pacing: "fast" },
+                { actNumber: 1, sceneNumber: 2, summary: "The courier is ambushed by corporate security drones on the way to the delivery.", visualCues: ["Explosions", "Laser fire", "Flying cars"], pacing: "action" },
+                { actNumber: 2, sceneNumber: 1, summary: "The courier navigates the treacherous undercity to evade pursuit.", visualCues: ["Dark tunnels", "Steam", "Rats"], pacing: "suspense" },
+                { actNumber: 2, sceneNumber: 2, summary: "The courier confronts a rival gang leader who wants the package.", visualCues: ["Graffiti", "Weapons", "Tension"], pacing: "tense" },
+                { actNumber: 3, sceneNumber: 1, summary: "The courier reaches the delivery point at the top of the corporate spire.", visualCues: ["Skyline", "Wind", "Vertigo"], pacing: "climactic" },
+                { actNumber: 3, sceneNumber: 2, summary: "The courier delivers the package and reveals the truth to the world.", visualCues: ["Holograms", "Crowds", "Sunrise"], pacing: "resolution" }
+            ]
+        }),
+        json: {
+            logline: "Mock Story: The Neon Courier. A courier in a neon city must deliver a package against all odds.",
+            genre: "sci-fi",
+            characters: "Courier: A cyberpunk courier.\nRecipient: The mysterious client.",
+            setting: "The Neon City is a sprawling metropolis of towering skyscrapers and holographic advertisements that never sleep. Rain constantly falls from the smog-choked sky, reflecting the neon lights in the puddles on the grimy streets below. Flying cars zip between buildings, while pedestrians hustle through the crowded markets at street level. The atmosphere is thick with tension and the smell of ozone and street food. It is a world of high tech and low life, where corporations rule and the shadows hide dangerous secrets.",
+            plotOutline: "Act I: Delivery. Act II: Chase. Act III: Resolution.",
+            characterProfiles: [
+                { 
+                    id: "char-1", 
+                    name: "Courier", 
+                    role: "protagonist", 
+                    age: 25, 
+                    visualDescriptor: "Cyberpunk courier with glowing cybernetic arm and leather jacket.",
+                    appearance: { hair: "Short, neon blue", eyes: "Cybernetic red", build: "Lean", typicalAttire: "Leather jacket" }
+                },
+                { 
+                    id: "char-2", 
+                    name: "Recipient", 
+                    role: "antagonist", 
+                    age: 45, 
+                    visualDescriptor: "Corporate executive in a sharp suit with cold, calculating eyes.",
+                    appearance: { hair: "Slicked back gray", eyes: "Cold blue", build: "Tall", typicalAttire: "Sharp suit" }
+                }
+            ],
+            plotScenes: [
+                { actNumber: 1, sceneNumber: 1, summary: "The courier picks up the package from a shady contact in a back alley.", visualCues: ["Neon lights", "Rain", "Shadows"], pacing: "fast" },
+                { actNumber: 1, sceneNumber: 2, summary: "The courier is ambushed by corporate security drones on the way to the delivery.", visualCues: ["Explosions", "Laser fire", "Flying cars"], pacing: "action" },
+                { actNumber: 2, sceneNumber: 1, summary: "The courier navigates the treacherous undercity to evade pursuit.", visualCues: ["Dark tunnels", "Steam", "Rats"], pacing: "suspense" },
+                { actNumber: 2, sceneNumber: 2, summary: "The courier confronts a rival gang leader who wants the package.", visualCues: ["Graffiti", "Weapons", "Tension"], pacing: "tense" },
+                { actNumber: 3, sceneNumber: 1, summary: "The courier reaches the delivery point at the top of the corporate spire.", visualCues: ["Skyline", "Wind", "Vertigo"], pacing: "climactic" },
+                { actNumber: 3, sceneNumber: 2, summary: "The courier delivers the package and reveals the truth to the world.", visualCues: ["Holograms", "Crowds", "Sunrise"], pacing: "resolution" }
+            ]
+        },
         usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
         model: 'mock-model',
         durationMs: 50,
@@ -515,6 +579,7 @@ export function getTransport(id: string): LLMTransport | undefined {
  * Set the active transport for LLM calls
  */
 export function setActiveTransport(transport: LLMTransport | string): void {
+    console.log('[LLMTransport] Setting active transport:', typeof transport === 'string' ? transport : transport.id);
     if (typeof transport === 'string') {
         const t = transports.get(transport);
         if (!t) {
@@ -532,10 +597,12 @@ export function setActiveTransport(transport: LLMTransport | string): void {
  */
 export function getActiveTransport(): LLMTransport {
     if (!activeTransport) {
+        console.log('[LLMTransport] No active transport, creating default GeminiTransport');
         // Default to Gemini if not set
         activeTransport = new GeminiTransport();
         transports.set(activeTransport.id, activeTransport);
     }
+    console.log('[LLMTransport] Returning active transport:', activeTransport.id);
     return activeTransport;
 }
 

@@ -18,7 +18,7 @@ import { useSceneStateStore } from '../services/sceneStateStore';
 import { useAllGenStatuses, DEFAULT_GENERATION_STATUS } from '../services/generationStatusStore';
 import { isFeatureEnabled } from '../utils/featureFlags';
 import { usePipelineStore } from '../services/pipelineStore';
-import { PipelineTask } from '../types/pipeline';
+import { createExportPipeline } from '../services/pipelineFactory';
 
 interface ContinuityDirectorProps {
   scenes: Scene[];
@@ -176,64 +176,46 @@ CONTEXT FROM ADJACENT SCENES:
   }, [storyBible, effectiveScenes]);
 
   // Phase 4.4: Pipeline Orchestration
-  const createPipeline = usePipelineStore(state => state.createPipeline);
   const activePipelineId = usePipelineStore(state => state.activePipelineId);
+  const activePipeline = usePipelineStore(state => 
+    state.activePipelineId ? state.pipelines[state.activePipelineId] : null
+  );
+
+  const pipelineStats = useMemo(() => {
+    if (!activePipeline) return null;
+    const tasks = Object.values(activePipeline.tasks);
+    const total = tasks.length;
+    const completed = tasks.filter(t => t.status === 'completed').length;
+    const running = tasks.filter(t => t.status === 'running');
+    const failed = tasks.filter(t => t.status === 'failed').length;
+    
+    return {
+      total,
+      completed,
+      running,
+      failed,
+      progress: total > 0 ? Math.round((completed / total) * 100) : 0
+    };
+  }, [activePipeline]);
 
   const handleExportAll = useCallback(() => {
-    const tasks: PipelineTask[] = [];
-    
-    effectiveScenes.forEach(scene => {
-      if (!scene.timeline) return;
-      
-      scene.timeline.shots.forEach(shot => {
-        const keyframeTaskId = `keyframe-${scene.id}-${shot.id}`;
-        const videoTaskId = `video-${scene.id}-${shot.id}`;
-        
-        // Keyframe Task
-        tasks.push({
-          id: keyframeTaskId,
-          type: 'generate_keyframe',
-          label: `Keyframe: ${scene.title} - Shot ${shot.id}`,
-          status: 'pending',
-          dependencies: [],
-          retryCount: 0,
-          createdAt: Date.now(),
-          payload: {
-            sceneId: scene.id,
-            shotId: shot.id,
-            prompt: (shot as any).visualPrompt || shot.description,
-            negativePrompt: '', 
-            workflowProfileId: 'wan-t2i'
-          }
-        });
+    if (!localGenSettings) {
+      addToast('Settings not loaded', 'error');
+      return;
+    }
 
-        // Video Task
-        tasks.push({
-          id: videoTaskId,
-          type: 'generate_video',
-          label: `Video: ${scene.title} - Shot ${shot.id}`,
-          status: 'pending',
-          dependencies: [keyframeTaskId],
-          retryCount: 0,
-          createdAt: Date.now(),
-          payload: {
-            sceneId: scene.id,
-            shotId: shot.id,
-            prompt: (shot as any).visualPrompt || shot.description,
-            negativePrompt: '',
-            workflowProfileId: 'wan-i2v',
-          }
-        });
-      });
+    const pipelineId = createExportPipeline(effectiveScenes, localGenSettings, {
+      generateKeyframes: true,
+      generateVideos: true,
+      upscale: false
     });
 
-    if (tasks.length > 0) {
-      createPipeline('Export All Scenes', tasks);
+    if (pipelineId) {
       addToast('Export pipeline started', 'success');
     } else {
       addToast('No shots to export', 'warning');
     }
-  }, [effectiveScenes, createPipeline, addToast]);
+  }, [effectiveScenes, localGenSettings, addToast]);
 
 
   return (
@@ -248,7 +230,7 @@ CONTEXT FROM ADJACENT SCENES:
           {/* NOTE: Future enhancement - Auto-link latest renders from the canonical pipeline instead of requiring manual upload, and integrate Visual Bible continuity scoring. See Phase 4 roadmap. */}
         </p>
         
-        <div className="mt-6 flex justify-center">
+        <div className="mt-6 flex flex-col items-center gap-3">
           <button
             onClick={handleExportAll}
             disabled={!!activePipelineId}
@@ -260,7 +242,8 @@ CONTEXT FROM ADJACENT SCENES:
           >
             {activePipelineId ? (
                <>
-                 <span className="animate-spin">⟳</span> Pipeline Active...
+                 <span className="animate-spin">⟳</span> 
+                 {pipelineStats ? `Processing... ${pipelineStats.progress}%` : 'Pipeline Active...'}
                </>
             ) : (
                <>
@@ -268,6 +251,22 @@ CONTEXT FROM ADJACENT SCENES:
                </>
             )}
           </button>
+
+          {activePipelineId && pipelineStats && (
+            <div className="text-sm text-gray-400 animate-pulse flex flex-col items-center">
+              <span>
+                {pipelineStats.running.length > 0 
+                  ? `Running: ${pipelineStats.running[0]?.type} (${pipelineStats.completed}/${pipelineStats.total})`
+                  : `Pending tasks... (${pipelineStats.completed}/${pipelineStats.total})`
+                }
+              </span>
+              {pipelineStats.failed > 0 && (
+                <span className="text-red-400 text-xs mt-1">
+                  ⚠️ {pipelineStats.failed} task(s) failed
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </header>
 

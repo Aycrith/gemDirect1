@@ -1,7 +1,6 @@
 import { usePipelineStore } from './pipelineStore';
-import type { PipelineTask, PipelineTaskType } from '../types/pipeline';
+import type { PipelineTask } from '../types/pipeline';
 import { TaskRegistry } from './pipelineTaskRegistry';
-import { getGenerationQueue, GenerationType } from './generationQueue';
 
 export class PipelineEngine {
   private static instance: PipelineEngine;
@@ -118,22 +117,8 @@ export class PipelineEngine {
 
       let result;
       
-      // Determine if this task needs the GenerationQueue
-      if (this.requiresGenerationQueue(task.type)) {
-         const queue = getGenerationQueue();
-         const genType = this.mapTaskTypeToGenType(task.type);
-         
-         result = await queue.enqueue({
-             id: task.id,
-             type: genType,
-             priority: 'normal',
-             execute: () => executor(task, { dependencies }),
-             metadata: { description: task.label }
-         });
-      } else {
-         // Run directly
-         result = await executor(task, { dependencies });
-      }
+      // Run directly - the executors handle their own queuing via GenerationQueue if needed
+      result = await executor(task, { dependencies });
       
       store.updateTaskStatus(pipelineId, task.id, 'completed', result);
     } catch (error: any) {
@@ -143,19 +128,6 @@ export class PipelineEngine {
       // Optional: Fail pipeline on error
       // store.updatePipelineStatus(pipelineId, 'failed');
     }
-  }
-
-  private requiresGenerationQueue(type: PipelineTaskType): boolean {
-      return ['generate_keyframe', 'generate_video', 'upscale_video'].includes(type);
-  }
-
-  private mapTaskTypeToGenType(type: PipelineTaskType): GenerationType {
-      switch (type) {
-          case 'generate_keyframe': return 'keyframe';
-          case 'generate_video': return 'video';
-          case 'upscale_video': return 'video'; // Upscaling is video work
-          default: return 'text';
-      }
   }
 }
 

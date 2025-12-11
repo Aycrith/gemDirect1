@@ -644,6 +644,7 @@ export interface LocalGenerationSettings {
     llmTimeoutMs?: number;
     llmRequestFormat?: string;
     llmSeed?: number;
+    useMockLLM?: boolean;
     
     // Vision LLM Configuration (Image Analysis & Prompt Feedback)
     // If not specified, falls back to text LLM settings (for unified vision models like Qwen3-VL)

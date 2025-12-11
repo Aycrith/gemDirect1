@@ -338,6 +338,13 @@ const GenerationControls: React.FC<Props> = ({
           Video Generation
         </h2>
 
+        {settings.useMockLLM && (
+          <div className="bg-amber-900/30 border border-amber-700/50 rounded-lg p-3 flex items-center gap-2 text-amber-200 text-sm">
+            <AlertTriangleIcon className="w-4 h-4" />
+            <span>Mock LLM Mode Active - Stories will be simulated</span>
+          </div>
+        )}
+
         {/* Queue Status Indicator - shown when useGenerationQueue flag is enabled */}
         {getFeatureFlag(settings.featureFlags, "useGenerationQueue") && (
           <QueueStatusIndicator />

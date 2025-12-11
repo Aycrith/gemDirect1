@@ -39,7 +39,9 @@ const ZustandBackedProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     
     // Memoize settings object - recompute only when store changes
     const settings = useMemo(() => {
-        return isHydrated ? getSettings() : DEFAULT_LOCAL_GENERATION_SETTINGS;
+        const current = isHydrated ? getSettings() : DEFAULT_LOCAL_GENERATION_SETTINGS;
+        console.log('[ZustandBackedProvider] Settings updated. Hydrated:', isHydrated, 'LastSync:', lastSync, 'Profiles:', Object.keys(current.workflowProfiles || {}).length);
+        return current;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lastSync, isHydrated, getSettings]);
     

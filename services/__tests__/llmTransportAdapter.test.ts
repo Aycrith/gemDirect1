@@ -57,7 +57,8 @@ describe('MockLLMTransport', () => {
 
             const response = await transport.send(request);
 
-            expect(response.text).toBe('{}');
+            expect(response.text).toContain('Mock Story');
+            expect(response.text).toContain('The Neon Courier');
             expect(response.model).toBe('mock-model');
             expect(response.usage).toBeDefined();
             expect(response.durationMs).toBeGreaterThanOrEqual(0);
@@ -153,7 +154,7 @@ describe('MockLLMTransport', () => {
             });
 
             expect(first.text).toBe('One-time response');
-            expect(second.text).toBe('{}'); // Falls back to default
+            expect(second.text).toContain('Mock Story'); // Falls back to default
         });
 
         it('should simulate delay when specified', async () => {
@@ -963,7 +964,7 @@ describe('sendLLMRequestWithAdapter', () => {
     it('should log error on adapter failure', async () => {
         // Create a failing transport
         const failingTransport = {
-            id: 'failing',
+            id: 'mock', // Use 'mock' ID to prevent auto-replacement by geminiService when useMockLLM is true
             name: 'Failing Transport',
             send: vi.fn().mockRejectedValue(new Error('Simulated failure')),
             isAvailable: vi.fn().mockResolvedValue(true),

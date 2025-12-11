@@ -32,10 +32,16 @@
 param(
     [string]$Filter = "",
     [switch]$Debug,
-    [switch]$UI
+    [switch]$UI,
+    [switch]$UseMockLLM
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($UseMockLLM) {
+    $env:VITE_USE_MOCK_LLM = "true"
+    Write-Host "Mock LLM Mode: ENABLED" -ForegroundColor Yellow
+}
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  AGENT-SAFE TEST RUNNER (Playwright)" -ForegroundColor Cyan

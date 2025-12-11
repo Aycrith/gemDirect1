@@ -31,6 +31,7 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       NODE_ENV: 'development',
+      VITE_USE_MOCK_LLM: process.env.VITE_USE_MOCK_LLM || '',
       // Local LM Studio (Mistral) configuration for tests - use network IP for reliability
       VITE_LOCAL_STORY_PROVIDER_URL: process.env.VITE_LOCAL_STORY_PROVIDER_URL || 'http://192.168.50.192:1234/v1/chat/completions',
       VITE_LOCAL_LLM_MODEL: process.env.VITE_LOCAL_LLM_MODEL || 'mistralai/mistral-nemo-instruct-2407',

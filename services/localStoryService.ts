@@ -40,14 +40,16 @@ interface StoryBlueprintResponse {
   heroArcs?: Partial<HeroArc>[];
 }
 
-const DEFAULT_MODEL = import.meta.env.VITE_LOCAL_LLM_MODEL ?? 'mistralai/mistral-nemo-instruct-2407';
-const DEFAULT_TEMPERATURE = Number(import.meta.env.VITE_LOCAL_LLM_TEMPERATURE ?? 0.35);
-const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_LOCAL_LLM_TIMEOUT_MS ?? 120000);
-const DEFAULT_REQUEST_FORMAT = import.meta.env.VITE_LOCAL_LLM_REQUEST_FORMAT ?? 'openai-chat';
-const DEFAULT_SEED = import.meta.env.VITE_LOCAL_LLM_SEED;
+const getEnv = (key: string) => (import.meta as any).env?.[key] ?? (typeof process !== 'undefined' ? process.env[key] : undefined);
+
+const DEFAULT_MODEL = getEnv('VITE_LOCAL_LLM_MODEL') ?? 'mistralai/mistral-nemo-instruct-2407';
+const DEFAULT_TEMPERATURE = Number(getEnv('VITE_LOCAL_LLM_TEMPERATURE') ?? 0.35);
+const DEFAULT_TIMEOUT_MS = Number(getEnv('VITE_LOCAL_LLM_TIMEOUT_MS') ?? 120000);
+const DEFAULT_REQUEST_FORMAT = getEnv('VITE_LOCAL_LLM_REQUEST_FORMAT') ?? 'openai-chat';
+const DEFAULT_SEED = getEnv('VITE_LOCAL_LLM_SEED');
 const FALLBACK_TIMEOUT = 120000;
 // Enable system role for models that support it (Qwen, Llama, etc.) - disable for old Mistral 7B
-const USE_SYSTEM_ROLE = import.meta.env.VITE_LOCAL_LLM_USE_SYSTEM_ROLE !== 'false';
+const USE_SYSTEM_ROLE = getEnv('VITE_LOCAL_LLM_USE_SYSTEM_ROLE') !== 'false';
 // Note: response_format is NOT supported by LM Studio - JSON enforcement is via prompt only
 
 const getSettings = () => {
@@ -61,17 +63,17 @@ const getLocalStoryProviderUrl = (): string | null => {
   const settings = getSettings();
   
   // Priority: settings > env > window.LOCAL_STORY_PROVIDER_URL
-  const url = settings.llmProviderUrl || import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL;
+  const url = settings.llmProviderUrl || getEnv('VITE_LOCAL_STORY_PROVIDER_URL');
   
   if (url) {
     // In browser context during development, use Vite proxy to avoid CORS
-    if (typeof window !== 'undefined' && import.meta.env.DEV) {
+    if (typeof window !== 'undefined' && getEnv('DEV')) {
       return '/api/local-llm';
     }
     
     // In production builds, do not silently switch to proxy route
     // Browser fetch to direct URLs will likely fail due to CORS
-    if (typeof window !== 'undefined' && !import.meta.env.DEV) {
+    if (typeof window !== 'undefined' && !getEnv('DEV')) {
       // Check if URL is a direct IP/host (not a relative path)
       if (url.startsWith('http://') || url.startsWith('https://')) {
         throw new CSGError(
@@ -164,12 +166,35 @@ const buildStoryFromResponse = (parsed: StoryBlueprintResponse, fallback: StoryB
   };
 };
 
+const getMockStoryResponse = (idea: string, genre: string): StoryBible => {
+  return {
+    logline: `[MOCK] A compelling story about ${idea} set in a ${genre} world.`,
+    characters: 'Protagonist: A determined hero with a hidden past. Antagonist: A powerful rival seeking control.',
+    setting: 'A vivid world that reflects the themes of the story, full of contrast and detail.',
+    plotOutline: 'Act 1: The Inciting Incident disrupts the status quo. Act 2: Rising action and complications. Act 3: Climax and resolution.',
+    heroArcs: HERO_ARC_LIBRARY.map(arc => ({
+      ...arc,
+      summary: `[MOCK] The hero experiences ${arc.name} in the context of ${idea}.`,
+      emotionalShift: arc.emotionalShift
+    }))
+  };
+};
+
 const callStoryProvider = async (
   idea: string,
   genre: string,
   fallback: StoryBible,
   feedback?: string
 ): Promise<StoryBible> => {
+  const settings = getSettings();
+  
+  if (settings.useMockLLM) {
+    console.log('[LocalStoryService] Using Mock LLM response');
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    return getMockStoryResponse(idea, genre);
+  }
+
   const providerUrl = getLocalStoryProviderUrl();
   if (!providerUrl) {
     throw new CSGError(ErrorCodes.LLM_CONNECTION_FAILED, { reason: 'URL not configured' });
@@ -177,11 +202,9 @@ const callStoryProvider = async (
   if (typeof fetch !== 'function') {
     throw new CSGError(ErrorCodes.LLM_CONNECTION_FAILED, { reason: 'fetch not available' });
   }
-
-  const settings = getSettings();
   
   const controller = new AbortController();
-  const timeoutMs = Math.max(12000, settings.llmTimeoutMs || Number(import.meta.env.VITE_LOCAL_LLM_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS) || FALLBACK_TIMEOUT);
+  const timeoutMs = Math.max(12000, settings.llmTimeoutMs || Number(getEnv('VITE_LOCAL_LLM_TIMEOUT_MS') ?? DEFAULT_TIMEOUT_MS) || FALLBACK_TIMEOUT);
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {

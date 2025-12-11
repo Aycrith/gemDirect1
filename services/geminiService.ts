@@ -8,9 +8,12 @@ import { convertToStoryBibleV2 } from "./storyBibleConverter";
 import { loadFeatureFlags, isFeatureEnabled, type FeatureFlags } from "../utils/featureFlags";
 import { 
     getActiveTransport, 
+    setActiveTransport,
+    createMockTransport,
     LLMRequest, 
     LLMResponse,
 } from "./llmTransportAdapter";
+import { useSettingsStore } from "./settingsStore";
 
 // P2.6 Optimization (2025-11-20): Defer Gemini SDK initialization until first API call
 // Instead of creating GoogleGenAI instance at module load, use lazy initialization
@@ -159,6 +162,27 @@ export const sendLLMRequestWithAdapter = async (
     const context = request.metadata?.context || 'llm-request';
     const correlationId = request.metadata?.correlationId || generateCorrelationId();
     const startTime = Date.now();
+
+    // Check for Mock LLM override from settings
+    try {
+        const settings = useSettingsStore.getState();
+        console.log('[LLM Debug] Settings state in geminiService:', { 
+            useMockLLM: settings.useMockLLM, 
+            featureFlags: settings.featureFlags 
+        });
+        
+        if (settings.useMockLLM) {
+            const currentTransport = getActiveTransport();
+            console.log('[LLM Debug] Current transport:', currentTransport.id);
+            
+            if (currentTransport.id !== 'mock') {
+                console.log('[LLM] Enabling Mock LLM Transport via settings');
+                setActiveTransport(createMockTransport());
+            }
+        }
+    } catch (e) {
+        console.warn('[LLM] Failed to read settings store:', e);
+    }
     
     if (useAdapter) {
         // Route through transport adapter
@@ -503,6 +527,37 @@ const storyBibleV2Schema = {
     required: ['logline', 'characters', 'setting', 'plotOutline', 'characterProfiles', 'plotScenes'],
 } as const;
 
+// Helper to get feature flags from storage (browser context)
+const getStoredFeatureFlags = (): FeatureFlags => {
+    try {
+        // Try to get flags from SettingsStore first (primary source)
+        const state = useSettingsStore.getState();
+        if (state.featureFlags) {
+            console.log('[geminiService] Reading flags from SettingsStore:', state.featureFlags);
+            return state.featureFlags;
+        }
+
+        // Fallback to localStorage (legacy/backup)
+        if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem('gemDirect-settings-store');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (parsed.state?.featureFlags) {
+                    console.log('[geminiService] Reading flags from localStorage fallback:', parsed.state.featureFlags);
+                    return loadFeatureFlags(parsed.state.featureFlags);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[geminiService] Error reading flags:', e);
+    }
+    
+    // Return defaults if nothing found
+    const defaults = loadFeatureFlags({});
+    console.log('[geminiService] Using default flags:', defaults);
+    return defaults;
+};
+
 /**
  * Generate Story Bible via the LLM Transport Adapter
  * This enables testability via MockLLMTransport
@@ -526,7 +581,7 @@ const generateStoryBibleViaAdapter = async (
     
     const response = await sendLLMRequestWithAdapter(
         request,
-        loadFeatureFlags(),
+        getStoredFeatureFlags(),
         logApiCall,
         onStateChange
     );
@@ -599,7 +654,9 @@ const generateStoryBibleViaAdapter = async (
     return result;
 };
 
+
 export const generateStoryBible = async (idea: string, genre: string = 'sci-fi', logApiCall: ApiLogCallback, onStateChange?: ApiStateChangeCallback): Promise<StoryBibleV2> => {
+    console.error('[geminiService] generateStoryBible called with idea:', idea);
     const context = 'generate Story Bible';
     
     // Load and apply template enhancement
@@ -620,10 +677,10 @@ ${template.content}`;
     // Build the prompt (shared between adapter and direct SDK paths)
     const prompt = buildStoryBiblePrompt(idea, templateGuidance);
     
-    // Check feature flag - route to adapter if enabled
-    const flags = loadFeatureFlags();
-    if (isFeatureEnabled(flags, 'useLLMTransportAdapter')) {
-        console.log('[generateStoryBible] Using LLM Transport Adapter');
+    const flags = getStoredFeatureFlags();
+    const settings = useSettingsStore.getState();
+    const shouldUseAdapter = settings.useMockLLM || isFeatureEnabled(flags, 'useLLMTransportAdapter');
+    if (shouldUseAdapter) {
         return generateStoryBibleViaAdapter(prompt, genre, logApiCall, onStateChange);
     }
     

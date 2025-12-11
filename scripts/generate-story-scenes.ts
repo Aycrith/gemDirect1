@@ -22,6 +22,8 @@ const parseArgs = (): CliOptions => {
             i += 1;
         } else if (arg === '--useLocalLLM') {
             options.useLocalLLM = true;
+        } else if (arg === '--useMockLLM') {
+            options.useMockLLM = true;
         } else if (arg === '--localLLMSeed' && args[i + 1]) {
             options.localLLMSeed = args[i + 1];
             i += 1;

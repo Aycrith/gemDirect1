@@ -1,9 +1,9 @@
 import { PipelineTask, PipelineTaskType } from '../types/pipeline';
 import { useSettingsStore } from './settingsStore';
 import { 
-    queueComfyUIPrompt, 
-    trackPromptExecution, 
-    ComfyUIPromptPayloads 
+    queueComfyUIPromptWithQueue, 
+    ComfyUIPromptPayloads,
+    trackPromptExecution
 } from './comfyUIService';
 import { 
     upscaleVideo, 
@@ -17,22 +17,10 @@ const stripDataUrlPrefix = (dataUrl: string): string => {
     return dataUrl.replace(/^data:image\/\w+;base64,/, "");
 };
 
-const waitForCompletion = (settings: any, promptId: string): Promise<any> => {
-    return new Promise((resolve, reject) => {
-        trackPromptExecution(settings, promptId, (statusUpdate) => {
-            if (statusUpdate.status === 'complete') {
-                resolve(statusUpdate.final_output);
-            } else if (statusUpdate.status === 'error') {
-                reject(new Error(statusUpdate.message || 'Unknown error during execution'));
-            }
-        });
-    });
-};
-
 export const executeKeyframeGeneration: TaskExecutor = async (task) => {
     console.log(`[TaskRegistry] Executing keyframe generation for task ${task.id}`);
     
-    const { prompt, negativePrompt, workflowProfileId } = task.payload;
+    const { prompt, negativePrompt, workflowProfileId, sceneId, shotId } = task.payload;
     const settings = useSettingsStore.getState();
 
     if (!prompt) {
@@ -47,25 +35,30 @@ export const executeKeyframeGeneration: TaskExecutor = async (task) => {
     };
 
     // For keyframe generation, we don't usually have an input image
-    const result = await queueComfyUIPrompt(
+    const result = await queueComfyUIPromptWithQueue(
         settings,
         payloads,
         '', // No input image
-        workflowProfileId || 'wan-t2i' // Default to T2I
+        workflowProfileId || 'wan-t2i', // Default to T2I
+        {
+            sceneId,
+            shotId,
+            waitForCompletion: true
+        }
     );
 
     if (!result) {
         throw new Error('Failed to queue keyframe generation');
     }
 
-    console.log(`[TaskRegistry] Keyframe generation queued with ID: ${result.prompt_id}`);
-    return waitForCompletion(settings, result.prompt_id);
+    console.log(`[TaskRegistry] Keyframe generation completed for task ${task.id}`);
+    return result;
 };
 
 export const executeVideoGeneration: TaskExecutor = async (task, context) => {
     console.log(`[TaskRegistry] Executing video generation for task ${task.id}`);
     
-    let { prompt, negativePrompt, keyframeImage, workflowProfileId } = task.payload;
+    let { prompt, negativePrompt, keyframeImage, workflowProfileId, sceneId, shotId } = task.payload;
     const settings = useSettingsStore.getState();
 
     // Resolve keyframe image from dependencies if not provided
@@ -91,19 +84,24 @@ export const executeVideoGeneration: TaskExecutor = async (task, context) => {
 
     const cleanImage = stripDataUrlPrefix(keyframeImage);
 
-    const result = await queueComfyUIPrompt(
+    const result = await queueComfyUIPromptWithQueue(
         settings,
         payloads,
         cleanImage,
-        workflowProfileId || 'wan-i2v' // Default to I2V
+        workflowProfileId || 'wan-i2v', // Default to I2V
+        {
+            sceneId,
+            shotId,
+            waitForCompletion: true
+        }
     );
 
     if (!result) {
         throw new Error('Failed to queue video generation');
     }
 
-    console.log(`[TaskRegistry] Video generation queued with ID: ${result.prompt_id}`);
-    return waitForCompletion(settings, result.prompt_id);
+    console.log(`[TaskRegistry] Video generation completed for task ${task.id}`);
+    return result;
 };
 
 export const executeUpscaleVideo: TaskExecutor = async (task, context) => {
@@ -137,7 +135,9 @@ export const executeUpscaleVideo: TaskExecutor = async (task, context) => {
     }
 
     console.log(`[TaskRegistry] Upscale queued with ID: ${result.promptId}`);
-    return waitForCompletion(settings, result.promptId);
+    return trackPromptExecution(settings, result.promptId, (status) => {
+        console.log(`[TaskRegistry] Upscale progress: ${status.status} - ${status.message}`);
+    });
 };
 
 export const TaskRegistry: Record<PipelineTaskType, TaskExecutor> = {

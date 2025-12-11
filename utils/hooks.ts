@@ -487,6 +487,8 @@ export function useProjectData(setGenerationProgress: React.Dispatch<React.SetSt
     }, [scenes, isLoading]);
 
     const handleGenerateStoryBible = useCallback(async (idea: string, genre: string = 'sci-fi', addToast: (message: string, type: ToastMessage['type']) => void) => {
+        console.error('[handleGenerateStoryBible] Called with idea:', idea);
+        console.error('[handleGenerateStoryBible] planActions available:', !!planActions);
         setIsLoading(true);
         
         // Safety timeout: ensure loading state clears even if async operation hangs

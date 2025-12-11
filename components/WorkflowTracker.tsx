@@ -81,6 +81,7 @@ const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({ currentStage, onStage
                             <div className="flex flex-col items-center text-center w-36">
                                 <button
                                     data-testid={STAGE_TEST_IDS[stage.id]}
+                                    aria-label={stage.name}
                                     onClick={() => isClickable && onStageClick(stageId)}
                                     disabled={!isClickable}
                                     className={`relative flex items-center justify-center w-16 h-16 rounded-full border-2 transition-all duration-300 group ${

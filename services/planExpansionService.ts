@@ -422,6 +422,7 @@ const createFallbackAction = <T extends (...args: any[]) => Promise<any>>(
     actionName: string
 ): T => {
     return (async (...args: Parameters<T>): Promise<Awaited<ReturnType<T>>> => {
+        console.log(`[FallbackWrapper] Executing ${actionName}`);
         try {
             // Try Gemini first
             return await geminiAction(...args);
@@ -446,7 +447,8 @@ const createFallbackAction = <T extends (...args: any[]) => Promise<any>>(
  * When a user selects a strategy, we honor their choice, but for Gemini,
  * we wrap each action with automatic local fallback on failure.
  */
-export const createPlanExpansionActions = (strategyId: string): PlanExpansionActions => {
+export const createPlanExpansionActionsV2 = (strategyId: string): PlanExpansionActions => {
+    console.error('[planExpansionService] createPlanExpansionActionsV2 called with strategyId:', strategyId);
     if (strategyId === LOCAL_STRATEGY_ID) {
         return localActions;
     }

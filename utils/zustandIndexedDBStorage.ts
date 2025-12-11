@@ -94,7 +94,7 @@ export function createIndexedDBStorage(
             
             try {
                 const data = await getData(fullKey);
-                
+
                 if (data === undefined || data === null) {
                     log(`No data found for: ${fullKey}`);
                     

@@ -628,6 +628,19 @@ const resolveWorkflowProfile = (
         return override;
     }
     const resolvedProfileId = profileId || DEFAULT_WORKFLOW_PROFILE_ID;
+    
+    // DEBUG LOGGING
+    if (profileId === 'wan-t2i') {
+        console.log(`[resolveWorkflowProfile] Resolving ${profileId}`);
+        console.log(`[resolveWorkflowProfile] Settings profiles keys: ${Object.keys(settings.workflowProfiles || {}).join(', ')}`);
+        const p = settings.workflowProfiles?.[profileId];
+        console.log(`[resolveWorkflowProfile] Profile found: ${!!p}`);
+        if (p) {
+             console.log(`[resolveWorkflowProfile] WorkflowJson type: ${typeof p.workflowJson}`);
+             console.log(`[resolveWorkflowProfile] WorkflowJson length: ${p.workflowJson?.length}`);
+        }
+    }
+
     const profileFromSettings = profileId ? settings.workflowProfiles?.[profileId] : undefined;
     const primaryProfile = settings.workflowProfiles?.[DEFAULT_WORKFLOW_PROFILE_ID];
     const workflowJson =
@@ -1348,6 +1361,7 @@ export const queueComfyUIPrompt = async (
     profileOverride?: WorkflowProfile,
     options?: QueuePromptOptions
 ): Promise<ComfyUIPromptResult | null> => {
+    console.log(`[DEBUG] queueComfyUIPrompt entered. Profile: ${profileId}`);
     // ========================================================================
     // Entry Diagnostics - helps identify why requests never reach ComfyUI
     // ========================================================================
@@ -5395,6 +5409,7 @@ export const queueComfyUIPromptWithQueue = async (
         extraData?: Record<string, any>;
     }
 ): Promise<ComfyUIPromptResult | LocalGenerationStatus['final_output']> => {
+    console.log(`[DEBUG] queueComfyUIPromptWithQueue entered. Profile: ${profileId}`);
     const queue = getGenerationQueue();
     const waitForCompletion = options?.waitForCompletion ?? true;
 

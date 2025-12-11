@@ -1,34 +1,34 @@
 {
-  "timestamp": "2025-12-10T00:30:00Z",
+  "timestamp": "2025-12-11T12:00:00Z",
   "agent": "Implementer",
-  "sessionSummary": "Completed implementation of video upscaling executor and verified full pipeline success path with E2E tests.",
+  "sessionSummary": "Improved UI feedback for pipeline export and verified full pipeline E2E tests.",
   "filesModified": [
-    "services/pipelineTaskRegistry.ts",
-    "tests/e2e/pipeline-success.spec.ts",
-    "AGENT_HANDOFF_SESSION_20251209_V6.md"
+    "components/ContinuityDirector.tsx",
+    "tests/e2e/pipeline-export.spec.ts",
+    "AGENT_HANDOFF_PIPELINE_UI_IMPROVEMENTS_20251211.md"
   ],
   "decisions": [
     {
-      "decision": "Mock WebSocket in E2E",
-      "rationale": "To verify the pipeline success path without relying on a fragile or slow real ComfyUI instance, we mocked the WebSocket protocol to simulate task completion.",
-      "alternatives": ["Use real ComfyUI (slow, flaky)", "Mock only HTTP (insufficient for trackPromptExecution)"]
+      "decision": "Use usePipelineStore in ContinuityDirector",
+      "rationale": "To access real-time pipeline status and task details for better UI feedback.",
+      "alternatives": ["Pass status via props (cumbersome)", "Use local state (doesn't persist across components)"]
+    },
+    {
+      "decision": "Update pipeline-export.spec.ts assertion",
+      "rationale": "To match the dynamic text changes in the UI ('Processing... X%').",
+      "alternatives": ["Keep static assertion (would fail)"]
     }
   ],
   "currentState": {
-    "phase": "implementing",
-    "progress": "100%",
-    "status": "Pipeline Orchestration (P4.4) complete and verified."
+    "phase": "refinement",
+    "progress": "P4.4 UI Feedback Complete",
+    "status": "UI shows detailed progress. E2E tests passing."
   },
   "nextSteps": [
-    "Integration testing with real ComfyUI",
-    "Refine error handling"
+    "Manual verification of the UI with real ComfyUI backend",
+    "Consider mapping task types to user-friendly labels"
   ],
   "blockers": [],
   "openQuestions": [],
-  "relatedIssues": [],
-  "testMetrics": {
-    "typescript": "0 errors",
-    "unitTests": "2556 passed",
-    "e2eTests": "3 new tests passed (continuity-crash, pipeline-export, pipeline-success)"
-  }
+  "relatedIssues": []
 }

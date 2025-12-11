@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PipelineEngine } from '../pipelineEngine';
 import { usePipelineStore } from '../pipelineStore';
 import { TaskRegistry } from '../pipelineTaskRegistry';
-import { getGenerationQueue } from '../generationQueue';
 
 // Mock dependencies
 vi.mock('../pipelineStore', () => ({
@@ -52,11 +51,6 @@ describe('PipelineEngine', () => {
         
         // Mock TaskRegistry
         (TaskRegistry as any)['generic_action'] = vi.fn().mockResolvedValue('success');
-        
-        // Mock GenerationQueue
-        (getGenerationQueue as any).mockReturnValue({
-            enqueue: vi.fn().mockResolvedValue('queued_success')
-        });
     });
 
     it('should execute runnable tasks', async () => {
@@ -85,8 +79,6 @@ describe('PipelineEngine', () => {
         
         await (engine as any).processPipelines();
         
-        const queue = getGenerationQueue();
-        expect(queue.enqueue).toHaveBeenCalled();
         expect(mockStore.updateTaskStatus).toHaveBeenCalledWith('p1', 't3', 'running');
     });
 });

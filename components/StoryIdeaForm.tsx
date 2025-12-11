@@ -20,6 +20,8 @@ import { refineField } from '../services/refineField';
 import { useFieldState } from '../utils/useFieldState';
 import { suggestionHistoryStore } from '../store/suggestionHistoryStore';
 import { logCorrelation, generateCorrelationId } from '../utils/correlation';
+import { useSettingsStore } from '../services/settingsStore';
+import AlertTriangleIcon from './icons/AlertTriangleIcon';
 
 interface StoryIdeaFormProps {
     onSubmit: (idea: string, genre?: string) => void;
@@ -38,6 +40,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
     const fieldState = useFieldState('Draft');
     const spotlightRef = useInteractiveSpotlight<HTMLDivElement>();
     const planActions = usePlanExpansionActions();
+    const useMockLLM = useSettingsStore(state => state.useMockLLM);
 
     // Compute validation result whenever idea changes
     const validation: StoryIdeaValidation = useMemo(() => {
@@ -52,9 +55,10 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        console.error('[StoryIdeaForm] handleSubmit called');
         if (idea.trim() && validation.canProceed) {
             fieldState.setValidating();
-            console.log('[StoryIdeaForm] Submitting idea with validation:', {
+            console.error('[StoryIdeaForm] Submitting idea with validation:', {
                 wordCount: validation.wordCount,
                 qualityScore: validation.qualityScore,
                 issueCount: validation.issues.length
@@ -64,7 +68,7 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
             // Show validation panel if trying to submit invalid idea
             setShowValidation(true);
             fieldState.setHasIssues();
-            console.log('[StoryIdeaForm] Blocked submission - validation failed:', validation.issues);
+            console.error('[StoryIdeaForm] Blocked submission - validation failed:', validation.issues);
         }
     };
     
@@ -166,6 +170,13 @@ const StoryIdeaForm: React.FC<StoryIdeaFormProps> = ({ onSubmit, isLoading, onAp
             <GuideCard title="What makes a strong story idea?">
                 <p>Your initial idea is the seed for everything that follows. Aim for a concept that includes a <strong className="text-amber-300">protagonist</strong>, a clear <strong className="text-amber-300">goal</strong>, and a significant <strong className="text-amber-300">conflict</strong> or obstacle.</p>
             </GuideCard>
+
+            {useMockLLM && (
+                <div className="mt-4 bg-amber-900/30 border border-amber-700/50 rounded-lg p-3 flex items-center gap-2 text-amber-200 text-sm">
+                    <AlertTriangleIcon className="w-4 h-4" />
+                    <span>Mock LLM Mode Active - Story generation will be simulated</span>
+                </div>
+            )}
 
             <form onSubmit={handleSubmit} className="mt-6">
                 <div className="mb-4">

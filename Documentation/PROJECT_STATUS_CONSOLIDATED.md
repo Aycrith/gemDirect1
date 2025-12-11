@@ -6,7 +6,9 @@
 
 > **Note**: This document consolidates information from `CURRENT_STATUS.md`, `START_HERE.md`, and recent session summaries into a single authoritative reference. For detailed history, see `Development_History/Sessions/`.
 
-> **Latest Session**: Phase 3 Remediation Complete (2025-12-09) - **✅ COMPLETE** - Implemented Guardian rules (P3.4). Remediated all violations: Refactored `videoUpscalingService.ts` to use safe queue. Added `<HydrationGate>` to 9 Context Providers. Fixed TypeScript errors in benchmark scripts. Guardian Scan: **No issues**. TypeScript: **Zero errors**.
+> **Latest Session**: Pipeline UI Improvements (2025-12-11) - **✅ COMPLETE** - Improved UI feedback for pipeline export in `ContinuityDirector.tsx` (progress %, task details). Verified full pipeline E2E tests (`full-pipeline.spec.ts` passed). Updated `pipeline-export.spec.ts` to match new UI.
+
+> **Previous Session**: Phase 3 Remediation Complete (2025-12-09) - **✅ COMPLETE** - Implemented Guardian rules (P3.4). Remediated all violations: Refactored `videoUpscalingService.ts` to use safe queue. Added `<HydrationGate>` to 9 Context Providers. Fixed TypeScript errors in benchmark scripts. Guardian Scan: **No issues**. TypeScript: **Zero errors**.
 
 > **Previous Session**: Generation Queue Integration (2025-12-09) - **✅ COMPLETE** - Implemented Generation Queue to prevent VRAM exhaustion. Added `queueComfyUIPromptWithQueue` wrapper in `comfyUIService.ts`. Updated `generateVideoFromShot` to use queue when `useGenerationQueue` flag is enabled. Verified with UI panel integration.
 

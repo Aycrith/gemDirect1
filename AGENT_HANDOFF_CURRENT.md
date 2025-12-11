@@ -1,7 +1,7 @@
 # Agent Handoff: Current State (Consolidated)
 
-**Last Updated**: December 9, 2025 14:00 PST  
-**Status**: ✅ PHASE 9B COMPLETE – PRODUCTION PIPELINE UI EXTENSIONS  
+**Last Updated**: December 10, 2025 04:40 UTC
+**Status**: ✅ PHASE 9B COMPLETE – PRODUCTION PIPELINE UI EXTENSIONS
 **Phase**: Production Video Pipeline Validation (Phase 9B)
 
 ---
@@ -43,6 +43,79 @@ promptScheduling: false,
 - **Stability Profile Selector**: Standard marked with ★ star
 - **Workflow Dropdown**: wan-fun-inpaint marked as "★ Recommended"
 - **Help Text**: "★ Production Default: wan-fun-inpaint + Standard stability profile"
+
+---
+
+## Session 2025-12-10 12:00 UTC – Unit Test Fixes & Stability Verification ✅
+
+**Goal**: Fix unit test regressions and verify codebase stability.
+
+**Accomplishments**:
+- **Fixed geminiService.ts**: Corrected the logic that checks for the active transport ID. It was incorrectly checking for 'mock-transport' instead of 'mock', which caused it to aggressively overwrite valid mock transports injected during testing.
+- **Fixed llmTransportAdapter.test.ts**:
+  - Updated test expectations to match the actual "Mock Story" JSON returned by the default mock transport.
+  - Updated the "failing transport" test case to use id: 'mock' so that geminiService accepts it as a valid mock.
+- **Verified Stability**:
+  - Ran `npx tsc --noEmit`: Passed (Clean compilation).
+  - Ran `npm test`: Passed (All 58 tests in llmTransportAdapter.test.ts passed).
+
+**Next Steps**:
+- Proceed to E2E testing.
+
+## Session 2025-12-10 13:00 UTC – Pipeline Orchestration (P4.4) Implementation ✅
+
+**Goal**: Implement robust, multi-step generation workflows (Keyframe -> Video -> Upscale) with dependency management and queue integration.
+
+**Accomplishments**:
+- **Pipeline Factory**: Implemented `services/pipelineFactory.ts` to create DAG-based pipelines from scenes.
+- **Pipeline Engine**: Implemented `services/pipelineEngine.ts` to execute tasks with dependency resolution.
+- **Task Registry**: Updated `services/pipelineTaskRegistry.ts` to use `queueComfyUIPromptWithQueue`, ensuring proper VRAM management and concurrency.
+- **UI Integration**: Updated `ContinuityDirector.tsx` to use the new pipeline system for "Export All".
+- **Testing**:
+  - Created unit tests for `pipelineFactory`.
+  - Created integration tests for `pipelineEngine` + `TaskRegistry` + `GenerationQueue` (mocked).
+  - Verified full flow execution and failure handling.
+
+**Status**:
+- P4.4 Core Implementation Complete.
+- Integration Tests Passing.
+
+**Next Steps**:
+- Create E2E tests for the full export flow.
+- Improve UI feedback for pipeline progress.
+
+## Session 2025-12-10 04:40 UTC – Manual E2E Verification ✅
+
+## Session 2025-12-10 05:30 UTC – Mock LLM Implementation ✅
+
+**Goal**: Unblock E2E testing by implementing a Mock LLM mode.
+
+**Changes**:
+- Implemented `useMockLLM` setting and logic in `localStoryService.ts`.
+- Added UI controls and indicators for Mock LLM mode.
+- Fixed `import.meta.env` usage for Node.js compatibility.
+- Verified with `scripts/test-mock-llm.ts`.
+
+**Status**:
+- Mock LLM is working and verified.
+- E2E tests can now proceed without a running LM Studio instance.
+
+**Next Steps**:
+- Run full E2E tests with Mock LLM.
+
+**Goal**: Verify "Export All Scenes" pipeline initiation and UI prerequisite logic via manual E2E test.
+
+**Accomplishments**:
+- **Data Injection**: Successfully injected test data (Story Bible, Scenes, Settings) into IndexedDB using `page.evaluate`.
+- **UI Verification**: Confirmed "Continuity Director" view correctly reflects injected data and updates "Prerequisites Missing" warnings.
+- **Pipeline Initiation**: Confirmed "Export All Scenes" button triggers the export pipeline (`[PipelineEngine] Executing task...`).
+- **Failure Analysis**: Documented that pipeline fails due to missing local LLM connection (expected in this environment).
+- **Reporting**: Created `MANUAL_TEST_REPORT_EXPORT_PIPELINE.md` with detailed findings.
+
+**Next Steps**:
+- Implement mock LLM service for automated E2E testing.
+- Refine UI to disable export when critical prerequisites are missing.
+- Continue integration testing with real ComfyUI.
 
 ---
 

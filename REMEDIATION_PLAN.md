@@ -42,6 +42,9 @@ This document provides a comprehensive plan to address all known issues, gaps, a
 
 **Total Estimated Effort**: 10-15 days of focused work
 
+## Multi-Agent Strategy
+See [Documentation/MULTI_AGENT_STRATEGY.md](Documentation/MULTI_AGENT_STRATEGY.md) for details on how to execute this plan using VS Code's Agent HQ and Background Agents.
+
 ---
 
 ## Phase 1: Critical Bugs & Quick Wins (1-2 days)
@@ -1072,13 +1075,19 @@ Implement:
 
 ### P4.4: Pipeline Orchestration (D1)
 
+**Status**: 🔄 IN PROGRESS
 **Effort**: Large (5+ days)
 
-Consider Prefect/Dagster integration for:
-- DAG-based pipeline management
-- Job submission API
-- Retry logic
-- Distributed execution
+**Progress:**
+- [x] Step 1: Core Infrastructure (Engine, Store, Types) - `services/pipelineEngine.ts`, `services/pipelineStore.ts`
+- [x] Step 2: Task Executors (Registry, ComfyUI Integration) - `services/pipelineTaskRegistry.ts`
+- [x] Step 3: UI Integration (Completed) - `components/PipelineStatusPanel.tsx`, `components/ContinuityDirector.tsx` (Export All button), `services/pipelineFactory.ts`
+- [ ] Step 4: Testing & Hardening - Unit tests added for factory. Need integration tests.
+
+**Implementation Plan:**
+1.  Add integration tests for the full pipeline flow (mocking ComfyUI).
+2.  Verify error handling and retry logic.
+3.  Consider Prefect/Dagster integration for future distributed execution.
 
 ---
 

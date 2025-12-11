@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo } fro
 import { HydrationGate } from './HydrationContext';
 import { PlanExpansionStrategy } from '../types';
 import { usePersistentState } from '../utils/hooks';
-import { createPlanExpansionActions, PlanExpansionActions } from '../services/planExpansionService';
+import { createPlanExpansionActionsV2, PlanExpansionActions } from '../services/planExpansionService';
 import { DEFAULT_PLAN_STRATEGIES, FALLBACK_PLAN_STRATEGY, PLAN_STRATEGY_STORAGE_KEY } from '../utils/contextConstants';
 
 type PlanExpansionStrategyContextValue = {
@@ -22,6 +22,8 @@ export const PlanExpansionStrategyProvider: React.FC<{ children: React.ReactNode
         : (DEFAULT_PLAN_STRATEGIES[0]?.id ?? 'default');
 
     const [selectedStrategyId, setSelectedStrategyId] = usePersistentState<string>(PLAN_STRATEGY_STORAGE_KEY, defaultStrategyId);
+    
+    console.log('[PlanExpansionStrategyProvider] Initialized with strategy:', selectedStrategyId);
 
     const strategies = DEFAULT_PLAN_STRATEGIES;
 
@@ -76,7 +78,8 @@ export const PlanExpansionStrategyProvider: React.FC<{ children: React.ReactNode
         if (!activeStrategy) {
             throw new Error('[PlanExpansionStrategy] No active strategy available');
         }
-        return createPlanExpansionActions(activeStrategy.id);
+        console.error('[PlanExpansionStrategyProvider] Calling createPlanExpansionActionsV2 with:', activeStrategy.id);
+        return createPlanExpansionActionsV2(activeStrategy.id);
     }, [activeStrategy]);
 
     const value = useMemo<PlanExpansionStrategyContextValue>(() => {

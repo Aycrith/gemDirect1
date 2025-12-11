@@ -145,6 +145,12 @@ const StoryBibleEditor: React.FC<StoryBibleEditorProps> = ({ storyBible, onUpdat
     
     // Story Bible validation hook - provides real-time validation feedback
     const validation = useStoryBibleValidation(editableBible);
+
+    useEffect(() => {
+        if (validation.issues.length > 0) {
+            console.log('[Validation Debug] Issues:', JSON.stringify(validation.issues, null, 2));
+        }
+    }, [validation.issues]);
     
     // Sync editable bible when prop changes (e.g., after save)
     useEffect(() => {

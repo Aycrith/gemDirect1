@@ -104,6 +104,7 @@ export interface SettingsStoreState {
     llmTimeoutMs?: number;
     llmRequestFormat?: string;
     llmSeed?: number;
+    useMockLLM?: boolean;
     
     // ========================================================================
     // Vision LLM Configuration
@@ -246,7 +247,8 @@ export type SettingsStore = SettingsStoreState & SettingsStoreActions;
 /**
  * Convert DEFAULT_LOCAL_GENERATION_SETTINGS to initial store state
  */
-const createInitialState = (): SettingsStoreState => ({
+const createInitialState = (): SettingsStoreState => {
+    const state: SettingsStoreState = {
     // Video Provider
     videoProvider: DEFAULT_LOCAL_GENERATION_SETTINGS.videoProvider ?? 'comfyui-local',
     
@@ -276,6 +278,7 @@ const createInitialState = (): SettingsStoreState => ({
     llmTimeoutMs: DEFAULT_LOCAL_GENERATION_SETTINGS.llmTimeoutMs,
     llmRequestFormat: DEFAULT_LOCAL_GENERATION_SETTINGS.llmRequestFormat,
     llmSeed: DEFAULT_LOCAL_GENERATION_SETTINGS.llmSeed,
+    useMockLLM: DEFAULT_LOCAL_GENERATION_SETTINGS.useMockLLM,
     
     // Vision LLM Configuration
     visionLLMProviderUrl: DEFAULT_LOCAL_GENERATION_SETTINGS.visionLLMProviderUrl,
@@ -308,11 +311,29 @@ const createInitialState = (): SettingsStoreState => ({
     _hasHydrated: false,
     _lastSyncTimestamp: 0,
     _isInitialized: false,
-});
+    };
+
+    // Apply injected settings (for testing)
+    if (typeof window !== 'undefined' && (window as any).__INJECTED_SETTINGS) {
+        console.log('[SettingsStore] Applying injected settings:', (window as any).__INJECTED_SETTINGS);
+        // Deep merge feature flags if present
+        if ((window as any).__INJECTED_SETTINGS.featureFlags) {
+            state.featureFlags = {
+                ...state.featureFlags,
+                ...(window as any).__INJECTED_SETTINGS.featureFlags
+            };
+            delete (window as any).__INJECTED_SETTINGS.featureFlags;
+        }
+        return { ...state, ...(window as any).__INJECTED_SETTINGS };
+    }
+
+    return state;
+};
 
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
 
 /**
  * Convert store state to LocalGenerationSettings interface
@@ -339,6 +360,7 @@ function stateToSettings(state: SettingsStoreState): LocalGenerationSettings {
         llmTimeoutMs: state.llmTimeoutMs,
         llmRequestFormat: state.llmRequestFormat,
         llmSeed: state.llmSeed,
+        useMockLLM: state.useMockLLM,
         visionLLMProviderUrl: state.visionLLMProviderUrl,
         visionLLMModel: state.visionLLMModel,
         visionLLMTemperature: state.visionLLMTemperature,
@@ -382,6 +404,7 @@ function settingsToState(settings: LocalGenerationSettings): Partial<SettingsSto
         llmTimeoutMs: settings.llmTimeoutMs,
         llmRequestFormat: settings.llmRequestFormat,
         llmSeed: settings.llmSeed,
+        useMockLLM: settings.useMockLLM,
         visionLLMProviderUrl: settings.visionLLMProviderUrl,
         visionLLMModel: settings.visionLLMModel,
         visionLLMTemperature: settings.visionLLMTemperature,
@@ -440,7 +463,8 @@ export const SETTINGS_STORE_NAME = 'gemDirect-settings-store';
 export const useSettingsStore = create<SettingsStore>()(
     subscribeWithSelector(
         persist(
-            (set, get) => ({
+            (set, get) => {
+                return {
                 // Initial state
                 ...createInitialState(),
                 
@@ -570,11 +594,11 @@ export const useSettingsStore = create<SettingsStore>()(
                         comfyUIClientId: state.comfyUIClientId,
                     }));
                 },
-            }),
+            }; },
             {
                 name: SETTINGS_STORE_NAME,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                storage: createIndexedDBStorage({ keyPrefix: '' }) as any,
+                storage: createIndexedDBStorage({ keyPrefix: '', debug: true }) as any,
                 partialize: (state): Partial<SettingsStoreState> => {
                     // Extract only serializable state fields, exclude functions and metadata
                     return {
@@ -598,6 +622,7 @@ export const useSettingsStore = create<SettingsStore>()(
                         llmTimeoutMs: state.llmTimeoutMs,
                         llmRequestFormat: state.llmRequestFormat,
                         llmSeed: state.llmSeed,
+                        useMockLLM: state.useMockLLM,
                         visionLLMProviderUrl: state.visionLLMProviderUrl,
                         visionLLMModel: state.visionLLMModel,
                         visionLLMTemperature: state.visionLLMTemperature,
@@ -618,8 +643,18 @@ export const useSettingsStore = create<SettingsStore>()(
                 },
                 onRehydrateStorage: () => (state) => {
                     if (state) {
-                        console.log('[SettingsStore] Rehydrating. Raw profiles keys:', Object.keys(state.workflowProfiles || {}));
-                        
+                        console.log('[SettingsStore] Rehydrated state keys:', Object.keys(state));
+                        if (state.workflowProfiles) {
+                            console.log('[SettingsStore] Rehydrated profiles:', Object.keys(state.workflowProfiles));
+                            if (state.workflowProfiles['wan-t2i']) {
+                                console.log('[SettingsStore] Rehydrated wan-t2i length:', state.workflowProfiles['wan-t2i'].workflowJson?.length);
+                            } else {
+                                console.log('[SettingsStore] Rehydrated wan-t2i NOT FOUND');
+                            }
+                        } else {
+                            console.log('[SettingsStore] Rehydrated workflowProfiles is MISSING');
+                        }
+
                         // Normalize workflow profiles on hydration
                         const normalized = normalizeProfiles(state.workflowProfiles || {});
                         
@@ -627,13 +662,32 @@ export const useSettingsStore = create<SettingsStore>()(
                         const needsNormalization = Object.keys(normalized).length !== Object.keys(state.workflowProfiles || {}).length;
                         
                         if (needsNormalization) {
-                            console.log('[SettingsStore] Normalizing workflow profiles on hydration');
                             state.workflowProfiles = normalized;
+                        }
+                        
+                        // CRITICAL FIX: Re-apply injected settings after hydration
+                        // This ensures that test settings override whatever was in IndexedDB
+                        if (typeof window !== 'undefined' && (window as any).__INJECTED_SETTINGS) {
+                            console.log('[SettingsStore] Re-applying injected settings after hydration');
+                            const injected = (window as any).__INJECTED_SETTINGS;
+                            
+                            // Deep merge feature flags if present
+                            if (injected.featureFlags) {
+                                state.featureFlags = {
+                                    ...state.featureFlags,
+                                    ...injected.featureFlags
+                                };
+                            }
+                            
+                            // Apply other top-level properties
+                            Object.assign(state, injected);
+                            
+                            // Force sync timestamp to trigger subscribers
+                            state._lastSyncTimestamp = Date.now();
                         }
                         
                         state.setHasHydrated(true);
                         state.setIsInitialized(true);
-                        console.log('[SettingsStore] Hydrated from storage');
                     }
                 },
             }
@@ -742,4 +796,16 @@ export function subscribeToSettings(
  */
 export function updateSettings(updates: Partial<LocalGenerationSettings>): void {
     useSettingsStore.getState().updateSettings(updates);
+}
+
+// ============================================================================
+// DevTools / Testing Exposure
+// ============================================================================
+
+if (typeof window !== 'undefined') {
+    console.log('[SettingsStore] Exposing store to globalThis');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).useSettingsStore = useSettingsStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__TEST_STORE_EXPOSED = true;
 }

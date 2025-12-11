@@ -18,9 +18,19 @@ type MediaGenerationProviderContextValue = {
 const MediaGenerationProviderContext = createContext<MediaGenerationProviderContextValue | undefined>(undefined);
 
 export const MediaGenerationProviderProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    console.error('[MediaGenerationProvider] Rendering...');
     const initialProviderId = FALLBACK_MEDIA_PROVIDER?.id ?? DEFAULT_MEDIA_PROVIDERS[0]?.id ?? 'default';
     const [selectedProviderId, setSelectedProviderId] = usePersistentState<string>(MEDIA_PROVIDER_STORAGE_KEY, initialProviderId);
     const { settings: localGenerationSettings } = useLocalGenerationSettings();
+
+    // Debug logging
+    console.error(`[MediaGenerationProvider] Render. Settings ref: ${localGenerationSettings === undefined ? 'undefined' : 'defined'}`);
+    
+    useEffect(() => {
+        const profileCount = localGenerationSettings?.workflowProfiles ? Object.keys(localGenerationSettings.workflowProfiles).length : 0;
+        const hasJson = localGenerationSettings?.workflowProfiles && Object.values(localGenerationSettings.workflowProfiles).some(p => p.workflowJson?.length > 0);
+        console.error(`[MediaGenerationProvider] Effect: Received settings update. Profiles: ${profileCount}, HasJSON: ${hasJson}`);
+    }, [localGenerationSettings]);
 
     const providers = DEFAULT_MEDIA_PROVIDERS;
 
@@ -153,9 +163,17 @@ export const MediaGenerationProviderProvider: React.FC<{ children: React.ReactNo
         const mappingKeys = localGenerationSettings.mapping 
             ? Object.keys(localGenerationSettings.mapping).sort().join(',') 
             : '';
+        
+        // Include profile keys AND a content checksum (e.g. length of workflowJson)
+        // This ensures we detect when profiles are populated with actual workflow data
         const profileKeys = localGenerationSettings.workflowProfiles 
-            ? Object.keys(localGenerationSettings.workflowProfiles).sort().join(',') 
+            ? Object.keys(localGenerationSettings.workflowProfiles).sort().map(key => {
+                const profile = localGenerationSettings.workflowProfiles![key];
+                const jsonLen = profile?.workflowJson?.length ?? 0;
+                return `${key}:${jsonLen}`;
+            }).join(',') 
             : '';
+            
         return `${localGenerationSettings.comfyUIUrl ?? ''}|${localGenerationSettings.comfyUIClientId ?? ''}|${(localGenerationSettings.workflowJson ?? '').substring(0, 50)}|${mappingKeys}|${profileKeys}`;
     };
     
@@ -163,9 +181,23 @@ export const MediaGenerationProviderProvider: React.FC<{ children: React.ReactNo
     const settingsHashRef = useRef<string>(computeSettingsHash());
     const settingsCacheRef = useRef(localGenerationSettings);
     
+    // Log initialization
+    useEffect(() => {
+        console.log('[MediaGenerationProvider] Mounted. Initial hash:', settingsHashRef.current);
+    }, []);
+
     // Update cache when content actually changes
     const currentHash = computeSettingsHash();
+    
+    // Debug logging for profiles specifically
+    const profileDebug = localGenerationSettings?.workflowProfiles 
+        ? Object.entries(localGenerationSettings.workflowProfiles).map(([k, v]) => `${k}:${v?.workflowJson?.length ?? 0}`).join(', ')
+        : 'undefined';
+    console.error(`[MediaGenerationProvider] Profiles Debug: ${profileDebug}`);
+    
     if (currentHash !== settingsHashRef.current) {
+        console.error('[MediaGenerationProvider] Settings hash changed:', currentHash);
+        console.error('[MediaGenerationProvider] Profiles count:', localGenerationSettings?.workflowProfiles ? Object.keys(localGenerationSettings.workflowProfiles).length : 0);
         settingsHashRef.current = currentHash;
         settingsCacheRef.current = localGenerationSettings;
     }

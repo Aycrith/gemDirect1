@@ -74,6 +74,7 @@ export const DEFAULT_LOCAL_GENERATION_SETTINGS: LocalGenerationSettings = {
     llmTemperature: 0.35,
     llmTimeoutMs: 120000,
     llmRequestFormat: 'openai-chat',
+    useMockLLM: (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_USE_MOCK_LLM === 'true') || false,
     // Vision LLM settings (separate model for image/video analysis)
     visionLLMProviderUrl: 'http://192.168.50.192:1234/v1/chat/completions',
     visionLLMModel: 'qwen/qwen3-vl-8b',
@@ -119,7 +120,9 @@ export const MEDIA_PROVIDER_STORAGE_KEY = 'mediaGeneration.provider.selected';
 
 // --- PlanExpansionStrategyContext Constants ---
 
-const PREFER_LOCAL_LLM = Boolean(import.meta.env.VITE_LOCAL_STORY_PROVIDER_URL);
+const getEnv = (key: string) => (import.meta as any).env?.[key] ?? (typeof process !== 'undefined' ? process.env[key] : undefined);
+
+const PREFER_LOCAL_LLM = Boolean(getEnv('VITE_LOCAL_STORY_PROVIDER_URL'));
 
 const LOCAL_STRATEGY: PlanExpansionStrategy = {
     id: 'local-drafter',

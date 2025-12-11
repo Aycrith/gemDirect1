@@ -8,6 +8,9 @@ test.describe('Story Bible Generation', () => {
     await page.goto('/');
     await dismissWelcomeDialog(page);
     await ensureDirectorMode(page);
+    // Ensure page is stable before running tests
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState('networkidle');
   });
 
   test('generates story bible from user idea with local LLM', async ({ page }) => {
@@ -64,25 +67,53 @@ test.describe('Story Bible Generation', () => {
       plotPoints: ['Setup', 'Conflict', 'Resolution']
     };
     
+    // Wait for the page to be fully interactive
+    await page.waitForSelector('textarea[aria-label="Story Idea"]', { state: 'visible', timeout: 10000 });
+
     // Directly write to IndexedDB to simulate story generation
-    await page.evaluate((bible) => {
-      return new Promise((resolve) => {
-        const request = indexedDB.open('cinematic-story-db', 1);
-        request.onupgradeneeded = (event) => {
-          const db = (event.target as any).result;
-          if (!db.objectStoreNames.contains('misc')) {
-            db.createObjectStore('misc');
-          }
-        };
-        request.onsuccess = () => {
-          const db = request.result;
-          const tx = db.transaction('misc', 'readwrite');
-          const store = tx.objectStore('misc');
-          store.put(bible, 'storyBible');
-          tx.oncomplete = () => { db.close(); resolve(true); };
-        };
-      });
-    }, mockStoryBible);
+    // Use retry logic to handle potential app reloads/navigations
+    await expect(async () => {
+      await page.waitForLoadState('domcontentloaded');
+      await page.waitForTimeout(1000); // Stability wait
+      
+      await page.evaluate((bible) => {
+        return new Promise((resolve, reject) => {
+          // Open without version to get current version
+          const request = indexedDB.open('cinematic-story-db');
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            // Ensure the object store exists
+            if (!db.objectStoreNames.contains('misc')) {
+              const version = db.version + 1;
+              db.close();
+              const upgradeRequest = indexedDB.open('cinematic-story-db', version);
+              upgradeRequest.onupgradeneeded = (event) => {
+                const upgradedDb = (event.target as any).result;
+                if (!upgradedDb.objectStoreNames.contains('misc')) {
+                  upgradedDb.createObjectStore('misc');
+                }
+              };
+              upgradeRequest.onsuccess = () => {
+                const upgradedDb = upgradeRequest.result;
+                const tx = upgradedDb.transaction('misc', 'readwrite');
+                const store = tx.objectStore('misc');
+                store.put(bible, 'storyBible');
+                tx.oncomplete = () => { upgradedDb.close(); resolve(true); };
+              };
+            } else {
+              const tx = db.transaction('misc', 'readwrite');
+              const store = tx.objectStore('misc');
+              store.put(bible, 'storyBible');
+              tx.oncomplete = () => { db.close(); resolve(true); };
+            }
+          };
+        });
+      }, mockStoryBible);
+    }).toPass({ timeout: 30000 });
+    
+    // Give IndexedDB time to persist and app to reload
+    await page.waitForTimeout(2000);
     
     // Give IndexedDB time to persist
     await page.waitForTimeout(500);
@@ -90,7 +121,8 @@ test.describe('Story Bible Generation', () => {
     // Check IndexedDB for stored story bible
     const storedBible = await page.evaluate(async () => {
       return new Promise((resolve) => {
-        const request = indexedDB.open('cinematic-story-db', 1);
+        // Open without version to get current version
+        const request = indexedDB.open('cinematic-story-db');
         request.onsuccess = () => {
           const db = request.result;
           if (!db.objectStoreNames.contains('misc')) {
@@ -115,45 +147,56 @@ test.describe('Story Bible Generation', () => {
   });
 
   test('user can edit story bible fields', async ({ page }) => {
+    // Wait for the page to be fully interactive
+    await page.waitForSelector('textarea[aria-label="Story Idea"]', { state: 'visible', timeout: 10000 });
+
     // Pre-populate IndexedDB with mock story bible
-    await page.evaluate((bible) => {
-      return new Promise((resolve) => {
-        const request = indexedDB.open('cinematic-story-db', 1);
-        request.onsuccess = () => {
-          const db = request.result;
-          // Ensure the object store exists
-          if (!db.objectStoreNames.contains('misc')) {
-            const version = db.version;
-            db.close();
-            const upgradeRequest = indexedDB.open('cinematic-story-db', version + 1);
-            upgradeRequest.onupgradeneeded = (event) => {
-              const upgradedDb = (event.target as any).result;
-              if (!upgradedDb.objectStoreNames.contains('misc')) {
-                upgradedDb.createObjectStore('misc');
-              }
-            };
-            upgradeRequest.onsuccess = () => {
-              const upgradedDb = upgradeRequest.result;
-              const tx = upgradedDb.transaction('misc', 'readwrite');
+    // Use retry logic to handle potential app reloads/navigations
+    await expect(async () => {
+      await page.waitForLoadState('domcontentloaded');
+      await page.waitForTimeout(1000); // Stability wait
+
+      await page.evaluate((bible) => {
+        return new Promise((resolve, reject) => {
+          // Open without version to get current version
+          const request = indexedDB.open('cinematic-story-db');
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            // Ensure the object store exists
+            if (!db.objectStoreNames.contains('misc')) {
+              const version = db.version + 1;
+              db.close();
+              const upgradeRequest = indexedDB.open('cinematic-story-db', version);
+              upgradeRequest.onupgradeneeded = (event) => {
+                const upgradedDb = (event.target as any).result;
+                if (!upgradedDb.objectStoreNames.contains('misc')) {
+                  upgradedDb.createObjectStore('misc');
+                }
+              };
+              upgradeRequest.onsuccess = () => {
+                const upgradedDb = upgradeRequest.result;
+                const tx = upgradedDb.transaction('misc', 'readwrite');
+                const store = tx.objectStore('misc');
+                store.put(bible, 'storyBible');
+                tx.oncomplete = () => {
+                  upgradedDb.close();
+                  resolve(true);
+                };
+              };
+            } else {
+              const tx = db.transaction('misc', 'readwrite');
               const store = tx.objectStore('misc');
               store.put(bible, 'storyBible');
               tx.oncomplete = () => {
-                upgradedDb.close();
+                db.close();
                 resolve(true);
               };
-            };
-          } else {
-            const tx = db.transaction('misc', 'readwrite');
-            const store = tx.objectStore('misc');
-            store.put(bible, 'storyBible');
-            tx.oncomplete = () => {
-              db.close();
-              resolve(true);
-            };
-          }
-        };
-      });
-    }, mockStoryBible);
+            }
+          };
+        });
+      }, mockStoryBible);
+    }).toPass({ timeout: 30000 });
     
     // Reload page to load the story bible from IndexedDB
     await page.reload();
