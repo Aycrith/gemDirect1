@@ -27,6 +27,13 @@ export interface FeatureFlags {
     videoUpscaling: boolean;
 
     /**
+     * Enable First-Last-Frame-to-Video (FLF2V) chaining
+     * Uses the last frame of the previous shot as the start frame of the next shot
+     * @default false
+     */
+    enableFLF2V: boolean;
+
+    /**
      * Enable character consistency cascade (CCC) workflow
      * Maintains character identity across scenes using embeddings
      * @default false

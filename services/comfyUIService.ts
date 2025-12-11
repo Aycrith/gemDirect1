@@ -1,5 +1,6 @@
 import { LocalGenerationSettings, LocalGenerationStatus, LocalGenerationOutput, TimelineData, Shot, Scene, CreativeEnhancers, WorkflowMapping, MappableData, LocalGenerationAsset, WorkflowProfile, WorkflowProfileMappingHighlight, StoryBible, VisualBible } from '../types';
-import { base64ToBlob } from '../utils/videoUtils';
+import { base64ToBlob, blobToBase64 } from '../utils/videoUtils';
+import { comfyEventManager } from './comfyUIEventManager';
 import { getVisualBible } from './visualBibleContext';
 import { generateCorrelationId, logCorrelation, networkTap } from '../utils/correlation';
 import { validatePromptGuardrails } from './promptValidator';
@@ -2030,12 +2031,13 @@ export const queueComfyUIPromptValidated = async (
  * @param settings The local generation settings.
  * @param promptId The ID of the prompt to track.
  * @param onProgress A callback function to report progress updates.
+ * @returns Unsubscribe function
  */
 export const trackPromptExecution = (
     settings: LocalGenerationSettings,
     promptId: string,
     onProgress: (statusUpdate: Partial<LocalGenerationStatus>) => void
-) => {
+): () => void => {
     const dispatchProgress = (update: Partial<LocalGenerationStatus>) => {
         onProgress({ promptId, ...update });
     };
@@ -2043,68 +2045,40 @@ export const trackPromptExecution = (
     const { comfyUIUrl, comfyUIClientId } = settings;
     if (!comfyUIUrl || !comfyUIClientId) {
         dispatchProgress({ status: 'error', message: 'ComfyUI URL or Client ID is not configured.' });
-        return;
+        return () => {};
     }
 
-    // Check if custom WebSocket URL is configured in settings (use provided settings directly)
-    let wsUrl: string;
-    
-    if (settings.comfyUIWebSocketUrl) {
-        // Use configured WebSocket URL
-        wsUrl = settings.comfyUIWebSocketUrl.replace(/\/+$/, '') + `?clientId=${comfyUIClientId}`;
-    } else if (typeof import.meta.env !== 'undefined' && import.meta.env.DEV) {
-        // In DEV mode, use Vite proxy for WebSocket (ws:true configured in vite.config.ts)
-        // Guard against window.location being undefined in test environments
-        if (typeof window !== 'undefined' && window.location) {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            wsUrl = `${protocol}//${window.location.host}/api/comfyui/ws?clientId=${comfyUIClientId}`;
-        } else {
-            // Test/SSR environment - use direct local connection
-            wsUrl = `ws://127.0.0.1:8188/ws?clientId=${comfyUIClientId}`;
-        }
-    } else {
-        // Auto-derive from HTTP URL (production mode)
-        const normalizedUrl = comfyUIUrl.replace(/\/+$/, '');
-        const protocol = normalizedUrl.startsWith('https://') ? 'wss://' : 'ws://';
-        wsUrl = `${protocol}${normalizedUrl.replace(/^https?:\/\//, '')}/ws?clientId=${comfyUIClientId}`;
+    // Ensure global connection is active
+    if (!comfyEventManager.isConnected) {
+        comfyEventManager.connect(settings);
     }
-    
-    const ws = new WebSocket(wsUrl);
 
-    ws.onopen = () => {
-        console.log('ComfyUI WebSocket connection established.');
-    };
-
-    ws.onmessage = async (event) => {
-        if (typeof event.data !== 'string') return; // Ignore binary data
-        const msg = JSON.parse(event.data);
-        
-        switch (msg.type) {
+    // Subscribe to events via the manager
+    const unsubscribe = comfyEventManager.subscribe(promptId, async (event) => {
+        switch (event.type) {
             case 'status':
-                if (msg.data.queue_remaining !== undefined) {
+                if (event.data.queue_remaining !== undefined) {
                     dispatchProgress({ 
                         status: 'queued', 
-                        message: `In queue... Position: ${msg.data.queue_remaining}`,
-                        queue_position: msg.data.queue_remaining
+                        message: `In queue... Position: ${event.data.queue_remaining}`,
+                        queue_position: event.data.queue_remaining
                     });
                 }
                 break;
             
             case 'execution_start':
-                if (msg.data.prompt_id === promptId) {
-                    dispatchProgress({ status: 'running', message: 'Execution started.' });
-                }
+                dispatchProgress({ status: 'running', message: 'Execution started.' });
                 break;
                 
             case 'executing':
-                 if (msg.data.prompt_id === promptId && msg.data.node) {
+                 if (event.data.node) {
                      // Try to get node title from workflow
-                     let nodeTitle = `Node ${msg.data.node}`;
+                     let nodeTitle = `Node ${event.data.node}`;
                      try {
                         const workflow = JSON.parse(settings.workflowJson);
                         const prompt = workflow.prompt || workflow;
-                        if(prompt[msg.data.node]?._meta?.title) {
-                            nodeTitle = prompt[msg.data.node]._meta.title;
+                        if(prompt[event.data.node as string]?._meta?.title) {
+                            nodeTitle = prompt[event.data.node as string]._meta.title;
                         }
                      } catch(e) {/* ignore */}
 
@@ -2117,8 +2091,8 @@ export const trackPromptExecution = (
                 break;
 
             case 'progress':
-                 if (msg.data.prompt_id === promptId) {
-                    const progress = (msg.data.value / msg.data.max) * 100;
+                 if (event.data.value !== undefined && event.data.max !== undefined) {
+                    const progress = (event.data.value / event.data.max) * 100;
                     dispatchProgress({
                         status: 'running',
                         progress: Math.round(progress),
@@ -2127,173 +2101,147 @@ export const trackPromptExecution = (
                 break;
             
             case 'execution_error':
-                if (msg.data.prompt_id === promptId) {
-                    const errorDetails = msg.data;
-                    const rawError = errorDetails.exception_message || 'Unknown execution error';
-                    const userFriendlyError = parseComfyUIError(rawError);
-                    const errorMessage = `ComfyUI error (node ${errorDetails.node_id}): ${userFriendlyError}`;
-                    console.error(`[trackPromptExecution] Execution error:`, errorDetails);
-                    dispatchProgress({ status: 'error', message: errorMessage });
-                    ws.close();
-                }
+                const errorDetails = event.data;
+                const rawError = errorDetails.exception_message || 'Unknown execution error';
+                const userFriendlyError = parseComfyUIError(rawError);
+                const errorMessage = `ComfyUI error (node ${errorDetails.node_id}): ${userFriendlyError}`;
+                console.error(`[trackPromptExecution] Execution error:`, errorDetails);
+                dispatchProgress({ status: 'error', message: errorMessage });
                 break;
 
             case 'executed':
-                if (msg.data.prompt_id === promptId) {
-                    console.log(`[trackPromptExecution] ✓ Execution complete for promptId=${promptId.slice(0,8)}...`);
-                    const outputs = msg.data.output || {};
-                    
-                    // FIXED: Iterate through node outputs like polling handler does
-                    // ComfyUI executed event has outputs keyed by node ID, not flat videos/images
-                    const assetSources: Array<{ entries?: ComfyUIOutputEntry[]; resultType: LocalGenerationAsset['type'] }> = [];
-                    
-                    for (const [nodeId, nodeOutput] of Object.entries(outputs)) {
-                        const output = nodeOutput as ComfyUINodeOutput;
-                        if (output.videos && Array.isArray(output.videos)) {
-                            console.log(`[trackPromptExecution] Found ${output.videos.length} videos in node ${nodeId}`);
-                            assetSources.push({ entries: output.videos, resultType: 'video' });
+                console.log(`[trackPromptExecution] ✓ Execution complete for promptId=${promptId.slice(0,8)}...`);
+                const outputs = event.data.output || {};
+                
+                // FIXED: Iterate through node outputs like polling handler does
+                // ComfyUI executed event has outputs keyed by node ID, not flat videos/images
+                const assetSources: Array<{ entries?: ComfyUIOutputEntry[]; resultType: LocalGenerationAsset['type'] }> = [];
+                
+                for (const [nodeId, nodeOutput] of Object.entries(outputs)) {
+                    const output = nodeOutput as ComfyUINodeOutput;
+                    if (output.videos && Array.isArray(output.videos)) {
+                        console.log(`[trackPromptExecution] Found ${output.videos.length} videos in node ${nodeId}`);
+                        assetSources.push({ entries: output.videos, resultType: 'video' });
+                    }
+                    if (output.images && Array.isArray(output.images)) {
+                        console.log(`[trackPromptExecution] Found ${output.images.length} images in node ${nodeId}`);
+                        assetSources.push({ entries: output.images, resultType: 'image' });
+                    }
+                    if (output.gifs && Array.isArray(output.gifs)) {
+                        console.log(`[trackPromptExecution] Found ${output.gifs.length} gifs in node ${nodeId}`);
+                        assetSources.push({ entries: output.gifs, resultType: 'video' });
+                    }
+                }
+
+                const fetchAssetCollection = async (
+                    entries: ComfyUIOutputEntry[],
+                    resultType: LocalGenerationAsset['type']
+                ): Promise<LocalGenerationAsset[]> => {
+                    return Promise.all(
+                        entries.map(async (entry) => ({
+                            type: resultType,
+                            data: await fetchAssetAsDataURL(
+                                comfyUIUrl,
+                                entry.filename,
+                                entry.subfolder,
+                                entry.type || 'output'
+                            ),
+                            filename: entry.filename,
+                        }))
+                    );
+                };
+
+                // If there are no declared output entries at all, report completion synchronously
+                // so callers/tests do not race on the async fetch logic.
+                const hasDeclaredEntries = assetSources.some(s => Array.isArray(s.entries) && s.entries.length > 0);
+                if (!hasDeclaredEntries) {
+                    console.log(`[trackPromptExecution] ⚠️ No output entries for promptId=${promptId.slice(0,8)}...`);
+                    dispatchProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
+                    return;
+                }
+
+                try {
+                    console.log(`[trackPromptExecution] 📥 Fetching assets for promptId=${promptId.slice(0,8)}...`);
+                    dispatchProgress({ message: 'Fetching final output...', progress: 100 });
+                    const downloadedAssets: LocalGenerationAsset[] = [];
+
+                    for (const source of assetSources) {
+                        const entries = source.entries;
+                        if (!Array.isArray(entries)) {
+                            continue;
                         }
-                        if (output.images && Array.isArray(output.images)) {
-                            console.log(`[trackPromptExecution] Found ${output.images.length} images in node ${nodeId}`);
-                            assetSources.push({ entries: output.images, resultType: 'image' });
+                        if (entries.length === 0) {
+                            continue;
                         }
-                        if (output.gifs && Array.isArray(output.gifs)) {
-                            console.log(`[trackPromptExecution] Found ${output.gifs.length} gifs in node ${nodeId}`);
-                            assetSources.push({ entries: output.gifs, resultType: 'video' });
-                        }
+                        console.log(`[trackPromptExecution] Fetching ${entries.length} ${source.resultType} assets for promptId=${promptId.slice(0,8)}...`);
+                        const assets = await fetchAssetCollection(entries, source.resultType);
+                        downloadedAssets.push(...assets);
+                        console.log(`[trackPromptExecution] ✓ Fetched ${assets.length} ${source.resultType} assets`);
                     }
 
-                    const fetchAssetCollection = async (
-                        entries: ComfyUIOutputEntry[],
-                        resultType: LocalGenerationAsset['type']
-                    ): Promise<LocalGenerationAsset[]> => {
-                        return Promise.all(
-                            entries.map(async (entry) => ({
-                                type: resultType,
-                                data: await fetchAssetAsDataURL(
-                                    comfyUIUrl,
-                                    entry.filename,
-                                    entry.subfolder,
-                                    entry.type || 'output'
-                                ),
-                                filename: entry.filename,
-                            }))
-                        );
-                    };
-
-                    // If there are no declared output entries at all, report completion synchronously
-                    // so callers/tests do not race on the async fetch logic.
-                    const hasDeclaredEntries = assetSources.some(s => Array.isArray(s.entries) && s.entries.length > 0);
-                    if (!hasDeclaredEntries) {
-                        console.log(`[trackPromptExecution] ⚠️ No output entries for promptId=${promptId.slice(0,8)}...`);
-                        dispatchProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
-                        ws.close();
-                        return;
-                    }
-
-                    try {
-                        console.log(`[trackPromptExecution] 📥 Fetching assets for promptId=${promptId.slice(0,8)}...`);
-                        dispatchProgress({ message: 'Fetching final output...', progress: 100 });
-                        const downloadedAssets: LocalGenerationAsset[] = [];
-
-                        for (const source of assetSources) {
-                            const entries = source.entries;
-                            if (!Array.isArray(entries)) {
-                                continue;
-                            }
-                            if (entries.length === 0) {
-                                continue;
-                            }
-                            console.log(`[trackPromptExecution] Fetching ${entries.length} ${source.resultType} assets for promptId=${promptId.slice(0,8)}...`);
-                            const assets = await fetchAssetCollection(entries, source.resultType);
-                            downloadedAssets.push(...assets);
-                            console.log(`[trackPromptExecution] ✓ Fetched ${assets.length} ${source.resultType} assets`);
+                    if (downloadedAssets.length > 0) {
+                        const primaryAsset = downloadedAssets[0];
+                        if (!primaryAsset) {
+                            console.error(`[trackPromptExecution] ❌ Primary asset is undefined despite array length > 0`);
+                            dispatchProgress({ status: 'error', message: 'Asset download failed - empty result' });
+                            return;
                         }
-
-                        if (downloadedAssets.length > 0) {
-                            const primaryAsset = downloadedAssets[0];
-                            if (!primaryAsset) {
-                                console.error(`[trackPromptExecution] ❌ Primary asset is undefined despite array length > 0`);
-                                dispatchProgress({ status: 'error', message: 'Asset download failed - empty result' });
-                                ws.close();
-                                return;
-                            }
-                            const imageAssets = downloadedAssets.filter(asset => asset.type === 'image');
-                            const videoAssets = downloadedAssets.filter(asset => asset.type === 'video');
-                            
-                            // CRITICAL: Validate first asset has valid data URL
-                            const primaryData = primaryAsset.data;
-                            const isValidDataUrl = typeof primaryData === 'string' && 
-                                (primaryData.startsWith('data:video/') || primaryData.startsWith('data:image/'));
-                            
-                            if (!isValidDataUrl) {
-                                console.error(`[trackPromptExecution] ❌ Invalid data URL for promptId=${promptId.slice(0,8)}... Type: ${typeof primaryData}, Preview: ${typeof primaryData === 'string' ? primaryData.slice(0, 100) : 'N/A'}`);
-                                dispatchProgress({ 
-                                    status: 'error', 
-                                    message: `Asset data invalid: expected data URL, received ${typeof primaryData === 'string' ? primaryData.slice(0, 50) : typeof primaryData}` 
-                                });
-                                ws.close();
-                                return;
-                            }
-                            
-                            const finalOutput: LocalGenerationStatus['final_output'] = {
-                                type: primaryAsset.type,
-                                data: primaryAsset.data,
-                                filename: primaryAsset.filename,
-                                assets: downloadedAssets,
-                            };
-
-                            if (imageAssets.length > 0) {
-                                finalOutput.images = imageAssets.map(asset => asset.data);
-                            }
-                            if (videoAssets.length > 0) {
-                                finalOutput.videos = videoAssets.map(asset => asset.data);
-                            }
-
-                            console.log(`[trackPromptExecution] ✅ Downloaded ${downloadedAssets.length} assets for promptId=${promptId.slice(0,8)}..., sending complete status`);
-                            // CRITICAL: Send completion signal SYNCHRONOUSLY before closing WebSocket
-                            // This ensures the promise resolver receives the data
-                            dispatchProgress({
-                                status: 'complete',
-                                message: 'Generation complete!',
-                                final_output: finalOutput,
+                        const imageAssets = downloadedAssets.filter(asset => asset.type === 'image');
+                        const videoAssets = downloadedAssets.filter(asset => asset.type === 'video');
+                        
+                        // CRITICAL: Validate first asset has valid data URL
+                        const primaryData = primaryAsset.data;
+                        const isValidDataUrl = typeof primaryData === 'string' && 
+                            (primaryData.startsWith('data:video/') || primaryData.startsWith('data:image/'));
+                        
+                        if (!isValidDataUrl) {
+                            console.error(`[trackPromptExecution] ❌ Invalid data URL for promptId=${promptId.slice(0,8)}... Type: ${typeof primaryData}, Preview: ${typeof primaryData === 'string' ? primaryData.slice(0, 100) : 'N/A'}`);
+                            dispatchProgress({ 
+                                status: 'error', 
+                                message: `Asset data invalid: expected data URL, received ${typeof primaryData === 'string' ? primaryData.slice(0, 50) : typeof primaryData}` 
                             });
-                            
-                            // Small delay to ensure state updates propagate
-                            await new Promise(resolve => setTimeout(resolve, 50));
-                        } else {
-                            console.log(`[trackPromptExecution] ⚠️ No assets downloaded for promptId=${promptId.slice(0,8)}...`);
-                            dispatchProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
+                            return;
                         }
-                    } catch (error) {
-                        const message = error instanceof Error ? error.message : "Failed to fetch final output.";
-                        console.error(`[trackPromptExecution] ❌ Asset fetch error for promptId=${promptId.slice(0,8)}...:`, error);
-                        dispatchProgress({ status: 'error', message });
-                    } finally {
-                        // Ensure WebSocket closes after all processing with explicit logging
-                        try {
-                            console.log(`[trackPromptExecution] ⏸️  Waiting 50ms before WebSocket close for promptId=${promptId.slice(0,8)}...`);
-                            await new Promise(resolve => setTimeout(resolve, 50));
-                            console.log(`[trackPromptExecution] 🔌 Closing WebSocket for promptId=${promptId.slice(0,8)}...`);
-                            ws.close();
-                            console.log(`[trackPromptExecution] ✅ WebSocket closed successfully for promptId=${promptId.slice(0,8)}`);
-                        } catch (closeError) {
-                            console.error(`[trackPromptExecution] ❌ Error closing WebSocket for promptId=${promptId.slice(0,8)}:`, closeError);
+                        
+                        const finalOutput: LocalGenerationStatus['final_output'] = {
+                            type: primaryAsset.type,
+                            data: primaryAsset.data,
+                            filename: primaryAsset.filename,
+                            assets: downloadedAssets,
+                        };
+
+                        if (imageAssets.length > 0) {
+                            finalOutput.images = imageAssets.map(asset => asset.data);
                         }
+                        if (videoAssets.length > 0) {
+                            finalOutput.videos = videoAssets.map(asset => asset.data);
+                        }
+
+                        console.log(`[trackPromptExecution] ✅ Downloaded ${downloadedAssets.length} assets for promptId=${promptId.slice(0,8)}..., sending complete status`);
+                        // CRITICAL: Send completion signal SYNCHRONOUSLY before closing WebSocket
+                        // This ensures the promise resolver receives the data
+                        dispatchProgress({
+                            status: 'complete',
+                            message: 'Generation complete!',
+                            final_output: finalOutput,
+                        });
+                        
+                        // Small delay to ensure state updates propagate
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    } else {
+                        console.log(`[trackPromptExecution] ⚠️ No assets downloaded for promptId=${promptId.slice(0,8)}...`);
+                        dispatchProgress({ status: 'complete', message: 'Generation complete! No visual output found in final node.' });
                     }
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : "Failed to fetch final output.";
+                    console.error(`[trackPromptExecution] ❌ Asset fetch error for promptId=${promptId.slice(0,8)}...:`, error);
+                    dispatchProgress({ status: 'error', message });
                 }
                 break;
         }
-    };
+    });
 
-    ws.onerror = (error) => {
-        console.error('ComfyUI WebSocket error:', error);
-        dispatchProgress({ status: 'error', message: `WebSocket connection error. Check if ComfyUI is running at ${comfyUIUrl}.` });
-    };
-
-    ws.onclose = () => {
-        console.log('ComfyUI WebSocket connection closed.');
-    };
+    return unsubscribe;
 };
 
 export interface VideoGenerationDependencies {
@@ -3282,7 +3230,7 @@ export const generateTimelineVideos = async (
             // Note: We do NOT wrap this in GenerationQueue here because the underlying
             // shotExecutor (generateVideoFromShot) already handles queuing if enabled.
             // Wrapping it here would cause a deadlock (task waiting for sub-task in same serial queue).
-            result = await executeShotGeneration();
+            let result = await executeShotGeneration();
 
             // ============================================================================
             // POST-PROCESSING: Endpoint Snapping (if enabled and supported)

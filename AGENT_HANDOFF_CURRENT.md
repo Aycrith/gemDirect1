@@ -46,6 +46,25 @@ promptScheduling: false,
 
 ---
 
+## Session 2025-12-11 00:00 UTC – Phase 2 Scaffolding & Refactoring ✅
+
+**Goal**: Refactor ComfyUI event handling and establish scaffolding for FLF2V (First-Last-Frame to Video) workflows.
+
+**Accomplishments**:
+- **Refactored `trackPromptExecution`**: Updated `services/comfyUIService.ts` to use `comfyEventManager` for WebSocket pooling (P2.2). This centralizes event handling and improves connection stability.
+- **FLF2V Scaffolding**:
+  - Created `tests/unit/flf2v_scaffolding.test.ts` to validate FLF2V logic.
+  - Added `enableFLF2V` feature flag to `utils/featureFlags.ts`.
+  - Verified scaffolding with unit tests.
+
+**Status**:
+- P2.2 WebSocket Pooling Refactoring Complete.
+- FLF2V Scaffolding In Place.
+
+**Next Steps**:
+- Implement full FLF2V logic in the orchestrator.
+- Integrate FLF2V workflows with the pipeline engine.
+
 ## Session 2025-12-10 12:00 UTC – Unit Test Fixes & Stability Verification ✅
 
 **Goal**: Fix unit test regressions and verify codebase stability.

@@ -46,7 +46,8 @@ export type ComfyEventType =
   | 'progress'
   | 'execution_cached'
   | 'execution_error'
-  | 'execution_interrupted';
+  | 'execution_interrupted'
+  | 'executed';
 
 /**
  * Parsed ComfyUI event with typed data
