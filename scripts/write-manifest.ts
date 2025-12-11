@@ -70,6 +70,13 @@ interface CliArgs {
     projectRoot?: string;
     dryRun?: boolean;
     help?: boolean;
+    // Telemetry
+    flf2vEnabled?: boolean;
+    flf2vSource?: 'keyframe' | 'last-frame';
+    flf2vFallback?: boolean;
+    interpolationElapsed?: number;
+    upscaleMethod?: string;
+    finalFps?: number;
 }
 
 function parseArgs(): CliArgs {
@@ -146,6 +153,31 @@ function parseArgs(): CliArgs {
             case '--help':
             case '-h':
                 args.help = true;
+                break;
+            // Telemetry
+            case '--flf2v-enabled':
+                args.flf2vEnabled = next === 'true';
+                i++;
+                break;
+            case '--flf2v-source':
+                args.flf2vSource = next as 'keyframe' | 'last-frame';
+                i++;
+                break;
+            case '--flf2v-fallback':
+                args.flf2vFallback = next === 'true';
+                i++;
+                break;
+            case '--interpolation-elapsed':
+                args.interpolationElapsed = next ? parseInt(next, 10) : undefined;
+                i++;
+                break;
+            case '--upscale-method':
+                args.upscaleMethod = next;
+                i++;
+                break;
+            case '--final-fps':
+                args.finalFps = next ? parseInt(next, 10) : undefined;
+                i++;
                 break;
         }
     }
@@ -234,6 +266,16 @@ function buildManifestFromArgs(args: CliArgs): GenerationManifest {
         seed: args.seed,
         seedExplicit: args.seed !== undefined,
         promptId: args.promptId,
+        flf2v: args.flf2vEnabled !== undefined ? {
+            enabled: args.flf2vEnabled,
+            source: args.flf2vSource || 'keyframe',
+            fallback: args.flf2vFallback || false,
+        } : undefined,
+        postProcessingStats: (args.interpolationElapsed !== undefined || args.upscaleMethod !== undefined || args.finalFps !== undefined) ? {
+            interpolationElapsed: args.interpolationElapsed,
+            upscaleMethod: args.upscaleMethod,
+            finalFps: args.finalFps,
+        } : undefined,
     });
     
     // If video file is provided, complete the manifest with output info

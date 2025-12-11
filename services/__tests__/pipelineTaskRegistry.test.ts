@@ -73,6 +73,13 @@ describe('PipelineTaskRegistry', () => {
       'wan-i2v',
       expect.objectContaining({ sceneId: 's1', shotId: 'sh1', waitForCompletion: true })
     );
-    expect(result).toEqual({ video: 'vid1' });
+    expect(result).toEqual({ 
+      video: 'vid1',
+      metadata: {
+        flf2vEnabled: false,
+        flf2vFallback: false,
+        flf2vSource: 'keyframe'
+      }
+    });
   });
 });

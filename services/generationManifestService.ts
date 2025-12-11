@@ -234,6 +234,26 @@ export interface GenerationManifest {
     /** Additional metadata */
     extra?: Record<string, unknown>;
 
+    // --- Pipeline Telemetry ---
+    
+    /** Whether FLF2V (Frame-Last-Frame to Video) was enabled */
+    flf2vEnabled?: boolean;
+    
+    /** Source of the input frame for FLF2V ('keyframe' or 'last-frame') */
+    flf2vSource?: 'keyframe' | 'last-frame';
+    
+    /** Whether FLF2V fell back to keyframe due to extraction failure */
+    flf2vFallback?: boolean;
+    
+    /** Time taken for interpolation in milliseconds */
+    interpolationElapsed?: number;
+    
+    /** Upscaling method used (e.g., 'RIFE', 'RealESRGAN') */
+    upscaleMethod?: string;
+    
+    /** Final FPS after interpolation */
+    finalFps?: number;
+
     // --- Camera Path (E1 - Camera-as-Code) ---
 
     /** Camera path ID if defined in pipeline config */
@@ -446,6 +466,20 @@ export interface BuildManifestOptions {
     /** Extra metadata */
     extra?: Record<string, unknown>;
 
+    /** FLF2V settings */
+    flf2v?: {
+        enabled: boolean;
+        source: 'keyframe' | 'last-frame';
+        fallback: boolean;
+    };
+    
+    /** Interpolation/Upscale stats */
+    postProcessingStats?: {
+        interpolationElapsed?: number;
+        upscaleMethod?: string;
+        finalFps?: number;
+    };
+
     /** Camera path from pipeline config (E1 - Camera-as-Code) */
     cameraPath?: CameraPath;
 }
@@ -471,6 +505,8 @@ export function buildManifest(options: BuildManifestOptions): GenerationManifest
         warnings,
         extra,
         cameraPath,
+        flf2v,
+        postProcessingStats,
     } = options;
     
     const now = new Date().toISOString();
@@ -538,6 +574,14 @@ export function buildManifest(options: BuildManifestOptions): GenerationManifest
         promptId,
         warnings,
         extra,
+
+        // Pipeline Telemetry
+        flf2vEnabled: flf2v?.enabled,
+        flf2vSource: flf2v?.source,
+        flf2vFallback: flf2v?.fallback,
+        interpolationElapsed: postProcessingStats?.interpolationElapsed,
+        upscaleMethod: postProcessingStats?.upscaleMethod,
+        finalFps: postProcessingStats?.finalFps,
 
         // Camera path metadata (E1 - Camera-as-Code)
         cameraPathId,

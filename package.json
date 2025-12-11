@@ -44,6 +44,7 @@
     "benchmark:video-quality": "npx tsx scripts/benchmarks/video-quality-benchmark.ts",
     "benchmark:video-quality:verbose": "npx tsx scripts/benchmarks/video-quality-benchmark.ts --verbose",
     "check:ffmpeg": "npx tsx scripts/check-ffmpeg.ts",
+    "lint": "eslint . --ext .ts,.tsx",
     "bookend:ci:core": "npx tsc --noEmit && npx vitest run --reporter=verbose && npm run bookend:regression",
     "bookend:ci:vision": "pwsh -File scripts/run-bookend-vision-qa.ps1 -Runs 3",
     "pipeline": "npx tsx scripts/run-pipeline.ts",
@@ -84,6 +85,9 @@
     "tsx": "^4.19.4",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
-    "vitest": "^4.0.8"
+    "vitest": "^4.0.8",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/parser": "^7.1.0",
+    "@typescript-eslint/eslint-plugin": "^7.1.0"
   }
 }

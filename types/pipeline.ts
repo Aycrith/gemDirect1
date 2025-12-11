@@ -4,6 +4,7 @@ export type PipelineTaskType =
   | 'generate_keyframe' 
   | 'generate_video' 
   | 'upscale_video' 
+  | 'interpolate_video'
   | 'export_timeline'
   | 'generic_action';
 

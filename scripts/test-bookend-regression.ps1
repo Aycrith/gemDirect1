@@ -532,6 +532,7 @@ foreach ($sampleDir in $sampleDirs) {
             duration = $genResult.Duration
             videoPath = $genResult.VideoPath
             promptId = $promptId
+            flf2vEnabled = $true
         }
         if ($regressionInfo) {
             $sampleResult.regressionCheck = $regressionInfo

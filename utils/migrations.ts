@@ -10,6 +10,7 @@
 
 import { ValidationResult, validationSuccess, validationFailure, createValidationError, createValidationWarning } from '../types/validation';
 import { Migration, MigrationState, MigrationResult } from '../types/migrations';
+import { FeatureFlags, DEFAULT_FEATURE_FLAGS } from './featureFlags';
 
 /**
  * Current project schema version
@@ -34,24 +35,23 @@ const migrations: Migration[] = [
             
             // Initialize featureFlags if not present
             if (migrated.localGenSettings && !migrated.localGenSettings.featureFlags) {
-                migrated.localGenSettings.featureFlags = {
-                    // Note: bookendKeyframes removed - use localGenSettings.keyframeMode instead
-                    videoUpscaling: false,
-                    characterConsistency: false,
-                    shotLevelContinuity: false,
-                    autoSuggestions: false,
-                    narrativeStateTracking: false,
-                    promptABTesting: false,
-                    providerHealthPolling: false,
-                    promptQualityGate: false,
-                    characterAppearanceTracking: false,
-                } as any;
+                migrated.localGenSettings.featureFlags = { ...DEFAULT_FEATURE_FLAGS } as FeatureFlags;
             }
             
             // Remove legacy bookendKeyframes from featureFlags if present (migrated to keyframeMode)
-            const flags = migrated.localGenSettings?.featureFlags as Record<string, unknown> | undefined;
-            if (flags?.bookendKeyframes !== undefined) {
+            const flags = migrated.localGenSettings?.featureFlags as unknown as Record<string, unknown>;
+            if (flags && typeof flags.bookendKeyframes !== 'undefined') {
                 delete flags.bookendKeyframes;
+            }
+
+            // Ensure all current flags exist (backfill with defaults)
+            if (migrated.localGenSettings?.featureFlags) {
+                const currentFlags = migrated.localGenSettings.featureFlags as unknown as Record<string, unknown>;
+                for (const key of Object.keys(DEFAULT_FEATURE_FLAGS)) {
+                    if (typeof currentFlags[key] === 'undefined') {
+                        currentFlags[key] = DEFAULT_FEATURE_FLAGS[key as keyof FeatureFlags];
+                    }
+                }
             }
             
             // Add healthCheckIntervalMs default if not present
@@ -61,7 +61,8 @@ const migrations: Migration[] = [
             
             // Add category to existing workflow profiles
             if (migrated.localGenSettings?.workflowProfiles) {
-                for (const [profileId, profile] of Object.entries(migrated.localGenSettings.workflowProfiles)) {
+                const profiles = migrated.localGenSettings.workflowProfiles as unknown as Record<string, Record<string, unknown>>;
+                for (const [profileId, profile] of Object.entries(profiles)) {
                     if (!profile.category) {
                         // Infer category from profile ID
                         if (profileId.includes('t2i') || profileId.includes('text-to-image')) {
@@ -109,18 +110,6 @@ const migrations: Migration[] = [
                 }
             }
             
-            // Add new pipeline flags to existing featureFlags
-            if (migrated.localGenSettings?.featureFlags) {
-                const flags = migrated.localGenSettings.featureFlags as any;
-                if (typeof flags.sceneListContextV2 === 'undefined') flags.sceneListContextV2 = false;
-                if (typeof flags.actContextV2 === 'undefined') flags.actContextV2 = false;
-                if (typeof flags.keyframePromptPipeline === 'undefined') flags.keyframePromptPipeline = false;
-                if (typeof flags.videoPromptPipeline === 'undefined') flags.videoPromptPipeline = false;
-                if (typeof flags.bibleV2SaveSync === 'undefined') flags.bibleV2SaveSync = false;
-                if (typeof flags.sceneListValidationMode === 'undefined') flags.sceneListValidationMode = 'off';
-                if (typeof flags.promptTokenGuard === 'undefined') flags.promptTokenGuard = 'off';
-            }
-            
             return migrated;
         },
         down: (state: MigrationState) => {
@@ -138,7 +127,7 @@ const migrations: Migration[] = [
             // Remove category from workflow profiles
             if (migrated.localGenSettings?.workflowProfiles) {
                 for (const profile of Object.values(migrated.localGenSettings.workflowProfiles)) {
-                    const p = profile as any;
+                    const p = profile as unknown as Record<string, unknown>;
                     delete p.category;
                     delete p.chainPosition;
                     delete p.inputProfiles;
@@ -148,7 +137,7 @@ const migrations: Migration[] = [
             // Remove autoGenerateSuggestions from continuityData
             if (migrated.continuityData) {
                 for (const data of Object.values(migrated.continuityData)) {
-                    const d = data as any;
+                    const d = data as unknown as Record<string, unknown>;
                     delete d.autoGenerateSuggestions;
                     delete d.lastSuggestionTimestamp;
                     delete d.regenerationAttempts;
@@ -171,7 +160,7 @@ const migrations: Migration[] = [
             
             // Remove new pipeline flags
             if (migrated.localGenSettings?.featureFlags) {
-                const flags = migrated.localGenSettings.featureFlags as any;
+                const flags = migrated.localGenSettings.featureFlags as unknown as Record<string, unknown>;
                 delete flags.sceneListContextV2;
                 delete flags.actContextV2;
                 delete flags.keyframePromptPipeline;
@@ -343,7 +332,7 @@ export function preserveUnknownFields<T extends MigrationState>(state: T, migrat
     const result = { ...migratedState };
     
     // Recursively copy unknown fields from original state
-    const copyUnknownFields = (original: any, target: any, depth: number = 0) => {
+    const copyUnknownFields = (original: Record<string, unknown>, target: Record<string, unknown>, depth: number = 0) => {
         if (depth > 5 || !original || !target || typeof original !== 'object' || typeof target !== 'object') {
             return;
         }
@@ -354,7 +343,7 @@ export function preserveUnknownFields<T extends MigrationState>(state: T, migrat
                 target[key] = original[key];
             } else if (typeof original[key] === 'object' && typeof target[key] === 'object') {
                 // Recurse into nested objects
-                copyUnknownFields(original[key], target[key], depth + 1);
+                copyUnknownFields(original[key] as Record<string, unknown>, target[key] as Record<string, unknown>, depth + 1);
             }
         }
     };

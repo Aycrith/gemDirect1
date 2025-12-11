@@ -225,11 +225,27 @@ function createGenerateStep(): PipelineStep {
                     
                     // Read results.json to get the video path
                     const resultsJsonPath = path.join(absoluteRunDir, 'results.json');
+                    
+                    // Telemetry fields
+                    let flf2vEnabled: boolean | undefined;
+                    let flf2vFallback: boolean | undefined;
+                    let interpolationElapsed: number | undefined;
+                    let finalFps: number | undefined;
+                    let upscaleMethod: string | undefined;
+
                     if (fs.existsSync(resultsJsonPath)) {
                         try {
                             const resultsData = JSON.parse(fs.readFileSync(resultsJsonPath, 'utf-8'));
                             const sampleData = resultsData.samples?.[sample];
                             
+                            if (sampleData) {
+                                flf2vEnabled = sampleData.flf2vEnabled;
+                                flf2vFallback = sampleData.flf2vFallback;
+                                interpolationElapsed = sampleData.interpolationElapsed;
+                                finalFps = sampleData.finalFps;
+                                upscaleMethod = sampleData.upscaleMethod;
+                            }
+
                             if (sampleData?.videoPath) {
                                 // videoPath in results.json is relative to ComfyUI output dir
                                 // e.g., "video/regression_sample-001-geometric_*.mp4"
@@ -257,6 +273,11 @@ function createGenerateStep(): PipelineStep {
                                 videoPath: pathCandidate,
                                 sample,
                                 generateOutput: stdout,
+                                flf2vEnabled,
+                                flf2vFallback,
+                                interpolationElapsed,
+                                finalFps,
+                                upscaleMethod,
                             },
                         });
                     };
@@ -806,6 +827,23 @@ function createManifestStep(): PipelineStep {
                 if (videoPath) {
                     args.push('--video-file', path.basename(videoPath));
                     args.push('--output-dir', path.dirname(videoPath));
+                }
+
+                // Add telemetry args if available
+                if (ctx.flf2vEnabled) {
+                    args.push('--flf2v-enabled', 'true');
+                }
+                if (ctx.flf2vFallback) {
+                    args.push('--flf2v-fallback', 'true');
+                }
+                if (ctx.interpolationElapsed) {
+                    args.push('--interpolation-elapsed', String(ctx.interpolationElapsed));
+                }
+                if (ctx.finalFps) {
+                    args.push('--final-fps', String(ctx.finalFps));
+                }
+                if (ctx.upscaleMethod) {
+                    args.push('--upscale-method', String(ctx.upscaleMethod));
                 }
 
                 const child = spawn('node', args, {

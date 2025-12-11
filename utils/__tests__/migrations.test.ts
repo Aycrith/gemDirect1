@@ -148,7 +148,7 @@ describe('migrations', () => {
             expect(result.success).toBe(true);
             const migrated = result.data?.state as any;
             expect(migrated.localGenSettings.featureFlags).toBeDefined();
-            expect(migrated.localGenSettings.featureFlags.promptQualityGate).toBe(false);
+            expect(migrated.localGenSettings.featureFlags.promptQualityGate).toBe(true);
         });
 
         it('should add healthCheckIntervalMs during migration', () => {

@@ -7,7 +7,7 @@
  * @module services/videoUpscalingService
  */
 
-import type { LocalGenerationSettings, WorkflowProfile } from '../types';
+import type { LocalGenerationSettings, WorkflowProfile, LocalGenerationAsset } from '../types';
 
 /**
  * Upscaling configuration
@@ -37,6 +37,21 @@ export const DEFAULT_UPSCALE_CONFIG: UpscaleConfig = {
 };
 
 /**
+ * Interpolation configuration
+ */
+export interface InterpolationConfig {
+    /** Target FPS multiplier (2x, 4x) */
+    multiplier: 2 | 4;
+    /** Interpolation model */
+    model: 'RIFE' | 'GMFSS';
+}
+
+export const DEFAULT_INTERPOLATION_CONFIG: InterpolationConfig = {
+    multiplier: 2,
+    model: 'RIFE'
+};
+
+/**
  * Result of video upscaling operation
  */
 export interface UpscaleResult {
@@ -47,7 +62,91 @@ export interface UpscaleResult {
     upscaledResolution?: { width: number; height: number };
     processingTimeMs?: number;
     error?: string;
+    // Telemetry
+    interpolationElapsed?: number;
+    upscaleMethod?: string;
+    finalFps?: number;
 }
+
+import { queueComfyUIPromptWithQueue, ComfyUIPromptPayloads } from './comfyUIService';
+
+export const interpolateVideo = async (
+    settings: LocalGenerationSettings,
+    videoPath: string,
+    config: InterpolationConfig = DEFAULT_INTERPOLATION_CONFIG
+): Promise<UpscaleResult> => {
+    console.log(`[VideoUpscaling] Interpolating video: ${videoPath} with config`, config);
+    const startTime = Date.now();
+
+    // Use configured profile or default to 'rife-interpolation'
+    const profileId = settings.workflowProfiles?.['rife-interpolation'] ? 'rife-interpolation' : null;
+    
+    if (!profileId) {
+        console.error(`[VideoUpscaling] Profile 'rife-interpolation' not found`);
+        return {
+            success: false,
+            error: `Interpolation workflow profile 'rife-interpolation' not found. Please import it in settings.`
+        };
+    }
+
+    try {
+        // Empty payloads as we're driving via inputVideo mapping
+        const payloads: ComfyUIPromptPayloads = {
+            json: "{}",
+            text: "",
+            structured: [],
+            negativePrompt: ""
+        };
+
+        const result = await queueComfyUIPromptWithQueue(
+            settings,
+            payloads,
+            "", // No keyframe image needed for RIFE usually
+            profileId,
+            {
+                waitForCompletion: true,
+                extraData: {
+                    inputVideo: videoPath
+                }
+            }
+        );
+
+        // When waitForCompletion is true, result is LocalGenerationStatus['final_output']
+        // We need to cast it safely
+        const output = result as { 
+            type: string; 
+            data: string; 
+            filename: string; 
+            assets?: LocalGenerationAsset[] 
+        };
+
+        if (output && (output.type === 'video' || output.type === 'image')) {
+            const elapsed = Date.now() - startTime;
+            return {
+                success: true,
+                outputPath: output.filename,
+                outputData: output.data,
+                processingTimeMs: elapsed,
+                interpolationElapsed: elapsed,
+                upscaleMethod: config.model,
+                finalFps: config.multiplier * 24 // Estimate based on multiplier
+            };
+        }
+
+        return {
+            success: false,
+            error: "Interpolation completed but no output video was returned"
+        };
+
+    } catch (error) {
+        console.error(`[VideoUpscaling] Interpolation failed:`, error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+        };
+    }
+};
+
 
 /**
  * Validates upscaling is supported for the current settings
@@ -230,6 +329,7 @@ export async function upscaleVideo(
         
         // Queue the upscale job
         // Note: This uses a custom workflow profile for upscaling
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const response = await queueComfyUIPromptSafe(
             settings,
             {

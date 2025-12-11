@@ -180,7 +180,7 @@ export const queueComfyUIPrompt = async (
     settings: LocalGenerationSettings,
     payloads: { json: string; text: string },
     base64Image: string,
-): Promise<any> => {
+): Promise<VideoGenerationResponse> => {
     
     // --- PRE-FLIGHT CHECK 1: Basic Configuration ---
     if (!settings.comfyUIUrl) {
@@ -305,7 +305,7 @@ export const queueComfyUIPrompt = async (
             } catch (e) { /* ignore json parse error */ }
             throw new Error(errorMessage);
         }
-        return response.json();
+        return response.json() as Promise<VideoGenerationResponse>;
 
     } catch (error) {
         console.error("Error processing ComfyUI request:", error);
@@ -343,7 +343,7 @@ export const queueComfyUIPromptSafe = async (
         onProgress?: (progress: number, message?: string) => void;
         onStatusChange?: (status: GenerationStatus) => void;
     }
-): Promise<unknown> => {
+): Promise<VideoGenerationResponse> => {
     const queue = getGenerationQueue();
     
     // Check feature flag - if disabled, call directly without queue
@@ -431,11 +431,10 @@ class DefaultSceneVideoManager implements SceneVideoManager {
         // UI remains responsive even when the backend is not running.
         let endpoint = 'http://127.0.0.1:43210/api/scene/regenerate';
         if (typeof window !== 'undefined') {
-            const w = window as any;
-            if (w.__SCENE_REGEN_ENDPOINT__) {
-                endpoint = String(w.__SCENE_REGEN_ENDPOINT__);
-            } else if (w.importMetaEnv?.VITE_SCENE_REGEN_ENDPOINT) {
-                endpoint = String(w.importMetaEnv.VITE_SCENE_REGEN_ENDPOINT);
+            if (window.__SCENE_REGEN_ENDPOINT__) {
+                endpoint = String(window.__SCENE_REGEN_ENDPOINT__);
+            } else if (window.importMetaEnv?.VITE_SCENE_REGEN_ENDPOINT) {
+                endpoint = String(window.importMetaEnv.VITE_SCENE_REGEN_ENDPOINT);
             }
         }
 

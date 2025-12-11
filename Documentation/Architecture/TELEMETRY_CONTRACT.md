@@ -99,6 +99,34 @@ Every scene attempt emits telemetry describing its execution. These fields appea
 | **ExecutionSuccessDetected** | bool | `$historyData -ne $null` | true/false | true |
 | **ExecutionSuccessAt** | ISO8601 | Timestamp when history detected | timestamp | 2025-11-12T10:23:05Z |
 
+### Pipeline & Post-Processing Metrics
+
+| Field | Type | Source | Unit/Format | Example |
+|-------|------|--------|-------------|---------|
+| **FLF2VEnabled** | bool | Pipeline config | true/false | true |
+| **FLF2VSource** | enum | Task execution | "keyframe" \| "last-frame" | "last-frame" |
+| **FLF2VFallback** | bool | Task execution | true/false | false |
+| **InterpolationElapsed** | float | Task execution | milliseconds | 1250.5 |
+| **UpscaleMethod** | string | Task config | string | "RIFE" |
+| **FinalFPS** | int | Task config | count | 60 |
+
+**Purpose**: Tracks the behavior of advanced pipeline features like Frame-Last-Frame chaining and video interpolation.
+
+### FLF2V & Post-Processing Metrics
+
+| Field | Type | Source | Unit/Format | Example |
+|-------|------|--------|-------------|---------|
+| **FLF2VEnabled** | bool | Feature flag | true/false | true |
+| **FLF2VSource** | enum | Task logic | string | "last-frame" \| "keyframe" |
+| **FLF2VFallback** | bool | Task logic | true/false | false |
+| **InterpolationElapsed** | float | Task logic | milliseconds | 1250 |
+| **UpscaleMethod** | string | Config | string | "RIFE" |
+| **FinalFPS** | float | Config/Output | number | 48 |
+| **FinalResolution** | string | Output | string | "1920x1080" |
+
+**Purpose**: Tracks the usage and performance of First-Last-Frame-to-Video (FLF2V) chaining and post-processing steps (interpolation, upscaling).
+
+
 **Purpose**: Signals whether `/history/<promptId>` ever returned results (true) or polling ended without results (false).
 
 ### Post-Execution Monitoring

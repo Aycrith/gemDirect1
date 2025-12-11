@@ -588,6 +588,30 @@ function createShotGenerateStep(shot: NarrativeShotRef, shotIndex: number): Pipe
                     let videoPath: string | undefined;
                     const sampleDir = path.join(absoluteRunDir, sample);
                     
+                    // Read results.json to get telemetry
+                    const resultsJsonPath = path.join(absoluteRunDir, 'results.json');
+                    let flf2vEnabled: boolean | undefined;
+                    let flf2vFallback: boolean | undefined;
+                    let interpolationElapsed: number | undefined;
+                    let finalFps: number | undefined;
+                    let upscaleMethod: string | undefined;
+
+                    if (fs.existsSync(resultsJsonPath)) {
+                        try {
+                            const resultsData = JSON.parse(fs.readFileSync(resultsJsonPath, 'utf-8'));
+                            const sampleData = resultsData.samples?.[sample];
+                            if (sampleData) {
+                                flf2vEnabled = sampleData.flf2vEnabled;
+                                flf2vFallback = sampleData.flf2vFallback;
+                                interpolationElapsed = sampleData.interpolationElapsed;
+                                finalFps = sampleData.finalFps;
+                                upscaleMethod = sampleData.upscaleMethod;
+                            }
+                        } catch (e) {
+                            // ignore
+                        }
+                    }
+                    
                     if (fs.existsSync(sampleDir)) {
                         const files = fs.readdirSync(sampleDir);
                         const videoFile = files.find(f => f.endsWith('.mp4'));
@@ -615,6 +639,11 @@ function createShotGenerateStep(shot: NarrativeShotRef, shotIndex: number): Pipe
                                 [`shot_${shot.id}_runDir`]: absoluteRunDir,
                                 [`shot_${shot.id}_videoPath`]: pathCandidate,
                                 [`shot_${shot.id}_sample`]: sample,
+                                [`shot_${shot.id}_flf2vEnabled`]: flf2vEnabled,
+                                [`shot_${shot.id}_flf2vFallback`]: flf2vFallback,
+                                [`shot_${shot.id}_interpolationElapsed`]: interpolationElapsed,
+                                [`shot_${shot.id}_finalFps`]: finalFps,
+                                [`shot_${shot.id}_upscaleMethod`]: upscaleMethod,
                             },
                         });
                     };
@@ -1067,6 +1096,29 @@ function createShotManifestStep(shot: NarrativeShotRef): PipelineStep {
                     '--run-dir', runDir,
                     '--sample', sample,
                 ];
+
+                // Add telemetry args if available
+                const flf2vEnabled = ctx[`shot_${shot.id}_flf2vEnabled`];
+                const flf2vFallback = ctx[`shot_${shot.id}_flf2vFallback`];
+                const interpolationElapsed = ctx[`shot_${shot.id}_interpolationElapsed`];
+                const finalFps = ctx[`shot_${shot.id}_finalFps`];
+                const upscaleMethod = ctx[`shot_${shot.id}_upscaleMethod`];
+
+                if (flf2vEnabled) {
+                    args.push('--flf2v-enabled', 'true');
+                }
+                if (flf2vFallback) {
+                    args.push('--flf2v-fallback', 'true');
+                }
+                if (interpolationElapsed) {
+                    args.push('--interpolation-elapsed', String(interpolationElapsed));
+                }
+                if (finalFps) {
+                    args.push('--final-fps', String(finalFps));
+                }
+                if (upscaleMethod) {
+                    args.push('--upscale-method', String(upscaleMethod));
+                }
 
                 const child = spawn('node', args, {
                     cwd: projectRoot,

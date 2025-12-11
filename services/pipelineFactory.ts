@@ -9,17 +9,21 @@ export const createExportPipeline = (
         generateKeyframes?: boolean;
         generateVideos?: boolean;
         upscale?: boolean;
-    } = { generateKeyframes: true, generateVideos: true, upscale: false }
+        interpolate?: boolean;
+    } = { generateKeyframes: true, generateVideos: true, upscale: false, interpolate: false }
 ): string => {
     const tasks: PipelineTask[] = [];
 
     scenes.forEach(scene => {
         if (!scene.timeline) return;
 
-        scene.timeline.shots.forEach(shot => {
+        let previousVideoTaskId: string | null = null;
+
+        scene.timeline.shots.forEach((shot, _index) => {
             const keyframeTaskId = `keyframe-${scene.id}-${shot.id}`;
             const videoTaskId = `video-${scene.id}-${shot.id}`;
             const upscaleTaskId = `upscale-${scene.id}-${shot.id}`;
+            const interpolateTaskId = `interpolate-${scene.id}-${shot.id}`;
 
             // Use visualPrompt if available (via cast for now), else description
             const prompt = (shot as any).visualPrompt || shot.description;
@@ -52,6 +56,12 @@ export const createExportPipeline = (
                     deps.push(keyframeTaskId);
                 }
 
+                // FLF2V: Add dependency on previous shot's video task
+                // This ensures sequential generation and allows passing the last frame
+                if (settings.featureFlags?.enableFLF2V && previousVideoTaskId) {
+                    deps.push(previousVideoTaskId);
+                }
+
                 tasks.push({
                     id: videoTaskId,
                     type: 'generate_video',
@@ -68,6 +78,8 @@ export const createExportPipeline = (
                     retryCount: 0,
                     createdAt: Date.now()
                 });
+
+                previousVideoTaskId = videoTaskId;
             }
 
             // 3. Upscale
@@ -81,6 +93,25 @@ export const createExportPipeline = (
                     payload: {
                         config: {
                             scale: 2
+                        }
+                    },
+                    retryCount: 0,
+                    createdAt: Date.now()
+                });
+            }
+
+            // 4. Interpolation
+            if (options.interpolate) {
+                const deps = options.upscale ? [upscaleTaskId] : [videoTaskId];
+                tasks.push({
+                    id: interpolateTaskId,
+                    type: 'interpolate_video',
+                    label: `Interpolate: ${scene.title} - Shot ${shot.id}`,
+                    status: 'pending',
+                    dependencies: deps,
+                    payload: {
+                        config: {
+                            multiplier: 2
                         }
                     },
                     retryCount: 0,

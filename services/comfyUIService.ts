@@ -70,13 +70,26 @@ import {
     type BuildManifestOptions,
 } from './generationManifestService';
 
+interface GemDirectDiagnostic {
+    event: string;
+    filename: string;
+    subfolder: string;
+    type: string;
+    prefix: string;
+    ts: number;
+}
+
 // Extend Window interface for debug flags and global settings
 declare global {
     interface Window {
         DEBUG_MANIFESTS?: boolean;
         LOCAL_STORY_PROVIDER_URL?: string;
         __localGenSettings?: LocalGenerationSettings;
+        __SCENE_REGEN_ENDPOINT__?: string;
+        importMetaEnv?: { VITE_SCENE_REGEN_ENDPOINT?: string };
     }
+    // eslint-disable-next-line no-var
+    var __gemDirectClientDiagnostics: GemDirectDiagnostic[];
 }
 
 // Interface for ComfyUI workflow nodes
@@ -567,7 +580,7 @@ const KEYFRAME_MAPPING_TYPE = 'keyframe_image';
 const HIGHLIGHT_TYPES = ['human_readable_prompt', 'full_timeline_json', 'keyframe_image'];
 
 // Helper functions for workflow mapping analysis
-const getPromptPayload = (workflowJson?: string): Record<string, any> | null => {
+const getPromptPayload = (workflowJson?: string): Record<string, WorkflowNode> | null => {
   if (!workflowJson) {
     return null;
   }
@@ -718,7 +731,7 @@ export const validateWorkflowAndMappings = (
         throw new Error("No workflow has been synced from the server.");
     }
 
-    let workflowApi: Record<string, any>;
+    let workflowApi: Record<string, WorkflowNode>;
     try {
         workflowApi = JSON.parse(workflowJson);
     } catch {
@@ -730,7 +743,7 @@ export const validateWorkflowAndMappings = (
         throw new Error("Synced workflow has an invalid structure. Please re-sync.");
     }
 
-    const workflowNodes = Object.values(promptPayloadTemplate ?? {}) as Array<Record<string, any>>;
+    const workflowNodes = Object.values(promptPayloadTemplate ?? {}) as WorkflowNode[];
     const mappingErrors: string[] = [];
     const mappedDataTypes = new Set(Object.values(mapping));
 
@@ -779,7 +792,7 @@ export const validateWorkflowAndMappings = (
         const nodeId = parts[0];
         const inputName = parts[1];
         if (!nodeId || !inputName) continue;
-        const node = promptPayloadTemplate[nodeId];
+        const node = (promptPayloadTemplate as Record<string, WorkflowNode>)[nodeId];
         const nodeTitle = node?._meta?.title || `Node ${nodeId}`;
 
         if (!node) {
@@ -795,7 +808,7 @@ export const validateWorkflowAndMappings = (
         if (dataType === 'keyframe_image' && node.class_type !== 'LoadImage') {
              mappingErrors.push(`'Keyframe Image' is mapped to node '${nodeTitle}', which is not a 'LoadImage' node. This will cause an error.`);
         }
-        if ((dataType === 'human_readable_prompt' || dataType === 'full_timeline_json' || dataType === 'negative_prompt') && !node.class_type.includes('Text')) {
+        if ((dataType === 'human_readable_prompt' || dataType === 'full_timeline_json' || dataType === 'negative_prompt') && !node.class_type?.includes('Text')) {
              mappingErrors.push(`Warning: Text data ('${dataType}') is mapped to '${nodeTitle}', which isn't a standard text input node (e.g., CLIPTextEncode). This might not work as expected with custom nodes.`);
         }
     }
@@ -840,7 +853,7 @@ export const validateWorkflowAndMappingsResult = (
         ]);
     }
 
-    let workflowApi: Record<string, any>;
+    let workflowApi: Record<string, WorkflowNode>;
     try {
         workflowApi = JSON.parse(workflowJson);
     } catch {
@@ -864,7 +877,7 @@ export const validateWorkflowAndMappingsResult = (
         ]);
     }
 
-    const workflowNodes = Object.values(promptPayloadTemplate ?? {}) as Array<Record<string, any>>;
+    const workflowNodes = Object.values(promptPayloadTemplate ?? {}) as WorkflowNode[];
     const errors: ReturnType<typeof createValidationError>[] = [];
     const warnings: ReturnType<typeof createValidationWarning>[] = [];
     const mappedDataTypes = new Set(Object.values(mapping));
@@ -929,7 +942,7 @@ export const validateWorkflowAndMappingsResult = (
         const nodeId = parts[0];
         const inputName = parts[1];
         if (!nodeId || !inputName) continue;
-        const node = promptPayloadTemplate[nodeId];
+        const node = (promptPayloadTemplate as Record<string, WorkflowNode>)[nodeId];
         const nodeTitle = node?._meta?.title || `Node ${nodeId}`;
 
         if (!node) {
@@ -1141,7 +1154,7 @@ export const checkChainedVideoNodeDependencies = async (
 };
 
 
-const ensureWorkflowMappingDefaults = (workflowNodes: Record<string, any>, existingMapping: WorkflowMapping): WorkflowMapping => {
+const ensureWorkflowMappingDefaults = (workflowNodes: Record<string, WorkflowNode>, existingMapping: WorkflowMapping): WorkflowMapping => {
     if (!workflowNodes || typeof workflowNodes !== 'object') {
         return existingMapping;
     }
@@ -1291,9 +1304,8 @@ const fetchAssetAsDataURL = async (
                     console.info('GEMDIRECT-KEYFRAME:' + (dataUrl ? dataUrl.slice(0, 200) : ''));
 
                     // Also push a compact diagnostic into a global so tests can read it from the page
-                    const g: any = globalThis as any;
-                    g.__gemDirectClientDiagnostics = g.__gemDirectClientDiagnostics || [];
-                    g.__gemDirectClientDiagnostics.push({
+                    globalThis.__gemDirectClientDiagnostics = globalThis.__gemDirectClientDiagnostics || [];
+                    globalThis.__gemDirectClientDiagnostics.push({
                         event: 'keyframe-fetched',
                         filename,
                         subfolder,
@@ -1352,6 +1364,8 @@ const fetchAssetAsDataURL = async (
 export interface QueuePromptOptions {
     /** IP-Adapter payload for character consistency */
     ipAdapter?: IPAdapterPayload;
+    /** Input video path for video-to-video workflows */
+    inputVideo?: string;
 }
 
 export const queueComfyUIPrompt = async (
@@ -1498,7 +1512,7 @@ export const queueComfyUIPrompt = async (
         console.warn(`[${profileId}] Missing mappings: ${missingMappings.join(', ')}`);
     }
 
-    let workflowApi: Record<string, any>;
+    let workflowApi: Record<string, WorkflowNode>;
     try {
         workflowApi = JSON.parse(profile.workflowJson);
     } catch (error) {
@@ -1506,7 +1520,7 @@ export const queueComfyUIPrompt = async (
     }
 
     const promptPayloadTemplate = workflowApi.prompt || workflowApi;
-    const mergedMapping = ensureWorkflowMappingDefaults(promptPayloadTemplate, profile.mapping);
+    const mergedMapping = ensureWorkflowMappingDefaults(promptPayloadTemplate as Record<string, WorkflowNode>, profile.mapping);
     const runtimeSettings: LocalGenerationSettings = {
         ...settings,
         workflowJson: profile.workflowJson,
@@ -1791,6 +1805,11 @@ export const queueComfyUIPrompt = async (
                     case 'feta_weight':
                         // FETA (Enhance-A-Video) weight for temporal coherence
                         // Default is preserved from workflow JSON
+                        break;
+                    case 'input_video':
+                        if (options?.inputVideo) {
+                            dataToInject = options.inputVideo;
+                        }
                         break;
                 }
                 if (dataToInject !== null) {
@@ -4426,7 +4445,7 @@ export const queueComfyUIPromptDualImage = async (
         throw new Error(`Workflow profile '${profileId}' not found. Please configure the profile in Settings.`);
     }
     
-    let workflowApi: Record<string, any>;
+    let workflowApi: Record<string, WorkflowNode>;
     try {
         // If sourcePath is specified and workflowJson is empty, attempt to load from file (Node.js only)
         if (profileConfig.sourcePath && !profileConfig.workflowJson) {
@@ -4776,14 +4795,14 @@ export function supportsNativeDualKeyframe(
     
     // Try to parse workflow and check for dual-keyframe nodes
     try {
-        let workflow: Record<string, any>;
+        let workflow: Record<string, unknown>;
         if (profile.workflowJson) {
             workflow = JSON.parse(profile.workflowJson);
         } else {
             return false;
         }
         
-        const nodes = workflow.nodes || workflow.prompt || workflow;
+        const nodes = ((workflow as Record<string, unknown>).nodes || (workflow as Record<string, unknown>).prompt || workflow) as Record<string, unknown>;
         const dualKeyframeNodeTypes = [
             'WanFirstLastFrameToVideo',           // 14B model node
             'WanFunInpaintToVideo',
@@ -5375,7 +5394,7 @@ export const queueComfyUIPromptWithQueue = async (
         waitForCompletion?: boolean;
         onProgress?: (statusUpdate: Partial<LocalGenerationStatus>) => void;
         priority?: 'high' | 'normal' | 'low';
-        extraData?: Record<string, any>;
+        extraData?: Record<string, unknown>;
     }
 ): Promise<ComfyUIPromptResult | LocalGenerationStatus['final_output']> => {
     console.log(`[DEBUG] queueComfyUIPromptWithQueue entered. Profile: ${profileId}`);
@@ -5385,7 +5404,12 @@ export const queueComfyUIPromptWithQueue = async (
     const task = createVideoTask(
         async () => {
             // 1. Queue the prompt
-            const response = await queueComfyUIPrompt(settings, payloads, base64Image, profileId, undefined, options?.extraData);
+            // Map extraData to QueuePromptOptions
+            const queueOptions: QueuePromptOptions = {
+                ipAdapter: options?.extraData?.ipAdapter as IPAdapterPayload | undefined,
+                inputVideo: options?.extraData?.inputVideo as string | undefined
+            };
+            const response = await queueComfyUIPrompt(settings, payloads, base64Image, profileId, undefined, queueOptions);
             
             if (!response || !response.prompt_id) {
                 throw new Error('Failed to queue prompt: No prompt_id returned.');

@@ -1,0 +1,7 @@
+node_modules
+dist
+build
+fastvideo-env-wsl
+coverage
+.next
+.git

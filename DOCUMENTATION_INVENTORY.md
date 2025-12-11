@@ -1,7 +1,7 @@
 # Documentation Inventory: Project GemDirect1
 
-**Last Updated**: December 11, 2025
-**Total Files**: 45 documentation files
+**Last Updated**: December 11, 2025 (Updated with CI/Testing Docs)
+**Total Files**: 46 documentation files
 **Status**: Active
 
 ---
@@ -39,6 +39,8 @@
     - Strategy for LLM interface optimization.
 14. **BOOKEND_WORKFLOW_PROPOSAL.md**
     - Proposal for bookend workflow.
+15. **VIDEO_PROCESSING_PIPELINE.md**
+    - Architecture for FLF2V and Video Interpolation pipelines.
 
 ### Guides (`Documentation/Guides/`)
 15. **RECIPES.md**
@@ -101,6 +103,15 @@
     - AI agent prompt for fast video.
 42. **prompts/PROMPT_LIBRARY.md**
     - Library of prompts.
+
+### Testing (`Testing/`)
+43. **STORY_TO_VIDEO_TEST_CHECKLIST.md** (`Testing/E2E/STORY_TO_VIDEO_TEST_CHECKLIST.md`)
+    - Checklist for story-to-video testing.
+44. **TESTING_COMMAND_REFERENCE.md**
+    - Reference for testing commands.
+45. **CI_WORKFLOWS.md** (Implicit in `.github/workflows/`)
+    - `pr-validation.yml`: Main PR check (Unit, Build, Smoke, Telemetry).
+    - `pr-vitest.yml`: Vitest specific checks.
 
 ### Other Important Files
 43. **USAGE_WORKFLOW.md** (`USAGE_WORKFLOW.md`)
