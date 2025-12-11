@@ -28,6 +28,10 @@ handoffs:
     prompt: |
       Run complete validation: guardian scan, tsc, tests, ComfyUI health. Report pass/fail for each.
     send: true
+  - label: "🛡️ E2E Stabilization"
+    agent: agent
+    prompt: "Analyze E2E test failures in `tests/e2e/`.\n1. Identify tests failing due to missing services.\n2. Implement skip logic using `service-mocks.ts` or environment flags.\n3. Verify with `npx playwright test`."
+    send: true
 ---
 
 # Project Guardian Agent

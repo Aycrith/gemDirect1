@@ -5,6 +5,16 @@ import {
   loadStateAndWaitForHydration 
 } from '../fixtures/test-helpers';
 import { mockStoryBible } from '../fixtures/mock-data';
+import { setupComfyUIRoutes } from '../fixtures/service-mocks';
+
+const RUN_REAL_WORKFLOWS = process.env.RUN_REAL_WORKFLOWS === '1';
+
+test.beforeEach(async ({ page }) => {
+  if (!RUN_REAL_WORKFLOWS) {
+    console.log('Using ComfyUI mocks (RUN_REAL_WORKFLOWS not set)');
+    await setupComfyUIRoutes(page);
+  }
+});
 
 /**
  * ComfyUI Integration Test Suite

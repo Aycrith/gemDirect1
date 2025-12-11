@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissWelcomeDialog, ensureDirectorMode } from '../fixtures/test-helpers';
+import { setupLLMRoutes } from '../fixtures/service-mocks';
 
 /**
  * LM Studio Integration Test Suite
@@ -12,16 +13,21 @@ import { dismissWelcomeDialog, ensureDirectorMode } from '../fixtures/test-helpe
  * - Mistral Nemo model loaded
  * - Vite dev server running (provides CORS proxy)
  * 
- * NOTE: These tests make REAL LLM calls and should be skipped by default.
- * Set RUN_REAL_WORKFLOWS=1 to enable these tests.
+ * NOTE: These tests make REAL LLM calls when RUN_REAL_WORKFLOWS=1.
+ * Otherwise, they use mock responses to verify UI behavior.
  */
 
 const RUN_REAL_WORKFLOWS = process.env.RUN_REAL_WORKFLOWS === '1';
 
 test.describe('LM Studio Integration', () => {
-  test.skip(!RUN_REAL_WORKFLOWS, 'LM Studio integration tests require RUN_REAL_WORKFLOWS=1 and running LM Studio service to avoid overwhelming the LLM server');
+  // test.skip(!RUN_REAL_WORKFLOWS, 'LM Studio integration tests require RUN_REAL_WORKFLOWS=1 and running LM Studio service to avoid overwhelming the LLM server');
   
   test.beforeEach(async ({ page }) => {
+    if (!RUN_REAL_WORKFLOWS) {
+      console.log('Using LLM mocks (RUN_REAL_WORKFLOWS not set)');
+      await setupLLMRoutes(page);
+    }
+    
     await page.goto('/');
     await dismissWelcomeDialog(page);
     await ensureDirectorMode(page);
