@@ -11,6 +11,14 @@ handoffs:
     agent: agent
     prompt: "Implement the GenerationQueue integration (P1.2).\n1. Read services/generationQueue.ts and services/videoGenerationService.ts.\n2. Create queueComfyUIPromptSafe wrapper.\n3. Update generateTimelineVideos.\n4. Verify with tests."
     send: true
+  - label: "🔌 WebSocket Pooling"
+    agent: agent
+    prompt: "Implement WebSocket Connection Pooling (P2.2).\n1. Read `REMEDIATION_PLAN.MD` item P2.2.\n2. Update `services/comfyUIService.ts` to use `comfyEventManager.subscribe` instead of creating new WebSockets.\n3. Verify with `npm test services/comfyUIService.test.ts`."
+    send: true
+  - label: "🎬 FLF2V Logic"
+    agent: agent
+    prompt: "Implement FLF2V Orchestrator Logic (Phase 2).\n1. Read `plan.md` Phase 2.\n2. Modify the orchestrator to save the last frame of each scene.\n3. Update the next scene's generation to use this frame as `init_image` if FLF2V is enabled.\n4. Verify with tests."
+    send: true
 ---
 
 # Implementer Agent
