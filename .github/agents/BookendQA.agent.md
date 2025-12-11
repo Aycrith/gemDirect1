@@ -18,6 +18,10 @@ handoffs:
     prompt: |
       Re-run the Bookend regression suite with the current configuration, then update AGENT_HANDOFF_CURRENT.md with a concise results summary (similarity metrics and verdicts per golden sample).
     send: false
+  - label: "🎬 Full Workflow Test"
+    agent: agent
+    prompt: "Validate the complete story-to-video workflow in the React UI.\n1. Configure LLM (Gemini/LM Studio).\n2. Import workflow profiles.\n3. Generate: story → scenes → timeline → keyframe → video.\n4. Validate progress updates and error handling."
+    send: false
 ---
 
 # Bookend QA Implementation Agent
