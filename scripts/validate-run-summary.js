@@ -4,6 +4,8 @@ import os from 'node:os';
 
 const HISTORY_EXIT_REASONS = new Set(['success', 'maxWait', 'attemptLimit', 'postExecution', 'unknown']);
 
+const FINAL_RESOLUTION_PATTERN = /^\d+x\d+$/;
+
 function escapeRegex(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -40,6 +42,119 @@ function requireInt(value) {
         }
     }
     return null;
+}
+
+function parseMaybeNumber(value) {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+    }
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length === 0) return null;
+        const parsed = Number(trimmed);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+}
+
+function parseMaybeBoolean(value) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+        const lowered = value.trim().toLowerCase();
+        if (lowered === 'true') return true;
+        if (lowered === 'false') return false;
+    }
+    return null;
+}
+
+function hasOwn(obj, prop) {
+    return Object.prototype.hasOwnProperty.call(obj, prop);
+}
+
+function validateExtendedTelemetry(sceneId, telemetry, errors) {
+    if (!telemetry || typeof telemetry !== 'object') {
+        return;
+    }
+
+    // Optional FLF2V + post-processing fields. Validate when present; don't break legacy runs.
+    if (hasOwn(telemetry, 'FLF2VEnabled')) {
+        const value = telemetry.FLF2VEnabled;
+        if (value != null) {
+            const parsed = parseMaybeBoolean(value);
+            if (parsed === null) {
+                errors.push(`Scene ${sceneId} telemetry FLF2VEnabled must be boolean.`);
+            }
+        }
+    }
+
+    if (hasOwn(telemetry, 'FLF2VFallback')) {
+        const value = telemetry.FLF2VFallback;
+        if (value != null) {
+            const parsed = parseMaybeBoolean(value);
+            if (parsed === null) {
+                errors.push(`Scene ${sceneId} telemetry FLF2VFallback must be boolean.`);
+            }
+        }
+    }
+
+    if (hasOwn(telemetry, 'FLF2VSource')) {
+        const value = telemetry.FLF2VSource;
+        if (value != null) {
+            if (typeof value !== 'string' || value.trim().length === 0) {
+                errors.push(`Scene ${sceneId} telemetry FLF2VSource must be a non-empty string.`);
+            }
+        }
+    }
+
+    // If FLF2V is enabled, require a source.
+    const flf2vEnabled = parseMaybeBoolean(telemetry.FLF2VEnabled);
+    if (flf2vEnabled === true) {
+        if (typeof telemetry.FLF2VSource !== 'string' || telemetry.FLF2VSource.trim().length === 0) {
+            errors.push(`Scene ${sceneId} telemetry FLF2VEnabled=true but FLF2VSource is missing.`);
+        }
+    }
+
+    if (hasOwn(telemetry, 'InterpolationElapsed')) {
+        const value = telemetry.InterpolationElapsed;
+        if (value != null) {
+            const parsed = parseMaybeNumber(value);
+            if (parsed === null || parsed < 0) {
+                errors.push(`Scene ${sceneId} telemetry InterpolationElapsed must be a non-negative number.`);
+            }
+        }
+    }
+
+    if (hasOwn(telemetry, 'UpscaleMethod')) {
+        const value = telemetry.UpscaleMethod;
+        if (value != null) {
+            if (typeof value !== 'string' || value.trim().length === 0) {
+                errors.push(`Scene ${sceneId} telemetry UpscaleMethod must be a non-empty string.`);
+            }
+        }
+    }
+
+    if (hasOwn(telemetry, 'FinalFPS')) {
+        const value = telemetry.FinalFPS;
+        if (value != null) {
+            const parsed = parseMaybeNumber(value);
+            if (parsed === null || parsed <= 0) {
+                errors.push(`Scene ${sceneId} telemetry FinalFPS must be a positive number.`);
+            }
+        }
+    }
+
+    if (hasOwn(telemetry, 'FinalResolution')) {
+        const value = telemetry.FinalResolution;
+        if (value != null) {
+            if (typeof value !== 'string' || value.trim().length === 0) {
+                errors.push(`Scene ${sceneId} telemetry FinalResolution must be a non-empty string.`);
+            } else if (!FINAL_RESOLUTION_PATTERN.test(value.trim())) {
+                errors.push(
+                    `Scene ${sceneId} telemetry FinalResolution '${value}' must match <width>x<height> (e.g. 1920x1080).`
+                );
+            }
+        }
+    }
 }
 
 export function runValidation(runDir) {
@@ -201,6 +316,8 @@ export function runValidation(runDir) {
                     errors.push(`Scene ${sceneId} telemetry payload missing from artifact metadata.`);
                     continue;
                 }
+
+                validateExtendedTelemetry(sceneId, scene.Telemetry, errors);
 
                 const telemetryPattern = new RegExp(`\\[Scene\\s+${escapedSceneId}].*Telemetry:`);
                 if (!telemetryPattern.test(text)) {

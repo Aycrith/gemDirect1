@@ -40,6 +40,43 @@ function Get-VideoDurationSeconds([string]$file) {
   return $null
 }
 
+function Get-VideoFps([string]$file) {
+  $ffprobe = Get-FfprobePath
+  if (-not $ffprobe) { return $null }
+  try {
+    $args = @('-v','error','-select_streams','v:0','-show_entries','stream=r_frame_rate','-of','default=noprint_wrappers=1:nokey=1',"$file")
+    $p = Start-Process -FilePath $ffprobe -ArgumentList $args -NoNewWindow -RedirectStandardOutput -PassThru -Wait
+    $out = $p.StandardOutput.ReadToEnd().Trim()
+    if ($out) {
+      if ($out -match '^(\d+)(?:/(\d+))?$') {
+        $num = [double]$Matches[1]
+        $den = if ($Matches[2]) { [double]$Matches[2] } else { 1.0 }
+        if ($den -gt 0) {
+          $fps = $num / $den
+          return [math]::Round($fps)
+        }
+      }
+      $parsed = [double]::Parse($out, [System.Globalization.CultureInfo]::InvariantCulture)
+      return [math]::Round($parsed)
+    }
+  } catch {}
+  return $null
+}
+
+function Get-VideoResolution([string]$file) {
+  $ffprobe = Get-FfprobePath
+  if (-not $ffprobe) { return $null }
+  try {
+    $args = @('-v','error','-select_streams','v:0','-show_entries','stream=width,height','-of','csv=s=x:p=0',"$file")
+    $p = Start-Process -FilePath $ffprobe -ArgumentList $args -NoNewWindow -RedirectStandardOutput -PassThru -Wait
+    $out = $p.StandardOutput.ReadToEnd().Trim()
+    if ($out -match '^\d+x\d+$') {
+      return $out
+    }
+  } catch {}
+  return $null
+}
+
 $sceneDirs = @()
 $sceneDirs += Get-ChildItem -Directory -Path $RunDir -Filter 'scene_*' -ErrorAction SilentlyContinue
 $sceneDirs += Get-ChildItem -Directory -Path $RunDir -Filter 'scene-*' -ErrorAction SilentlyContinue
@@ -59,11 +96,15 @@ foreach ($scene in $sceneDirs) {
   $errorMsg = 'MP4 missing'
   $videoPathNormalized = $null
   $durationSeconds = $null
+  $finalFps = $null
+  $finalResolution = $null
 
   if ($video) {
     $status = 'complete'
     $errorMsg = $null
     $durationSeconds = Get-VideoDurationSeconds -file $video.FullName
+    $finalFps = Get-VideoFps -file $video.FullName
+    $finalResolution = Get-VideoResolution -file $video.FullName
     $videoPathNormalized = $video.FullName -replace '\\', '/'
   }
 
@@ -91,6 +132,22 @@ foreach ($scene in $sceneDirs) {
             Error = $errorMsg
           })
         }
+
+        # Patch FinalFPS/FinalResolution into Telemetry when available.
+        if ($video -and $sceneObj.PSObject.Properties.Name -contains 'Telemetry') {
+          $telemetry = $sceneObj.Telemetry
+          if (-not $telemetry) {
+            $telemetry = [ordered]@{}
+          }
+          if ($finalFps -ne $null -and ($telemetry.PSObject.Properties.Name -notcontains 'FinalFPS' -or $telemetry.FinalFPS -eq $null)) {
+            $telemetry | Add-Member -NotePropertyName 'FinalFPS' -NotePropertyValue $finalFps -Force
+          }
+          if ($finalResolution -and ($telemetry.PSObject.Properties.Name -notcontains 'FinalResolution' -or [string]::IsNullOrWhiteSpace($telemetry.FinalResolution))) {
+            $telemetry | Add-Member -NotePropertyName 'FinalResolution' -NotePropertyValue $finalResolution -Force
+          }
+          $sceneObj.Telemetry = $telemetry
+        }
+
         break
       }
     }
