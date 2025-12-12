@@ -1,12 +1,13 @@
-name: Vitest CI
+name: Vitest CI (Push)
 
 on:
-  pull_request:
-    branches: ['**']
+  push:
+    branches: ['main']
+  workflow_dispatch:
 
 jobs:
   test:
-    name: Run Vitest on PR
+    name: Run Vitest
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
