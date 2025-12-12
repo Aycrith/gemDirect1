@@ -9,6 +9,7 @@ vi.mock('../../services/comfyUIService', () => ({
   queueComfyUIPromptWithQueue: vi.fn(),
   trackPromptExecution: vi.fn(),
   stripDataUrlPrefix: vi.fn((value: string) => value?.replace(/^data:[^,]+,/, '') ?? value),
+  waitForComfyCompletion: vi.fn(),
 }));
 
 vi.mock('../../utils/videoUtils', () => ({

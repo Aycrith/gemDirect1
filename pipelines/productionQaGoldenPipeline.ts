@@ -952,6 +952,7 @@ function createRunSummaryStep(): PipelineStep {
                 benchmarkReportPath: ctx.benchmarkReportPath as string | undefined,
                 manifestPath: ctx.manifestPath as string | undefined,
                 flf2vEnabled: ctx.flf2vEnabled as boolean | undefined,
+                flf2vSource: ctx.flf2vSource as string | undefined,
                 flf2vFallback: ctx.flf2vFallback as boolean | undefined,
                 interpolationElapsed: ctx.interpolationElapsed as number | undefined,
                 finalFps: ctx.finalFps as number | undefined,
@@ -972,29 +973,65 @@ function createRunSummaryStep(): PipelineStep {
             const jsonPath = path.join(runSummariesDir, `run-summary-${timestamp}.json`);
             fs.writeFileSync(jsonPath, JSON.stringify(summary, null, 2));
 
-            // Write artifact-metadata.json to runDir if available
+            // Persist FLF2V + post-processing metadata into the canonical artifacts contract.
+            // Canonical location: Scenes[*].Telemetry (PascalCase keys).
             if (summary.runDir) {
                 const artifactMetadataPath = path.join(summary.runDir, 'artifact-metadata.json');
                 let existingMetadata: Record<string, unknown> = {};
                 if (fs.existsSync(artifactMetadataPath)) {
                     try {
-                        existingMetadata = JSON.parse(fs.readFileSync(artifactMetadataPath, 'utf-8'));
-                    } catch (e) { /* ignore */ }
+                        existingMetadata = JSON.parse(fs.readFileSync(artifactMetadataPath, 'utf-8')) as Record<string, unknown>;
+                    } catch {
+                        // ignore parse errors; we'll fall back to empty
+                    }
                 }
-                
-                const newMetadata: Record<string, unknown> = {
-                    ...existingMetadata,
+
+                const telemetryPatch: Record<string, unknown> = {
                     FLF2VEnabled: summary.flf2vEnabled,
+                    FLF2VSource: summary.flf2vSource,
+                    FLF2VFallback: summary.flf2vFallback,
                     InterpolationElapsed: summary.interpolationElapsed,
                     UpscaleMethod: summary.upscaleMethod,
                     FinalFPS: summary.finalFps,
-                    FinalResolution: summary.finalResolution
+                    FinalResolution: summary.finalResolution,
                 };
-                
-                // Filter out undefined values
-                Object.keys(newMetadata).forEach(key => newMetadata[key] === undefined && delete newMetadata[key]);
-                
+
+                const stripUndefined = (obj: Record<string, unknown>): Record<string, unknown> => {
+                    const out: Record<string, unknown> = {};
+                    for (const [key, value] of Object.entries(obj)) {
+                        if (value !== undefined) out[key] = value;
+                    }
+                    return out;
+                };
+
+                const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+                    return !!value && typeof value === 'object' && !Array.isArray(value);
+                };
+
+                const newMetadata: Record<string, unknown> = { ...existingMetadata };
+
+                // Preferred: patch each scene's Telemetry block.
+                if (Array.isArray(newMetadata.Scenes)) {
+                    newMetadata.Scenes = newMetadata.Scenes.map((scene) => {
+                        if (!isPlainObject(scene)) return scene;
+                        const sceneObj = scene as Record<string, unknown>;
+                        const existingTelemetry = isPlainObject(sceneObj.Telemetry) ? (sceneObj.Telemetry as Record<string, unknown>) : {};
+                        const mergedTelemetry = stripUndefined({ ...existingTelemetry, ...telemetryPatch });
+                        return { ...sceneObj, Telemetry: mergedTelemetry };
+                    });
+                } else {
+                    // Fallback: if artifact metadata doesn't have per-scene structure, preserve legacy top-level writes.
+                    Object.assign(newMetadata, stripUndefined(telemetryPatch));
+                }
+
+                // Write back to runDir
                 fs.writeFileSync(artifactMetadataPath, JSON.stringify(newMetadata, null, 2));
+
+                // Mirror for UI: public/artifacts/latest-run.json
+                const publicArtifactsDir = path.join(projectRoot, 'public', 'artifacts');
+                fs.mkdirSync(publicArtifactsDir, { recursive: true });
+                const publicLatestPath = path.join(publicArtifactsDir, 'latest-run.json');
+                fs.writeFileSync(publicLatestPath, JSON.stringify(newMetadata, null, 2));
             }
 
             const mdLines = [
@@ -1012,7 +1049,10 @@ function createRunSummaryStep(): PipelineStep {
             ];
 
             if (summary.flf2vEnabled !== undefined) {
-                mdLines.push(`- FLF2V: ${summary.flf2vEnabled ? 'enabled' : 'disabled'} (fallback: ${summary.flf2vFallback ? 'yes' : 'no'})`);
+                mdLines.push(
+                    `- FLF2V: ${summary.flf2vEnabled ? 'enabled' : 'disabled'}` +
+                        ` (source: ${summary.flf2vSource || 'unknown'}, fallback: ${summary.flf2vFallback ? 'yes' : 'no'})`,
+                );
             }
             if (summary.interpolationElapsed !== undefined) {
                 mdLines.push(`- Interpolation: ${summary.interpolationElapsed}ms (${summary.upscaleMethod || 'unknown'}, ${summary.finalFps || '?'} fps)`);

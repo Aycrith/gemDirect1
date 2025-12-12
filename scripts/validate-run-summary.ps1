@@ -218,6 +218,80 @@ if (-not (Test-Path $artifactJson)) {
                     if ($scene.Telemetry.ExecutionSuccessDetected -and -not $scene.Telemetry.ExecutionSuccessAt) {
                         $errors += "Scene $sceneId telemetry signals ExecutionSuccessDetected but lacks ExecutionSuccessAt."
                     }
+
+                    # Optional extended telemetry fields (FLF2V + post-processing).
+                    # Validate types/format when present; do not break legacy runs that omit them.
+                    if ($scene.Telemetry.PSObject.Properties.Name -contains 'FLF2VEnabled') {
+                        if ($null -ne $scene.Telemetry.FLF2VEnabled -and -not ($scene.Telemetry.FLF2VEnabled -is [bool])) {
+                            $errors += "Scene $sceneId telemetry FLF2VEnabled must be boolean."
+                        }
+                    }
+                    if ($scene.Telemetry.PSObject.Properties.Name -contains 'FLF2VFallback') {
+                        if ($null -ne $scene.Telemetry.FLF2VFallback -and -not ($scene.Telemetry.FLF2VFallback -is [bool])) {
+                            $errors += "Scene $sceneId telemetry FLF2VFallback must be boolean."
+                        }
+                    }
+                    if ($scene.Telemetry.PSObject.Properties.Name -contains 'FLF2VSource') {
+                        if ($null -ne $scene.Telemetry.FLF2VSource -and -not ($scene.Telemetry.FLF2VSource -is [string])) {
+                            $errors += "Scene $sceneId telemetry FLF2VSource must be a string."
+                        }
+                        if (($scene.Telemetry.FLF2VSource -is [string]) -and [string]::IsNullOrWhiteSpace($scene.Telemetry.FLF2VSource)) {
+                            $errors += "Scene $sceneId telemetry FLF2VSource must be a non-empty string."
+                        }
+                    }
+                    if (($scene.Telemetry.PSObject.Properties.Name -contains 'FLF2VEnabled') -and ($scene.Telemetry.FLF2VEnabled -eq $true)) {
+                        if (-not ($scene.Telemetry.PSObject.Properties.Name -contains 'FLF2VSource') -or [string]::IsNullOrWhiteSpace($scene.Telemetry.FLF2VSource)) {
+                            $errors += "Scene $sceneId telemetry FLF2VEnabled=true but FLF2VSource is missing."
+                        }
+                    }
+                    if ($scene.Telemetry.PSObject.Properties.Name -contains 'InterpolationElapsed') {
+                        if ($null -ne $scene.Telemetry.InterpolationElapsed) {
+                            if ($scene.Telemetry.InterpolationElapsed -is [bool]) {
+                                $errors += "Scene $sceneId telemetry InterpolationElapsed must be a number (not boolean)."
+                            } else {
+                                try {
+                                    $interpMs = [double]$scene.Telemetry.InterpolationElapsed
+                                    if ($interpMs -lt 0) {
+                                        $errors += "Scene $sceneId telemetry InterpolationElapsed must be non-negative."
+                                    }
+                                } catch {
+                                    $errors += "Scene $sceneId telemetry InterpolationElapsed must be a number."
+                                }
+                            }
+                        }
+                    }
+                    if ($scene.Telemetry.PSObject.Properties.Name -contains 'UpscaleMethod') {
+                        if ($null -ne $scene.Telemetry.UpscaleMethod -and -not ($scene.Telemetry.UpscaleMethod -is [string])) {
+                            $errors += "Scene $sceneId telemetry UpscaleMethod must be a string."
+                        } elseif (($scene.Telemetry.UpscaleMethod -is [string]) -and [string]::IsNullOrWhiteSpace($scene.Telemetry.UpscaleMethod)) {
+                            $errors += "Scene $sceneId telemetry UpscaleMethod must be a non-empty string."
+                        }
+                    }
+                    if ($scene.Telemetry.PSObject.Properties.Name -contains 'FinalFPS') {
+                        if ($null -ne $scene.Telemetry.FinalFPS) {
+                            if ($scene.Telemetry.FinalFPS -is [bool]) {
+                                $errors += "Scene $sceneId telemetry FinalFPS must be a number (not boolean)."
+                            } else {
+                                try {
+                                    $finalFps = [double]$scene.Telemetry.FinalFPS
+                                    if ($finalFps -le 0) {
+                                        $errors += "Scene $sceneId telemetry FinalFPS must be > 0."
+                                    }
+                                } catch {
+                                    $errors += "Scene $sceneId telemetry FinalFPS must be a number."
+                                }
+                            }
+                        }
+                    }
+                    if ($scene.Telemetry.PSObject.Properties.Name -contains 'FinalResolution') {
+                        if ($null -ne $scene.Telemetry.FinalResolution -and -not ($scene.Telemetry.FinalResolution -is [string])) {
+                            $errors += "Scene $sceneId telemetry FinalResolution must be a string."
+                        } elseif (($scene.Telemetry.FinalResolution -is [string]) -and [string]::IsNullOrWhiteSpace($scene.Telemetry.FinalResolution)) {
+                            $errors += "Scene $sceneId telemetry FinalResolution must be a non-empty string."
+                        } elseif (($scene.Telemetry.FinalResolution -is [string]) -and ($scene.Telemetry.FinalResolution -notmatch '^\d+x\d+$')) {
+                            $errors += "Scene $sceneId telemetry FinalResolution '$($scene.Telemetry.FinalResolution)' must match <width>x<height> (e.g. 1920x1080)."
+                        }
+                    }
                     $escapedSceneId = [System.Text.RegularExpressions.Regex]::Escape($sceneId)
                     $pollLimitPattern = "\[Scene\s+$escapedSceneId\].*Telemetry:.*pollLimit=([^|\s]+)"
                     $pollLimitMatch = [System.Text.RegularExpressions.Regex]::Match($text, $pollLimitPattern)

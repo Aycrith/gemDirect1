@@ -51,7 +51,11 @@ const createRunSummary = (includeTelemetryLine: boolean, pollLimitValue = 'unbou
         .join(os.EOL);
 };
 
-const createArtifactMetadata = (includeTelemetry = true, fallbackNotes: string[] = []) => {
+const createArtifactMetadata = (
+    includeTelemetry = true,
+    fallbackNotes: string[] = [],
+    telemetryExtras: Record<string, unknown> = {},
+) => {
     const telemetry = includeTelemetry
         ? {
               DurationSeconds: 10,
@@ -82,6 +86,7 @@ const createArtifactMetadata = (includeTelemetry = true, fallbackNotes: string[]
               System: {
                   FallbackNotes: fallbackNotes,
               },
+              ...telemetryExtras,
           }
         : undefined;
     return {
@@ -323,5 +328,75 @@ describe('validate-run-summary.ps1', () => {
         const result = runValidator(runDir);
         expect(result.status).toBe(1);
         expect(result.stdout).toMatch(/Queue policy sceneRetries.*does not match QueueConfig/);
+    });
+
+    it('passes when optional FLF2V + post-processing telemetry fields are present', () => {
+        const runDir = mkdtempSync(path.join(os.tmpdir(), 'validate-run-extended-'));
+        tempDirs.push(runDir);
+        writeFileSync(path.join(runDir, 'run-summary.txt'), createRunSummary(true), 'utf8');
+        writeFileSync(
+            path.join(runDir, 'artifact-metadata.json'),
+            JSON.stringify(
+                createArtifactMetadata(true, [], {
+                    FLF2VEnabled: true,
+                    FLF2VSource: 'last-frame',
+                    FLF2VFallback: false,
+                    InterpolationElapsed: 1234,
+                    UpscaleMethod: 'RIFE',
+                    FinalFPS: 48,
+                    FinalResolution: '1920x1080',
+                }),
+                null,
+                2,
+            ),
+            'utf8',
+        );
+        createHelperFiles(runDir);
+
+        const result = runValidator(runDir);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toMatch(/run-summary validation: PASS/);
+    });
+
+    it('fails when FLF2VEnabled is true but FLF2VSource is missing', () => {
+        const runDir = mkdtempSync(path.join(os.tmpdir(), 'validate-run-flf2v-source-'));
+        tempDirs.push(runDir);
+        writeFileSync(path.join(runDir, 'run-summary.txt'), createRunSummary(true), 'utf8');
+        writeFileSync(
+            path.join(runDir, 'artifact-metadata.json'),
+            JSON.stringify(
+                createArtifactMetadata(true, [], {
+                    FLF2VEnabled: true,
+                }),
+                null,
+                2,
+            ),
+            'utf8',
+        );
+
+        const result = runValidator(runDir);
+        expect(result.status).toBe(1);
+        expect(result.stdout).toMatch(/FLF2VEnabled=true but FLF2VSource is missing/);
+    });
+
+    it('fails when FinalResolution does not match <width>x<height>', () => {
+        const runDir = mkdtempSync(path.join(os.tmpdir(), 'validate-run-final-res-'));
+        tempDirs.push(runDir);
+        writeFileSync(path.join(runDir, 'run-summary.txt'), createRunSummary(true), 'utf8');
+        writeFileSync(
+            path.join(runDir, 'artifact-metadata.json'),
+            JSON.stringify(
+                createArtifactMetadata(true, [], {
+                    FinalResolution: '1920-1080',
+                }),
+                null,
+                2,
+            ),
+            'utf8',
+        );
+
+        const result = runValidator(runDir);
+        expect(result.status).toBe(1);
+        expect(result.stdout).toMatch(/FinalResolution.*must match/);
     });
 });

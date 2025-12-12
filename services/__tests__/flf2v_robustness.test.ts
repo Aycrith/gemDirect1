@@ -14,32 +14,17 @@ vi.mock('../settingsStore', () => ({
         })
     }
 }));
-vi.mock('../comfyUIService');
+vi.mock('../comfyUIService', () => ({
+    queueComfyUIPromptWithQueue: vi.fn(),
+    waitForComfyCompletion: vi.fn(),
+    stripDataUrlPrefix: (value: string) => {
+        const parts = value.split(',');
+        return parts.length > 1 ? parts.slice(1).join(',') : value;
+    },
+    ComfyUIPromptPayloads: {}
+}));
 vi.mock('../../utils/videoUtils');
 
-// Mock child_process for Node extraction
-const mockExec = vi.fn();
-vi.mock('child_process', () => ({
-    exec: (cmd: string, cb: any) => mockExec(cmd, cb)
-}));
-
-// Mock fs and util
-vi.mock('fs', () => ({
-    existsSync: vi.fn().mockReturnValue(true),
-    mkdirSync: vi.fn(),
-    writeFileSync: vi.fn(),
-    readFileSync: vi.fn().mockReturnValue(Buffer.from('mock-frame-data')),
-    unlinkSync: vi.fn()
-}));
-
-vi.mock('util', () => ({
-    promisify: (fn: any) => async (...args: any[]) => {
-        if (fn === mockExec) {
-            return { stdout: '', stderr: '' };
-        }
-        return fn(...args);
-    }
-}));
 
 // Mock fetch
 global.fetch = vi.fn().mockResolvedValue({
@@ -101,20 +86,18 @@ describe('FLF2V Robustness', () => {
     it('should fall back to Node extraction when window is undefined', async () => {
         // Simulate Node environment (window undefined)
         delete (global as any).window;
-        
-        // executeVideoGeneration uses dynamic import for child_process, 
-        // so we need to ensure our mock works with that.
-        // Since we can't easily mock dynamic imports in this setup without more complex config,
-        // we will rely on the fact that the code checks typeof window === 'undefined'.
-        
-        // However, the dynamic import might fail in this test environment if not handled.
-        // For this test, we assume the code path is taken.
-        
-        // We need to mock the dynamic imports.
-        // Vitest handles dynamic imports of mocked modules correctly usually.
-        
+
+        (globalThis as any).__flf2vNodeFrameExtractor = {
+            extractLastFrameBase64FromVideoUrl: vi.fn().mockResolvedValue('node-frame-1')
+        };
+
         const result = await executeVideoGeneration(mockTask, mockContext);
+
         expect(result).toBeDefined();
+        expect((result as any).metadata.flf2vSource).toBe('last-frame');
+        expect((result as any).metadata.flf2vFallback).toBe(false);
+
+        delete (globalThis as any).__flf2vNodeFrameExtractor;
     });
 
     it('should fall back to keyframe if extraction fails', async () => {
