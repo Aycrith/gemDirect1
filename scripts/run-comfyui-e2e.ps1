@@ -14,12 +14,25 @@ param(
     [int]$SceneRetryBudget = 1,
     [int]$MaxWaitSeconds = 600,
     [int]$PollIntervalSeconds = 2,
-    [string]$LMStudioEndpoint = 'http://192.168.50.192:1234',
+    [int]$HistoryMaxAttempts = 0,
+    [int]$PostExecutionTimeoutSeconds = 30,
+    [string]$ComfyUIUrl = 'http://127.0.0.1:8188',
+    [string]$LMStudioEndpoint = 'http://127.0.0.1:1234',
     [switch]$SkipLMStudioUnload,
-    [switch]$UseMockLLM
+    [switch]$UseMockLLM,
+
+    # Back-compat aliases (used by older wrappers like scripts/persistent-e2e.ps1).
+    [int]$SceneMaxWaitSeconds = 0,
+    [int]$SceneHistoryPollIntervalSeconds = 0,
+    [int]$ScenePostExecutionTimeoutSeconds = 0,
+    [int]$SceneHistoryMaxAttempts = -1
 )
 
 $ErrorActionPreference = 'Continue'
+
+# Prefer npx.cmd to avoid PowerShell shim argument quirks.
+$npxCommand = (Get-Command 'npx.cmd' -ErrorAction SilentlyContinue).Path
+if (-not $npxCommand) { $npxCommand = 'npx' }
 
 # Resolve project root
 if ($ProjectRoot -eq $PSScriptRoot) {
@@ -242,6 +255,7 @@ function Unload-LMStudioModels {
     Start-Sleep -Seconds 10
     
     return @{ Success = $true; Skipped = $false }
+}
 
 # Create timestamped run directory
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -251,6 +265,7 @@ New-Item -ItemType Directory -Path $runDir -Force | Out-Null
 $summaryPath = Join-Path $runDir 'run-summary.txt'
 $storyDir = Join-Path $runDir 'story'
 $videoDir = Join-Path $runDir 'video'
+$artifactJsonPath = Join-Path $runDir 'artifact-metadata.json'
 
 # ============================================================================
 # ACQUIRE PLAYWRIGHT LOCK (prevents concurrent runs)
@@ -286,6 +301,12 @@ function Write-Header {
     Write-Summary ""
 }
 
+function Normalize-PathForJson {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    return ($Path -replace '\\', '/')
+}
+
 # VRAM Monitoring Setup
 $vramLog = Join-Path $runDir 'vram-usage.log'
 $vramStats = @{
@@ -296,22 +317,29 @@ $vramStats = @{
 
 function Get-VRAMUsage {
     try {
-        $stats = Invoke-RestMethod "http://127.0.0.1:8188/system_stats" -TimeoutSec 2 -ErrorAction Stop
+        $base = $ComfyUIUrl.TrimEnd('/')
+        $stats = Invoke-RestMethod "$base/system_stats" -TimeoutSec 2 -ErrorAction Stop
         if ($stats.devices -and $stats.devices[0]) {
             $dev = $stats.devices[0]
-            
-            # Extract available values (API may not return all fields)
-            $totalMB = if ($dev.vram_total) { [math]::Round($dev.vram_total / 1MB, 0) } else { 0 }
-            $freeMB = if ($dev.vram_free) { [math]::Round($dev.vram_free / 1MB, 0) } else { 0 }
-            
-            # Calculate used based on whether Total is available
-            $usedMB = if ($totalMB -gt 0) { $totalMB - $freeMB } else { 0 }
-            
+
+            $totalBytes = if ($dev.vram_total) { [double]$dev.vram_total } else { 0.0 }
+            $freeBytes = if ($dev.vram_free) { [double]$dev.vram_free } else { 0.0 }
+
+            $totalMB = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB, 3) } else { 0.0 }
+            $freeMB = if ($freeBytes -gt 0) { [math]::Round($freeBytes / 1MB, 3) } else { 0.0 }
+            $usedMB = if ($totalMB -gt 0) { [math]::Round($totalMB - $freeMB, 3) } else { 0.0 }
+
             return @{
+                Name = if ($dev.name) { [string]$dev.name } elseif ($dev.model) { [string]$dev.model } else { 'unknown' }
+                Type = if ($dev.type) { [string]$dev.type } else { 'cuda' }
+                Index = if ($dev.index -ne $null) { [int]$dev.index } else { 0 }
+                VramFreeBytes = $freeBytes
+                VramTotalBytes = $totalBytes
                 Used = $usedMB
                 Free = $freeMB
                 Total = $totalMB
                 Timestamp = Get-Date -Format 'HH:mm:ss'
+                TimestampIso = (Get-Date).ToString('o')
             }
         }
     } catch {
@@ -336,6 +364,12 @@ function Log-VRAMSample {
 Write-Summary "E2E Story-to-Video Run: $timestamp"
 Write-Summary "Run directory: $runDir"
 Write-Summary ""
+
+# Apply back-compat alias overrides (if provided)
+if ($SceneMaxWaitSeconds -gt 0) { $MaxWaitSeconds = $SceneMaxWaitSeconds }
+if ($SceneHistoryPollIntervalSeconds -gt 0) { $PollIntervalSeconds = $SceneHistoryPollIntervalSeconds }
+if ($ScenePostExecutionTimeoutSeconds -gt 0) { $PostExecutionTimeoutSeconds = $ScenePostExecutionTimeoutSeconds }
+if ($SceneHistoryMaxAttempts -ge 0) { $HistoryMaxAttempts = $SceneHistoryMaxAttempts }
 
 # Capture initial VRAM state
 Log-VRAMSample
@@ -374,10 +408,69 @@ $vramMonitorJob = Start-Job -ScriptBlock {
 if ($FastIteration) {
     $MaxWaitSeconds = 360  # 6 minutes for fresh generation (3.5 min/scene + buffer)
     $PollIntervalSeconds = 1
+    $PostExecutionTimeoutSeconds = 15
     Write-Summary "FastIteration mode: MaxWait=${MaxWaitSeconds}s PollInterval=${PollIntervalSeconds}s"
 }
 
-Write-Summary "Queue policy: retries=$SceneRetryBudget maxWait=${MaxWaitSeconds}s pollInterval=${PollIntervalSeconds}s"
+$historyMaxAttemptsLabel = if ($HistoryMaxAttempts -gt 0) { $HistoryMaxAttempts } else { 'unbounded' }
+Write-Summary "Queue policy: sceneRetries=$SceneRetryBudget, historyMaxWait=${MaxWaitSeconds}s, historyPollInterval=${PollIntervalSeconds}s, historyMaxAttempts=$historyMaxAttemptsLabel, postExecutionTimeout=${PostExecutionTimeoutSeconds}s"
+
+# ============================================================================
+# STEP 0: Preflight Helpers (Mappings + ComfyUI Status)
+# ============================================================================
+Write-Header "STEP 0: Preflight (Mappings + ComfyUI Status)"
+
+$helperDir = Join-Path $runDir 'test-results\comfyui-status'
+New-Item -ItemType Directory -Path $helperDir -Force | Out-Null
+
+$mappingSummaryPath = Join-Path $helperDir 'mapping-preflight.json'
+$mappingLogPath = Join-Path $helperDir 'mapping-preflight.log'
+$comfyStatusSummaryPath = Join-Path $helperDir 'comfyui-status.json'
+$comfyStatusLogPath = Join-Path $helperDir 'comfyui-status.log'
+
+try {
+    $mappingScript = Join-Path $PSScriptRoot 'preflight-mappings.ts'
+    if (Test-Path $mappingScript) {
+        Write-Summary "Step 0: Running mapping preflight (scripts/preflight-mappings.ts)"
+        $mappingArgs = @(
+            'tsx',
+            $mappingScript,
+            '--project', $ProjectRoot,
+            '--summary-dir', $helperDir,
+            '--log-path', $mappingLogPath
+        )
+        & $npxCommand @mappingArgs 2>&1 | Out-Null
+        Write-Summary "Step 0: Mapping preflight summary: $(Normalize-PathForJson $mappingSummaryPath)"
+        Write-Summary "Step 0: Mapping preflight log: $(Normalize-PathForJson $mappingLogPath)"
+    } else {
+        Write-Summary "WARNING: scripts/preflight-mappings.ts not found; skipping"
+    }
+} catch {
+    Write-Summary "WARNING: Mapping preflight failed: $_"
+}
+
+try {
+    $comfyStatusScript = Join-Path $PSScriptRoot 'comfyui-status.ts'
+    if (Test-Path $comfyStatusScript) {
+        $env:LOCAL_COMFY_URL = $ComfyUIUrl
+        Write-Summary "Step 0: Probing ComfyUI status (scripts/comfyui-status.ts; log: $(Normalize-PathForJson $comfyStatusLogPath))"
+        $statusArgs = @(
+            'tsx',
+            $comfyStatusScript,
+            '--project', $ProjectRoot,
+            '--summary-dir', $helperDir,
+            '--log-path', $comfyStatusLogPath
+        )
+        & $npxCommand @statusArgs 2>&1 | Out-Null
+        Write-Summary "ComfyUI status summary: $(Normalize-PathForJson $comfyStatusSummaryPath)"
+        Write-Summary "ComfyUI status log: $(Normalize-PathForJson $comfyStatusLogPath)"
+        Write-Summary "Using ComfyUI URL: $ComfyUIUrl"
+    } else {
+        Write-Summary "WARNING: scripts/comfyui-status.ts not found; skipping"
+    }
+} catch {
+    Write-Summary "WARNING: ComfyUI status probe failed: $_"
+}
 
 # ============================================================================
 # STEP 1: Generate Story (with keyframes)
@@ -421,6 +514,18 @@ try {
     
     $story = Get-Content $storyJsonPath -Raw | ConvertFrom-Json
     $sceneIds = $story.scenes.id
+
+    $storyId = $story.storyId
+    Write-Summary "Story ready: $storyId (scenes=$($sceneIds.Count))"
+    if ($story.directorsVision) { Write-Summary "Director's vision: $($story.directorsVision)" }
+    if ($story.logline) { Write-Summary "Story logline: $($story.logline)" }
+    if ($story.llm) {
+        $llmStatus = if ($story.llm.status) { $story.llm.status } else { 'n/a' }
+        $llmProvider = if ($story.llm.providerUrl) { $story.llm.providerUrl } else { 'n/a' }
+        $llmSeed = if ($story.llm.seed) { $story.llm.seed } else { 'n/a' }
+        $llmDuration = if ($story.llm.durationMs -ne $null) { "$($story.llm.durationMs)ms" } else { 'n/a' }
+        Write-Summary "Story LLM status: $llmStatus (provider=$llmProvider, seed=$llmSeed, duration=$llmDuration)"
+    }
     Write-Summary "Scenes to process: $($sceneIds -join ', ')"
     
 } catch {
@@ -474,7 +579,7 @@ if (-not (Test-Path $wanScript)) {
 
 # Set environment variables for WAN script
 $env:WAN2_RUN_DIR = $runDir
-$env:WAN2_COMFY_URL = 'http://127.0.0.1:8188'
+$env:WAN2_COMFY_URL = $ComfyUIUrl
 $env:WAN2_MAX_WAIT = $MaxWaitSeconds
 $env:WAN2_POLL_INTERVAL = $PollIntervalSeconds
 
@@ -482,6 +587,18 @@ try {
     Write-Summary "Invoking WAN I2V generation (process isolation mode)..."
     Write-Summary "Script: $wanScript"
     Write-Summary "Scenes to process: $($sceneIds.Count)"
+
+    # Validate ComfyUI connectivity before generating videos/metadata.
+    if (-not (Get-VRAMUsage)) {
+        Write-Summary "ERROR: ComfyUI not reachable at $ComfyUIUrl (failed /system_stats probe)"
+        exit 1
+    }
+
+    $scenePayloadById = @{}
+    foreach ($s in $story.scenes) {
+        if ($s -and $s.id) { $scenePayloadById[$s.id] = $s }
+    }
+    $collectedSceneMetadata = @()
     
     # Sample VRAM before generation starts
     Log-VRAMSample
@@ -494,6 +611,10 @@ try {
     foreach ($sceneId in $sceneIds) {
         Write-Summary ""
         Write-Summary "[Scene $sceneId] Starting video generation..."
+
+        $scenePayload = $scenePayloadById[$sceneId]
+        $sceneStart = Get-Date
+        $gpuBefore = Get-VRAMUsage
         
         # Call WAN script with single scene filter in isolated process
         $wanArgs = @(
@@ -501,7 +622,7 @@ try {
             '-ExecutionPolicy', 'Bypass',
             '-File', $wanScript,
             '-RunDir', $runDir,
-            '-ComfyUrl', 'http://127.0.0.1:8188',
+            '-ComfyUrl', $ComfyUIUrl,
             '-MaxWaitSeconds', $MaxWaitSeconds.ToString(),
             '-PollIntervalSeconds', $PollIntervalSeconds.ToString(),
             '-SceneFilter', $sceneId
@@ -519,6 +640,110 @@ try {
             $failCount++
         }
         
+        $sceneEnd = Get-Date
+        $gpuAfter = Get-VRAMUsage
+
+        $videoPath = $null
+        try {
+            $sceneVideoDir = Join-Path $videoDir $sceneId
+            if (Test-Path $sceneVideoDir) {
+                $videoCandidate = Get-ChildItem -Path $sceneVideoDir -Recurse -Include *.mp4 -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if ($videoCandidate) { $videoPath = $videoCandidate.FullName }
+            }
+        } catch {}
+
+        $executionSuccess = ($process.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($videoPath))
+        $historyExitReason = if ($executionSuccess) { 'success' } elseif ($processDuration -ge $MaxWaitSeconds) { 'maxWait' } else { 'unknown' }
+
+        $gpuName = if ($gpuBefore -and $gpuBefore.Name) { $gpuBefore.Name } elseif ($gpuAfter -and $gpuAfter.Name) { $gpuAfter.Name } else { 'unknown' }
+        $beforeMB = if ($gpuBefore) { [double]$gpuBefore.Free } else { 0.0 }
+        $afterMB = if ($gpuAfter) { [double]$gpuAfter.Free } else { $beforeMB }
+        $beforeMB = [math]::Round($beforeMB, 3)
+        $afterMB = [math]::Round($afterMB, 3)
+        $deltaMB = [math]::Round(($afterMB - $beforeMB), 3)
+
+        $pollLimitLabel = if ($HistoryMaxAttempts -gt 0) { $HistoryMaxAttempts } else { 'unbounded' }
+        $execAt = if ($executionSuccess) { (Get-Date).ToString('o') } else { $null }
+        $execDetectedText = if ($executionSuccess) { 'true' } else { 'false' }
+        $execAtText = if ($execAt) { $execAt } else { 'null' }
+        $telemetryMessage = "[Scene $sceneId] Telemetry: DurationSeconds=${processDuration}s | MaxWaitSeconds=${MaxWaitSeconds}s | PollIntervalSeconds=${PollIntervalSeconds}s | HistoryAttempts=0 | pollLimit=$pollLimitLabel | SceneRetryBudget=$SceneRetryBudget | PostExecutionTimeoutSeconds=${PostExecutionTimeoutSeconds}s | ExecutionSuccessDetected=$execDetectedText | ExecutionSuccessAt=$execAtText | HistoryExitReason=$historyExitReason | VRAMBeforeMB=${beforeMB}MB | VRAMAfterMB=${afterMB}MB | VRAMDeltaMB=${deltaMB}MB | gpu=$gpuName | DoneMarkerWaitSeconds=0s | DoneMarkerDetected=false | ForcedCopyTriggered=false"
+        Write-Summary $telemetryMessage
+
+        if (-not $executionSuccess) {
+            Write-Summary "[Scene $sceneId] ERROR: Video generation failed"
+        }
+
+        $sceneMeta = [ordered]@{
+            SceneId = $sceneId
+            SceneTitle = if ($scenePayload -and $scenePayload.title) { $scenePayload.title } else { $null }
+            SceneSummary = if ($scenePayload -and $scenePayload.summary) { $scenePayload.summary } else { $null }
+            Prompt = if ($scenePayload -and $scenePayload.prompt) { $scenePayload.prompt } else { '' }
+            NegativePrompt = if ($scenePayload -and $scenePayload.negativePrompt) { $scenePayload.negativePrompt } else { '' }
+            FrameFloor = if ($scenePayload -and $scenePayload.expectedFrames) { [int]$scenePayload.expectedFrames } else { 1 }
+            FrameCount = if ($executionSuccess -and $scenePayload -and $scenePayload.expectedFrames) { [int]$scenePayload.expectedFrames } elseif ($executionSuccess) { 1 } else { 0 }
+            DurationSeconds = $processDuration
+            FramePrefix = "video/$sceneId"
+            HistoryPath = $null
+            Success = $executionSuccess
+            MeetsFrameFloor = $executionSuccess
+            HistoryRetrieved = $false
+            HistoryAttempts = 0
+            Warnings = @()
+            Errors = if ($executionSuccess) { @() } else { @("Video generation failed (exit=$($process.ExitCode))") }
+            AttemptsRun = 1
+            Requeued = $false
+            KeyframeSource = if ($scenePayload -and $scenePayload.keyframePath) { $scenePayload.keyframePath } else { $null }
+            StoryTitle = if ($scenePayload -and $scenePayload.title) { $scenePayload.title } else { $null }
+            StorySummary = if ($scenePayload -and $scenePayload.summary) { $scenePayload.summary } else { $null }
+            StoryMood = if ($scenePayload -and $scenePayload.mood) { $scenePayload.mood } else { $null }
+            StoryExpectedFrames = if ($scenePayload -and $scenePayload.expectedFrames) { [int]$scenePayload.expectedFrames } else { $null }
+            StoryCameraMovement = if ($scenePayload -and $scenePayload.cameraMovement) { $scenePayload.cameraMovement } else { $null }
+            HistoryAttemptLimit = $HistoryMaxAttempts
+            SceneRetryBudget = $SceneRetryBudget
+            HistoryConfig = [ordered]@{
+                MaxWaitSeconds = $MaxWaitSeconds
+                PollIntervalSeconds = $PollIntervalSeconds
+                MaxAttempts = $HistoryMaxAttempts
+                PostExecutionTimeoutSeconds = $PostExecutionTimeoutSeconds
+            }
+            Telemetry = [ordered]@{
+                QueueStart = $sceneStart.ToString('o')
+                QueueEnd = $sceneEnd.ToString('o')
+                DurationSeconds = $processDuration
+                MaxWaitSeconds = $MaxWaitSeconds
+                PollIntervalSeconds = $PollIntervalSeconds
+                HistoryAttempts = 0
+                HistoryAttemptLimit = $HistoryMaxAttempts
+                HistoryExitReason = $historyExitReason
+                HistoryPostExecutionTimeoutReached = $false
+                PostExecutionTimeoutSeconds = $PostExecutionTimeoutSeconds
+                ExecutionSuccessDetected = $executionSuccess
+                ExecutionSuccessAt = $execAt
+                SceneRetryBudget = $SceneRetryBudget
+                DoneMarkerDetected = $false
+                DoneMarkerWaitSeconds = 0
+                DoneMarkerPath = $null
+                ForcedCopyTriggered = $false
+                ForcedCopyDebugPath = $null
+                GPU = [ordered]@{
+                    Name = $gpuName
+                    Type = if ($gpuBefore -and $gpuBefore.Type) { $gpuBefore.Type } else { 'cuda' }
+                    Index = if ($gpuBefore -and $gpuBefore.Index -ne $null) { $gpuBefore.Index } else { 0 }
+                    VramFreeBefore = if ($gpuBefore) { $gpuBefore.VramFreeBytes } else { 0.0 }
+                    VramFreeAfter = if ($gpuAfter) { $gpuAfter.VramFreeBytes } else { 0.0 }
+                    VramTotal = if ($gpuBefore) { $gpuBefore.VramTotalBytes } elseif ($gpuAfter) { $gpuAfter.VramTotalBytes } else { 0.0 }
+                    VramDelta = if ($gpuBefore -and $gpuAfter) { [double]($gpuAfter.VramFreeBytes - $gpuBefore.VramFreeBytes) } else { 0.0 }
+                    VramBeforeMB = $beforeMB
+                    VramAfterMB = $afterMB
+                    VramDeltaMB = $deltaMB
+                }
+                System = [ordered]@{
+                    FallbackNotes = @()
+                }
+            }
+        }
+        $collectedSceneMetadata += $sceneMeta
+
         # Force garbage collection and brief pause between scenes
         [GC]::Collect()
         [GC]::WaitForPendingFinalizers()
@@ -704,6 +929,179 @@ try {
     Write-Summary "✓ Archive created: $archivePath"
 } catch {
     Write-Summary "WARNING: Archive creation failed: $_"
+}
+
+# ============================================================================
+# STEP 6: Vitest Suites (writes vitest-results.json + summary lines)
+# ============================================================================
+Write-Header "STEP 6: Vitest Suites"
+
+$vitestScript = Join-Path $PSScriptRoot 'run-vitests.ps1'
+if (Test-Path $vitestScript) {
+    try {
+        $vitestArgs = @(
+            '-NoLogo',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $vitestScript,
+            '-ProjectRoot', $ProjectRoot,
+            '-RunDir', $runDir
+        )
+        if ($FastIteration) { $vitestArgs += '-Quick' }
+        $vitestProc = Start-Process -FilePath 'pwsh' -ArgumentList $vitestArgs -Wait -NoNewWindow -PassThru
+        Write-Summary "Vitest suites completed (exitCode=$($vitestProc.ExitCode))"
+    } catch {
+        Write-Summary "WARNING: Vitest invocation failed: $_"
+    }
+} else {
+    Write-Summary "WARNING: run-vitests.ps1 not found; skipping"
+}
+
+# ============================================================================
+# STEP 7: Artifact Metadata + UI Snapshot
+# ============================================================================
+Write-Header "STEP 7: Artifact Metadata + UI Snapshot"
+
+$vitestResultsPath = Join-Path $runDir 'vitest-results.json'
+$vitestSummary = $null
+if (Test-Path $vitestResultsPath) {
+    try {
+        $vitestSummary = Get-Content $vitestResultsPath -Raw | ConvertFrom-Json
+    } catch {
+        $vitestSummary = $null
+    }
+}
+
+$vitestScriptsLog = if ($vitestSummary -and $vitestSummary.scriptsLog) { [string]$vitestSummary.scriptsLog } else { (Join-Path $runDir 'vitest-scripts.log') }
+
+if (-not $collectedSceneMetadata) { $collectedSceneMetadata = @() }
+
+$artifactObj = [ordered]@{
+    RunId = $timestamp
+    Timestamp = (Get-Date).ToString('o')
+    RunDir = $runDir
+    Story = [ordered]@{
+        Id = if ($story -and $story.storyId) { $story.storyId } else { "story-$timestamp" }
+        Logline = if ($story -and $story.logline) { $story.logline } else { '' }
+        DirectorsVision = if ($story -and $story.directorsVision) { $story.directorsVision } else { '' }
+        Generator = if ($story -and $story.generator) { $story.generator } else { 'scripts/run-comfyui-e2e.ps1' }
+        File = $storyJsonPath
+        StoryDir = $storyDir
+        LLM = if ($story -and $story.llm) { $story.llm } else { $null }
+        HealthCheck = [ordered]@{
+            Url = $null
+            Override = $null
+            Status = 'not requested'
+            Models = $null
+            Error = $null
+            Timestamp = (Get-Date).ToString('o')
+            Skipped = $true
+            SkipReason = 'LLM health check not performed by run-comfyui-e2e.ps1'
+        }
+        Warnings = if ($story -and $story.warnings) { $story.warnings } else { @() }
+    }
+    Scenes = $collectedSceneMetadata
+    QueueConfig = [ordered]@{
+        SceneRetryBudget = $SceneRetryBudget
+        HistoryMaxWaitSeconds = $MaxWaitSeconds
+        HistoryPollIntervalSeconds = $PollIntervalSeconds
+        HistoryMaxAttempts = $HistoryMaxAttempts
+        PostExecutionTimeoutSeconds = $PostExecutionTimeoutSeconds
+    }
+    VitestLogs = [ordered]@{
+        ComfyUI = (Join-Path $runDir 'vitest-comfyui.log')
+        E2E = (Join-Path $runDir 'vitest-e2e.log')
+        Scripts = $vitestScriptsLog
+        ResultsJson = $vitestResultsPath
+    }
+    VitestSummary = $vitestSummary
+    Archive = $archivePath
+    HelperSummaries = [ordered]@{
+        MappingPreflight = [ordered]@{
+            Summary = (Normalize-PathForJson $mappingSummaryPath)
+            Log = (Normalize-PathForJson $mappingLogPath)
+        }
+        ComfyUIStatus = [ordered]@{
+            Summary = (Normalize-PathForJson $comfyStatusSummaryPath)
+            Log = (Normalize-PathForJson $comfyStatusLogPath)
+        }
+    }
+}
+
+try {
+    $artifactObj | ConvertTo-Json -Depth 12 | Set-Content -Path $artifactJsonPath -Encoding UTF8
+    Write-Summary "Wrote artifact metadata: $artifactJsonPath"
+} catch {
+    Write-Summary "WARNING: Failed to write artifact-metadata.json: $_"
+}
+
+# Update per-scene MP4 metadata (duration/fps/resolution) when possible.
+try {
+    $updateVideoScript = Join-Path $PSScriptRoot 'update-scene-video-metadata.ps1'
+    if (Test-Path $updateVideoScript) {
+        $updateArgs = @(
+            '-NoLogo',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $updateVideoScript,
+            '-RunDir', $runDir
+        )
+        $updateProc = Start-Process -FilePath 'pwsh' -ArgumentList $updateArgs -Wait -NoNewWindow -PassThru
+        Write-Summary "Updated scene video metadata (exitCode=$($updateProc.ExitCode))"
+    }
+} catch {
+    Write-Summary "WARNING: update-scene-video-metadata failed: $_"
+}
+
+# Copy snapshot into public/ so the UI can load it directly.
+try {
+    $publicArtifactsDir = Join-Path $ProjectRoot 'public\artifacts'
+    New-Item -ItemType Directory -Path $publicArtifactsDir -Force | Out-Null
+    Copy-Item -Path $artifactJsonPath -Destination (Join-Path $publicArtifactsDir 'latest-run.json') -Force
+    Copy-Item -Path $artifactJsonPath -Destination (Join-Path $ProjectRoot 'public\artifact-metadata.json') -Force
+    Write-Summary "UI snapshot updated: public/artifacts/latest-run.json and public/artifact-metadata.json"
+} catch {
+    Write-Summary "WARNING: Failed to update public UI snapshot JSON: $_"
+}
+
+# Artifact Index block for humans + validator
+try {
+    $keyframeCount = 0
+    if (Test-Path (Join-Path $storyDir 'keyframes')) {
+        $keyframeCount = (Get-ChildItem (Join-Path $storyDir 'keyframes') -Filter '*.png' -File -ErrorAction SilentlyContinue | Measure-Object).Count
+    }
+    $mp4Count = 0
+    if (Test-Path $videoDir) {
+        $mp4Count = (Get-ChildItem $videoDir -Recurse -Filter '*.mp4' -File -ErrorAction SilentlyContinue | Measure-Object).Count
+    }
+    $totalCopied = $keyframeCount + $mp4Count
+
+    Write-Summary "## Artifact Index"
+    Write-Summary "Story folder: $storyDir"
+    Write-Summary "Scenes captured: $($collectedSceneMetadata.Count)"
+    Write-Summary "Total frames copied: $totalCopied"
+    Write-Summary "Vitest comfyUI log: $(Join-Path $runDir 'vitest-comfyui.log')"
+    Write-Summary "Vitest e2e log: $(Join-Path $runDir 'vitest-e2e.log')"
+    Write-Summary "Vitest scripts log: $vitestScriptsLog"
+    Write-Summary "Vitest results json: $vitestResultsPath"
+    Write-Summary "Archive: $archivePath"
+} catch {
+    Write-Summary "WARNING: Failed to write Artifact Index block: $_"
+}
+
+# Validate run-summary + artifact metadata contract (recommended)
+try {
+    $validatorScript = Join-Path $PSScriptRoot 'validate-run-summary.ps1'
+    if (Test-Path $validatorScript) {
+        $validatorArgs = @(
+            '-NoLogo',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $validatorScript,
+            '-RunDir', $runDir
+        )
+        $validatorProc = Start-Process -FilePath 'pwsh' -ArgumentList $validatorArgs -Wait -NoNewWindow -PassThru
+        Write-Summary "Run-summary validator exitCode=$($validatorProc.ExitCode)"
+    }
+} catch {
+    Write-Summary "WARNING: Run-summary validator failed to execute: $_"
 }
 
 # ============================================================================

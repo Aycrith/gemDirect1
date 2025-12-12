@@ -1,13 +1,13 @@
 # gemDirect1 — Development Workflow & Agent Orchestration
 
 ## Roles
-- **Planning agent (Codec CLI)**: Ingests `PLAN.md`, `TASK_SCHEMA.md`, and `backlog.json`; produces and tracks structured backlog.
+- **Planning agent (Codec CLI)**: Ingests `plan.md`, `TASK_SCHEMA.md`, and `backlog.json`; produces and tracks structured backlog.
 - **Implementation agent (Cloud Opus 4.5 + Copilot in VS Code)**: Receives individual task definitions and implements code/config/docs.
 - **Human reviewer / maintainer**: Runs tests/QA/benchmarks, reviews changes, approves or requests fixes, marks tasks done.
 
 ## Typical Workflow
 1. Ingest plan & backlog:  
-   `codec plan ingest PLAN.md backlog.json`
+   `codec plan ingest plan.md backlog.json`
 2. List tasks:  
    `codec plan list`
 3. Fetch ready tasks (dependencies satisfied):  
@@ -26,7 +26,7 @@
 - VRAM assumptions: safe mode for ~8 GB; optimize up to 24 GB (20–22 GB target headroom); no reliance on >24 GB.
 
 ## Ready-to-Use Commands
-- Ingest: `codec plan ingest PLAN.md backlog.json`
+- Ingest: `codec plan ingest plan.md backlog.json`
 - List: `codec plan list`
 - Next tasks: `codec plan next <N>`
 - Complete task: `codec plan complete <TASK_ID>`

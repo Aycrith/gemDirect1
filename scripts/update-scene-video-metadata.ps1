@@ -82,13 +82,27 @@ $sceneDirs += Get-ChildItem -Directory -Path $RunDir -Filter 'scene_*' -ErrorAct
 $sceneDirs += Get-ChildItem -Directory -Path $RunDir -Filter 'scene-*' -ErrorAction SilentlyContinue
 $sceneDirs = $sceneDirs | Sort-Object FullName -Unique
 
-# Scenes is an array of scene objects, not a hashtable
-# We need to find each scene by SceneId and add the Video property
-foreach ($scene in $sceneDirs) {
-  $sceneId = $scene.Name
+# Prefer using the metadata's declared scenes; fall back to scene directories if metadata is sparse.
+$sceneIds = @()
+if ($meta.Scenes -and $meta.Scenes -is [array]) {
+  $sceneIds = @(
+    $meta.Scenes |
+      ForEach-Object { $_.SceneId } |
+      Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+      Sort-Object -Unique
+  )
+}
+if (-not $sceneIds -or $sceneIds.Count -eq 0) {
+  $sceneIds = @($sceneDirs | ForEach-Object { $_.Name } | Sort-Object -Unique)
+}
+
+foreach ($sceneId in $sceneIds) {
+  $sceneDir = $sceneDirs | Where-Object { $_.Name -eq $sceneId } | Select-Object -First 1
+
   # Prefer new convention: RunDir/video/<sceneId>/*.mp4
   $preferredDir = Join-Path (Join-Path $RunDir $VideoSubDir) $sceneId
-  $searchDir = (Test-Path $preferredDir) ? $preferredDir : $scene.FullName
+  $fallbackDir = Join-Path $RunDir $VideoSubDir
+  $searchDir = if (Test-Path $preferredDir) { $preferredDir } elseif ($sceneDir) { $sceneDir.FullName } else { $fallbackDir }
   $video = Get-ChildItem -Path $searchDir -Recurse -Include *.mp4 -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
   $now = (Get-Date).ToString('o')

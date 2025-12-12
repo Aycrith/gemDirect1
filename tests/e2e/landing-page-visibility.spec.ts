@@ -70,10 +70,19 @@ test.describe('Landing Page Visibility', () => {
       expect(directorClasses).toContain('bg-amber');
       console.log('✓ Director Mode is active');
       
-      // Verify Director Mode specific elements
-      // Ensure we don't see the idea form
-      const ideaFormTitle = page.locator('h2').filter({ hasText: 'Start with an Idea' });
-      await expect(ideaFormTitle).toBeVisible({ timeout: 5000 });
+      // Verify Director Mode specific elements.
+      // The Quick Generate landing form should not be shown when the feature is disabled.
+      const quickGenerateTitle = page.locator('h2').filter({ hasText: 'Start with an Idea' });
+      await expect(quickGenerateTitle).not.toBeVisible({ timeout: 1000 });
+
+      // Director Mode should still render the Story Idea stage UI.
+      // Allow time for the story form to hydrate/load (can be slower on CI / cold IndexedDB).
+      const loadingStoryForm = page.getByText('Loading story form...');
+      await loadingStoryForm.waitFor({ state: 'hidden', timeout: 30000 }).catch(() => {});
+
+      const ideaTextarea = page.locator('textarea[aria-label="Story Idea"]');
+      await expect(ideaTextarea).toBeVisible({ timeout: 30000 });
+      await expect(ideaTextarea).toBeEditable({ timeout: 30000 });
     }
     
     // Verify no loading spinner or blocker is present

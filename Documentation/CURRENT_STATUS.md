@@ -1,16 +1,34 @@
 # Project Status - gemDirect1
 
-**Last Updated**: November 20, 2025 (Post-Improvement Session)  
-**Version**: 1.0.0-rc1  
-**Status**: ✅ Production-Ready with Recent Quality Improvements
+**Last Updated**: December 12, 2025  
+**Version**: 1.0.0-rc9  
+**Status**: Production-ready; live E2E artifact run validated (2025-12-12 113150)
 
 ---
 
 ## Executive Summary
 
-**gemDirect1 is a fully functional AI cinematic story-to-video generator** with validated WAN2 video generation, comprehensive testing, and production-ready architecture. The system transforms text prompts into complete cinematic timelines with generated keyframes and MP4 videos.
+**gemDirect1 is a fully functional AI cinematic story-to-video generator** with production pipeline/FLF2V/post-processing wiring merged and green tests. The “effective results” gap is now closed with a fresh live ComfyUI E2E artifact run that passes the validator and renders in the UI artifact viewer.
 
-### Current Metrics (Validated 2025-11-20 Post-Performance Optimization)
+### Effective Results (Current Definition)
+- `logs/<timestamp>/run-summary.txt`
+- `logs/<timestamp>/artifact-metadata.json`
+- `public/artifacts/latest-run.json` (UI snapshot mirror)
+- At least one scene MP4 under `logs/<timestamp>/video/`
+- Validator pass: `scripts/validate-run-summary.ps1 -RunDir <runDir>`
+
+Latest validated run (2025-12-12):
+- Run dir: `logs/20251212-113150`
+- Videos: 3/3 scenes (`logs/20251212-113150/video/scene-*/scene-*.mp4`)
+- Validator: PASS (`scripts/validate-run-summary.ps1 -RunDir logs/20251212-113150`)
+- UI proof: `logs/20251212-113150/test-results/test-results/ui-artifact-viewer-latest.png`
+
+### Current Metrics (Validated 2025-11-20; updated 2025-12-12)
+
+Local validation (2025-12-12):
+- `npx tsc --noEmit`, `npm test`, and `npm run build` pass.
+- Playwright smoke (`tests/e2e/app-loading.spec.ts`, `tests/e2e/landing-page-visibility.spec.ts`) passes on chromium even when ComfyUI/LM Studio are unreachable (expected degraded mode).
+- Session notes: `Development_History/Sessions/2025-12/SESSION_NOTES_2025-12-12_E2E_ARTIFACT_WIRING.md`
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|

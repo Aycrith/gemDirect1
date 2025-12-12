@@ -67,6 +67,7 @@ reports/
 test-results*.json
 test-run*.json
 /public/artifacts/
+/public/artifact-metadata.json
 /public/videos/
 /public/preflight-status.json
 /public/run-status.json

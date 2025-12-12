@@ -1,10 +1,10 @@
 #!/usr/bin/env markdown
 # 📚 START HERE: Quick Context for gemDirect1
 
-**Last Updated**: November 30, 2025  
+**Last Updated**: December 12, 2025  
 **For**: Next AI Coding Agent  
 **Project**: gemDirect1 – AI Cinematic Story-to-Video Generator  
-**Current Status**: ✅ **PRODUCTION-READY** – Phase 1D Complete (~99%)
+**Current Status**: ✅ Production-ready; live E2E artifact run validated (logs/20251212-113150)
 
 ---
 
@@ -16,7 +16,7 @@
 - **ComfyUI + WAN2 workflows** for keyframe images and video rendering
 - **React + TypeScript** frontend with IndexedDB persistence
 
-### Current State (November 30, 2025)
+### Current State (December 12, 2025)
 | Metric | Status |
 |--------|--------|
 | **Phase** | 1D - State Management Migration |
@@ -40,8 +40,15 @@ npm test                          # Should show 2400+ tests passing
 npx playwright test               # E2E tests (117 runnable)
 
 # Run Full Pipeline
-pwsh -ExecutionPolicy Bypass -File scripts/run-comfyui-e2e.ps1 -FastIteration
+pwsh -NoLogo -ExecutionPolicy Bypass -File scripts/run-comfyui-e2e.ps1 -FastIteration
 ```
+
+### E2E “Effective Results” (Dec 12 update)
+- Runbook: `Agents/Instructions/handoff-procedure.md`
+- Output artifacts: `logs/<timestamp>/run-summary.txt` + `logs/<timestamp>/artifact-metadata.json`
+- UI snapshot mirrors: `public/artifacts/latest-run.json` + `public/artifact-metadata.json`
+- Validator: `pwsh -NoLogo -ExecutionPolicy Bypass -File scripts/validate-run-summary.ps1 -RunDir logs/<timestamp>`
+- Latest validated run: `logs/20251212-113150`
 
 ---
 

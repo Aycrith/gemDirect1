@@ -24,6 +24,10 @@ Try {
   $ComfyUrl = $ComfyUrl.TrimEnd('/')
 } Catch {}
 
+# Prefer npx.cmd to avoid PowerShell shim argument quirks (especially when splatting).
+$npxCommand = (Get-Command 'npx.cmd' -ErrorAction SilentlyContinue).Path
+if (-not $npxCommand) { $npxCommand = 'npx' }
+
         function Add-RunSummaryLine {
           param([string]$Message)
           try {
@@ -686,7 +690,7 @@ Try {
                         )
                         
                         # Run manifest writer
-                        $manifestResult = & npx @manifestArgs 2>&1
+                        $manifestResult = & $npxCommand @manifestArgs 2>&1
                         if ($LASTEXITCODE -eq 0) {
                           Write-Host "[$sceneId] ✓ Manifest written" -ForegroundColor Green
                           Add-RunSummaryLine "[Scene $sceneId] Manifest persisted to disk"

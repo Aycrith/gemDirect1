@@ -1,12 +1,12 @@
 # Project Status - Consolidated (Single Source of Truth)
 
-**Last Updated**: December 9, 2025 (Guardian Remediation Complete)  
-**Version**: 1.0.0-rc8  
-**Status**: ✅ Production-Ready (100% Complete)
+**Last Updated**: December 12, 2025  
+**Version**: 1.0.0-rc9  
+**Status**: Production-ready; live E2E artifact run validated (2025-12-12 113150)
 
 > **Note**: This document consolidates information from `CURRENT_STATUS.md`, `START_HERE.md`, and recent session summaries into a single authoritative reference. For detailed history, see `Development_History/Sessions/`.
 
-> **Latest Session**: Phase 2 Scaffolding & Refactoring (2025-12-11) - **✅ COMPLETE** - Refactored `trackPromptExecution` in `services/comfyUIService.ts` to use `comfyEventManager` (P2.2 WebSocket Pooling). Added FLF2V scaffolding (`tests/unit/flf2v_scaffolding.test.ts` and `enableFLF2V` flag).
+> **Latest Session**: E2E Artifact Runner Wiring + Smoke Test Hardening (2025-12-12) - **✅ COMPLETE** - `scripts/run-comfyui-e2e.ps1` now writes `logs/<ts>/artifact-metadata.json` and updates `public/artifacts/latest-run.json` + `public/artifact-metadata.json`, emits validator-compatible `Queue policy`/`Telemetry` lines, runs `scripts/run-vitests.ps1`, and appends `## Artifact Index`. Playwright smoke stabilized (`tests/e2e/landing-page-visibility.spec.ts`). Live run evidence: `logs/20251212-113150` (validator PASS + UI viewer screenshot). Session notes: `Development_History/Sessions/2025-12/SESSION_NOTES_2025-12-12_E2E_ARTIFACT_WIRING.md`.
 
 > **Previous Session**: Pipeline UI Improvements (2025-12-11) - **✅ COMPLETE** - Improved UI feedback for pipeline export in `ContinuityDirector.tsx` (progress %, task details). Verified full pipeline E2E tests (`full-pipeline.spec.ts` passed). Updated `pipeline-export.spec.ts` to match new UI.
 

@@ -1,34 +1,36 @@
 {
-  "timestamp": "2025-12-11T12:00:00Z",
-  "agent": "Implementer",
-  "sessionSummary": "Fixed FLF2V pipeline integration and verified with E2E tests. Resolved UI synchronization issues, payload construction bugs, and test race conditions.",
+  "timestamp": "2025-12-12T17:00:00Z",
+  "agent": "QualityDirector",
+  "sessionSummary": "Confirmed main is up-to-date and post-merge green; added a repeatable handoff procedure + post-merge status report and a next-agent orientation runbook focused on producing a real end-to-end artifact run.",
   "filesModified": [
-    "tests/e2e/flf2v-pipeline.spec.ts",
-    "services/comfyUIService.ts",
-    "AGENT_HANDOFF_FLF2V_VERIFICATION_20251211.md"
+    "Agents/Instructions/handoff-procedure.md",
+    "Agents/README.md",
+    "AGENT_HANDOFF_NEXT_AGENT_ORIENTATION_20251212.md",
+    "PROJECT_STATUS_REPORT_2025-12-12_EOD.md",
+    "agent/.state/session-handoff.json"
   ],
   "decisions": [
     {
-      "decision": "Updated E2E test to use flexible payload search",
-      "rationale": "The test was failing because it assumed a fixed order of requests. Searching by node type is more robust.",
-      "alternatives": ["Fix the request order in the app"]
-    },
-    {
-      "decision": "Enforced strict UI synchronization for keyframes",
-      "rationale": "Prevented the user (and tests) from triggering video generation before assets were ready.",
-      "alternatives": ["Handle missing assets in the backend"]
+      "decision": "Treat 'effective results' as a real artifact run",
+      "rationale": "Green unit tests and smoke tests are necessary but not sufficient; the project needs a reproducible ComfyUI+LLM run whose outputs are validated and visible in the UI.",
+      "alternatives": ["Only rely on unit tests/fixtures and postpone real-service validation"]
     }
   ],
   "currentState": {
-    "phase": "complete",
-    "progress": "100%",
-    "status": "FLF2V Pipeline Verified & Stable"
+    "phase": "post-merge",
+    "status": "Pipeline/FLF2V/toggles merged; awaiting live E2E artifacts"
   },
   "nextSteps": [
-    "Consider adding similar E2E tests for other complex workflows",
-    "Monitor for any regressions in future updates"
+    "Run `scripts/run-comfyui-e2e.ps1 -FastIteration` against live ComfyUI + LLM",
+    "Validate with `scripts/validate-run-summary.ps1 -RunDir ...`",
+    "Verify UI reads `public/artifacts/latest-run.json` (Vite port 3000)",
+    "Write a new root-level AGENT_HANDOFF capturing run evidence"
   ],
-  "blockers": [],
-  "openQuestions": [],
+  "blockers": [
+    "Live ComfyUI/LM Studio availability for a real generation run"
+  ],
+  "openQuestions": [
+    "What is the preferred LM Studio endpoint for local development (the helper defaults may not match current machines)?"
+  ],
   "relatedIssues": []
 }

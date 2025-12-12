@@ -1,49 +1,37 @@
 # Implementation Plan: Next Steps
 
-**Date**: 2025-12-09
+**Date**: 2025-12-12  
 **Status**: Active
 
-## Completed Items (Recent)
-- **P4.2 Benchmark Harness Integration**: ✅ Complete (2025-12-09). Fixed FFmpeg parser bug and verified pipeline integration.
-- **Phase 9B Production Pipeline UI Extensions**: ✅ Complete (2025-12-05).
+## What’s Now True (Recent Completions)
 
-## Immediate Priorities
+- E2E runner produces validator + UI-consumable artifacts (“effective results”): `scripts/run-comfyui-e2e.ps1`
+- Validator integrated at end of the run: `scripts/validate-run-summary.ps1`
+- UI mirror paths updated per run: `public/artifacts/latest-run.json` and `public/artifact-metadata.json`
+- Playwright smoke stabilized for degraded mode: `tests/e2e/landing-page-visibility.spec.ts`
 
-### 1. Full Workflow Test (UI Integration)
-**Priority**: High
-**Goal**: Validate the complete story-to-video workflow in the React UI with the new production settings.
+## Immediate Priorities (Next Agent / Next Session)
 
-**Tasks**:
-- [ ] Configure LLM (Gemini API key OR LM Studio).
-- [ ] Import workflow profiles via Settings.
-- [ ] Generate: story → scenes → timeline → keyframe → video.
-- [ ] Validate progress updates and error handling.
-- [ ] Monitor for split-screen artifacts.
-
-### 2. GenerationQueue ComfyUI Integration
-**Priority**: High
-**Goal**: Prevent GPU OOM in production by routing ComfyUI requests through the `GenerationQueue`.
+### 1) Fresh Live E2E Artifact Run (ComfyUI + LLM available)
+**Priority**: Highest  
+**Goal**: Produce a clean run dir + validator pass + UI verification with services reachable.
 
 **Tasks**:
-- [ ] Create `queueComfyUIPromptWithQueue` wrapper in `videoGenerationService.ts`.
-- [ ] Add integration tests for queue wrapper.
-- [ ] Update `generateTimelineVideos` to use queue wrapper.
-- [ ] Add GenerationQueuePanel to UI (Settings → ComfyUI tab).
+- [ ] Start/confirm ComfyUI is reachable.
+- [ ] Configure LLM (Gemini key or LM Studio) if needed for story generation.
+- [ ] Run: `pwsh -NoLogo -ExecutionPolicy Bypass -File scripts/run-comfyui-e2e.ps1 -FastIteration`
+- [ ] Validate: `pwsh -NoLogo -ExecutionPolicy Bypass -File scripts/validate-run-summary.ps1 -RunDir logs/<timestamp>`
+- [ ] UI check: verify the app reads `public/artifacts/latest-run.json` and `public/artifact-metadata.json` correctly (Artifacts / Run Viewer).
 
-### 3. E2E Test Environment Stabilization
-**Priority**: Medium
-**Goal**: Reduce flaky tests in CI by handling external service dependencies better.
+### 2) Close Documentation Drift
+**Priority**: High  
+**Goal**: Keep entrypoints and inventories aligned with the new “effective results” workflow.
 
 **Tasks**:
-- [ ] Add environment detection to skip tests when services are unavailable.
-- [ ] Enhance mocking using `service-mocks.ts`.
+- [ ] Ensure `START_HERE.md`, `Documentation/CURRENT_STATUS.md`, and `Documentation/PROJECT_STATUS_CONSOLIDATED.md` agree on current status and the E2E command/validator.
+- [ ] Update `DOCUMENTATION_INVENTORY.md` to reflect the current entrypoints and filenames (`plan.md`, runbooks).
 
-## Future Phases
+## Deferred / Longer-Horizon
 
-### Phase 3: Advanced Features
-- **Stable Video Infinity (SVI)**: Workflow and UI integration.
-- **ControlNet Integration**: Pose/depth sequence support.
+- Advanced features (SVI, ControlNet, premium keyframes) are intentionally deferred until the live E2E artifact run is repeatably green.
 
-### Phase 4: Premium Keyframes
-- **Z-Image Turbo**: Integration for high-quality keyframes.
-- **VACE Transitions**: Clip joiner workflow.

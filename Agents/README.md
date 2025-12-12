@@ -12,6 +12,7 @@ Documentation for AI coding agents working on this project.
 - **Current Instructions**: ../.github/copilot-instructions.md
 - **Latest Status**: ../START_HERE.md
 - **Latest Correction**: ../AGENT_HANDOFF_CORRECTION_20251120.md
+- **Handoff Procedure**: ./Instructions/handoff-procedure.md
 
 ## Agent Onboarding
 

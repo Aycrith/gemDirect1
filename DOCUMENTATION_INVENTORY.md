@@ -1,7 +1,7 @@
 # Documentation Inventory: Project GemDirect1
 
-**Last Updated**: December 11, 2025 (Updated with CI/Testing Docs)
-**Total Files**: 46 documentation files
+**Last Updated**: December 12, 2025 (Updated with E2E “effective results” runbook + artifact runner notes)
+**Total Files**: 46 documentation files (inventory; may drift)
 **Status**: Active
 
 ---
@@ -20,15 +20,19 @@
 5. **README_TESTING_STARTS_HERE.md** (`README_TESTING_STARTS_HERE.md`)
    - Entry point for testing and CI/CD status.
 6. **TODO.md** (`TODO.md`)
-   - High-level to-do list.
-6. **PLAN.md** (`PLAN.md`)
-   - Project plan.
-7. **MULTI_AGENT_STRATEGY.md** (`Documentation/MULTI_AGENT_STRATEGY.md`)
-   - Strategy for multi-agent collaboration.
-8. **PROMPT_OPTIMIZATION_IMPROVEMENT_PLAN.md** (`Documentation/PROMPT_OPTIMIZATION_IMPROVEMENT_PLAN.md`)
-   - Plan for improving prompt optimization.
-9. **PROMPT_ENGINEERING_FRAMEWORK_INTEGRATION_PLAN.md** (`Documentation/PROMPT_ENGINEERING_FRAMEWORK_INTEGRATION_PLAN.md`)
-   - Integration plan for prompt engineering framework.
+    - High-level to-do list.
+7. **plan.md** (`plan.md`)
+    - Project plan / principles.
+8. **MULTI_AGENT_STRATEGY.md** (`Documentation/MULTI_AGENT_STRATEGY.md`)
+    - Strategy for multi-agent collaboration.
+9. **PROMPT_OPTIMIZATION_IMPROVEMENT_PLAN.md** (`Documentation/PROMPT_OPTIMIZATION_IMPROVEMENT_PLAN.md`)
+    - Plan for improving prompt optimization.
+10. **PROMPT_ENGINEERING_FRAMEWORK_INTEGRATION_PLAN.md** (`Documentation/PROMPT_ENGINEERING_FRAMEWORK_INTEGRATION_PLAN.md`)
+    - Integration plan for prompt engineering framework.
+
+### Agents / Runbooks
+- **Next-agent handoff runbook**: `Agents/Instructions/handoff-procedure.md`
+- **Session notes (2025-12-12)**: `Development_History/Sessions/2025-12/SESSION_NOTES_2025-12-12_E2E_ARTIFACT_WIRING.md`
 
 ### Architecture (`Documentation/Architecture/`)
 10. **TELEMETRY_CONTRACT.md**
@@ -136,5 +140,4 @@
 | References | 14 |
 | Additional Docs | 5 |
 | Other | 3 |
-
 

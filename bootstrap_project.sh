@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-PLAN_FILE="PLAN.md"
+PLAN_FILE="plan.md"
 BACKLOG_FILE="backlog.json"
 
 function ingest_plan() {
