@@ -92,10 +92,12 @@ Queue policy: sceneRetries=3, historyMaxWait=300s, historyPollInterval=5s, histo
     Set-Content -Path (Join-Path $Path 'artifact-metadata.json') -Value $metadataContent
     
     # Create dummy mapping summary
-    New-Item -ItemType File -Path (Join-Path $Path 'logs/mapping.txt') -Force | Out-Null
-    New-Item -ItemType File -Path (Join-Path $Path 'logs/mapping.log') -Force | Out-Null
-    New-Item -ItemType File -Path (Join-Path $Path 'logs/status.txt') -Force | Out-Null
-    New-Item -ItemType File -Path (Join-Path $Path 'logs/status.log') -Force | Out-Null
+    $LogsDir = Join-Path $Path 'logs'
+    New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
+    New-Item -ItemType File -Path (Join-Path $LogsDir 'mapping.txt') -Force | Out-Null
+    New-Item -ItemType File -Path (Join-Path $LogsDir 'mapping.log') -Force | Out-Null
+    New-Item -ItemType File -Path (Join-Path $LogsDir 'status.txt') -Force | Out-Null
+    New-Item -ItemType File -Path (Join-Path $LogsDir 'status.log') -Force | Out-Null
 }
 
 $TestDir = Join-Path $PSScriptRoot "temp-telemetry-test"

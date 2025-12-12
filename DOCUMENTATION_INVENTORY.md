@@ -17,7 +17,9 @@
    - Project overview and entry point.
 4. **START_HERE.md** (`START_HERE.md`)
    - Quick start guide.
-5. **TODO.md** (`TODO.md`)
+5. **README_TESTING_STARTS_HERE.md** (`README_TESTING_STARTS_HERE.md`)
+   - Entry point for testing and CI/CD status.
+6. **TODO.md** (`TODO.md`)
    - High-level to-do list.
 6. **PLAN.md** (`PLAN.md`)
    - Project plan.
@@ -30,7 +32,7 @@
 
 ### Architecture (`Documentation/Architecture/`)
 10. **TELEMETRY_CONTRACT.md**
-    - Telemetry specification and enforcement.
+    - Telemetry specification and enforcement. Updated Dec 11, 2025 with Video Processing Metrics.
 11. **POLLING_FIX_ARCHITECTURE_DIAGRAM.md**
     - Diagram for polling fix architecture.
 12. **LLM_OPTIMIZATION_PLAN.md**
@@ -52,7 +54,7 @@
 18. **SETUP_AND_TROUBLESHOOTING.md**
     - Setup instructions and troubleshooting steps.
 19. **PIPELINE_CONFIGS.md**
-    - Configuration guide for pipelines.
+    - Configuration guide for pipelines. Updated Dec 11, 2025 with Post-Processing config.
 20. **NARRATIVE_PIPELINE.md**
     - Guide for the narrative pipeline.
 21. **GETTING_STARTED.md**

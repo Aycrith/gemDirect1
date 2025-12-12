@@ -471,6 +471,25 @@ Components consuming artifact metadata must display:
 
 ---
 
+### Video Processing Metrics
+
+These metrics track the performance and configuration of video post-processing steps (FLF2V and Interpolation).
+
+| Field | Type | Source | Unit/Format | Example |
+|-------|------|--------|-------------|---------|
+| **flf2vEnabled** | bool | Pipeline configuration | true/false | true |
+| **interpolationElapsed** | float | `videoUpscalingService` | milliseconds | 1250.5 |
+| **upscaleMethod** | string | `videoUpscalingService` | string | "rife-interpolation" |
+| **finalFps** | int | `videoUpscalingService` | frames/sec | 60 |
+
+**Purpose**: Monitor the performance cost of frame interpolation and verify that the correct upscaling method was applied.
+
+**External Reference**:
+- **RIFE Interpolation**: Uses `rife-interpolation` workflow profile in ComfyUI
+- **FLF2V**: First/Last Frame to Video logic in `pipelineTaskRegistry.ts`
+
+---
+
 ## Change Log
 
 | Date | Author | Change | Status |

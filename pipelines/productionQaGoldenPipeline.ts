@@ -232,6 +232,7 @@ function createGenerateStep(): PipelineStep {
                     let interpolationElapsed: number | undefined;
                     let finalFps: number | undefined;
                     let upscaleMethod: string | undefined;
+                    let finalResolution: string | undefined;
 
                     if (fs.existsSync(resultsJsonPath)) {
                         try {
@@ -244,6 +245,7 @@ function createGenerateStep(): PipelineStep {
                                 interpolationElapsed = sampleData.interpolationElapsed;
                                 finalFps = sampleData.finalFps;
                                 upscaleMethod = sampleData.upscaleMethod;
+                                finalResolution = sampleData.finalResolution;
                             }
 
                             if (sampleData?.videoPath) {
@@ -278,6 +280,7 @@ function createGenerateStep(): PipelineStep {
                                 interpolationElapsed,
                                 finalFps,
                                 upscaleMethod,
+                                finalResolution,
                             },
                         });
                     };
@@ -948,6 +951,12 @@ function createRunSummaryStep(): PipelineStep {
                 benchmarkJsonPath: ctx.benchmarkJsonPath as string | undefined,
                 benchmarkReportPath: ctx.benchmarkReportPath as string | undefined,
                 manifestPath: ctx.manifestPath as string | undefined,
+                flf2vEnabled: ctx.flf2vEnabled as boolean | undefined,
+                flf2vFallback: ctx.flf2vFallback as boolean | undefined,
+                interpolationElapsed: ctx.interpolationElapsed as number | undefined,
+                finalFps: ctx.finalFps as number | undefined,
+                upscaleMethod: ctx.upscaleMethod as string | undefined,
+                finalResolution: ctx.finalResolution as string | undefined,
                 preflight,
                 warnings,
             };
@@ -963,6 +972,31 @@ function createRunSummaryStep(): PipelineStep {
             const jsonPath = path.join(runSummariesDir, `run-summary-${timestamp}.json`);
             fs.writeFileSync(jsonPath, JSON.stringify(summary, null, 2));
 
+            // Write artifact-metadata.json to runDir if available
+            if (summary.runDir) {
+                const artifactMetadataPath = path.join(summary.runDir, 'artifact-metadata.json');
+                let existingMetadata: Record<string, unknown> = {};
+                if (fs.existsSync(artifactMetadataPath)) {
+                    try {
+                        existingMetadata = JSON.parse(fs.readFileSync(artifactMetadataPath, 'utf-8'));
+                    } catch (e) { /* ignore */ }
+                }
+                
+                const newMetadata: Record<string, unknown> = {
+                    ...existingMetadata,
+                    FLF2VEnabled: summary.flf2vEnabled,
+                    InterpolationElapsed: summary.interpolationElapsed,
+                    UpscaleMethod: summary.upscaleMethod,
+                    FinalFPS: summary.finalFps,
+                    FinalResolution: summary.finalResolution
+                };
+                
+                // Filter out undefined values
+                Object.keys(newMetadata).forEach(key => newMetadata[key] === undefined && delete newMetadata[key]);
+                
+                fs.writeFileSync(artifactMetadataPath, JSON.stringify(newMetadata, null, 2));
+            }
+
             const mdLines = [
                 `# Run Summary: production-qa-golden`,
                 ``,
@@ -976,6 +1010,14 @@ function createRunSummaryStep(): PipelineStep {
                 `- Manifest: \`${summary.manifestPath || 'n/a'}\``,
                 `- Preflight: ffmpeg=${summary.preflight?.ffmpegVersion || 'n/a'}, tmixNormalize=${summary.preflight?.tmixNormalizeSupported ? 'yes' : 'no'}, VLM=${summary.preflight?.vlmReachable ? 'reachable' : 'unreachable'}`,
             ];
+
+            if (summary.flf2vEnabled !== undefined) {
+                mdLines.push(`- FLF2V: ${summary.flf2vEnabled ? 'enabled' : 'disabled'} (fallback: ${summary.flf2vFallback ? 'yes' : 'no'})`);
+            }
+            if (summary.interpolationElapsed !== undefined) {
+                mdLines.push(`- Interpolation: ${summary.interpolationElapsed}ms (${summary.upscaleMethod || 'unknown'}, ${summary.finalFps || '?'} fps)`);
+            }
+
             if (warnings.length > 0) {
                 mdLines.push(`- Warnings: ${warnings.join('; ')}`);
             }

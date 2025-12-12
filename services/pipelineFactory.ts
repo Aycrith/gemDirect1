@@ -124,3 +124,105 @@ export const createExportPipeline = (
     const store = usePipelineStore.getState();
     return store.createPipeline(`Export All (${scenes.length} scenes)`, tasks);
 };
+
+export const createSceneGenerationPipeline = (
+    scene: Scene,
+    settings: LocalGenerationSettings,
+    keyframeImages: Record<string, string>,
+    options: {
+        generateVideos?: boolean;
+        upscale?: boolean;
+        interpolate?: boolean;
+        visualBible?: any;
+        characterReferenceImages?: Record<string, string>;
+    } = { generateVideos: true, upscale: false, interpolate: false }
+): string => {
+    const tasks: PipelineTask[] = [];
+    if (!scene.timeline) return '';
+
+    let previousVideoTaskId: string | null = null;
+
+    scene.timeline.shots.forEach((shot) => {
+        const videoTaskId = `video-${scene.id}-${shot.id}`;
+        const upscaleTaskId = `upscale-${scene.id}-${shot.id}`;
+        const interpolateTaskId = `interpolate-${scene.id}-${shot.id}`;
+
+        const prompt = (shot as any).visualPrompt || shot.description;
+        const negativePrompt = scene.timeline.negativePrompt || '';
+        const keyframeImage = keyframeImages[shot.id];
+
+        // 1. Video Generation
+        if (options.generateVideos) {
+            const deps: string[] = [];
+            
+            // FLF2V: Add dependency on previous shot's video task
+            if (settings.featureFlags?.enableFLF2V && previousVideoTaskId) {
+                deps.push(previousVideoTaskId);
+            }
+
+            tasks.push({
+                id: videoTaskId,
+                type: 'generate_video',
+                label: `Video: ${scene.title} - Shot ${shot.id}`,
+                status: 'pending',
+                dependencies: deps,
+                payload: {
+                    sceneId: scene.id,
+                    shotId: shot.id,
+                    prompt,
+                    negativePrompt,
+                    workflowProfileId: settings.videoWorkflowProfile || 'wan-i2v',
+                    keyframeImage: keyframeImage, // Pass existing keyframe
+                    visualBible: options.visualBible,
+                    scene: scene,
+                    characterReferenceImages: options.characterReferenceImages
+                },
+                retryCount: 0,
+                createdAt: Date.now()
+            });
+
+            previousVideoTaskId = videoTaskId;
+        }
+
+        // 2. Upscale
+        if (options.upscale) {
+             tasks.push({
+                id: upscaleTaskId,
+                type: 'upscale_video',
+                label: `Upscale: ${scene.title} - Shot ${shot.id}`,
+                status: 'pending',
+                dependencies: [videoTaskId],
+                payload: {
+                    config: {
+                        scale: 2
+                    }
+                },
+                retryCount: 0,
+                createdAt: Date.now()
+            });
+        }
+        
+        // 3. Interpolation
+        if (options.interpolate) {
+            const deps = options.upscale ? [upscaleTaskId] : [videoTaskId];
+            tasks.push({
+                id: interpolateTaskId,
+                type: 'interpolate_video',
+                label: `Interpolate: ${scene.title} - Shot ${shot.id}`,
+                status: 'pending',
+                dependencies: deps,
+                payload: {
+                    config: {
+                        multiplier: 2
+                    }
+                },
+                retryCount: 0,
+                createdAt: Date.now()
+            });
+        }
+    });
+
+    const store = usePipelineStore.getState();
+    return store.createPipeline(`Generate Scene: ${scene.title}`, tasks);
+};
+

@@ -1366,6 +1366,8 @@ export interface QueuePromptOptions {
     ipAdapter?: IPAdapterPayload;
     /** Input video path for video-to-video workflows */
     inputVideo?: string;
+    /** End keyframe for First-Last-Frame workflows */
+    endKeyframe?: string;
 }
 
 export const queueComfyUIPrompt = async (
@@ -1376,7 +1378,6 @@ export const queueComfyUIPrompt = async (
     profileOverride?: WorkflowProfile,
     options?: QueuePromptOptions
 ): Promise<ComfyUIPromptResult | null> => {
-    console.log(`[DEBUG] queueComfyUIPrompt entered. Profile: ${profileId}`);
     // ========================================================================
     // Entry Diagnostics - helps identify why requests never reach ComfyUI
     // ========================================================================
@@ -1528,21 +1529,14 @@ export const queueComfyUIPrompt = async (
     };
 
     // --- Run final pre-flight checks before queuing ---
-    let systemResourcesMessage: string | undefined;
-    try {
-        await checkServerConnection(runtimeSettings.comfyUIUrl);
-        systemResourcesMessage = await checkSystemResources(runtimeSettings.comfyUIUrl);
-        // Validate using the active profile so wan-t2i (text->image) is not
-        // incorrectly forced to have a LoadImage/keyframe mapping.
-        validateWorkflowAndMappings(runtimeSettings, profileId);
-    } catch(error) {
-        // Re-throw the specific error from the checks to be displayed to the user.
-        throw error;
-    }
+    await checkServerConnection(runtimeSettings.comfyUIUrl);
+    const systemResourcesMessage = await checkSystemResources(runtimeSettings.comfyUIUrl);
+    // Validate using the active profile so wan-t2i (text->image) is not
+    // incorrectly forced to have a LoadImage/keyframe mapping.
+    validateWorkflowAndMappings(runtimeSettings, profileId);
     
     // --- ALL CHECKS PASSED, PROCEED WITH GENERATION ---
     try {
-        console.log('[DEBUG] queueComfyUIPrompt: Starting generation sequence');
         const promptPayload = JSON.parse(JSON.stringify(promptPayloadTemplate));
         const baseUrl = getComfyUIBaseUrl(runtimeSettings.comfyUIUrl);
         const clientId = runtimeSettings.comfyUIClientId || `csg_${Date.now()}`;
@@ -1552,7 +1546,7 @@ export const queueComfyUIPrompt = async (
         let uploadedImageFilename: string | null = null;
         
         // --- STEP 1: UPLOAD ASSETS (IF MAPPED) ---
-        console.log('[DEBUG] queueComfyUIPrompt: Step 1 - Upload Assets');
+        
         const imageMappingKey = Object.keys(runtimeSettings.mapping).find(key => runtimeSettings.mapping[key] === 'keyframe_image');
         if (imageMappingKey && base64Image) {
             const nodeId = imageMappingKey.split(':')[0];
@@ -1612,7 +1606,11 @@ export const queueComfyUIPrompt = async (
             }
         }
         
-        if (endImageKey && base64Image) {
+        // Use explicit end keyframe if provided, otherwise fallback to base64Image (start keyframe)
+        // This allows FLF2V workflows to use different start/end frames
+        const endImageToUse = options?.endKeyframe || base64Image;
+        
+        if (endImageKey && endImageToUse) {
             const nodeId = endImageKey.split(':')[0];
             console.log(`[${profileId}] end_image upload: nodeId=${nodeId}`);
             if (nodeId) {
@@ -1621,7 +1619,7 @@ export const queueComfyUIPrompt = async (
                 if (node && node.class_type === 'LoadImage') {
                     // For dual-keyframe workflow: use the same image for both if only one provided
                     // In a real dual-keyframe scenario, caller should pass both images
-                    const blob = base64ToBlob(base64Image, 'image/jpeg');
+                    const blob = base64ToBlob(endImageToUse, 'image/jpeg');
                     const formData = new FormData();
                     formData.append('image', blob, `csg_end_${Date.now()}.jpg`);
                     formData.append('overwrite', 'true');
@@ -1643,7 +1641,7 @@ export const queueComfyUIPrompt = async (
         }
 
         // --- STEP 1.2: IP-ADAPTER CHARACTER CONSISTENCY (if provided) ---
-        let ipAdapterUploadedFilenames: Record<string, string> = {};
+        const ipAdapterUploadedFilenames: Record<string, string> = {};
         if (options?.ipAdapter?.isActive && Object.keys(options.ipAdapter.uploadedImages).length > 0) {
             console.log(`[${profileId}] IP-Adapter: Uploading ${Object.keys(options.ipAdapter.uploadedImages).length} character reference images...`);
             pushDiagnostic({ profileId, action: 'ipAdapter:uploadStart', referenceCount: Object.keys(options.ipAdapter.uploadedImages).length });
@@ -1756,7 +1754,6 @@ export const queueComfyUIPrompt = async (
         }
 
         // --- STEP 2: INJECT DATA INTO WORKFLOW BASED ON MAPPING ---
-        console.log('[DEBUG] queueComfyUIPrompt: Step 2 - Inject Data');
         for (const [key, dataType] of Object.entries(runtimeSettings.mapping)) {
             if (dataType === 'none') continue;
 
@@ -1819,7 +1816,6 @@ export const queueComfyUIPrompt = async (
         }
         
         // --- STEP 3: QUEUE THE PROMPT ---
-        console.log('[DEBUG] queueComfyUIPrompt: Step 3 - Queue Prompt');
         // Generate correlation ID for request tracking
         const correlationId = generateCorrelationId();
         const startTime = Date.now();
@@ -1992,7 +1988,7 @@ export const queueComfyUIPromptValidated = async (
         
         // Categorize error and provide suggestions
         let errorCode: ValidationErrorCode = ValidationErrorCodes.PROVIDER_CONNECTION_FAILED;
-        let suggestions: Array<{ id: string; type: 'fix'; description: string; action: string; autoApplicable: boolean }> = [];
+        const suggestions: Array<{ id: string; type: 'fix'; description: string; action: string; autoApplicable: boolean }> = [];
         
         if (message.includes('not valid JSON') || message.includes('re-sync')) {
             errorCode = ValidationErrorCodes.WORKFLOW_INVALID_JSON;
@@ -2119,7 +2115,7 @@ export const trackPromptExecution = (
                 }
                 break;
             
-            case 'execution_error':
+            case 'execution_error': {
                 const errorDetails = event.data;
                 const rawError = errorDetails.exception_message || 'Unknown execution error';
                 const userFriendlyError = parseComfyUIError(rawError);
@@ -2127,8 +2123,9 @@ export const trackPromptExecution = (
                 console.error(`[trackPromptExecution] Execution error:`, errorDetails);
                 dispatchProgress({ status: 'error', message: errorMessage });
                 break;
+            }
 
-            case 'executed':
+            case 'executed': {
                 console.log(`[trackPromptExecution] ✓ Execution complete for promptId=${promptId.slice(0,8)}...`);
                 const outputs = event.data.output || {};
                 
@@ -2256,6 +2253,7 @@ export const trackPromptExecution = (
                     console.error(`[trackPromptExecution] ❌ Asset fetch error for promptId=${promptId.slice(0,8)}...:`, error);
                     dispatchProgress({ status: 'error', message });
                 }
+            }
                 break;
         }
     });
@@ -2285,6 +2283,8 @@ export interface VideoGenerationOverrides {
     visualBible?: VisualBible | null;
     /** Scene context for IP-Adapter character references */
     scene?: Scene;
+    /** End keyframe for First-Last-Frame workflows */
+    endKeyframe?: string;
 }
 
 
@@ -2430,7 +2430,10 @@ export const generateVideoFromShot = async (
                         waitForCompletion: true,
                         onProgress: reportProgress,
                         priority: 'normal',
-                        extraData: ipAdapterPayload ? { ipAdapter: ipAdapterPayload } : undefined
+                        extraData: {
+                            ...(ipAdapterPayload ? { ipAdapter: ipAdapterPayload } : {}),
+                            ...(overrides?.endKeyframe ? { endKeyframe: overrides.endKeyframe } : {})
+                        }
                     }
                 );
                 
@@ -2463,13 +2466,18 @@ export const generateVideoFromShot = async (
         reportProgress({ status: 'running', message: 'Queuing prompt in ComfyUI...' });
         let promptResponse: ComfyUIPromptResult | null;
         try {
+            const queueOptions: QueuePromptOptions = {
+                ipAdapter: ipAdapterPayload,
+                endKeyframe: overrides?.endKeyframe
+            };
+
             promptResponse = await queuePrompt(
                 settings, 
                 payloads, 
                 keyframeImage || '', 
                 videoProfileId,
                 undefined, // profileOverride
-                ipAdapterPayload ? { ipAdapter: ipAdapterPayload } : undefined
+                queueOptions
             );
         } catch (queueError) {
             const message = queueError instanceof Error ? queueError.message : String(queueError);
@@ -2617,7 +2625,7 @@ export const generateVideoFromShot = async (
                     const outputs = promptHistory.outputs || {};
                     const assetSources: Array<{ entries?: ComfyUIOutputEntry[]; resultType: LocalGenerationAsset['type'] }> = [];
                     
-                    for (const [_nodeId, nodeOutput] of Object.entries(outputs)) {
+                    for (const nodeOutput of Object.values(outputs)) {
                         const output = nodeOutput as ComfyUINodeOutput;
                         if (output.images) assetSources.push({ entries: output.images, resultType: 'image' });
                         if (output.videos) assetSources.push({ entries: output.videos, resultType: 'video' });
@@ -3190,10 +3198,19 @@ export const generateTimelineVideos = async (
         // 2. Otherwise fall back to the shot's assigned keyframe
         // 3. Finally fall back to null (will fail if workflow requires it)
         let keyframe = keyframeImages[shot.id] || null;
+        let targetEndKeyframe: string | undefined = undefined;
         
-        if (settings.featureFlags?.enableFLF2V && previousShotLastFrame) {
-            console.log(`[Timeline Batch] FLF2V: Using last frame of previous shot as keyframe for ${shot.id}`);
-            keyframe = previousShotLastFrame;
+        if (settings.featureFlags?.enableFLF2V) {
+            if (previousShotLastFrame) {
+                console.log(`[Timeline Batch] FLF2V: Using last frame of previous shot as START keyframe for ${shot.id}`);
+                keyframe = previousShotLastFrame;
+                
+                // Use the shot's original keyframe as the END keyframe
+                if (keyframeImages[shot.id]) {
+                    targetEndKeyframe = keyframeImages[shot.id];
+                    console.log(`[Timeline Batch] FLF2V: Using shot keyframe as END keyframe for ${shot.id}`);
+                }
+            }
         }
 
         const allowCharacterContinuity = shouldInjectCharacterContinuity(shot, options?.visualBible, scene?.id);
@@ -3256,6 +3273,7 @@ export const generateTimelineVideos = async (
                     characterReferenceImages: useIpAdapter && allowCharacterContinuity ? options?.characterReferenceImages : undefined,
                     visualBible: useIpAdapter && allowCharacterContinuity ? options?.visualBible : undefined,
                     scene: useIpAdapter && allowCharacterContinuity ? scene : undefined,
+                    endKeyframe: targetEndKeyframe,
                 }
             );
 
@@ -3263,7 +3281,7 @@ export const generateTimelineVideos = async (
             // Note: We do NOT wrap this in GenerationQueue here because the underlying
             // shotExecutor (generateVideoFromShot) already handles queuing if enabled.
             // Wrapping it here would cause a deadlock (task waiting for sub-task in same serial queue).
-            let result = await executeShotGeneration();
+            const result = await executeShotGeneration();
 
             // ============================================================================
             // POST-PROCESSING: Endpoint Snapping (if enabled and supported)
@@ -3492,7 +3510,7 @@ export const waitForComfyCompletion = (
                     const assetSources: Array<{ entries?: ComfyUIOutputEntry[]; resultType: LocalGenerationAsset['type'] }> = [];
                     
                     // Check all output nodes for images/videos
-                    for (const [_nodeId, nodeOutput] of Object.entries(outputs)) {
+                    for (const nodeOutput of Object.values(outputs)) {
                         const output = nodeOutput as ComfyUINodeOutput;
                         if (output.images) assetSources.push({ entries: output.images, resultType: 'image' });
                         if (output.videos) assetSources.push({ entries: output.videos, resultType: 'video' });
@@ -4046,7 +4064,7 @@ export async function generateVideoFromBookendsSequential(
     if (typeof window !== 'undefined') {
         console.log('[Sequential Bookend] Browser environment detected, using mock splicer');
         checkFfmpegAvailable = async () => true;
-        spliceVideos = async (v1: string, _v2: string, _out: string) => ({ 
+        spliceVideos = async (v1: string) => ({ 
             success: true, 
             outputPath: v1, 
             duration: 0 
@@ -4103,6 +4121,7 @@ export async function generateVideoFromBookendsSequential(
         startPromptResponse.prompt_id,
         (state) => {
             // Only forward progress updates, not completion status (prevents premature UI completion)
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { status: _status, final_output: _finalOutput, ...progressState } = state;
             onStateChange({
                 phase: 'bookend-start-video',
@@ -4146,6 +4165,7 @@ export async function generateVideoFromBookendsSequential(
         endPromptResponse.prompt_id,
         (state) => {
             // Only forward progress updates, not completion status (prevents premature UI completion)
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { status: _status, final_output: _finalOutput, ...progressState } = state;
             onStateChange({
                 phase: 'bookend-end-video',
@@ -4588,7 +4608,7 @@ export const queueComfyUIPromptDualImage = async (
     
     // Randomize seeds
     const randomSeed = Math.floor(Math.random() * 1e15);
-    for (const [_nodeId, nodeEntry] of Object.entries(promptPayload)) {
+    for (const nodeEntry of Object.values(promptPayload)) {
         const node = nodeEntry as WorkflowNode;
         if (typeof node === 'object' && node !== null && node.class_type === 'KSampler' && node.inputs && 'seed' in node.inputs) {
             node.inputs.seed = randomSeed;
@@ -4810,7 +4830,7 @@ export function supportsNativeDualKeyframe(
             'Wan22FirstLastFrameToVideoLatentTiledVAE', // 5B model node with tiled VAE (custom)
         ];
         
-        for (const [_nodeId, node] of Object.entries(nodes)) {
+        for (const node of Object.values(nodes)) {
             if (typeof node === 'object' && node !== null) {
                 const nodeEntry = node as WorkflowNode;
                 if (dualKeyframeNodeTypes.includes(nodeEntry.class_type || '')) {
@@ -5397,7 +5417,6 @@ export const queueComfyUIPromptWithQueue = async (
         extraData?: Record<string, unknown>;
     }
 ): Promise<ComfyUIPromptResult | LocalGenerationStatus['final_output']> => {
-    console.log(`[DEBUG] queueComfyUIPromptWithQueue entered. Profile: ${profileId}`);
     const queue = getGenerationQueue();
     const waitForCompletion = options?.waitForCompletion ?? true;
 
@@ -5407,7 +5426,8 @@ export const queueComfyUIPromptWithQueue = async (
             // Map extraData to QueuePromptOptions
             const queueOptions: QueuePromptOptions = {
                 ipAdapter: options?.extraData?.ipAdapter as IPAdapterPayload | undefined,
-                inputVideo: options?.extraData?.inputVideo as string | undefined
+                inputVideo: options?.extraData?.inputVideo as string | undefined,
+                endKeyframe: options?.extraData?.endKeyframe as string | undefined
             };
             const response = await queueComfyUIPrompt(settings, payloads, base64Image, profileId, undefined, queueOptions);
             

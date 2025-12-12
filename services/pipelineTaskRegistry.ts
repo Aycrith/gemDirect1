@@ -1,10 +1,12 @@
 import { PipelineTask, PipelineTaskType } from '../types/pipeline';
 import { useSettingsStore } from './settingsStore';
+import { useGenerationStatusStore } from './generationStatusStore';
 import { 
     queueComfyUIPromptWithQueue, 
     ComfyUIPromptPayloads,
     trackPromptExecution
 } from './comfyUIService';
+import { prepareIPAdapterPayload } from './ipAdapterService';
 import { 
     upscaleVideo, 
     interpolateVideo,
@@ -69,7 +71,7 @@ export const executeKeyframeGeneration: TaskExecutor = async (task) => {
 export const executeVideoGeneration: TaskExecutor = async (task, context) => {
     console.log(`[TaskRegistry] Executing video generation for task ${task.id}`);
     
-    const { prompt, negativePrompt, workflowProfileId, sceneId, shotId } = task.payload;
+    const { prompt, negativePrompt, workflowProfileId, sceneId, shotId, visualBible, scene, characterReferenceImages } = task.payload;
     let { keyframeImage } = task.payload;
     const settings = useSettingsStore.getState();
 
@@ -181,6 +183,26 @@ export const executeVideoGeneration: TaskExecutor = async (task, context) => {
     if (!prompt) throw new Error('Missing prompt in task payload');
     if (!keyframeImage) throw new Error('Missing keyframe image in task payload (or dependency)');
 
+    // Prepare IP Adapter Payload
+    let ipAdapterPayload;
+    if (visualBible && scene && characterReferenceImages) {
+         try {
+            const profileId = workflowProfileId || 'wan-i2v';
+            const workflowProfile = settings.workflowProfiles?.[profileId];
+             if (workflowProfile?.workflowJson) {
+                ipAdapterPayload = await prepareIPAdapterPayload(
+                    JSON.parse(workflowProfile.workflowJson),
+                    visualBible,
+                    scene,
+                    characterReferenceImages
+                );
+                console.log(`[TaskRegistry] Prepared IP Adapter payload for task ${task.id}`);
+             }
+         } catch (e) {
+             console.warn('[TaskRegistry] Failed to prepare IP Adapter payload', e);
+         }
+    }
+
     const payloads: ComfyUIPromptPayloads = {
         json: prompt,
         text: prompt,
@@ -198,7 +220,15 @@ export const executeVideoGeneration: TaskExecutor = async (task, context) => {
         {
             sceneId,
             shotId,
-            waitForCompletion: true
+            waitForCompletion: true,
+            extraData: {
+                ipAdapter: ipAdapterPayload
+            },
+            onProgress: (update) => {
+                if (sceneId) {
+                    useGenerationStatusStore.getState().updateSceneStatus(sceneId, update);
+                }
+            }
         }
     );
 

@@ -41,21 +41,40 @@ test.describe('Landing Page Visibility', () => {
     await expect(title).toBeVisible({ timeout: 5000 });
     console.log('✓ App title is visible');
     
-    // Check if we're in the idea stage (landing page)
-    const ideaFormTitle = page.locator('h2').filter({ hasText: 'Start with an Idea' });
-    await expect(ideaFormTitle).toBeVisible({ timeout: 5000 });
-    console.log('✓ Idea form title is visible');
-    
-    // Check if the story idea textarea is visible and interactive
-    const ideaTextarea = page.locator('textarea[aria-label="Story Idea"]');
-    await expect(ideaTextarea).toBeVisible({ timeout: 5000 });
-    await expect(ideaTextarea).toBeEditable({ timeout: 5000 });
-    console.log('✓ Story idea textarea is visible and editable');
-    
-    // Check if the generate button is visible
-    const generateButton = page.locator('button:has-text("Generate Story Bible")');
-    await expect(generateButton).toBeVisible({ timeout: 5000 });
-    console.log('✓ Generate button is visible');
+    // Check if we're in the idea stage (landing page) or Director Mode
+    // This depends on whether Quick Generate is enabled
+    const quickButton = page.locator('[data-testid="mode-quick"]');
+    const isQuickGenerateEnabled = await quickButton.isVisible().catch(() => false);
+
+    if (isQuickGenerateEnabled) {
+      const ideaFormTitle = page.locator('h2').filter({ hasText: 'Start with an Idea' });
+      await expect(ideaFormTitle).toBeVisible({ timeout: 5000 });
+      console.log('✓ Idea form title is visible');
+      
+      // Check if the story idea textarea is visible and interactive
+      const ideaTextarea = page.locator('textarea[aria-label="Story Idea"]');
+      await expect(ideaTextarea).toBeVisible({ timeout: 5000 });
+      await expect(ideaTextarea).toBeEditable({ timeout: 5000 });
+      console.log('✓ Story idea textarea is visible and editable');
+      
+      // Check if the generate button is visible
+      const generateButton = page.locator('button:has-text("Generate Story Bible")');
+      await expect(generateButton).toBeVisible({ timeout: 5000 });
+      console.log('✓ Generate button is visible');
+    } else {
+      console.log('ℹ️ Quick Generate disabled, verifying Director Mode landing page');
+      const directorButton = page.locator('[data-testid="mode-director"]');
+      await expect(directorButton).toBeVisible({ timeout: 5000 });
+      
+      const directorClasses = await directorButton.getAttribute('class');
+      expect(directorClasses).toContain('bg-amber');
+      console.log('✓ Director Mode is active');
+      
+      // Verify Director Mode specific elements
+      // Ensure we don't see the idea form
+      const ideaFormTitle = page.locator('h2').filter({ hasText: 'Start with an Idea' });
+      await expect(ideaFormTitle).not.toBeVisible();
+    }
     
     // Verify no loading spinner or blocker is present
     const loadingSpinner = page.locator('.animate-spin');

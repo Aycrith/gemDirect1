@@ -150,6 +150,7 @@ export class GenerationQueue {
         totalExecutionTimeMs: 0,
     };
     
+    private isSelectingTask = false;
     private listeners: Set<(state: QueueState) => void> = new Set();
     private vramCheckFn?: (url?: string) => Promise<VRAMStatus>;
     private _preflightConfig: PreflightConfig = {};
@@ -439,144 +440,164 @@ export class GenerationQueue {
     }
 
     private async processQueue(): Promise<void> {
-        console.log(`[DEBUG] processQueue called. Current task: ${this.currentTask?.id}, Queue length: ${this.queue.length}`);
+        // Prevent concurrent task selection (race condition fix)
+        if (this.isSelectingTask) {
+            return;
+        }
+
         // Already processing
         if (this.currentTask !== null) {
             return;
         }
 
-        // Circuit breaker is open
-        if (this.isCircuitOpen()) {
-            if (DEBUG_QUEUE) {
-                const remaining = this.circuitOpenUntil! - Date.now();
-                console.debug(`[GenerationQueue] Circuit breaker open. Retry in ${Math.round(remaining / 1000)}s`);
-            }
-            return;
-        }
-
-        // Get next pending task
-        const nextTask = this.queue.find(t => t.status === 'pending');
-        if (!nextTask) {
-            return;
-        }
-
-        // VRAM gating (optional)
-        if (this.vramCheckFn) {
-            try {
-                const vramStatus = await this.vramCheckFn(this._preflightConfig.comfyUIUrl);
-                if (vramStatus.freeMB < (this._preflightConfig.minVRAMMB ?? MIN_VRAM_MB)) {
-                    if (DEBUG_QUEUE) {
-                        console.debug(`[GenerationQueue] VRAM gate: ${vramStatus.freeMB.toFixed(0)}MB free < ${(this._preflightConfig.minVRAMMB ?? MIN_VRAM_MB)}MB required. Waiting...`);
-                    }
-                    // Retry after a delay
-                    setTimeout(() => this.processQueue(), 5000);
-                    return;
-                }
-            } catch (error) {
-                // VRAM check failed - proceed anyway (graceful degradation)
-                if (DEBUG_QUEUE) {
-                    console.warn('[GenerationQueue] VRAM check failed, proceeding anyway:', error);
-                }
-            }
-        }
-
-        // Start the task
-        this.currentTask = nextTask;
-        nextTask.status = 'running';
-        nextTask.startedAt = Date.now();
-        nextTask.onStatusChange?.('running');
-        
-        // Create AbortController for this task
-        const abortController = new AbortController();
-        this.abortControllers.set(nextTask.id, abortController);
-        nextTask.abortSignal = abortController.signal;
-        
-        const waitTime = nextTask.startedAt - nextTask.queuedAt;
-        this.stats.totalWaitTimeMs += waitTime;
-
-        if (DEBUG_QUEUE) {
-            console.debug(`[GenerationQueue] Starting task ${nextTask.id}. Wait time: ${waitTime}ms`);
-        }
-
-        this.notifyListeners();
-
-        // Execute with timeout
-        const timeoutMs = nextTask.timeoutMs ?? DEFAULT_GENERATION_TIMEOUT_MS;
-        
-        const timeout = this.createTimeout(timeoutMs);
+        this.isSelectingTask = true;
 
         try {
-            const result = await Promise.race([
-                nextTask.execute(),
-                timeout.promise,
-            ]);
+            // Circuit breaker is open
+            if (this.isCircuitOpen()) {
+                if (DEBUG_QUEUE) {
+                    const remaining = this.circuitOpenUntil! - Date.now();
+                    console.debug(`[GenerationQueue] Circuit breaker open. Retry in ${Math.round(remaining / 1000)}s`);
+                }
+                this.isSelectingTask = false;
+                return;
+            }
 
-            // Success
-            nextTask.status = 'completed';
-            nextTask.completedAt = Date.now();
-            nextTask.onStatusChange?.('completed');
-            nextTask.resolve(result);
+            // Get next pending task
+            const nextTask = this.queue.find(t => t.status === 'pending');
+            if (!nextTask) {
+                this.isSelectingTask = false;
+                return;
+            }
+
+            // VRAM gating (optional)
+            if (this.vramCheckFn) {
+                try {
+                    const vramStatus = await this.vramCheckFn(this._preflightConfig.comfyUIUrl);
+                    if (vramStatus.freeMB < (this._preflightConfig.minVRAMMB ?? MIN_VRAM_MB)) {
+                        if (DEBUG_QUEUE) {
+                            console.debug(`[GenerationQueue] VRAM gate: ${vramStatus.freeMB.toFixed(0)}MB free < ${(this._preflightConfig.minVRAMMB ?? MIN_VRAM_MB)}MB required. Waiting...`);
+                        }
+                        // Retry after a delay
+                        setTimeout(() => this.processQueue(), 5000);
+                        this.isSelectingTask = false;
+                        return;
+                    }
+                } catch (error) {
+                    // VRAM check failed - proceed anyway (graceful degradation)
+                    if (DEBUG_QUEUE) {
+                        console.warn('[GenerationQueue] VRAM check failed, proceeding anyway:', error);
+                    }
+                }
+            }
+
+            // Start the task
+            this.currentTask = nextTask;
             
-            this.stats.totalCompleted++;
-            this.stats.totalExecutionTimeMs += nextTask.completedAt - nextTask.startedAt!;
-            this.consecutiveFailures = 0;
+            // Release lock now that currentTask is set
+            this.isSelectingTask = false;
+
+            nextTask.status = 'running';
+            nextTask.startedAt = Date.now();
+            nextTask.onStatusChange?.('running');
+            
+            // Create AbortController for this task
+            const abortController = new AbortController();
+            this.abortControllers.set(nextTask.id, abortController);
+            nextTask.abortSignal = abortController.signal;
+            
+            const waitTime = nextTask.startedAt - nextTask.queuedAt;
+            this.stats.totalWaitTimeMs += waitTime;
 
             if (DEBUG_QUEUE) {
-                console.debug(`[GenerationQueue] Task ${nextTask.id} completed in ${nextTask.completedAt - nextTask.startedAt!}ms`);
+                console.debug(`[GenerationQueue] Starting task ${nextTask.id}. Wait time: ${waitTime}ms`);
             }
 
-        } catch (error) {
-            // Failure
-            console.error('[GenerationQueue] Task execution failed with error:', error);
-            if (error instanceof Error) {
-                console.error('[GenerationQueue] Error stack:', error.stack);
-                console.error('[GenerationQueue] Error message:', error.message);
-            } else {
-                console.error('[GenerationQueue] Non-Error object thrown:', JSON.stringify(error));
-            }
+            this.notifyListeners();
 
-            const csError = error instanceof CSGError 
-                ? error 
-                : new CSGError(ErrorCodes.GENERATION_FAILED, {
-                    taskId: nextTask.id,
-                    originalError: error instanceof Error ? error.message : String(error),
-                });
-
-            nextTask.status = csError.code === ErrorCodes.COMFYUI_TIMEOUT_GENERATION ? 'timeout' : 'failed';
-            nextTask.completedAt = Date.now();
-            nextTask.error = csError;
-            nextTask.onStatusChange?.(nextTask.status);
-            nextTask.reject(csError);
+            // Execute with timeout
+            const timeoutMs = nextTask.timeoutMs ?? DEFAULT_GENERATION_TIMEOUT_MS;
             
-            this.stats.totalFailed++;
-            this.consecutiveFailures++;
+            const timeout = this.createTimeout(timeoutMs);
 
-            if (DEBUG_QUEUE) {
-                console.error(`[GenerationQueue] Task ${nextTask.id} failed:`, csError.message);
+            try {
+                const result = await Promise.race([
+                    nextTask.execute(),
+                    timeout.promise,
+                ]);
+
+                // Success
+                nextTask.status = 'completed';
+                nextTask.completedAt = Date.now();
+                nextTask.onStatusChange?.('completed');
+                nextTask.resolve(result);
+                
+                this.stats.totalCompleted++;
+                this.stats.totalExecutionTimeMs += nextTask.completedAt - nextTask.startedAt!;
+                this.consecutiveFailures = 0;
+
+                if (DEBUG_QUEUE) {
+                    console.debug(`[GenerationQueue] Task ${nextTask.id} completed in ${nextTask.completedAt - nextTask.startedAt!}ms`);
+                }
+
+            } catch (error) {
+                // Failure
+                console.error('[GenerationQueue] Task execution failed with error:', error);
+                if (error instanceof Error) {
+                    console.error('[GenerationQueue] Error stack:', error.stack);
+                    console.error('[GenerationQueue] Error message:', error.message);
+                } else {
+                    console.error('[GenerationQueue] Non-Error object thrown:', JSON.stringify(error));
+                }
+
+                const csError = error instanceof CSGError 
+                    ? error 
+                    : new CSGError(ErrorCodes.GENERATION_FAILED, {
+                        taskId: nextTask.id,
+                        originalError: error instanceof Error ? error.message : String(error),
+                    });
+
+                nextTask.status = csError.code === ErrorCodes.COMFYUI_TIMEOUT_GENERATION ? 'timeout' : 'failed';
+                nextTask.completedAt = Date.now();
+                nextTask.error = csError;
+                nextTask.onStatusChange?.(nextTask.status);
+                nextTask.reject(csError);
+                
+                this.stats.totalFailed++;
+                this.consecutiveFailures++;
+
+                if (DEBUG_QUEUE) {
+                    console.error(`[GenerationQueue] Task ${nextTask.id} failed:`, csError.message);
+                }
+
+                // Check circuit breaker
+                if (this.consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+                    this.circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_RESET_MS;
+                    console.warn(`[GenerationQueue] Circuit breaker opened after ${this.consecutiveFailures} consecutive failures. Retry in ${CIRCUIT_BREAKER_RESET_MS / 1000}s`);
+                }
+            } finally {
+                timeout.cancel();
+                // Clean up AbortController
+                this.abortControllers.delete(nextTask.id);
             }
 
-            // Check circuit breaker
-            if (this.consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
-                this.circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_RESET_MS;
-                console.warn(`[GenerationQueue] Circuit breaker opened after ${this.consecutiveFailures} consecutive failures. Retry in ${CIRCUIT_BREAKER_RESET_MS / 1000}s`);
+            // Remove task from queue and continue processing
+            const taskIndex = this.queue.findIndex(t => t.id === nextTask.id);
+            if (taskIndex !== -1) {
+                this.queue.splice(taskIndex, 1);
             }
-        } finally {
-            timeout.cancel();
-            // Clean up AbortController
-            this.abortControllers.delete(nextTask.id);
-        }
+            
+            this.currentTask = null;
+            this.notifyListeners();
+            
+            // Process next task
+            this.processQueue();
 
-        // Remove task from queue and continue processing
-        const taskIndex = this.queue.findIndex(t => t.id === nextTask.id);
-        if (taskIndex !== -1) {
-            this.queue.splice(taskIndex, 1);
+        } catch (e) {
+            // Catch any errors during selection phase
+            this.isSelectingTask = false;
+            throw e;
         }
-        
-        this.currentTask = null;
-        this.notifyListeners();
-        
-        // Process next task
-        this.processQueue();
     }
 
     private createTimeout(ms: number): { promise: Promise<never>; cancel: () => void } {

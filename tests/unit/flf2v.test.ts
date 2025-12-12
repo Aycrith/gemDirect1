@@ -98,12 +98,62 @@ describe('FLF2V Scaffolding', () => {
       'data:image/jpeg;base64,last_frame_base64', // Chained keyframe
       expect.anything(), // progressCallback
       undefined, // dependencies
-      expect.anything()  // options
+      expect.objectContaining({ endKeyframe: undefined })
     );
+  });
     //   'last_frame_base64', // The extracted frame
     //   expect.anything(),
     //   expect.anything(),
     //   expect.anything()
     // );
+
+  it('uses shot keyframe as endKeyframe when FLF2V is enabled and previous shot exists', async () => {
+    const settings = createValidTestSettings();
+    (settings as any).featureFlags = { ...settings.featureFlags, enableFLF2V: true };
+    
+    const progressSpy = vi.fn();
+
+    // Mock shot generator
+    const mockGenerateShot = vi.fn().mockImplementation(
+      async (_, shot) => {
+        return {
+          videoPath: `data:video/mp4;base64,fakevideo_${shot.id}`,
+          duration: 1,
+          filename: `${shot.id}.mp4`,
+        };
+      }
+    );
+
+    // Define keyframes for BOTH shots
+    const keyframesWithEnd = {
+      'shot-1': 'keyframe-1',
+      'shot-2': 'keyframe-2', // This should become the END keyframe for shot-2
+    };
+
+    await comfyUIService.generateTimelineVideos(
+      settings,
+      timeline,
+      'Vision',
+      'Summary',
+      keyframesWithEnd,
+      progressSpy,
+      { shotGenerator: mockGenerateShot }
+    );
+
+    // Verify Shot 2 was generated with:
+    // - Start Keyframe: Last frame of Shot 1 (from mock)
+    // - End Keyframe: 'keyframe-2' (from input)
+    
+    expect(mockGenerateShot).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ id: 'shot-2' }),
+      undefined,
+      expect.anything(),
+      'data:image/jpeg;base64,last_frame_base64', // Start keyframe (chained)
+      expect.anything(),
+      undefined,
+      expect.objectContaining({ endKeyframe: 'keyframe-2' }) // End keyframe
+    );
   });
 });

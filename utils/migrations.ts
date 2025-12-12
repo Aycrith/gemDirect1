@@ -13,6 +13,13 @@ import { Migration, MigrationState, MigrationResult } from '../types/migrations'
 import { FeatureFlags, DEFAULT_FEATURE_FLAGS } from './featureFlags';
 
 /**
+ * Type guard to check if a value is a non-null object
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+/**
  * Current project schema version
  * Increment this when making breaking changes to project structure
  */
@@ -39,17 +46,19 @@ const migrations: Migration[] = [
             }
             
             // Remove legacy bookendKeyframes from featureFlags if present (migrated to keyframeMode)
-            const flags = migrated.localGenSettings?.featureFlags as unknown as Record<string, unknown>;
-            if (flags && typeof flags.bookendKeyframes !== 'undefined') {
+            const flags = migrated.localGenSettings?.featureFlags;
+            if (isRecord(flags) && 'bookendKeyframes' in flags) {
                 delete flags.bookendKeyframes;
             }
 
             // Ensure all current flags exist (backfill with defaults)
             if (migrated.localGenSettings?.featureFlags) {
-                const currentFlags = migrated.localGenSettings.featureFlags as unknown as Record<string, unknown>;
-                for (const key of Object.keys(DEFAULT_FEATURE_FLAGS)) {
-                    if (typeof currentFlags[key] === 'undefined') {
-                        currentFlags[key] = DEFAULT_FEATURE_FLAGS[key as keyof FeatureFlags];
+                const currentFlags = migrated.localGenSettings.featureFlags;
+                if (isRecord(currentFlags)) {
+                    for (const key of Object.keys(DEFAULT_FEATURE_FLAGS)) {
+                        if (typeof currentFlags[key] === 'undefined') {
+                            currentFlags[key] = DEFAULT_FEATURE_FLAGS[key as keyof FeatureFlags];
+                        }
                     }
                 }
             }
@@ -61,20 +70,22 @@ const migrations: Migration[] = [
             
             // Add category to existing workflow profiles
             if (migrated.localGenSettings?.workflowProfiles) {
-                const profiles = migrated.localGenSettings.workflowProfiles as unknown as Record<string, Record<string, unknown>>;
-                for (const [profileId, profile] of Object.entries(profiles)) {
-                    if (!profile.category) {
-                        // Infer category from profile ID
-                        if (profileId.includes('t2i') || profileId.includes('text-to-image')) {
-                            profile.category = 'keyframe';
-                        } else if (profileId.includes('i2v') || profileId.includes('video')) {
-                            profile.category = 'video';
-                        } else if (profileId.includes('upscale')) {
-                            profile.category = 'upscaler';
-                        } else if (profileId.includes('character') || profileId.includes('ccc')) {
-                            profile.category = 'character';
-                        } else {
-                            profile.category = 'video'; // Default
+                const profiles = migrated.localGenSettings.workflowProfiles;
+                if (isRecord(profiles)) {
+                    for (const [profileId, profile] of Object.entries(profiles)) {
+                        if (isRecord(profile) && !profile.category) {
+                            // Infer category from profile ID
+                            if (profileId.includes('t2i') || profileId.includes('text-to-image')) {
+                                profile.category = 'keyframe';
+                            } else if (profileId.includes('i2v') || profileId.includes('video')) {
+                                profile.category = 'video';
+                            } else if (profileId.includes('upscale')) {
+                                profile.category = 'upscaler';
+                            } else if (profileId.includes('character') || profileId.includes('ccc')) {
+                                profile.category = 'character';
+                            } else {
+                                profile.category = 'video'; // Default
+                            }
                         }
                     }
                 }
@@ -125,22 +136,24 @@ const migrations: Migration[] = [
             }
             
             // Remove category from workflow profiles
-            if (migrated.localGenSettings?.workflowProfiles) {
+            if (migrated.localGenSettings?.workflowProfiles && isRecord(migrated.localGenSettings.workflowProfiles)) {
                 for (const profile of Object.values(migrated.localGenSettings.workflowProfiles)) {
-                    const p = profile as unknown as Record<string, unknown>;
-                    delete p.category;
-                    delete p.chainPosition;
-                    delete p.inputProfiles;
+                    if (isRecord(profile)) {
+                        delete profile.category;
+                        delete profile.chainPosition;
+                        delete profile.inputProfiles;
+                    }
                 }
             }
             
             // Remove autoGenerateSuggestions from continuityData
             if (migrated.continuityData) {
                 for (const data of Object.values(migrated.continuityData)) {
-                    const d = data as unknown as Record<string, unknown>;
-                    delete d.autoGenerateSuggestions;
-                    delete d.lastSuggestionTimestamp;
-                    delete d.regenerationAttempts;
+                    if (isRecord(data)) {
+                        delete data.autoGenerateSuggestions;
+                        delete data.lastSuggestionTimestamp;
+                        delete data.regenerationAttempts;
+                    }
                 }
             }
             
@@ -160,14 +173,17 @@ const migrations: Migration[] = [
             
             // Remove new pipeline flags
             if (migrated.localGenSettings?.featureFlags) {
-                const flags = migrated.localGenSettings.featureFlags as unknown as Record<string, unknown>;
-                delete flags.sceneListContextV2;
-                delete flags.actContextV2;
-                delete flags.keyframePromptPipeline;
-                delete flags.videoPromptPipeline;
-                delete flags.bibleV2SaveSync;
-                delete flags.sceneListValidationMode;
-                delete flags.promptTokenGuard;
+                const flags = migrated.localGenSettings.featureFlags;
+                if (isRecord(flags)) {
+                    const flagsRecord = flags as Record<string, unknown>;
+                    delete flagsRecord.sceneListContextV2;
+                    delete flagsRecord.actContextV2;
+                    delete flagsRecord.keyframePromptPipeline;
+                    delete flagsRecord.videoPromptPipeline;
+                    delete flagsRecord.bibleV2SaveSync;
+                    delete flagsRecord.sceneListValidationMode;
+                    delete flagsRecord.promptTokenGuard;
+                }
             }
             
             return migrated;

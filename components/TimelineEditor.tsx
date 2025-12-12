@@ -70,6 +70,7 @@ import { analyzeVideo as analyzeVideoQuality } from '../services/videoFeedbackSe
 import { evaluateVideoQuality, isQualityGateEnabled, getQualityGateStatusMessage, type QualityGateResult } from '../services/videoQualityGateService';
 // Keyframe Pair Analysis Preflight (Phase 8: Bookend QA)
 import { analyzeKeyframePair, keyframePairMeetsThresholds, getBlockingMessage, type KeyframePairRequest } from '../services/keyframePairAnalysisService';
+import { PipelineGenerationButton } from './PipelineGenerationButton';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 // @ts-ignore - Kept for future VRAM monitoring feature
@@ -3189,6 +3190,22 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                Generate Video
                             </button>
                         </Tooltip>
+
+                        <PipelineGenerationButton 
+                            scene={scene}
+                            settings={localGenSettings}
+                            keyframeData={generatedImages}
+                            visualBible={visualBible || undefined}
+                            characterReferenceImages={visualBible?.characters?.reduce((acc, char) => {
+                                const refImage = char.imageRefs?.[0];
+                                if (refImage) {
+                                    acc[char.id] = refImage;
+                                }
+                                return acc;
+                            }, {} as Record<string, string>)}
+                            disabled={!isLocalGenConfigured}
+                        />
+
                         <Tooltip text={!isLocalGenConfigured 
                             ? "Please configure ComfyUI server and sync workflow in Settings." 
                             : "Chain-of-frames generation: Each shot's end frame becomes the next shot's start frame for smoother scene continuity. Uses WanFirstLastFrameToVideo node."}>

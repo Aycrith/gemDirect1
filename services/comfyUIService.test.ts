@@ -160,7 +160,7 @@ describe('generateVideoFromShot', () => {
       baseKeyframe,
       expect.any(String), // profileId
       undefined, // profileOverride
-      undefined, // options (IP-Adapter)
+      expect.anything(), // options (IP-Adapter)
     );
 
     expect(queueInfoMock).toHaveBeenCalled();
@@ -222,7 +222,7 @@ describe('generateVideoFromShot', () => {
       baseKeyframe,
       expect.any(String), // profileId
       undefined, // profileOverride
-      undefined, // options (IP-Adapter)
+      expect.anything(), // options (IP-Adapter)
     );
   });
 

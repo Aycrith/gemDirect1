@@ -95,7 +95,7 @@ if (-not (Test-Path $artifactJson)) {
             if (-not $mappingHelper -or [string]::IsNullOrWhiteSpace($mappingHelper.Summary)) {
                 $errors += "HelperSummaries.MappingPreflight missing summary path."
             } else {
-                $mappingPath = $mappingHelper.Summary -replace '/', '\'
+                $mappingPath = $mappingHelper.Summary.Replace('/', [System.IO.Path]::DirectorySeparatorChar).Replace('\', [System.IO.Path]::DirectorySeparatorChar)
                 if (-not (Test-Path $mappingPath)) {
                     $warnings += "Mapping preflight summary file not found at $($mappingHelper.Summary)."
                 }

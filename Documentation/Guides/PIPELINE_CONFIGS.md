@@ -102,6 +102,56 @@ config/pipelines/*.json
 ```json
 {
   "version": "1.0",
+  "id": "production-qa-golden",
+  "name": "Production QA Golden Pipeline",
+  "workflowProfileId": "wan-fun-inpaint",
+  "presetMode": "production-qa",
+  "stabilityProfile": "standard",
+  "keyframeMode": "bookend",
+  "postProcessing": {
+    "interpolation": {
+      "enabled": true,
+      "profileId": "rife-interpolation",
+      "multiplier": 2
+    }
+  },
+  "featureFlags": {
+    "useGenerationQueue": true,
+    "enableFLF2V": true
+  }
+}
+```
+
+### Post-Processing Configuration
+
+Pipelines can configure post-processing steps like interpolation and upscaling.
+
+```json
+{
+  "postProcessing": {
+    "interpolation": {
+      "enabled": true,
+      "profileId": "rife-interpolation",
+      "multiplier": 2
+    },
+    "upscaling": {
+      "enabled": false,
+      "profileId": "video-upscaler",
+      "scaleFactor": 2
+    }
+  }
+}
+```
+
+These settings map to the `videoUpscalingService` and require corresponding workflow profiles in `localGenSettings.json`.
+
+---
+
+## Camera Paths (Camera-as-Code)
+
+```json
+{
+  "version": "1.0",
   "id": "production-qa-preview",
   "name": "Production QA Preview",
   "description": "Production-quality video generation with QA gates enabled.",
