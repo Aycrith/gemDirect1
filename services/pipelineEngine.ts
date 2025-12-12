@@ -80,6 +80,23 @@ export class PipelineEngine {
         });
 
         if (!canRunAny) {
+             // Mark downstream tasks blocked by failures/cancellations as skipped
+             // so the final pipeline graph doesn't remain stuck in "pending".
+             for (const task of pendingTasks) {
+                 const deps = task.dependencies
+                     .map((depId) => pipeline.tasks[depId])
+                     .filter((depTask): depTask is PipelineTask => !!depTask);
+                 const blocker = deps.find((depTask) => depTask.status === 'failed' || depTask.status === 'cancelled');
+                 if (!blocker) continue;
+                 store.updateTaskStatus(
+                     pipeline.id,
+                     task.id,
+                     'skipped',
+                     undefined,
+                     `Skipped due to ${blocker.status} dependency ${blocker.id}`
+                 );
+             }
+
              const finalStatus: 'failed' | 'cancelled' = anyFailed ? 'failed' : 'cancelled';
              store.updatePipelineStatus(pipeline.id, finalStatus);
              store.setActivePipeline(null);
