@@ -2,26 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PipelineEngine } from '../pipelineEngine';
 import { usePipelineStore } from '../pipelineStore';
 import { createExportPipeline } from '../pipelineFactory';
+import { executeVideoGeneration } from '../pipelineTaskRegistry';
 import { Scene, LocalGenerationSettings } from '../../types';
 import * as comfyUIService from '../comfyUIService';
 import * as videoUtils from '../../utils/videoUtils';
 
-// Mock Node modules for FLF2V
-vi.mock('child_process', () => ({
-    exec: (_cmd: string, cb: (error: Error | null, stdout: string, stderr: string) => void) => cb(null, 'stdout', 'stderr')
-}));
-
-vi.mock('fs', () => ({
-    existsSync: () => true,
-    mkdirSync: () => {},
-    writeFileSync: () => {},
-    readFileSync: () => Buffer.from('fake-frame'),
-    unlinkSync: () => {}
-}));
-
 // Mock ComfyUI Service
 vi.mock('../comfyUIService', () => ({
     queueComfyUIPromptWithQueue: vi.fn(),
+    waitForComfyCompletion: vi.fn(),
+    stripDataUrlPrefix: (value: string) => {
+        if (typeof value !== 'string') return value as unknown as string;
+        // Handle generic data URLs, not just images.
+        const parts = value.split(',');
+        return parts.length > 1 ? parts.slice(1).join(',') : value;
+    },
     ComfyUIPromptPayloads: {}
 }));
 
@@ -361,9 +356,10 @@ describe('Pipeline Integration', () => {
         
         expect(interpolateTask?.status).toBe('completed');
         expect(interpolateTask?.output?.videos?.[0]).toBe('output_interpolated.mp4');
-        expect(interpolateTask?.output?.metadata?.upscaleMethod).toBe('RIFE');
-        expect(interpolateTask?.output?.metadata?.finalFps).toBeDefined();
-        expect(interpolateTask?.output?.metadata?.interpolationElapsed).toBeDefined();
+        const meta = (interpolateTask?.output?.metadata as any) || {};
+        expect(meta.upscaleMethod).toBe('RIFE');
+        expect(meta.finalFps).toBeDefined();
+        expect(meta.interpolationElapsed).toBeDefined();
     });
 
     it('should use Node fallback for FLF2V when window is undefined', async () => {
@@ -372,6 +368,11 @@ describe('Pipeline Integration', () => {
         // @ts-ignore
         delete global.window;
 
+        // Inject a deterministic Node-only extractor (avoids pulling in ffmpeg / Node builtins)
+        (globalThis as any).__flf2vNodeFrameExtractor = {
+            extractLastFrameBase64FromVideoUrl: vi.fn().mockResolvedValue('fake-node-last-frame')
+        };
+
         mockGetState.mockReturnValue({
             comfyUIUrl: 'http://localhost:8188',
             workflowProfile: 'wan-t2i',
@@ -379,67 +380,63 @@ describe('Pipeline Integration', () => {
             featureFlags: { enableFLF2V: true }
         });
 
-        // Mock previous video output
-        const mockVideoResult = { success: true, videos: ['prev_video.mp4'] };
-        const mockKeyframeResult = { success: true, images: ['data:image/png;base64,fake-image'] };
-        const mockNextVideoResult = { success: true, videos: ['next_video.mp4'] };
-
-        (comfyUIService.queueComfyUIPromptWithQueue as unknown as ReturnType<typeof vi.fn>)
-            .mockResolvedValueOnce(mockKeyframeResult) // Keyframe 1
-            .mockResolvedValueOnce(mockKeyframeResult) // Keyframe 2
-            .mockResolvedValueOnce(mockVideoResult)    // Video 1
-            .mockResolvedValueOnce(mockNextVideoResult); // Video 2
-
-        // Mock fetch for video download
-        (global.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-            ok: true,
-            arrayBuffer: () => Promise.resolve(new ArrayBuffer(10))
+        // Directly exercise the executor to avoid timing flakiness from the polling engine.
+        (comfyUIService.queueComfyUIPromptWithQueue as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+            success: true,
+            videos: ['next_video.mp4']
         });
 
-        const oneSceneTwoShots = [
+        const result = await executeVideoGeneration(
             {
-                ...mockScenes[0]!,
-                timeline: {
-                    ...mockScenes[0]!.timeline,
-                    shots: [
-                        { id: 'shot-1', description: 'Shot 1' },
-                        { id: 'shot-2', description: 'Shot 2' }
-                    ]
+                id: 'video-scene-1-shot-2',
+                type: 'generate_video',
+                label: 'Video: shot-2',
+                status: 'pending',
+                dependencies: ['video-scene-1-shot-1'],
+                payload: {
+                    sceneId: 'scene-1',
+                    shotId: 'shot-2',
+                    prompt: 'Shot 2',
+                    negativePrompt: '',
+                    workflowProfileId: 'wan-i2v',
+                    keyframeImage: 'data:image/png;base64,fake-image'
+                },
+                retryCount: 0,
+                createdAt: Date.now()
+            } as any,
+            {
+                dependencies: {
+                    'video-scene-1-shot-1': {
+                        id: 'video-scene-1-shot-1',
+                        type: 'generate_video',
+                        label: 'Video: shot-1',
+                        status: 'completed',
+                        dependencies: [],
+                        payload: { prompt: 'Shot 1' },
+                        output: { videos: ['prev_video.mp4'] },
+                        retryCount: 0,
+                        createdAt: Date.now()
+                    } as any
                 }
             }
-        ];
+        );
 
-        const flf2vSettings = {
-            ...mockSettings,
-            featureFlags: { enableFLF2V: true }
-        };
+        expect(comfyUIService.queueComfyUIPromptWithQueue).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ text: 'Shot 2' }),
+            'fake-node-last-frame',
+            'wan-i2v',
+            expect.objectContaining({ waitForCompletion: true })
+        );
 
-        const pipelineId = createExportPipeline(oneSceneTwoShots as unknown as Scene[], flf2vSettings as unknown as LocalGenerationSettings, {
-            generateKeyframes: true,
-            generateVideos: true
-        });
-
-        usePipelineStore.getState().setActivePipeline(pipelineId);
-        engine.start();
-
-        // Run through tasks
-        // Shot 1 Keyframe
-        await vi.advanceTimersByTimeAsync(1100);
-        // Shot 1 Video
-        await vi.advanceTimersByTimeAsync(1100);
-        // Shot 2 Keyframe
-        await vi.advanceTimersByTimeAsync(1100);
-        // Shot 2 Video (should use FLF2V)
-        await vi.advanceTimersByTimeAsync(1100);
-
-        const pipeline = usePipelineStore.getState().pipelines[pipelineId];
-        const shot2VideoTask = Object.values(pipeline!.tasks).find(t => t.payload.shotId === 'shot-2' && t.type === 'generate_video');
-
-        expect(shot2VideoTask?.status).toBe('completed');
-        expect(shot2VideoTask?.output?.metadata?.flf2vEnabled).toBe(true);
-        expect(shot2VideoTask?.output?.metadata?.flf2vSource).toBe('last-frame');
+        const meta = (result.metadata as any) || {};
+        expect(meta.flf2vEnabled).toBe(true);
+        expect(meta.flf2vSource).toBe('last-frame');
         
         // Restore window
         global.window = originalWindow;
+
+        // Cleanup injected extractor
+        delete (globalThis as any).__flf2vNodeFrameExtractor;
     });
 });

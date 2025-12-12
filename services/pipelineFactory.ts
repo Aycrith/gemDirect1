@@ -1,4 +1,4 @@
-import { Scene, LocalGenerationSettings } from '../types';
+import { Scene, LocalGenerationSettings, VisualBible } from '../types';
 import { PipelineTask } from '../types/pipeline';
 import { usePipelineStore } from './pipelineStore';
 
@@ -25,8 +25,8 @@ export const createExportPipeline = (
             const upscaleTaskId = `upscale-${scene.id}-${shot.id}`;
             const interpolateTaskId = `interpolate-${scene.id}-${shot.id}`;
 
-            // Use visualPrompt if available (via cast for now), else description
-            const prompt = (shot as any).visualPrompt || shot.description;
+            // Prefer a precomputed visual prompt when available.
+            const prompt = shot.visualPrompt || shot.description;
             const negativePrompt = scene.timeline.negativePrompt || '';
 
             // 1. Keyframe Generation
@@ -92,7 +92,7 @@ export const createExportPipeline = (
                     dependencies: [videoTaskId],
                     payload: {
                         config: {
-                            scale: 2
+                            scaleFactor: 2
                         }
                     },
                     retryCount: 0,
@@ -133,7 +133,7 @@ export const createSceneGenerationPipeline = (
         generateVideos?: boolean;
         upscale?: boolean;
         interpolate?: boolean;
-        visualBible?: any;
+        visualBible?: VisualBible;
         characterReferenceImages?: Record<string, string>;
     } = { generateVideos: true, upscale: false, interpolate: false }
 ): string => {
@@ -147,7 +147,7 @@ export const createSceneGenerationPipeline = (
         const upscaleTaskId = `upscale-${scene.id}-${shot.id}`;
         const interpolateTaskId = `interpolate-${scene.id}-${shot.id}`;
 
-        const prompt = (shot as any).visualPrompt || shot.description;
+        const prompt = shot.visualPrompt || shot.description;
         const negativePrompt = scene.timeline.negativePrompt || '';
         const keyframeImage = keyframeImages[shot.id];
 
@@ -194,7 +194,7 @@ export const createSceneGenerationPipeline = (
                 dependencies: [videoTaskId],
                 payload: {
                     config: {
-                        scale: 2
+                        scaleFactor: 2
                     }
                 },
                 retryCount: 0,

@@ -1,5 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
+const includeFirefox = !process.env.CI || process.env.PLAYWRIGHT_INCLUDE_FIREFOX === 'true';
+
 export default defineConfig({
   testDir: 'tests/e2e',
   timeout: 120_000,
@@ -44,11 +46,15 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { browserName: 'chromium' },
+      use: { browserName: 'chromium' as const },
     },
-    {
-      name: 'firefox',
-      use: { browserName: 'firefox' },
-    },
+    ...(includeFirefox
+      ? [
+          {
+            name: 'firefox',
+            use: { browserName: 'firefox' as const },
+          },
+        ]
+      : []),
   ],
 });

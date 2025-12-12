@@ -27,3 +27,53 @@ if (typeof window !== 'undefined') {
     })),
   });
 }
+
+// Prevent unit tests from opening real WebSocket connections (e.g., telemetry streams).
+// Node 22+ provides a global WebSocket implementation that will attempt network I/O.
+if (typeof globalThis.WebSocket !== 'undefined') {
+  class MockWebSocket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+
+    url: string;
+    readyState = MockWebSocket.OPEN;
+
+    onopen: ((this: WebSocket, ev: Event) => any) | null = null;
+    onmessage: ((this: WebSocket, ev: MessageEvent) => any) | null = null;
+    onerror: ((this: WebSocket, ev: Event) => any) | null = null;
+    onclose: ((this: WebSocket, ev: CloseEvent) => any) | null = null;
+
+    constructor(url: string) {
+      this.url = url;
+      queueMicrotask(() => {
+        this.onopen?.call(this as unknown as WebSocket, new Event('open'));
+      });
+    }
+
+    send(_data: string | ArrayBufferLike | Blob | ArrayBufferView) {}
+
+    close() {
+      this.readyState = MockWebSocket.CLOSED;
+      queueMicrotask(() => {
+        this.onclose?.call(this as unknown as WebSocket, new Event('close') as unknown as CloseEvent);
+      });
+    }
+  }
+
+  // Some environments (happy-dom/vmThreads) can retain references; force override.
+  vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
+  Object.defineProperty(globalThis, 'WebSocket', {
+    value: MockWebSocket,
+    writable: true,
+    configurable: true,
+  });
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'WebSocket', {
+      value: MockWebSocket,
+      writable: true,
+      configurable: true,
+    });
+  }
+}

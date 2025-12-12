@@ -1,6 +1,6 @@
 /**
  * FastVideo Service Integration Tests
- * Tests for FastVideo adapter integration (requires server running)
+ * Tests for FastVideo adapter integration (requires server running; integration suite)
  */
 
 import { describe, it, expect } from 'vitest';

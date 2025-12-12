@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist, subscribeWithSelector } from 'zustand/middleware';
+import { createJSONStorage, persist, subscribeWithSelector } from 'zustand/middleware';
 import { createIndexedDBStorage } from '../utils/zustandIndexedDBStorage';
 import type { Pipeline, PipelineTask, PipelineStatus, PipelineTaskStatus } from '../types/pipeline';
 
@@ -11,7 +11,13 @@ interface PipelineStoreState {
   createPipeline: (name: string, tasks: PipelineTask[]) => string;
   getPipeline: (id: string) => Pipeline | undefined;
   updatePipelineStatus: (id: string, status: PipelineStatus) => void;
-  updateTaskStatus: (pipelineId: string, taskId: string, status: PipelineTaskStatus, output?: any, error?: string) => void;
+  updateTaskStatus: (
+    pipelineId: string,
+    taskId: string,
+    status: PipelineTaskStatus,
+    output?: PipelineTask['output'],
+    error?: string
+  ) => void;
   deletePipeline: (id: string) => void;
   setActivePipeline: (id: string | null) => void;
   resetTask: (pipelineId: string, taskId: string) => void;
@@ -159,11 +165,14 @@ export const usePipelineStore = create<PipelineStoreState>()(
       }),
       {
         name: 'pipeline-storage',
-        storage: createIndexedDBStorage() as any,
-        partialize: (state) => ({
-          pipelines: state.pipelines,
-          activePipelineId: state.activePipelineId
-        }) as any
+        storage: createJSONStorage<Pick<PipelineStoreState, 'pipelines' | 'activePipelineId'>>(
+          () => createIndexedDBStorage()
+        ),
+        partialize: (state) =>
+          ({
+            pipelines: state.pipelines,
+            activePipelineId: state.activePipelineId,
+          }) as Pick<PipelineStoreState, 'pipelines' | 'activePipelineId'>,
       }
     )
   )

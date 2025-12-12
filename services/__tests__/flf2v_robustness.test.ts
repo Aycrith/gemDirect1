@@ -90,8 +90,9 @@ describe('FLF2V Robustness', () => {
         const result = await executeVideoGeneration(mockTask, mockContext);
 
         expect(videoUtils.extractFramesFromVideo).toHaveBeenCalled();
-        expect(result.metadata.flf2vSource).toBe('last-frame');
-        expect(result.metadata.flf2vFallback).toBe(false);
+        const meta = (result.metadata as any) || {};
+        expect(meta.flf2vSource).toBe('last-frame');
+        expect(meta.flf2vFallback).toBe(false);
         
         // Cleanup
         delete (global as any).window;
@@ -122,8 +123,9 @@ describe('FLF2V Robustness', () => {
 
         const result = await executeVideoGeneration(mockTask, mockContext);
 
-        expect(result.metadata.flf2vFallback).toBe(true);
-        expect(result.metadata.flf2vSource).toBe('keyframe');
+        const meta = (result.metadata as any) || {};
+        expect(meta.flf2vFallback).toBe(true);
+        expect(meta.flf2vSource).toBe('keyframe');
         
         delete (global as any).window;
     });

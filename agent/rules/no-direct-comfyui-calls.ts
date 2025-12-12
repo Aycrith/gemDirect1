@@ -4,7 +4,7 @@ import * as path from 'path';
 
 export class NoDirectComfyUICallsRule implements Rule {
   id = 'no-direct-comfyui-calls';
-  description = 'Enforce usage of queueComfyUIPromptSafe instead of direct queueComfyUIPrompt calls';
+  description = 'Enforce queue-safe ComfyUI entrypoints (avoid direct queueComfyUIPrompt/queueVideoGeneration calls)';
 
   check(context: RuleContext): Issue[] {
     const issues: Issue[] = [];
@@ -32,18 +32,40 @@ export class NoDirectComfyUICallsRule implements Rule {
       // Ignore comments (simple heuristic)
       if (/^\s*\/\//.test(line) || /^\s*\*/.test(line) || /^\s*\/\*/.test(line)) continue;
 
-      // Check for usage of queueComfyUIPrompt that isn't queueComfyUIPromptSafe
-      // We look for word boundary to ensure we don't match the Safe version
-      if (/\bqueueComfyUIPrompt\b/.test(line) && !/\bqueueComfyUIPromptSafe\b/.test(line)) {
+      // Prefer queue-safe entry points:
+      // - queueComfyUIPromptWithQueue (services/comfyUIService)
+      // - queueComfyUIPromptSafe (services/videoGenerationService)
+      //
+      // Check for direct queueComfyUIPrompt usage (word boundary avoids matching Safe/WithQueue variants).
+      if (/\bqueueComfyUIPrompt\s*\(/.test(line)) {
         issues.push({
-          id: `no-direct-comfyui-${path.basename(filePath)}-${i + 1}`,
+          id: `no-direct-comfyui-prompt-${path.basename(filePath)}-${i + 1}`,
           type: 'error',
           severity: 'high',
           category: 'service-layer',
           file: path.relative(projectRoot, filePath),
           line: i + 1,
-          message: 'Direct call to queueComfyUIPrompt detected. Use queueComfyUIPromptSafe from videoGenerationService instead.',
-          suggestedFix: 'Replace with queueComfyUIPromptSafe',
+          message:
+            'Direct call to queueComfyUIPrompt detected. Use a queue-safe entrypoint (queueComfyUIPromptWithQueue or queueComfyUIPromptSafe).',
+          suggestedFix: 'Replace with queueComfyUIPromptWithQueue (preferred) or queueComfyUIPromptSafe',
+          autoFixable: false,
+          timestamp: new Date(),
+        });
+      }
+
+      // Check for direct queueVideoGeneration usage (avoid bypassing GenerationQueue).
+      // Word boundary avoids matching queueVideoGenerationWithQueue.
+      if (/\bqueueVideoGeneration\s*\(/.test(line)) {
+        issues.push({
+          id: `no-direct-comfyui-video-${path.basename(filePath)}-${i + 1}`,
+          type: 'error',
+          severity: 'high',
+          category: 'service-layer',
+          file: path.relative(projectRoot, filePath),
+          line: i + 1,
+          message:
+            'Direct call to queueVideoGeneration detected. Use queueVideoGenerationWithQueue to respect GenerationQueue when enabled.',
+          suggestedFix: 'Replace with queueVideoGenerationWithQueue',
           autoFixable: false,
           timestamp: new Date(),
         });

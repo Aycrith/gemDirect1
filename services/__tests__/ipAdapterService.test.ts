@@ -7,7 +7,7 @@
  * - Weight configuration and options handling
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
     isIPAdapterEnabled,
     getCharacterReferencesForScene,
@@ -526,6 +526,18 @@ describe('ipAdapterService', () => {
 });
 
 describe('IP-Adapter Model Validation', () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        fetchMock = vi.fn().mockRejectedValue(new Error('ENOTFOUND'));
+        vi.stubGlobal('fetch', fetchMock);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.clearAllMocks();
+    });
+
     describe('validateIPAdapterModels', () => {
         it('reports missing models when ComfyUI returns empty model lists', async () => {
             const references: IPAdapterReference[] = [{

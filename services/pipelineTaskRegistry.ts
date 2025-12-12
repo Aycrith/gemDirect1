@@ -1,36 +1,90 @@
-import { PipelineTask, PipelineTaskType } from '../types/pipeline';
+import type {
+    PipelineMediaOutput,
+    PipelineTask,
+    PipelineTaskOf,
+    PipelineTaskOutputMap,
+    PipelineTaskType,
+} from '../types/pipeline';
 import { useSettingsStore } from './settingsStore';
 import { useGenerationStatusStore } from './generationStatusStore';
-import { 
-    queueComfyUIPromptWithQueue, 
-    ComfyUIPromptPayloads,
-    trackPromptExecution
+import {
+    queueComfyUIPromptWithQueue,
+    type ComfyUIPromptPayloads,
+    stripDataUrlPrefix,
+    waitForComfyCompletion,
 } from './comfyUIService';
 import { prepareIPAdapterPayload } from './ipAdapterService';
-import { 
-    upscaleVideo, 
-    interpolateVideo,
-    DEFAULT_UPSCALE_CONFIG, 
+import {
     DEFAULT_INTERPOLATION_CONFIG,
-    UpscaleConfig,
-    InterpolationConfig
+    DEFAULT_UPSCALE_CONFIG,
+    type InterpolationConfig,
+    type UpscaleConfig,
+    interpolateVideo,
+    upscaleVideo,
 } from './videoUpscalingService';
 import { extractFramesFromVideo } from '../utils/videoUtils';
 
-export type TaskExecutor = (task: PipelineTask, context?: { dependencies: Record<string, PipelineTask> }) => Promise<any>;
+export type TaskExecutor<TType extends PipelineTaskType> = (
+    task: PipelineTaskOf<TType>,
+    context?: { dependencies: Record<string, PipelineTask> }
+) => Promise<PipelineTaskOutputMap[TType]>;
 
-const stripDataUrlPrefix = (dataUrl: string): string => {
-    return dataUrl.replace(/^data:image\/\w+;base64,/, "");
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+};
+
+type NodeFrameExtractor = {
+    extractLastFrameBase64FromVideoUrl: (videoUrl: string) => Promise<string | null>;
+};
+
+const getInjectedNodeFrameExtractor = (): NodeFrameExtractor | null => {
+    const candidate = (globalThis as unknown as { __flf2vNodeFrameExtractor?: unknown }).__flf2vNodeFrameExtractor;
+    if (!isRecord(candidate)) return null;
+    const fn = candidate.extractLastFrameBase64FromVideoUrl;
+    return typeof fn === 'function' ? (candidate as NodeFrameExtractor) : null;
+};
+
+const normalizeToPipelineMediaOutput = (value: unknown): PipelineMediaOutput => {
+    if (!isRecord(value)) {
+        return {};
+    }
+
+    const images = Array.isArray(value.images) ? value.images.filter((v): v is string => typeof v === 'string') : undefined;
+    const videos = Array.isArray(value.videos) ? value.videos.filter((v): v is string => typeof v === 'string') : undefined;
+
+    const assets = Array.isArray(value.assets)
+        ? value.assets
+              .filter(isRecord)
+              .filter((a) => (a.type === 'image' || a.type === 'video') && typeof a.data === 'string' && typeof a.filename === 'string')
+              .map((a) => ({
+                  type: a.type as 'image' | 'video',
+                  data: a.data as string,
+                  filename: a.filename as string,
+              }))
+        : undefined;
+
+    // If we got a single-asset shape ({ type, data, filename }) ensure images/videos are populated.
+    const singleType = typeof value.type === 'string' ? value.type : undefined;
+    const singleData = typeof value.data === 'string' ? value.data : undefined;
+    const inferredImages = !images && singleType === 'image' && singleData ? [singleData] : undefined;
+    const inferredVideos = !videos && singleType === 'video' && singleData ? [singleData] : undefined;
+
+    return {
+        images: images ?? inferredImages,
+        videos: videos ?? inferredVideos,
+        assets,
+        metadata: value.metadata,
+    };
 };
 
 const fetchVideoAsFile = async (url: string): Promise<File> => {
     const response = await fetch(url);
     const blob = await response.blob();
-    return new File([blob], "video.mp4", { type: "video/mp4" });
+    return new File([blob], 'video.mp4', { type: 'video/mp4' });
 };
 
 
-export const executeKeyframeGeneration: TaskExecutor = async (task) => {
+export const executeKeyframeGeneration: TaskExecutor<'generate_keyframe'> = async (task) => {
     console.log(`[TaskRegistry] Executing keyframe generation for task ${task.id}`);
     
     const { prompt, negativePrompt, workflowProfileId, sceneId, shotId } = task.payload;
@@ -65,13 +119,13 @@ export const executeKeyframeGeneration: TaskExecutor = async (task) => {
     }
 
     console.log(`[TaskRegistry] Keyframe generation completed for task ${task.id}`);
-    return result;
+    return normalizeToPipelineMediaOutput(result);
 };
 
-export const executeVideoGeneration: TaskExecutor = async (task, context) => {
+export const executeVideoGeneration: TaskExecutor<'generate_video'> = async (task, context) => {
     console.log(`[TaskRegistry] Executing video generation for task ${task.id}`);
     
-    const { prompt, negativePrompt, workflowProfileId, sceneId, shotId, visualBible, scene, characterReferenceImages } = task.payload;
+    const { prompt, negativePrompt, workflowProfileId, sceneId, shotId, visualBible, scene } = task.payload;
     let { keyframeImage } = task.payload;
     const settings = useSettingsStore.getState();
 
@@ -84,96 +138,75 @@ export const executeVideoGeneration: TaskExecutor = async (task, context) => {
     // FLF2V: Check for previous video dependency
     if (flf2vEnabled && context?.dependencies) {
         for (const dep of Object.values(context.dependencies)) {
-            if (dep.type === 'generate_video' && dep.output?.videos?.[0]) {
-                try {
-                    const videoPath = dep.output.videos[0];
-                    // Construct URL - assuming ComfyUI serves files at /view
-                    // If videoPath is already a URL, use it, otherwise construct it
-                    const videoUrl = videoPath.startsWith('http') 
-                        ? videoPath 
-                        : `${settings.comfyUIUrl}/view?filename=${encodeURIComponent(videoPath)}&type=output`;
-                    
-                    console.log(`[TaskRegistry] FLF2V: Fetching previous video from ${videoUrl}`);
-                    
-                    let frames: string[] = [];
-                    let extractionSuccess = false;
-                    
-                    // Try browser extraction first if in browser
-                    if (typeof window !== 'undefined') {
-                        try {
-                            const videoFile = await fetchVideoAsFile(videoUrl);
-                            frames = await extractFramesFromVideo(videoFile, 1);
-                            extractionSuccess = true;
-                        } catch (e) {
-                            console.warn(`[TaskRegistry] FLF2V: Browser extraction failed, attempting fallback if available`, e);
-                        }
-                    }
+            if (dep.type !== 'generate_video') continue;
 
-                    // Try Node extraction if browser failed or we are in Node
-                    if (!extractionSuccess && typeof window === 'undefined') {
-                        // Node/Headless path
-                        try {
-                            // Use dynamic imports to avoid bundling issues in browser
-                            const { exec } = await import('child_process');
-                            const util = await import('util');
-                            const fs = await import('fs');
-                            const path = await import('path');
-                            const execAsync = util.promisify(exec);
-                            
-                            const tempDir = path.join(process.cwd(), 'temp');
-                            if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-                            
-                            const tempVideoPath = path.join(tempDir, `temp_video_${Date.now()}.mp4`);
-                            const tempFramePath = path.join(tempDir, `temp_frame_${Date.now()}.jpg`);
-                            
-                            // Download video
-                            const response = await fetch(videoUrl);
-                            if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
-                            const buffer = await response.arrayBuffer();
-                            fs.writeFileSync(tempVideoPath, Buffer.from(buffer));
-                            
-                            // Extract last frame using ffmpeg
-                            // -sseof -0.1 seeks to 0.1s from end to ensure we get a frame
-                            await execAsync(`ffmpeg -sseof -0.1 -i "${tempVideoPath}" -vsync 0 -q:v 2 -update 1 "${tempFramePath}" -y`);
-                            
-                            if (fs.existsSync(tempFramePath)) {
-                                const frameBuffer = fs.readFileSync(tempFramePath);
-                                frames = [frameBuffer.toString('base64')];
-                                extractionSuccess = true;
-                                
-                                // Cleanup
-                                fs.unlinkSync(tempVideoPath);
-                                fs.unlinkSync(tempFramePath);
-                            }
-                        } catch (e) {
-                            console.warn(`[TaskRegistry] FLF2V: Node extraction failed`, e);
-                        }
+            const depOutput = normalizeToPipelineMediaOutput(dep.output);
+            const videoPath = depOutput.videos?.[0];
+            if (!videoPath) continue;
+
+            try {
+                // If videoPath is already a URL, use it, otherwise construct a ComfyUI /view URL.
+                const videoUrl = videoPath.startsWith('http')
+                    ? videoPath
+                    : `${settings.comfyUIUrl}/view?filename=${encodeURIComponent(videoPath)}&type=output`;
+
+                console.log(`[TaskRegistry] FLF2V: Fetching previous video from ${videoUrl}`);
+
+                let extracted: string | null = null;
+
+                // Try browser extraction first.
+                if (typeof window !== 'undefined') {
+                    try {
+                        const videoFile = await fetchVideoAsFile(videoUrl);
+                        const frames = await extractFramesFromVideo(videoFile, 1);
+                        extracted = frames.length > 0 ? frames[frames.length - 1] ?? null : null;
+                    } catch (e) {
+                        console.warn(`[TaskRegistry] FLF2V: Browser extraction failed, attempting fallback if available`, e);
                     }
-                    
-                    if (frames.length > 0) {
-                        // Use the last frame
-                        keyframeImage = frames[frames.length - 1];
-                        frameSource = 'last-frame';
-                        console.log(`[TaskRegistry] FLF2V: Using last frame from ${dep.id} as input`);
-                    } else {
-                        fallbackUsed = true;
-                        console.warn(`[TaskRegistry] FLF2V: Could not extract frames, falling back to keyframe`);
-                    }
-                } catch (e) {
-                    console.warn(`[TaskRegistry] FLF2V: Failed to extract last frame from ${dep.id}`, e);
-                    fallbackUsed = true;
                 }
-                break;
+
+                // Node/Headless fallback: dynamically import Node-only extractor.
+                if (!extracted && typeof window === 'undefined') {
+                    try {
+                        const injected = getInjectedNodeFrameExtractor();
+                        if (injected) {
+                            extracted = await injected.extractLastFrameBase64FromVideoUrl(videoUrl);
+                        } else {
+                            // Use a non-literal specifier so Vite doesn't try to include this Node-only module in browser builds.
+                            const modulePath = './flf2v/nodeFrameExtractor';
+                            const nodeExtractor = await import(/* @vite-ignore */ modulePath);
+                            extracted = await nodeExtractor.extractLastFrameBase64FromVideoUrl(videoUrl);
+                        }
+                    } catch (e) {
+                        console.warn(`[TaskRegistry] FLF2V: Node extraction failed`, e);
+                    }
+                }
+
+                if (extracted) {
+                    keyframeImage = extracted;
+                    frameSource = 'last-frame';
+                    console.log(`[TaskRegistry] FLF2V: Using last frame from ${dep.id} as input`);
+                } else {
+                    fallbackUsed = true;
+                    console.warn(`[TaskRegistry] FLF2V: Could not extract last frame, falling back to keyframe`);
+                }
+            } catch (e) {
+                console.warn(`[TaskRegistry] FLF2V: Failed to extract last frame from ${dep.id}`, e);
+                fallbackUsed = true;
             }
+
+            break;
         }
     }
 
     // Resolve keyframe image from dependencies if not provided (fallback or standard flow)
     if (!keyframeImage && context?.dependencies) {
         for (const dep of Object.values(context.dependencies)) {
-            console.log(`[TaskRegistry] Checking dep ${dep.id} type=${dep.type} output=${JSON.stringify(dep.output)}`);
-            if (dep.type === 'generate_keyframe' && dep.output?.images?.[0]) {
-                keyframeImage = dep.output.images[0];
+            if (dep.type !== 'generate_keyframe') continue;
+            const depOutput = normalizeToPipelineMediaOutput(dep.output);
+            const img = depOutput.images?.[0];
+            if (img) {
+                keyframeImage = img;
                 console.log(`[TaskRegistry] Resolved keyframe image from dependency ${dep.id}`);
                 break;
             }
@@ -185,16 +218,17 @@ export const executeVideoGeneration: TaskExecutor = async (task, context) => {
 
     // Prepare IP Adapter Payload
     let ipAdapterPayload;
-    if (visualBible && scene && characterReferenceImages) {
+    if (visualBible && scene) {
          try {
             const profileId = workflowProfileId || 'wan-i2v';
             const workflowProfile = settings.workflowProfiles?.[profileId];
              if (workflowProfile?.workflowJson) {
+                const shot = scene.timeline?.shots?.find((s) => s.id === shotId) ?? null;
                 ipAdapterPayload = await prepareIPAdapterPayload(
-                    JSON.parse(workflowProfile.workflowJson),
                     visualBible,
                     scene,
-                    characterReferenceImages
+                    shot,
+                    workflowProfile.workflowJson
                 );
                 console.log(`[TaskRegistry] Prepared IP Adapter payload for task ${task.id}`);
              }
@@ -238,17 +272,21 @@ export const executeVideoGeneration: TaskExecutor = async (task, context) => {
 
     console.log(`[TaskRegistry] Video generation completed for task ${task.id}`);
     
-    // Attach FLF2V telemetry
+    const normalized = normalizeToPipelineMediaOutput(result);
+
+    // Attach FLF2V telemetry (merge with any existing metadata).
+    const existingMeta = isRecord(normalized.metadata) ? (normalized.metadata as Record<string, unknown>) : {};
     const metadata = {
+        ...existingMeta,
         flf2vEnabled,
         flf2vSource: frameSource,
-        flf2vFallback: fallbackUsed
+        flf2vFallback: fallbackUsed,
     };
-    
-    return { ...result, metadata };
+
+    return { ...normalized, metadata };
 };
 
-export const executeUpscaleVideo: TaskExecutor = async (task, context) => {
+export const executeUpscaleVideo: TaskExecutor<'upscale_video'> = async (task, context) => {
     console.log(`[TaskRegistry] Executing upscale for task ${task.id}`);
     
     const { config } = task.payload;
@@ -258,8 +296,11 @@ export const executeUpscaleVideo: TaskExecutor = async (task, context) => {
     // Resolve video path from dependencies if not provided
     if (!videoPath && context?.dependencies) {
         for (const dep of Object.values(context.dependencies)) {
-            if (dep.type === 'generate_video' && dep.output?.videos?.[0]) {
-                videoPath = dep.output.videos[0];
+            if (dep.type !== 'generate_video') continue;
+            const depOutput = normalizeToPipelineMediaOutput(dep.output);
+            const v = depOutput.videos?.[0];
+            if (v) {
+                videoPath = v;
                 console.log(`[TaskRegistry] Resolved video path from dependency ${dep.id}`);
                 break;
             }
@@ -280,12 +321,12 @@ export const executeUpscaleVideo: TaskExecutor = async (task, context) => {
     }
 
     console.log(`[TaskRegistry] Upscale queued with ID: ${result.promptId}`);
-    return trackPromptExecution(settings, result.promptId, (status) => {
-        console.log(`[TaskRegistry] Upscale progress: ${status.status} - ${status.message}`);
-    });
+
+    const finalOutput = await waitForComfyCompletion(settings, result.promptId);
+    return normalizeToPipelineMediaOutput(finalOutput);
 };
 
-export const executeInterpolateVideo: TaskExecutor = async (task, context) => {
+export const executeInterpolateVideo: TaskExecutor<'interpolate_video'> = async (task, context) => {
     console.log(`[TaskRegistry] Executing interpolation for task ${task.id}`);
     
     const { config } = task.payload;
@@ -295,9 +336,11 @@ export const executeInterpolateVideo: TaskExecutor = async (task, context) => {
     // Resolve video path from dependencies if not provided
     if (!videoPath && context?.dependencies) {
         for (const dep of Object.values(context.dependencies)) {
-            // Can come from generate_video OR upscale_video
-            if ((dep.type === 'generate_video' || dep.type === 'upscale_video') && dep.output?.videos?.[0]) {
-                videoPath = dep.output.videos[0];
+            if (dep.type !== 'generate_video' && dep.type !== 'upscale_video') continue;
+            const depOutput = normalizeToPipelineMediaOutput(dep.output);
+            const v = depOutput.videos?.[0];
+            if (v) {
+                videoPath = v;
                 console.log(`[TaskRegistry] Resolved video path from dependency ${dep.id}`);
                 break;
             }
@@ -318,27 +361,29 @@ export const executeInterpolateVideo: TaskExecutor = async (task, context) => {
     }
 
     console.log(`[TaskRegistry] Interpolation completed: ${result.outputPath}`);
-    return { 
-        videos: [result.outputPath],
+    return {
+        videos: [result.outputPath || result.outputData || ''].filter((v) => v.length > 0),
         metadata: {
             interpolationElapsed: result.interpolationElapsed,
             upscaleMethod: result.upscaleMethod,
-            finalFps: result.finalFps
-        }
+            finalFps: result.finalFps,
+        },
     };
 };
 
-export const TaskRegistry: Record<PipelineTaskType, TaskExecutor> = {
-    'generate_keyframe': executeKeyframeGeneration,
-    'generate_video': executeVideoGeneration,
-    'upscale_video': executeUpscaleVideo,
-    'interpolate_video': executeInterpolateVideo,
-    'export_timeline': async (task) => {
+export const TaskRegistry: { [K in PipelineTaskType]: TaskExecutor<K> } = {
+    generate_keyframe: executeKeyframeGeneration,
+    generate_video: executeVideoGeneration,
+    upscale_video: executeUpscaleVideo,
+    interpolate_video: executeInterpolateVideo,
+    export_timeline: async (task) => {
         console.log(`[TaskRegistry] Executing export for task ${task.id}`);
-        return new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return undefined;
     },
-    'generic_action': async (task) => {
+    generic_action: async (task) => {
         console.log(`[TaskRegistry] Executing generic action for task ${task.id}`);
-        return new Promise(resolve => setTimeout(resolve, 100));
-    }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return undefined;
+    },
 };

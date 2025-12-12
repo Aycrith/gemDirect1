@@ -74,12 +74,18 @@ async function globalSetup() {
     console.error('\nPlease ensure LM Studio and ComfyUI are running and accessible.');
     console.error('Run `npm run check:health-helper` for detailed diagnostics.\n');
     
-    // Allow tests to proceed with warning in development
-    if (process.env.CI) {
+    const requireLocalServices =
+      process.env.RUN_MANUAL_E2E === '1' ||
+      process.env.REQUIRE_LOCAL_SERVICES === '1' ||
+      process.env.PLAYWRIGHT_REQUIRE_LOCAL_SERVICES === '1';
+
+    // In CI smoke runs we don't have LM Studio/ComfyUI available; proceed with a warning.
+    // For manual/full E2E runs, enforce the gate.
+    if (requireLocalServices) {
       throw new Error('Health check failed - services not ready');
-    } else {
-      console.warn('[!] Proceeding in dev mode despite failures. Tests may fail.\n');
     }
+
+    console.warn('[!] Proceeding without local services. Some tests may be skipped or degraded.\n');
   } else {
     console.log('\n[OK] All systems ready - proceeding with tests\n');
   }

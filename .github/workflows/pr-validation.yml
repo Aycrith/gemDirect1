@@ -11,6 +11,11 @@ on:
         default: 'false'
         type: boolean
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   # P8: Phase 8 CI/CD Enforcement
   validate-environment:
@@ -77,7 +82,7 @@ jobs:
         env:
           CI: true
         run: |
-          npm test -- --run --reporter=json --outputFile=vitest-report.json 2>&1 | tee test-output.txt
+          npm exec vitest -- run --reporter=json --outputFile=vitest-report.json 2>&1 | tee test-output.txt
           
           # Extract summary
           echo ""
@@ -154,6 +159,39 @@ jobs:
         run: |
           npx tsc --noEmit
           echo "✅ TypeScript compilation successful (zero errors)"
+
+  guardian-scan:
+    name: Guardian Guardrails
+    runs-on: ubuntu-latest
+    needs: validate-environment
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Guardian Scan (CI mode)
+        env:
+          CI: true
+        run: |
+          npm run guardian:scan -- --ci
+
+      - name: Upload Guardian Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardian-report
+          path: |
+            agent/reports/
+            agent/.state/issues.json
+            agent/logs/
+          retention-days: 30
 
   build-check:
     name: Production Build
@@ -339,7 +377,7 @@ jobs:
   pr-summary:
     name: PR Summary
     runs-on: ubuntu-latest
-    needs: [unit-tests, typescript-check, build-check, telemetry-validation, playwright-smoke, telemetry-validator-test]
+    needs: [unit-tests, typescript-check, guardian-scan, build-check, telemetry-validation, playwright-smoke, telemetry-validator-test]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Generate Summary
@@ -348,6 +386,7 @@ jobs:
           script: |
             const unitTests = '${{ needs.unit-tests.result }}';
             const typeCheck = '${{ needs.typescript-check.result }}';
+            const guardianScan = '${{ needs.guardian-scan.result }}';
             const buildCheck = '${{ needs.build-check.result }}';
             const telemetry = '${{ needs.telemetry-validation.result }}';
             const playwrightSmoke = '${{ needs.playwright-smoke.result }}';
@@ -362,6 +401,7 @@ jobs:
             | Node ≥22.19.0 | ${status('success')} |
             | Unit Tests | ${status(unitTests)} |
             | TypeScript | ${status(typeCheck)} |
+            | Guardian | ${status(guardianScan)} |
             | Build | ${status(buildCheck)} |
             | Playwright Smoke | ${status(playwrightSmoke)} |
             | Telemetry Validator | ${status(telemetryValidator)} |
@@ -381,9 +421,13 @@ jobs:
             4. Check "Run full E2E tests"
             `;
             
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            } catch (error) {
+              console.log(`[pr-summary] Unable to post comment: ${error?.message ?? String(error)}`);
+            }
