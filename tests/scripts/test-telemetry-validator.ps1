@@ -10,7 +10,7 @@ function New-MockRunDir {
 Story ready: True
 Story logline: A test story
 [Scene scene-001] Generated
-[Scene scene-001] Telemetry: DurationSeconds=10 MaxWaitSeconds=300 PollIntervalSeconds=5 HistoryAttempts=1 HistoryAttemptLimit=0 PostExecutionTimeoutSeconds=600 HistoryExitReason=success HistoryPostExecutionTimeoutReached=false ExecutionSuccessDetected=true ExecutionSuccessAt=2025-12-11T12:00:00Z DoneMarkerWaitSeconds=0s DoneMarkerDetected=true ForcedCopyTriggered=false ForcedCopyDebugPath= pollLimit=unbounded SceneRetryBudget=3
+[Scene scene-001] Telemetry: DurationSeconds=10 MaxWaitSeconds=300 PollIntervalSeconds=5 HistoryAttempts=1 HistoryAttemptLimit=0 PostExecutionTimeoutSeconds=600 HistoryExitReason=success HistoryPostExecutionTimeoutReached=false ExecutionSuccessDetected=true ExecutionSuccessAt=2025-12-11T12:00:00Z DoneMarkerWaitSeconds=0s DoneMarkerDetected=true ForcedCopyTriggered=false ForcedCopyDebugPath= pollLimit=unbounded SceneRetryBudget=3 FLF2VEnabled=true FLF2VSource=last-frame FLF2VFallback=false InterpolationElapsed=1234 UpscaleMethod=RIFE FinalFPS=48 FinalResolution=1920x1080
 [Scene scene-001] VRAMBeforeMB=1000MB
 [Scene scene-001] VRAMAfterMB=1000MB
 [Scene scene-001] VRAMDeltaMB=0MB
@@ -50,6 +50,13 @@ Queue policy: sceneRetries=3, historyMaxWait=300s, historyPollInterval=5s, histo
                 "ForcedCopyTriggered": false,
                 "ForcedCopyDebugPath": "",
                 "SceneRetryBudget": 3,
+                "FLF2VEnabled": true,
+                "FLF2VSource": "last-frame",
+                "FLF2VFallback": false,
+                "InterpolationElapsed": 1234,
+                "UpscaleMethod": "RIFE",
+                "FinalFPS": 48,
+                "FinalResolution": "1920x1080",
                 "GPU": {
                     "Name": "NVIDIA GeForce RTX 3090",
                     "VramBeforeMB": 1000,
