@@ -928,6 +928,15 @@ export interface SceneTelemetryMetadata {
         After?: unknown;
         FallbackNotes?: string[] | null;
     };
+
+    // Optional pipeline/task-level telemetry (used by artifact normalization + tests)
+    FLF2VEnabled?: boolean;
+    FLF2VSource?: string;
+    FLF2VFallback?: boolean;
+    InterpolationElapsed?: number;
+    UpscaleMethod?: string;
+    FinalFPS?: number;
+    FinalResolution?: string;
 }
 
 export interface SceneHistoryLogEntry {
@@ -1094,6 +1103,89 @@ export interface ArtifactMetadataState {
     refresh: () => void;
 }
 
+const coerceMaybeNumber = (value: unknown): number | undefined => {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : undefined;
+    }
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length === 0) return undefined;
+        const parsed = Number(trimmed);
+        return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    return undefined;
+};
+
+const coerceMaybeBoolean = (value: unknown): boolean | undefined => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+        const lowered = value.trim().toLowerCase();
+        if (lowered === 'true') return true;
+        if (lowered === 'false') return false;
+    }
+    return undefined;
+};
+
+/**
+ * Normalizes artifact metadata in a backward-compatible way.
+ *
+ * Primary use-case: tolerate legacy/camelCase telemetry producers by mapping
+ * to the canonical PascalCase telemetry contract.
+ */
+export function normalizeArtifactMetadata(input: ArtifactMetadata): ArtifactMetadata {
+    if (!input || !Array.isArray(input.Scenes)) {
+        return input;
+    }
+
+    const normalizedScenes = input.Scenes.map((scene) => {
+        const telemetry = scene.Telemetry as unknown;
+        if (!telemetry || typeof telemetry !== 'object') {
+            return scene;
+        }
+
+        const t = { ...(telemetry as Record<string, unknown>) };
+
+        // Map legacy/camelCase keys to canonical PascalCase keys when missing.
+        if (t.FLF2VEnabled === undefined && t.flf2vEnabled !== undefined) {
+            t.FLF2VEnabled = coerceMaybeBoolean(t.flf2vEnabled) ?? t.flf2vEnabled;
+        }
+        if (t.FLF2VSource === undefined && typeof t.flf2vSource === 'string') {
+            t.FLF2VSource = t.flf2vSource;
+        }
+        if (t.FLF2VFallback === undefined && t.flf2vFallback !== undefined) {
+            t.FLF2VFallback = coerceMaybeBoolean(t.flf2vFallback) ?? t.flf2vFallback;
+        }
+        if (t.InterpolationElapsed === undefined && t.interpolationElapsed !== undefined) {
+            const parsed = coerceMaybeNumber(t.interpolationElapsed);
+            if (parsed !== undefined) {
+                t.InterpolationElapsed = parsed;
+            }
+        }
+        if (t.UpscaleMethod === undefined && typeof t.upscaleMethod === 'string') {
+            t.UpscaleMethod = t.upscaleMethod;
+        }
+        if (t.FinalFPS === undefined && t.finalFps !== undefined) {
+            const parsed = coerceMaybeNumber(t.finalFps);
+            if (parsed !== undefined) {
+                t.FinalFPS = parsed;
+            }
+        }
+        if (t.FinalResolution === undefined && typeof t.finalResolution === 'string') {
+            t.FinalResolution = t.finalResolution;
+        }
+
+        return {
+            ...scene,
+            Telemetry: t as SceneTelemetryMetadata,
+        };
+    });
+
+    return {
+        ...input,
+        Scenes: normalizedScenes,
+    };
+}
+
 export function useArtifactMetadata(autoRefreshMs = 0): ArtifactMetadataState {
     const [artifact, setArtifact] = useState<ArtifactMetadata | null>(null);
     const [loading, setLoading] = useState(true);
@@ -1120,7 +1212,7 @@ export function useArtifactMetadata(autoRefreshMs = 0): ArtifactMetadataState {
             if (!payload) {
                 throw new Error('Unable to load artifact metadata from any known endpoint.');
             }
-            setArtifact(payload);
+            setArtifact(normalizeArtifactMetadata(payload));
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
             setArtifact(null);

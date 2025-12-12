@@ -1009,7 +1009,7 @@ const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ addToast }) => {
 
                                         const avgDuration =
                                             sceneHistory.reduce((sum, s) => sum + (s.duration || 0), 0) / sceneHistory.length;
-                                        const currentDuration = (scene.Telemetry as { durationMs?: number } | undefined)?.durationMs;
+                                        const currentDuration = (scene.Telemetry as ({ durationMs?: number } | undefined))?.durationMs;
                                         const delta = currentDuration ? currentDuration - avgDuration : null;
 
                                         return (

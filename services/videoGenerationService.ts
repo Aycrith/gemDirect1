@@ -921,13 +921,19 @@ export const generateSceneVideoChained = async (
                 negativePrompt: timeline.negativePrompt || ''
             };
             
-            // Queue the generation with the chain start frame
-            const response = await queueVideoGeneration(
+            // Queue the generation with the chain start frame.
+            // Respect GenerationQueue when enabled to avoid VRAM exhaustion and to comply with queue-only GPU entry.
+            const response = await queueVideoGenerationWithQueue(
                 settings,
                 chainedPayloads,
                 currentStartFrame, // This becomes chain_start_frame in the workflow
                 chainedProfileId,
-                log
+                {
+                    sceneId: options.sceneId,
+                    shotId: shot.id,
+                    featureFlags: options.featureFlags,
+                    logCallback: log,
+                }
             );
             
             // Record shot queued in metrics
@@ -1233,5 +1239,4 @@ export const waitForChainedVideoComplete = async (
         }
     });
 };
-
 

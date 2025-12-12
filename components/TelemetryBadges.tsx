@@ -103,6 +103,12 @@ const TelemetryBadges: React.FC<TelemetryBadgesProps> = ({
     return 'bg-gray-700/20 text-gray-300 border-gray-600/50';
   };
 
+  const getFeatureColor = (enabled?: boolean): string => {
+    if (enabled === true) return 'bg-green-900/20 text-green-300 border-green-700/50';
+    if (enabled === false) return 'bg-gray-700/20 text-gray-300 border-gray-600/50';
+    return 'bg-gray-700/20 text-gray-300 border-gray-600/50';
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -138,6 +144,20 @@ const TelemetryBadges: React.FC<TelemetryBadgesProps> = ({
           }`}>
             <div className="font-semibold">Poll Attempts</div>
             <div>{displayTelemetry.HistoryAttempts}</div>
+          </div>
+        )}
+
+        {/* FLF2V */}
+        {displayTelemetry.FLF2VEnabled !== undefined && (
+          <div className={`text-xs p-2 rounded border ${getFeatureColor(displayTelemetry.FLF2VEnabled)}`}>
+            <div className="font-semibold">FLF2V</div>
+            <div>{displayTelemetry.FLF2VEnabled ? 'Enabled' : 'Disabled'}</div>
+            {displayTelemetry.FLF2VEnabled && displayTelemetry.FLF2VSource && (
+              <div className="text-[10px] text-gray-400">
+                source: {displayTelemetry.FLF2VSource}
+                {displayTelemetry.FLF2VFallback ? ' (fallback)' : ''}
+              </div>
+            )}
           </div>
         )}
 
@@ -194,6 +214,38 @@ const TelemetryBadges: React.FC<TelemetryBadgesProps> = ({
           <div className="text-xs p-2 rounded border bg-gray-700/20 text-gray-300 border-gray-600/50">
             <div className="font-semibold">Post-Exec Timeout</div>
             <div>{displayTelemetry.PostExecutionTimeoutSeconds}s</div>
+          </div>
+        )}
+
+        {/* Interpolation Elapsed */}
+        {displayTelemetry.InterpolationElapsed !== undefined && (
+          <div className="text-xs p-2 rounded border bg-cyan-900/20 text-cyan-200 border-cyan-700/50">
+            <div className="font-semibold">Interpolation</div>
+            <div>{Math.round(displayTelemetry.InterpolationElapsed)}ms</div>
+          </div>
+        )}
+
+        {/* Upscale / Interp Method */}
+        {displayTelemetry.UpscaleMethod && (
+          <div className="text-xs p-2 rounded border bg-cyan-900/20 text-cyan-200 border-cyan-700/50">
+            <div className="font-semibold">Upscale Method</div>
+            <div>{displayTelemetry.UpscaleMethod}</div>
+          </div>
+        )}
+
+        {/* Final FPS */}
+        {displayTelemetry.FinalFPS !== undefined && (
+          <div className="text-xs p-2 rounded border bg-cyan-900/20 text-cyan-200 border-cyan-700/50">
+            <div className="font-semibold">Final FPS</div>
+            <div>{displayTelemetry.FinalFPS}</div>
+          </div>
+        )}
+
+        {/* Final Resolution */}
+        {displayTelemetry.FinalResolution && (
+          <div className="text-xs p-2 rounded border bg-cyan-900/20 text-cyan-200 border-cyan-700/50">
+            <div className="font-semibold">Final Resolution</div>
+            <div>{displayTelemetry.FinalResolution}</div>
           </div>
         )}
       </div>
