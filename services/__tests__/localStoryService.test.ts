@@ -20,6 +20,10 @@ describe('localStoryService.generateStoryBlueprint', () => {
   });
 
   it('falls back to deterministic blueprint when fetch fails', async () => {
+    if ((globalThis as any).window) {
+      (globalThis as any).window.__localGenSettings = { llmProviderUrl: '/api/local-llm' };
+    }
+
     // Mock fetch to fail - simulating no provider or network error
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
     
@@ -31,6 +35,10 @@ describe('localStoryService.generateStoryBlueprint', () => {
   });
 
   it('parses well-formed JSON from provider and normalizes to 12 hero arcs', async () => {
+    if ((globalThis as any).window) {
+      (globalThis as any).window.__localGenSettings = { llmProviderUrl: '/api/local-llm' };
+    }
+
     const fakeResponse = {
       choices: [
         {
@@ -59,6 +67,10 @@ describe('localStoryService.generateStoryBlueprint', () => {
   });
 
   it('handles malformed provider output and returns fallback blueprint', async () => {
+    if ((globalThis as any).window) {
+      (globalThis as any).window.__localGenSettings = { llmProviderUrl: '/api/local-llm' };
+    }
+
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ 
       ok: true, 
       json: async () => ({ choices: [{ message: { content: 'not json' } }] }) 
