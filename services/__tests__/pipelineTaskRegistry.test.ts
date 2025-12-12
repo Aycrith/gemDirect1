@@ -5,7 +5,11 @@ import { useSettingsStore } from '../settingsStore';
 
 vi.mock('../comfyUIService', () => ({
   queueComfyUIPromptWithQueue: vi.fn(),
-  trackPromptExecution: vi.fn()
+  waitForComfyCompletion: vi.fn(),
+  stripDataUrlPrefix: (value: string) => {
+    const parts = value.split(',');
+    return parts.length > 1 ? parts.slice(1).join(',') : value;
+  }
 }));
 
 vi.mock('../settingsStore', () => ({
@@ -62,7 +66,7 @@ describe('PipelineTaskRegistry', () => {
     };
 
     // Mock successful completion
-    (queueComfyUIPromptWithQueue as any).mockResolvedValue({ video: 'vid1' });
+    (queueComfyUIPromptWithQueue as any).mockResolvedValue({ videos: ['vid1'] });
 
     const result = await executeVideoGeneration(task, context);
 
@@ -74,7 +78,7 @@ describe('PipelineTaskRegistry', () => {
       expect.objectContaining({ sceneId: 's1', shotId: 'sh1', waitForCompletion: true })
     );
     expect(result).toEqual({ 
-      video: 'vid1',
+      videos: ['vid1'],
       metadata: {
         flf2vEnabled: false,
         flf2vFallback: false,

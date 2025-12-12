@@ -102,6 +102,11 @@ export interface Shot {
   id: string;
   title?: string;
   description: string;
+  /**
+   * Optional shot-level prompt produced by an AI pipeline (e.g., visually detailed prompt).
+   * When present, generation flows should prefer this over `description`.
+   */
+  visualPrompt?: string;
   purpose?: string;
   arcId?: string;
   arcName?: string;
