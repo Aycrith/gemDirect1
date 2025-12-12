@@ -14,55 +14,17 @@
  */
 
 import type { LocalGenerationSettings } from '../types';
-import { checkSystemResources, getInstalledNodes } from './comfyUIService';
 import { getAvailableDeflickerNode } from './deflickerService';
 import { checkIPAdapterAvailability } from './ipAdapterService';
 import type { StabilityProfileId } from '../utils/stabilityProfiles';
 import { STABILITY_PROFILES } from '../utils/stabilityProfiles';
+import { PRESET_VRAM_REQUIREMENTS, VRAM_HEADROOM_MB } from './resourcePreflightConstants';
+
+export { MAX_RECOMMENDED_VRAM_MB, PRESET_VRAM_RECOMMENDED, PRESET_VRAM_REQUIREMENTS, VRAM_HEADROOM_MB } from './resourcePreflightConstants';
 
 // ============================================================================
 // VRAM REQUIREMENTS BY PRESET
 // ============================================================================
-
-/**
- * VRAM requirements for each stability preset (in MB)
- * 
- * Updated for B2 (Resource Safety & Defaults Hardening):
- * - Fast: 6-8 GB - Basic WAN workflow, no temporal processing
- * - Standard: 8-12 GB - WAN + deflicker post-processing
- * - Cinematic: 12-16 GB - WAN + deflicker + IP-Adapter + FETA
- * 
- * Based on empirical testing with RTX 3060/3070/3090/4090 cards.
- * Values represent minimum VRAM to start generation without OOM.
- */
-export const PRESET_VRAM_REQUIREMENTS: Record<StabilityProfileId, number> = {
-    fast: 6144,      // 6GB - Basic WAN 2.5B workflow only
-    standard: 8192,  // 8GB - WAN 2.5B + deflicker post-processing
-    cinematic: 12288, // 12GB - WAN 2.5B + deflicker + IP-Adapter + FETA
-    custom: 8192,    // 8GB - Assume standard as baseline
-};
-
-/**
- * Recommended VRAM for comfortable operation (in MB)
- * Includes headroom for system overhead and unexpected spikes.
- */
-export const PRESET_VRAM_RECOMMENDED: Record<StabilityProfileId, number> = {
-    fast: 8192,      // 8GB recommended for Fast
-    standard: 12288, // 12GB recommended for Standard
-    cinematic: 16384, // 16GB recommended for Cinematic
-    custom: 12288,   // 12GB baseline for Custom
-};
-
-/**
- * Recommended headroom above minimum VRAM (in MB)
- * Leaves room for system overhead and unexpected spikes
- */
-export const VRAM_HEADROOM_MB = 2048; // 2GB
-
-/**
- * Maximum acceptable VRAM for any preset (to warn about overkill)
- */
-export const MAX_RECOMMENDED_VRAM_MB = 24576; // 24GB
 
 // ============================================================================
 // REQUIRED NODES BY WORKFLOW TYPE
@@ -221,6 +183,98 @@ export function parseVRAMStatus(resourceMessage: string): VRAMStatus {
     return result;
 }
 
+type ComfyUISystemStatsDevice = {
+    type?: string;
+    name?: string;
+    vram_total?: number;
+    vram_free?: number;
+};
+
+type ComfyUISystemStats = {
+    devices?: ComfyUISystemStatsDevice[];
+};
+
+const getComfyUIBaseUrl = (url: string): string => {
+    return url.endsWith('/') ? url.slice(0, -1) : url;
+};
+
+const createTimeoutSignal = (ms: number): AbortSignal | undefined => {
+    if (typeof AbortSignal !== 'undefined' && typeof (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout === 'function') {
+        return (AbortSignal as unknown as { timeout: (ms: number) => AbortSignal }).timeout(ms);
+    }
+
+    if (typeof AbortController === 'undefined') return undefined;
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+};
+
+const fetchSystemStats = async (comfyUIUrl: string): Promise<ComfyUISystemStats> => {
+    const baseUrl = getComfyUIBaseUrl(comfyUIUrl);
+    const response = await fetch(`${baseUrl}/system_stats`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: createTimeoutSignal(3000),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Could not retrieve system stats (status: ${response.status}).`);
+    }
+
+    const stats = (await response.json()) as ComfyUISystemStats;
+    return stats;
+};
+
+const fetchSystemResourcesMessage = async (comfyUIUrl: string): Promise<string> => {
+    if (!comfyUIUrl) {
+        return 'Server address is not configured.';
+    }
+
+    try {
+        const stats = await fetchSystemStats(comfyUIUrl);
+        const gpuDevice = stats.devices?.find((d) => {
+            const type = d.type?.toLowerCase();
+            return !!type && ['cuda', 'dml', 'mps', 'xpu', 'rocm'].includes(type);
+        });
+
+        if (gpuDevice && typeof gpuDevice.vram_total === 'number' && typeof gpuDevice.vram_free === 'number') {
+            const vramTotalGB = gpuDevice.vram_total / (1024 ** 3);
+            const vramFreeGB = gpuDevice.vram_free / (1024 ** 3);
+            const vramWarningThresholdGB = 2.0;
+
+            let message = `GPU: ${gpuDevice.name || 'Unknown GPU'} | Total VRAM: ${vramTotalGB.toFixed(1)} GB | Free VRAM: ${vramFreeGB.toFixed(1)} GB.`;
+            if (vramFreeGB < vramWarningThresholdGB) {
+                message += `\nWarning: Low VRAM detected. Generations requiring >${vramWarningThresholdGB.toFixed(1)}GB may fail.`;
+            }
+            return message;
+        }
+
+        return 'Info: No dedicated GPU detected. Generation will run on CPU and may be very slow.';
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.toLowerCase().includes('abort')) {
+            return 'Failed to check system resources: Connection timed out.';
+        }
+        return 'Failed to check system resources. Is the server running?';
+    }
+};
+
+const fetchInstalledNodes = async (comfyUIUrl: string): Promise<Set<string>> => {
+    const baseUrl = getComfyUIBaseUrl(comfyUIUrl);
+    const response = await fetch(`${baseUrl}/object_info`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: createTimeoutSignal(5000),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch object_info: ${response.status} ${response.statusText}`);
+    }
+
+    const objectInfo = (await response.json()) as Record<string, unknown>;
+    return new Set(Object.keys(objectInfo));
+};
+
 /**
  * Check VRAM availability for a given preset
  */
@@ -233,7 +287,7 @@ export async function checkVRAMForPreset(
     const requiredMB = PRESET_VRAM_REQUIREMENTS[preset];
     
     try {
-        const resourceMessage = await checkSystemResources(comfyUIUrl);
+        const resourceMessage = await fetchSystemResourcesMessage(comfyUIUrl);
         const vramStatus = parseVRAMStatus(resourceMessage);
         
         if (!vramStatus.available) {
@@ -284,7 +338,7 @@ export async function checkNodesForProfile(
     }
     
     try {
-        const installedNodes = await getInstalledNodes(comfyUIUrl);
+        const installedNodes = await fetchInstalledNodes(comfyUIUrl);
         const available: string[] = [];
         const missing: string[] = [];
         
@@ -550,7 +604,7 @@ export async function canProceedWithGeneration(
     minVRAMMB: number = PRESET_VRAM_REQUIREMENTS.fast
 ): Promise<{ canProceed: boolean; freeMB: number; reason?: string }> {
     try {
-        const resourceMessage = await checkSystemResources(comfyUIUrl);
+        const resourceMessage = await fetchSystemResourcesMessage(comfyUIUrl);
         const vramStatus = parseVRAMStatus(resourceMessage);
         
         if (!vramStatus.available) {

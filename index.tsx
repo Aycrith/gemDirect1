@@ -3,6 +3,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
+if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
+  performance.mark('app:entry');
+}
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");
@@ -14,3 +18,7 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
+  performance.mark('app:render');
+}

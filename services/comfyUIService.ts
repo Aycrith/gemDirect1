@@ -5142,15 +5142,10 @@ export const testComfyUIConnection = async (comfyUIUrl: string): Promise<{ succe
 // PREFLIGHT-INTEGRATED VIDEO GENERATION (Resource Safety)
 // ============================================================================
 
-import { 
-    runResourcePreflight, 
-    canProceedWithGeneration, 
-    formatPreflightSummary,
-    type PreflightResult,
-    PRESET_VRAM_REQUIREMENTS,
-} from './resourcePreflight';
+import type { PreflightResult } from './resourcePreflight';
 import { type PreflightConfig } from './generationQueue';
 import type { StabilityProfileId } from '../utils/stabilityProfiles';
+import { PRESET_VRAM_REQUIREMENTS, VRAM_HEADROOM_MB } from './resourcePreflightConstants';
 
 /**
  * Extended options for preflight-aware video generation
@@ -5246,7 +5241,9 @@ export async function generateVideoFromBookendsWithPreflight(
         progress: 0,
         message: 'Running resource preflight checks...'
     });
-    
+
+    const { runResourcePreflight, formatPreflightSummary } = await import('./resourcePreflight');
+
     const preflightResult = await runResourcePreflight(settings, {
         profileId,
         requestedPreset,
@@ -5326,8 +5323,25 @@ export async function checkGenerationReadiness(
     if (!settings.comfyUIUrl) {
         return { canProceed: false, freeMB: 0, reason: 'ComfyUI URL not configured' };
     }
-    
-    return canProceedWithGeneration(settings.comfyUIUrl, minVRAMMB);
+
+    const threshold = minVRAMMB ?? PRESET_VRAM_REQUIREMENTS.fast;
+
+    try {
+        const vramStatus = await getVRAMStatus(settings.comfyUIUrl);
+
+        if (!vramStatus.available) {
+            return { canProceed: true, freeMB: 0, reason: 'VRAM status unavailable - proceeding anyway' };
+        }
+
+        const canProceed = vramStatus.freeMB >= threshold;
+        return {
+            canProceed,
+            freeMB: vramStatus.freeMB,
+            reason: canProceed ? undefined : `Insufficient VRAM: ${vramStatus.freeMB.toFixed(0)}MB < ${threshold}MB required`,
+        };
+    } catch (_error) {
+        return { canProceed: true, freeMB: 0, reason: 'VRAM check failed - proceeding anyway' };
+    }
 }
 
 /**
@@ -5353,13 +5367,9 @@ export async function getAvailablePresets(
     }
     
     try {
-        const resourceMessage = await checkSystemResources(settings.comfyUIUrl);
-        
-        // Import parseVRAMStatus from resourcePreflight
-        const { parseVRAMStatus, VRAM_HEADROOM_MB } = await import('./resourcePreflight');
-        const vramStatus = parseVRAMStatus(resourceMessage);
-        
-        if (!vramStatus.available) {
+        const vramStatus = await getVRAMStatus(settings.comfyUIUrl);
+
+        if (!vramStatus.available || vramStatus.totalMB <= 0) {
             return { 
                 available: ['fast', 'standard', 'cinematic'], 
                 recommended: 'standard',
