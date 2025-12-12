@@ -381,9 +381,23 @@ export function createShellStep(
         description,
         dependsOn: options.dependsOn,
         run: async (ctx) => {
-            // Dynamic import for Node.js child_process
-            const { exec } = await import('child_process');
-            const { promisify } = await import('util');
+            // Node-only: run shell commands via child_process.
+            // IMPORTANT: keep Node built-ins out of browser bundles.
+            // We use a guarded, non-literal dynamic import so Vite won't try to
+            // resolve/externalize these modules when bundling the web app.
+            if (typeof window !== 'undefined') {
+                return {
+                    status: 'failed',
+                    errorMessage: 'Shell steps are only supported in Node.js environments',
+                };
+            }
+
+            const nodeImport = async <TModule>(moduleName: string): Promise<TModule> => {
+                return (await import(/* @vite-ignore */ moduleName)) as TModule;
+            };
+
+            const { exec } = await nodeImport<typeof import('child_process')>('child_process');
+            const { promisify } = await nodeImport<typeof import('util')>('util');
             const execAsync = promisify(exec);
 
             // Interpolate context values in command

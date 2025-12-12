@@ -31,6 +31,7 @@ program
   .option('-r, --report', 'Generate and display report')
   .option('-q, --process-queue', 'Process Copilot queue')
   .option('--scan', 'Run single scan and exit')
+  .option('--ci', 'CI mode (fail on guardrail violations)')
   .option('--no-auto-fix', 'Disable automatic fixes')
   .option('--no-auto-stage', 'Disable automatic git staging')
   .option('--watch-interval <ms>', 'File watch interval in ms', '30000')
@@ -96,7 +97,7 @@ async function main(): Promise<void> {
   }
 
   if (options.scan) {
-    await runSingleScan(config);
+    await runSingleScan(config, { ci: options.ci === true });
     return;
   }
 
@@ -304,7 +305,42 @@ async function processQueue(_projectRoot: string, config: Partial<AgentConfig>):
   console.log(`  Failed: ${result.failed}`);
 }
 
-async function runSingleScan(config: Partial<AgentConfig>): Promise<void> {
+async function runSingleScan(
+  config: Partial<AgentConfig>,
+  options?: {
+    ci?: boolean;
+  }
+): Promise<void> {
+  const ciMode = options?.ci === true;
+  const fullConfig: AgentConfig = { ...DEFAULT_CONFIG, ...config } as AgentConfig;
+
+  if (ciMode) {
+    // Ensure the scan reflects only the current working tree, not stale cached issues.
+    const issuesPath = path.join(fullConfig.projectRoot, 'agent', '.state', 'issues.json');
+    try {
+      if (fs.existsSync(issuesPath)) {
+        fs.unlinkSync(issuesPath);
+      }
+    } catch {
+      // best-effort cleanup
+    }
+  }
+
+  const playwrightLockPath = path.join(fullConfig.projectRoot, fullConfig.playwrightLockFile);
+  const createdPlaywrightLock = ciMode && !fs.existsSync(playwrightLockPath);
+  if (createdPlaywrightLock) {
+    // Skip running Vitest via Guardian (CI already runs it elsewhere).
+    try {
+      fs.writeFileSync(
+        playwrightLockPath,
+        JSON.stringify({ pid: process.pid, timestamp: new Date().toISOString() }, null, 2),
+        'utf-8'
+      );
+    } catch {
+      // best-effort
+    }
+  }
+
   const guardian = new Guardian(config);
   
   console.log('Running single scan...\n');
@@ -312,6 +348,39 @@ async function runSingleScan(config: Partial<AgentConfig>): Promise<void> {
   await guardian.generateReport();
   
   console.log('\nScan complete.');
+
+  if (ciMode) {
+    const stateManager = new StateManager(fullConfig);
+    const unresolved = stateManager.getUnresolvedIssues();
+
+    const guardrailViolations = unresolved.filter((issue) => {
+      if (issue.severity !== 'high' && issue.severity !== 'critical') return false;
+      return issue.id.startsWith('no-direct-comfyui-') || issue.id.startsWith('no-direct-llm-');
+    });
+
+    if (guardrailViolations.length > 0) {
+      console.error(`\nGuardian CI mode: FAIL (${guardrailViolations.length} guardrail violation(s))`);
+      for (const issue of guardrailViolations.slice(0, 20)) {
+        console.error(`- ${issue.file}:${issue.line ?? 1} ${issue.id}: ${issue.message}`);
+      }
+      if (guardrailViolations.length > 20) {
+        console.error(`... and ${guardrailViolations.length - 20} more`);
+      }
+      process.exitCode = 1;
+    } else {
+      console.log('\nGuardian CI mode: PASS (no guardrail violations)');
+    }
+
+    if (createdPlaywrightLock) {
+      try {
+        if (fs.existsSync(playwrightLockPath)) {
+          fs.unlinkSync(playwrightLockPath);
+        }
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

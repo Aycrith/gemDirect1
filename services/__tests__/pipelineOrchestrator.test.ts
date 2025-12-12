@@ -237,8 +237,9 @@ describe('runPipeline', () => {
 
         expect(result.startedAt).toBeDefined();
         expect(result.finishedAt).toBeDefined();
-        expect(result.totalDurationMs).toBeGreaterThanOrEqual(50);
-        expect(result.stepResults['slow-step']!.durationMs).toBeGreaterThanOrEqual(50);
+        // Timers can be slightly under due to scheduler jitter; allow small slack.
+        expect(result.totalDurationMs).toBeGreaterThanOrEqual(45);
+        expect(result.stepResults['slow-step']!.durationMs).toBeGreaterThanOrEqual(45);
     });
 
     it('preserves initial context', async () => {
