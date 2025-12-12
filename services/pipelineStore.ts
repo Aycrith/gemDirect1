@@ -154,7 +154,7 @@ export const usePipelineStore = create<PipelineStoreState>()(
 
         deletePipeline: (id) => {
           set(state => {
-            const { [id]: deleted, ...remaining } = state.pipelines;
+            const { [id]: _deleted, ...remaining } = state.pipelines;
             return {
               pipelines: remaining,
               activePipelineId: state.activePipelineId === id ? null : state.activePipelineId
