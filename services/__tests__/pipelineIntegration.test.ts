@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PipelineEngine } from '../pipelineEngine';
 import { usePipelineStore } from '../pipelineStore';
 import { createExportPipeline } from '../pipelineFactory';
-import { executeVideoGeneration } from '../pipelineTaskRegistry';
+import { executeVideoGeneration, TaskRegistry } from '../pipelineTaskRegistry';
 import { useGenerationStatusStore } from '../generationStatusStore';
 import { Scene, LocalGenerationSettings } from '../../types';
 import * as comfyUIService from '../comfyUIService';
@@ -56,6 +56,7 @@ describe('Pipeline Integration', () => {
     const engine = PipelineEngine.getInstance();
 
     beforeEach(() => {
+        vi.restoreAllMocks();
         vi.clearAllMocks();
         usePipelineStore.setState({ pipelines: {}, activePipelineId: null });
         useGenerationStatusStore.getState().clearAllStatuses();
@@ -521,6 +522,106 @@ describe('Pipeline Integration', () => {
         expect(keyframeTask?.retryCount).toBe(2);
     });
 
+    it('should mark blocked dependents as skipped when a task fails (skip propagation)', async () => {
+        (comfyUIService.queueComfyUIPromptWithQueue as unknown as ReturnType<typeof vi.fn>)
+            .mockRejectedValueOnce(new Error('ComfyUI Error'))
+            .mockRejectedValueOnce(new Error('ComfyUI Error'));
+
+        const pipelineId = createExportPipeline(mockScenes, mockSettings, {
+            generateKeyframes: true,
+            generateVideos: true,
+        });
+
+        usePipelineStore.getState().setActivePipeline(pipelineId);
+        engine.start();
+
+        // Allow attempt + retry + terminal evaluation.
+        await vi.advanceTimersByTimeAsync(4500);
+
+        const finalPipeline = usePipelineStore.getState().pipelines[pipelineId];
+        expect(finalPipeline?.status).toBe('failed');
+
+        expect(finalPipeline!.tasks['keyframe-scene-1-shot-1']?.status).toBe('failed');
+        expect(finalPipeline!.tasks['video-scene-1-shot-1']?.status).toBe('skipped');
+    });
+
+    it('should cancel a pipeline when a cancelled dependency blocks all pending work', async () => {
+        const pipelineId = usePipelineStore.getState().createPipeline('cancel-blocks-dependents', [
+            {
+                id: 'a',
+                type: 'generic_action',
+                label: 'A',
+                status: 'pending',
+                dependencies: [],
+                payload: {},
+                retryCount: 0,
+                createdAt: Date.now(),
+            } as any,
+            {
+                id: 'b',
+                type: 'generic_action',
+                label: 'B',
+                status: 'pending',
+                dependencies: ['a'],
+                payload: {},
+                retryCount: 0,
+                createdAt: Date.now(),
+            } as any,
+        ]);
+
+        usePipelineStore.getState().updateTaskStatus(pipelineId, 'a', 'cancelled');
+
+        engine.start();
+
+        // Tick 1: should determine pipeline cannot proceed.
+        await vi.advanceTimersByTimeAsync(1100);
+
+        const finalPipeline = usePipelineStore.getState().pipelines[pipelineId];
+        expect(finalPipeline?.status).toBe('cancelled');
+        expect(usePipelineStore.getState().activePipelineId).toBeNull();
+
+        expect(finalPipeline!.tasks['a']?.status).toBe('cancelled');
+        expect(finalPipeline!.tasks['b']?.status).toBe('skipped');
+    });
+
+    it('should exhaust retries on a non-keyframe task and fail the pipeline', async () => {
+        const executor = vi
+            .spyOn(TaskRegistry, 'generic_action')
+            .mockRejectedValueOnce(new Error('Boom'))
+            .mockRejectedValueOnce(new Error('Boom'))
+            .mockRejectedValueOnce(new Error('Boom'));
+
+        const pipelineId = usePipelineStore.getState().createPipeline('retry-exhaust-non-keyframe', [
+            {
+                id: 'a',
+                type: 'generic_action',
+                label: 'A',
+                status: 'pending',
+                dependencies: [],
+                payload: {},
+                retryCount: 0,
+                maxRetries: 2,
+                createdAt: Date.now(),
+            } as any,
+        ]);
+
+        engine.start();
+
+        await vi.advanceTimersByTimeAsync(1100); // attempt 1
+        await vi.advanceTimersByTimeAsync(1100); // attempt 2
+        await vi.advanceTimersByTimeAsync(1100); // attempt 3 -> failed
+        await vi.advanceTimersByTimeAsync(1100); // pipeline terminal evaluation
+
+        expect(executor).toHaveBeenCalledTimes(3);
+
+        const finalPipeline = usePipelineStore.getState().pipelines[pipelineId];
+        expect(finalPipeline?.status).toBe('failed');
+
+        const taskA = finalPipeline!.tasks['a'];
+        expect(taskA?.status).toBe('failed');
+        expect(taskA?.retryCount).toBe(2);
+    });
+
     it('should treat cancelled tasks as terminal and mark pipeline cancelled', async () => {
         const pipelineId = usePipelineStore.getState().createPipeline('cancelled-pipeline', [
             {
@@ -592,6 +693,101 @@ describe('Pipeline Integration', () => {
         // Tick 3: video should run now that keyframe is completed.
         await vi.advanceTimersByTimeAsync(1100);
         expect(comfyUIService.queueComfyUIPromptWithQueue).toHaveBeenCalledTimes(2);
+    });
+
+    it('should pause and resume scheduling (without double-scheduling)', async () => {
+        const deferredA = createDeferred<undefined>();
+        const executorSpy = vi.spyOn(TaskRegistry, 'generic_action').mockImplementation(async (task) => {
+            if (task.id === 'a') {
+                return deferredA.promise;
+            }
+            return undefined;
+        });
+
+        const pipelineId = usePipelineStore.getState().createPipeline('pause-resume', [
+            {
+                id: 'a',
+                type: 'generic_action',
+                label: 'A',
+                status: 'pending',
+                dependencies: [],
+                payload: {},
+                retryCount: 0,
+                createdAt: Date.now(),
+            } as any,
+            {
+                id: 'b',
+                type: 'generic_action',
+                label: 'B',
+                status: 'pending',
+                dependencies: ['a'],
+                payload: {},
+                retryCount: 0,
+                createdAt: Date.now(),
+            } as any,
+        ]);
+
+        engine.start();
+
+        // Tick 1: schedules A (running, blocked)
+        await vi.advanceTimersByTimeAsync(1100);
+        expect(executorSpy).toHaveBeenCalledTimes(1);
+
+        // Pause while A is running; B should not start even after A completes.
+        usePipelineStore.getState().updatePipelineStatus(pipelineId, 'paused');
+        deferredA.resolve(undefined);
+        await vi.advanceTimersByTimeAsync(1);
+
+        // Multiple ticks while paused should not schedule B.
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(executorSpy).toHaveBeenCalledTimes(1);
+
+        // Resume; B should schedule and pipeline should complete.
+        usePipelineStore.getState().updatePipelineStatus(pipelineId, 'active');
+        await vi.advanceTimersByTimeAsync(1100);
+        expect(executorSpy).toHaveBeenCalledTimes(2);
+        await vi.advanceTimersByTimeAsync(1100);
+
+        const finalPipeline = usePipelineStore.getState().pipelines[pipelineId];
+        expect(finalPipeline?.status).toBe('completed');
+        expect(finalPipeline!.tasks['a']?.status).toBe('completed');
+        expect(finalPipeline!.tasks['b']?.status).toBe('completed');
+    });
+
+    it('should not double-schedule a running task across polling ticks', async () => {
+        const deferred = createDeferred<undefined>();
+        const executorSpy = vi.spyOn(TaskRegistry, 'generic_action').mockImplementation(async () => deferred.promise);
+
+        const pipelineId = usePipelineStore.getState().createPipeline('no-double-schedule', [
+            {
+                id: 'a',
+                type: 'generic_action',
+                label: 'A',
+                status: 'pending',
+                dependencies: [],
+                payload: {},
+                retryCount: 0,
+                createdAt: Date.now(),
+            } as any,
+        ]);
+
+        engine.start();
+
+        // Tick 1: schedules task A; it remains running.
+        await vi.advanceTimersByTimeAsync(1100);
+        expect(executorSpy).toHaveBeenCalledTimes(1);
+
+        // Further polling ticks should NOT reschedule A while it is running.
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(executorSpy).toHaveBeenCalledTimes(1);
+
+        // Complete task and allow engine to evaluate terminal state.
+        deferred.resolve(undefined);
+        await vi.advanceTimersByTimeAsync(1);
+        await vi.advanceTimersByTimeAsync(1100);
+
+        const finalPipeline = usePipelineStore.getState().pipelines[pipelineId];
+        expect(finalPipeline?.status).toBe('completed');
     });
 
     it('should build FLF2V chains per scene in multi-scene export-all graphs', async () => {
