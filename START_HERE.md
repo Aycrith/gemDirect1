@@ -37,6 +37,8 @@ npm run check:health-helper       # Verify ComfyUI ready
 # Build & Test
 npm run build                     # Should complete with 0 errors
 npm test                          # Should show 2400+ tests passing
+npx vitest run services/__tests__/pipelineIntegration.test.ts
+npx vitest run services/__tests__/tsStrictnessNoExplicitAny.test.ts
 npx playwright test               # E2E tests (117 runnable)
 
 # Run Full Pipeline

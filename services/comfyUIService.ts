@@ -4312,6 +4312,7 @@ export async function generateVideoFromBookendsNative(
     }
     
     // Build generation manifest for reproducibility
+    const manifestFlf2vEnabled = profileId.toLowerCase().includes('flf2v');
     const manifestOptions: BuildManifestOptions = {
         generationType: 'video',
         sceneId: scene.id,
@@ -4323,6 +4324,13 @@ export async function generateVideoFromBookendsNative(
         endKeyframe: bookends.end,
         seed: Math.floor(Math.random() * 2147483647), // Will be overwritten if workflow specifies seed
         seedExplicit: false,
+        flf2v: manifestFlf2vEnabled
+            ? {
+                  enabled: true,
+                  source: 'keyframe',
+                  fallback: false,
+              }
+            : undefined,
     };
     let manifest = buildManifest(manifestOptions);
     

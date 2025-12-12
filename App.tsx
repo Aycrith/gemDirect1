@@ -444,16 +444,31 @@ const AppContent: React.FC = () => {
 
     // Effect for the interactive background gradient
     useEffect(() => {
-        const handleMouseMove = (event: MouseEvent) => {
-            const { clientX, clientY } = event;
-            document.documentElement.style.setProperty('--mouse-x', `${clientX}px`);
-            document.documentElement.style.setProperty('--mouse-y', `${clientY}px`);
+        let rafId: number | null = null;
+        let pending: { x: number; y: number } | null = null;
+
+        const flush = () => {
+            rafId = null;
+            if (!pending) return;
+            const { x, y } = pending;
+            pending = null;
+            document.documentElement.style.setProperty('--mouse-x', `${x}px`);
+            document.documentElement.style.setProperty('--mouse-y', `${y}px`);
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
+        const handleMouseMove = (event: MouseEvent) => {
+            pending = { x: event.clientX, y: event.clientY };
+            if (rafId !== null) return;
+            rafId = window.requestAnimationFrame(flush);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove, { passive: true });
 
         return () => {
             window.removeEventListener('mousemove', handleMouseMove);
+            if (rafId !== null) {
+                window.cancelAnimationFrame(rafId);
+            }
         };
     }, []);
 
