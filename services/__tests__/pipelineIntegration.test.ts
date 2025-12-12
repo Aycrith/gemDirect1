@@ -8,6 +8,16 @@ import { Scene, LocalGenerationSettings } from '../../types';
 import * as comfyUIService from '../comfyUIService';
 import * as videoUtils from '../../utils/videoUtils';
 
+const createDeferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+    return { promise, resolve, reject };
+};
+
 // Mock ComfyUI Service
 vi.mock('../comfyUIService', () => ({
     queueComfyUIPromptWithQueue: vi.fn(),
@@ -297,11 +307,6 @@ describe('Pipeline Integration', () => {
             generateVideos: true
         });
 
-        const pipeline = usePipelineStore.getState().pipelines[pipelineId];
-        if (!pipeline) throw new Error('Pipeline not found');
-        const shot2VideoTask = Object.values(pipeline.tasks).find(t => t.id.includes('video') && t.id.includes('shot-2'));
-        console.log('Shot 2 Video Dependencies:', shot2VideoTask?.dependencies);
-
         usePipelineStore.getState().setActivePipeline(pipelineId);
         engine.start();
 
@@ -479,6 +484,211 @@ describe('Pipeline Integration', () => {
         expect(meta.upscaleMethod).toBe('RIFE');
         expect(meta.finalFps).toBeDefined();
         expect(meta.interpolationElapsed).toBeDefined();
+    });
+
+    it('should exhaust retries and fail the pipeline', async () => {
+        (comfyUIService.queueComfyUIPromptWithQueue as unknown as ReturnType<typeof vi.fn>)
+            .mockRejectedValueOnce(new Error('ComfyUI Error'))
+            .mockRejectedValueOnce(new Error('ComfyUI Error'))
+            .mockRejectedValueOnce(new Error('ComfyUI Error'));
+
+        const pipelineId = createExportPipeline(mockScenes, mockSettings, {
+            generateKeyframes: true,
+            generateVideos: false,
+            maxRetries: 2,
+        });
+
+        usePipelineStore.getState().setActivePipeline(pipelineId);
+        engine.start();
+
+        // Tick 1: attempt 1 fails -> pending (retryCount=1)
+        await vi.advanceTimersByTimeAsync(1100);
+        // Tick 2: attempt 2 fails -> pending (retryCount=2)
+        await vi.advanceTimersByTimeAsync(1100);
+        // Tick 3: attempt 3 fails -> failed
+        await vi.advanceTimersByTimeAsync(1100);
+        // Tick 4: pipeline resolves terminal failure state
+        await vi.advanceTimersByTimeAsync(1100);
+
+        expect(comfyUIService.queueComfyUIPromptWithQueue).toHaveBeenCalledTimes(3);
+
+        const finalPipeline = usePipelineStore.getState().pipelines[pipelineId];
+        expect(finalPipeline?.status).toBe('failed');
+        expect(usePipelineStore.getState().activePipelineId).toBeNull();
+
+        const keyframeTask = Object.values(finalPipeline!.tasks).find(t => t.type === 'generate_keyframe');
+        expect(keyframeTask?.status).toBe('failed');
+        expect(keyframeTask?.retryCount).toBe(2);
+    });
+
+    it('should treat cancelled tasks as terminal and mark pipeline cancelled', async () => {
+        const pipelineId = usePipelineStore.getState().createPipeline('cancelled-pipeline', [
+            {
+                id: 'a',
+                type: 'generic_action',
+                label: 'A',
+                status: 'pending',
+                dependencies: [],
+                payload: {},
+                retryCount: 0,
+                createdAt: Date.now(),
+            } as any,
+            {
+                id: 'b',
+                type: 'generic_action',
+                label: 'B',
+                status: 'pending',
+                dependencies: [],
+                payload: {},
+                retryCount: 0,
+                createdAt: Date.now(),
+            } as any,
+        ]);
+
+        usePipelineStore.getState().updateTaskStatus(pipelineId, 'a', 'cancelled');
+
+        engine.start();
+
+        // Tick 1: schedules and completes task b.
+        await vi.advanceTimersByTimeAsync(1100);
+        // Tick 2: terminal evaluation should mark pipeline cancelled.
+        await vi.advanceTimersByTimeAsync(1100);
+
+        const finalPipeline = usePipelineStore.getState().pipelines[pipelineId];
+        expect(finalPipeline?.status).toBe('cancelled');
+        expect(usePipelineStore.getState().activePipelineId).toBeNull();
+
+        expect(finalPipeline!.tasks['a']?.status).toBe('cancelled');
+        expect(finalPipeline!.tasks['b']?.status).toBe('completed');
+    });
+
+    it('should block dependent tasks until dependencies complete', async () => {
+        const deferredKeyframe = createDeferred<{ success: true; images: string[] }>();
+        const mockVideoResult = { success: true, videos: ['output.mp4'] };
+
+        (comfyUIService.queueComfyUIPromptWithQueue as unknown as ReturnType<typeof vi.fn>)
+            .mockImplementationOnce(() => deferredKeyframe.promise)
+            .mockResolvedValueOnce(mockVideoResult);
+
+        const pipelineId = createExportPipeline(mockScenes, mockSettings, {
+            generateKeyframes: true,
+            generateVideos: true,
+        });
+
+        usePipelineStore.getState().setActivePipeline(pipelineId);
+        engine.start();
+
+        // Tick 1: keyframe starts (promise pending)
+        await vi.advanceTimersByTimeAsync(1100);
+        expect(comfyUIService.queueComfyUIPromptWithQueue).toHaveBeenCalledTimes(1);
+
+        // Tick 2: keyframe still running, so video must NOT start yet.
+        await vi.advanceTimersByTimeAsync(1100);
+        expect(comfyUIService.queueComfyUIPromptWithQueue).toHaveBeenCalledTimes(1);
+
+        deferredKeyframe.resolve({ success: true, images: ['data:image/png;base64,fake-image'] });
+        await vi.advanceTimersByTimeAsync(1);
+
+        // Tick 3: video should run now that keyframe is completed.
+        await vi.advanceTimersByTimeAsync(1100);
+        expect(comfyUIService.queueComfyUIPromptWithQueue).toHaveBeenCalledTimes(2);
+    });
+
+    it('should build FLF2V chains per scene in multi-scene export-all graphs', async () => {
+        mockGetState.mockReturnValue({
+            comfyUIUrl: 'http://localhost:8188',
+            workflowProfile: 'wan-t2i',
+            videoWorkflowProfile: 'wan-i2v',
+            featureFlags: { enableFLF2V: true },
+        });
+
+        const multiSceneData: Scene[] = [
+            {
+                id: 'scene-1',
+                title: 'Scene 1',
+                summary: 'Summary 1',
+                timeline: {
+                    shots: [
+                        { id: 'shot-1', description: 'Shot 1' },
+                        { id: 'shot-2', description: 'Shot 2' },
+                    ],
+                    shotEnhancers: {},
+                    transitions: [],
+                    negativePrompt: '',
+                },
+            } as unknown as Scene,
+            {
+                id: 'scene-2',
+                title: 'Scene 2',
+                summary: 'Summary 2',
+                timeline: {
+                    shots: [
+                        { id: 'shot-1', description: 'Shot 1' },
+                        { id: 'shot-2', description: 'Shot 2' },
+                    ],
+                    shotEnhancers: {},
+                    transitions: [],
+                    negativePrompt: '',
+                },
+            } as unknown as Scene,
+        ];
+
+        const flf2vSettings = {
+            ...mockSettings,
+            featureFlags: { enableFLF2V: true },
+        };
+
+        const pipelineId = createExportPipeline(multiSceneData, flf2vSettings as unknown as LocalGenerationSettings, {
+            generateKeyframes: true,
+            generateVideos: true,
+        });
+
+        const pipeline = usePipelineStore.getState().pipelines[pipelineId];
+        if (!pipeline) throw new Error('Pipeline not found');
+
+        expect(Object.keys(pipeline.tasks)).toHaveLength(8);
+
+        const s1Shot2 = pipeline.tasks['video-scene-1-shot-2'];
+        const s2Shot2 = pipeline.tasks['video-scene-2-shot-2'];
+
+        expect(s1Shot2?.dependencies).toEqual(expect.arrayContaining(['keyframe-scene-1-shot-2', 'video-scene-1-shot-1']));
+        expect(s2Shot2?.dependencies).toEqual(expect.arrayContaining(['keyframe-scene-2-shot-2', 'video-scene-2-shot-1']));
+
+        expect(s1Shot2?.dependencies).not.toEqual(expect.arrayContaining(['video-scene-2-shot-1', 'video-scene-2-shot-2']));
+        expect(s2Shot2?.dependencies).not.toEqual(expect.arrayContaining(['video-scene-1-shot-1', 'video-scene-1-shot-2']));
+    });
+
+    it('should only attach onProgress for video generation', async () => {
+        const updateSpy = vi.spyOn(useGenerationStatusStore.getState(), 'updateSceneStatus');
+
+        (comfyUIService.queueComfyUIPromptWithQueue as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+            async (_settings: any, _payloads: any, _input: any, profileId: any, queueOptions: any) => {
+                if (profileId === 'wan-t2i') {
+                    expect(queueOptions?.onProgress).toBeUndefined();
+                    return { success: true, images: ['data:image/png;base64,fake-image'] };
+                }
+
+                expect(typeof queueOptions?.onProgress).toBe('function');
+                queueOptions.onProgress({ status: 'running', progress: 25, message: 'Working...' });
+                return { success: true, videos: ['output.mp4'] };
+            }
+        );
+
+        const pipelineId = createExportPipeline(mockScenes, mockSettings, {
+            generateKeyframes: true,
+            generateVideos: true,
+        });
+
+        usePipelineStore.getState().setActivePipeline(pipelineId);
+        engine.start();
+
+        await vi.advanceTimersByTimeAsync(1100); // keyframe
+        await vi.advanceTimersByTimeAsync(1100); // video
+
+        expect(updateSpy).toHaveBeenCalledWith(
+            'scene-1',
+            expect.objectContaining({ progress: 25, status: 'running' })
+        );
     });
 
     it('should use Node fallback for FLF2V when window is undefined', async () => {

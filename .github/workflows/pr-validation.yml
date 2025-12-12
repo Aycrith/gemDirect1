@@ -82,6 +82,7 @@ jobs:
         env:
           CI: true
         run: |
+          set -euo pipefail
           npm exec vitest -- run --reporter=json --outputFile=vitest-report.json 2>&1 | tee test-output.txt
           
           # Extract summary
@@ -306,6 +307,7 @@ jobs:
       - name: Run Playwright E2E Tests
         run: |
           # Run non-ComfyUI tests only (mocked endpoints)
+          set -euo pipefail
           npx playwright test --project=chromium --grep-invert="@real-comfyui" 2>&1 | tee e2e-output.txt
         env:
           CI: true
