@@ -45,6 +45,7 @@
     "benchmark:video-quality:verbose": "npx tsx scripts/benchmarks/video-quality-benchmark.ts --verbose",
     "check:ffmpeg": "npx tsx scripts/check-ffmpeg.ts",
     "lint": "eslint . --ext .ts,.tsx",
+    "lint:critical": "eslint services/pipelineEngine.ts services/pipelineStore.ts services/pipelineTaskRegistry.ts services/pipelineFactory.ts services/comfyUIService.ts utils/migrations.ts --max-warnings 0",
     "bookend:ci:core": "npx tsc --noEmit && npx vitest run --reporter=verbose && npm run bookend:regression",
     "bookend:ci:vision": "pwsh -File scripts/run-bookend-vision-qa.ps1 -Runs 3",
     "pipeline": "npx tsx scripts/run-pipeline.ts",

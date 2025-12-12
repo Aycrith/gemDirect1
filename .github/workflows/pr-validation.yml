@@ -130,6 +130,47 @@ jobs:
           npx tsc --noEmit
           echo "✅ TypeScript compilation successful (zero errors)"
 
+  lint-critical:
+    name: Lint (Critical)
+    runs-on: ubuntu-latest
+    needs: validate-environment
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint critical files
+        run: npm run lint:critical
+
+  ts-strictness-no-explicit-any:
+    name: TS Strictness (No Explicit Any)
+    runs-on: ubuntu-latest
+    needs: validate-environment
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run no-explicit-any regression test
+        env:
+          CI: true
+        run: |
+          npx vitest run services/__tests__/tsStrictnessNoExplicitAny.test.ts --reporter=verbose
+
   guardian-scan:
     name: Guardian Guardrails
     runs-on: ubuntu-latest
@@ -328,7 +369,7 @@ jobs:
   pr-summary:
     name: PR Summary
     runs-on: ubuntu-latest
-    needs: [unit-tests, typescript-check, guardian-scan, build-check, telemetry-validation, playwright-smoke, telemetry-validator-test]
+    needs: [unit-tests, typescript-check, lint-critical, ts-strictness-no-explicit-any, guardian-scan, build-check, telemetry-validation, playwright-smoke, telemetry-validator-test]
     if: always() && github.event_name == 'pull_request'
     steps:
       - name: Generate Summary
@@ -337,6 +378,8 @@ jobs:
           script: |
             const unitTests = '${{ needs.unit-tests.result }}';
             const typeCheck = '${{ needs.typescript-check.result }}';
+            const lintCritical = '${{ needs.lint-critical.result }}';
+            const strictnessNoAny = '${{ needs.ts-strictness-no-explicit-any.result }}';
             const guardianScan = '${{ needs.guardian-scan.result }}';
             const buildCheck = '${{ needs.build-check.result }}';
             const telemetry = '${{ needs.telemetry-validation.result }}';
@@ -352,6 +395,8 @@ jobs:
             | Node ≥22.19.0 | ${status('success')} |
             | Unit Tests | ${status(unitTests)} |
             | TypeScript | ${status(typeCheck)} |
+            | Lint (Critical) | ${status(lintCritical)} |
+            | TS Strictness (No explicit any) | ${status(strictnessNoAny)} |
             | Guardian | ${status(guardianScan)} |
             | Build | ${status(buildCheck)} |
             | Playwright Smoke | ${status(playwrightSmoke)} |
