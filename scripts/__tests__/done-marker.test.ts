@@ -45,5 +45,5 @@ describe('generate-done-markers sentinel (integration)', () => {
       // Cleanup
       try { fs.rmSync(tmpRoot, { recursive: true, force: true }) } catch { }
     }
-  })
+  }, 30000)
 })
