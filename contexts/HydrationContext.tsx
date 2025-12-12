@@ -218,6 +218,22 @@ export const HydrationProvider: React.FC<{ children: ReactNode }> = ({ children 
             if (typeof window !== 'undefined') {
                 (window as any).__HYDRATION_COMPLETE__ = true;
                 document.body.setAttribute('data-testid', 'hydration-complete');
+
+                try {
+                    if (typeof performance !== 'undefined' && typeof performance.mark === 'function') {
+                        performance.mark('hydration:complete');
+
+                        const hasEntryMark =
+                            typeof performance.getEntriesByName === 'function' &&
+                            performance.getEntriesByName('app:entry', 'mark').length > 0;
+
+                        if (hasEntryMark && typeof performance.measure === 'function') {
+                            performance.measure('app:hydration', 'app:entry', 'hydration:complete');
+                        }
+                    }
+                } catch {
+                    // Ignore measurement errors (e.g. missing marks or unsupported APIs).
+                }
             }
         }
     }, [status]);

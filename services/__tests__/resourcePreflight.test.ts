@@ -6,12 +6,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock external dependencies before imports
-vi.mock('../comfyUIService', () => ({
-    checkSystemResources: vi.fn(),
-    getInstalledNodes: vi.fn(),
-}));
-
 vi.mock('../deflickerService', () => ({
     getAvailableDeflickerNode: vi.fn(),
 }));
@@ -33,13 +27,57 @@ import {
     WORKFLOW_REQUIRED_NODES,
 } from '../resourcePreflight';
 
-import { checkSystemResources, getInstalledNodes } from '../comfyUIService';
 import { getAvailableDeflickerNode } from '../deflickerService';
 import { checkIPAdapterAvailability } from '../ipAdapterService';
 
 describe('resourcePreflight', () => {
+    const buildSystemStats = (options?: { freeGB?: number; totalGB?: number; gpuName?: string }) => {
+        const freeGB = options?.freeGB ?? 20.0;
+        const totalGB = options?.totalGB ?? 24.0;
+        const gpuName = options?.gpuName ?? 'RTX 3090';
+
+        return {
+            devices: [
+                {
+                    type: 'cuda',
+                    name: gpuName,
+                    vram_total: totalGB * 1024 ** 3,
+                    vram_free: freeGB * 1024 ** 3,
+                },
+            ],
+        };
+    };
+
+    const installFetchMock = (options?: { freeGB?: number; totalGB?: number; nodes?: string[] }) => {
+        const nodes = options?.nodes ?? ['CLIPTextEncode', 'LoadImage', 'KSampler', 'VAEDecode', 'VHS_VideoCombine'];
+        const objectInfo = Object.fromEntries(nodes.map((n) => [n, {}]));
+
+        global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+
+            if (url.endsWith('/system_stats')) {
+                return {
+                    ok: true,
+                    json: async () => buildSystemStats({ freeGB: options?.freeGB, totalGB: options?.totalGB }),
+                } as unknown as Response;
+            }
+
+            if (url.endsWith('/object_info')) {
+                return {
+                    ok: true,
+                    json: async () => objectInfo,
+                    status: 200,
+                    statusText: 'OK',
+                } as unknown as Response;
+            }
+
+            throw new Error(`Unexpected fetch URL: ${url}`);
+        }) as unknown as typeof fetch;
+    };
+
     beforeEach(() => {
         vi.clearAllMocks();
+        installFetchMock();
     });
 
     describe('parseVRAMStatus', () => {
@@ -95,9 +133,7 @@ describe('resourcePreflight', () => {
 
     describe('checkVRAMForPreset', () => {
         it('should return sufficient when VRAM exceeds requirement', async () => {
-            vi.mocked(checkSystemResources).mockResolvedValue(
-                'GPU: RTX 3090 | Total VRAM: 24.0 GB | Free VRAM: 20.0 GB'
-            );
+            installFetchMock({ freeGB: 20.0, totalGB: 24.0 });
 
             const result = await checkVRAMForPreset('http://localhost:8188', 'standard');
 
@@ -106,9 +142,7 @@ describe('resourcePreflight', () => {
         });
 
         it('should return insufficient when VRAM is below requirement', async () => {
-            vi.mocked(checkSystemResources).mockResolvedValue(
-                'GPU: RTX 3090 | Total VRAM: 24.0 GB | Free VRAM: 8.0 GB'
-            );
+            installFetchMock({ freeGB: 8.0, totalGB: 24.0 });
 
             const result = await checkVRAMForPreset('http://localhost:8188', 'cinematic');
 
@@ -117,9 +151,7 @@ describe('resourcePreflight', () => {
 
         it('should account for headroom in requirement', async () => {
             const exactRequirement = PRESET_VRAM_REQUIREMENTS.fast + VRAM_HEADROOM_MB;
-            vi.mocked(checkSystemResources).mockResolvedValue(
-                `GPU: RTX 3090 | Total VRAM: 24.0 GB | Free VRAM: ${(exactRequirement / 1024).toFixed(1)} GB`
-            );
+            installFetchMock({ freeGB: exactRequirement / 1024, totalGB: 24.0 });
 
             const result = await checkVRAMForPreset('http://localhost:8188', 'fast');
 
@@ -127,20 +159,20 @@ describe('resourcePreflight', () => {
         });
 
         it('should handle check failure gracefully', async () => {
-            vi.mocked(checkSystemResources).mockRejectedValue(new Error('Connection refused'));
+            global.fetch = vi.fn(async () => {
+                throw new Error('Connection refused');
+            }) as unknown as typeof fetch;
 
             const result = await checkVRAMForPreset('http://localhost:8188', 'standard');
 
             expect(result.sufficient).toBe(false);
-            expect(result.message).toContain('check failed');
+            expect(result.message).toContain('Could not determine');
         });
     });
 
     describe('checkNodesForProfile', () => {
         it('should return success when all nodes available', async () => {
-            vi.mocked(getInstalledNodes).mockResolvedValue(
-                new Set(['CLIPTextEncode', 'LoadImage', 'KSampler', 'VAEDecode', 'VHS_VideoCombine'])
-            );
+            installFetchMock({ nodes: ['CLIPTextEncode', 'LoadImage', 'KSampler', 'VAEDecode', 'VHS_VideoCombine'] });
 
             const result = await checkNodesForProfile('http://localhost:8188', 'wan-i2v');
 
@@ -149,9 +181,7 @@ describe('resourcePreflight', () => {
         });
 
         it('should return failure when nodes are missing', async () => {
-            vi.mocked(getInstalledNodes).mockResolvedValue(
-                new Set(['CLIPTextEncode']) // Missing LoadImage, etc.
-            );
+            installFetchMock({ nodes: ['CLIPTextEncode'] }); // Missing LoadImage, etc.
 
             const result = await checkNodesForProfile('http://localhost:8188', 'wan-i2v');
 
@@ -211,12 +241,7 @@ describe('resourcePreflight', () => {
         };
 
         beforeEach(() => {
-            vi.mocked(checkSystemResources).mockResolvedValue(
-                'GPU: RTX 3090 | Total VRAM: 24.0 GB | Free VRAM: 20.0 GB'
-            );
-            vi.mocked(getInstalledNodes).mockResolvedValue(
-                new Set(['CLIPTextEncode', 'LoadImage', 'KSampler', 'VAEDecode', 'VHS_VideoCombine'])
-            );
+            installFetchMock({ freeGB: 20.0, totalGB: 24.0, nodes: ['CLIPTextEncode', 'LoadImage', 'KSampler', 'VAEDecode', 'VHS_VideoCombine'] });
             vi.mocked(getAvailableDeflickerNode).mockResolvedValue(null);
             vi.mocked(checkIPAdapterAvailability).mockResolvedValue({
                 available: false,
@@ -254,7 +279,9 @@ describe('resourcePreflight', () => {
         });
 
         it('should allow skipping VRAM check', async () => {
-            vi.mocked(checkSystemResources).mockRejectedValue(new Error('Timeout'));
+            global.fetch = vi.fn(async () => {
+                throw new Error('Timeout');
+            }) as unknown as typeof fetch;
 
             const result = await runResourcePreflight(mockSettings, {
                 skipVRAMCheck: true,
@@ -265,9 +292,7 @@ describe('resourcePreflight', () => {
         });
 
         it('should downgrade preset when VRAM insufficient', async () => {
-            vi.mocked(checkSystemResources).mockResolvedValue(
-                'GPU: RTX 3090 | Total VRAM: 24.0 GB | Free VRAM: 12.0 GB'
-            );
+            installFetchMock({ freeGB: 12.0, totalGB: 24.0 });
 
             const result = await runResourcePreflight(mockSettings, {
                 requestedPreset: 'cinematic',
@@ -280,9 +305,7 @@ describe('resourcePreflight', () => {
         });
 
         it('should block when downgrade not allowed and VRAM insufficient', async () => {
-            vi.mocked(checkSystemResources).mockResolvedValue(
-                'GPU: RTX 3090 | Total VRAM: 24.0 GB | Free VRAM: 5.0 GB'
-            );
+            installFetchMock({ freeGB: 5.0, totalGB: 24.0 });
 
             const result = await runResourcePreflight(mockSettings, {
                 requestedPreset: 'cinematic',
@@ -295,9 +318,7 @@ describe('resourcePreflight', () => {
 
     describe('canProceedWithGeneration', () => {
         it('should return canProceed true when VRAM sufficient', async () => {
-            vi.mocked(checkSystemResources).mockResolvedValue(
-                'GPU: RTX 3090 | Total VRAM: 24.0 GB | Free VRAM: 12.0 GB'
-            );
+            installFetchMock({ freeGB: 12.0, totalGB: 24.0 });
 
             const result = await canProceedWithGeneration('http://localhost:8188');
 
@@ -306,9 +327,7 @@ describe('resourcePreflight', () => {
         });
 
         it('should return canProceed false when VRAM too low', async () => {
-            vi.mocked(checkSystemResources).mockResolvedValue(
-                'GPU: RTX 3090 | Total VRAM: 24.0 GB | Free VRAM: 4.0 GB'
-            );
+            installFetchMock({ freeGB: 4.0, totalGB: 24.0 });
 
             const result = await canProceedWithGeneration('http://localhost:8188');
 
@@ -317,12 +336,14 @@ describe('resourcePreflight', () => {
         });
 
         it('should fail-open on error', async () => {
-            vi.mocked(checkSystemResources).mockRejectedValue(new Error('Network error'));
+            global.fetch = vi.fn(async () => {
+                throw new Error('Network error');
+            }) as unknown as typeof fetch;
 
             const result = await canProceedWithGeneration('http://localhost:8188');
 
             expect(result.canProceed).toBe(true);
-            expect(result.reason).toContain('check failed');
+            expect(result.reason).toContain('proceeding anyway');
         });
     });
 
