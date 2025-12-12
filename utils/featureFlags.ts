@@ -1115,8 +1115,7 @@ export const FEATURE_FLAG_META: Record<keyof FeatureFlags, FeatureFlagMeta> = {
         description: 'Apply upscaler workflow as post-processing step after video generation',
         category: 'quality',
         stability: 'experimental',
-        dependencies: ['characterConsistency'], // May conflict if not sequenced properly
-        // Phase 7: Upscaler workflow implemented in videoUpscalingService.ts
+        // Implemented: services/videoUpscalingService.ts
     },
     enableFLF2V: {
         id: 'enableFLF2V',

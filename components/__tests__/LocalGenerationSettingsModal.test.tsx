@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import LocalGenerationSettingsModal from '../LocalGenerationSettingsModal';
 import { LocalGenerationSettings } from '../../types';
 import { DEFAULT_FEATURE_FLAGS } from '../../utils/featureFlags';
@@ -39,6 +39,12 @@ describe('LocalGenerationSettingsModal', () => {
     const mockOnSave = vi.fn();
     const mockAddToast = vi.fn();
 
+    beforeEach(() => {
+        mockOnClose.mockClear();
+        mockOnSave.mockClear();
+        mockAddToast.mockClear();
+    });
+
     it('renders the FLF2V toggle in the Continuity category', () => {
         render(
             <LocalGenerationSettingsModal
@@ -64,6 +70,56 @@ describe('LocalGenerationSettingsModal', () => {
         expect(screen.getByText(/Use the last frame of the previous shot/)).toBeDefined();
     });
 
+    it('renders the Video Upscaling toggle in the Quality Enhancement category', () => {
+        render(
+            <LocalGenerationSettingsModal
+                isOpen={true}
+                onClose={mockOnClose}
+                settings={mockSettings}
+                onSave={mockOnSave}
+                addToast={mockAddToast}
+            />
+        );
+
+        // Switch to Features tab
+        fireEvent.click(screen.getByRole('button', { name: /Features/ }));
+
+        // Check for Quality category
+        expect(screen.getByText('Quality Enhancement')).toBeDefined();
+
+        // Check for Video Upscaling toggle label
+        expect(screen.getByText('Video Upscaling')).toBeDefined();
+
+        // Check for description
+        expect(screen.getByText(/Apply upscaler workflow as post-processing step after video generation/)).toBeDefined();
+    });
+
+    it('toggles Video Upscaling flag', () => {
+        render(
+            <LocalGenerationSettingsModal
+                isOpen={true}
+                onClose={mockOnClose}
+                settings={mockSettings}
+                onSave={mockOnSave}
+                addToast={mockAddToast}
+            />
+        );
+
+        // Switch to Features tab
+        fireEvent.click(screen.getByRole('button', { name: /Features/ }));
+
+        const labelText = screen.getByText('Video Upscaling');
+        const label = labelText.closest('label');
+        expect(label).toBeTruthy();
+        fireEvent.click(within(label as HTMLElement).getByRole('checkbox'));
+
+        fireEvent.click(screen.getByText('Save Settings'));
+
+        expect(mockOnSave).toHaveBeenCalled();
+        const savedSettings = mockOnSave.mock.calls.at(-1)?.[0];
+        expect(savedSettings?.featureFlags?.videoUpscaling).toBe(true);
+    });
+
     it('toggles FLF2V flag', () => {
         render(
             <LocalGenerationSettingsModal
@@ -78,19 +134,10 @@ describe('LocalGenerationSettingsModal', () => {
         // Switch to Features tab
         fireEvent.click(screen.getByRole('button', { name: /Features/ }));
 
-        // Find the checkbox (associated with the label)
-        const label = screen.getByText('First-Last-Frame-to-Video');
-        // The input is inside the label's parent container in the actual component structure
-        // We can find the checkbox by label text if properly associated, or by traversing up
-        
-        // In the component:
-        // <label ...>
-        //   <input type="checkbox" ... />
-        //   <div>...<span>Label</span>...</div>
-        // </label>
-        
-        // So clicking the label text should trigger the checkbox if it's wrapped in label
-        fireEvent.click(label);
+        const labelText = screen.getByText('First-Last-Frame-to-Video');
+        const label = labelText.closest('label');
+        expect(label).toBeTruthy();
+        fireEvent.click(within(label as HTMLElement).getByRole('checkbox'));
 
         // Since state is local to the modal until saved, we can't check onSave yet
         // But we can check if the checkbox state changed visually if we could query it
@@ -99,7 +146,7 @@ describe('LocalGenerationSettingsModal', () => {
         fireEvent.click(screen.getByText('Save Settings'));
 
         expect(mockOnSave).toHaveBeenCalled();
-        const savedSettings = mockOnSave.mock.calls[0]?.[0];
+        const savedSettings = mockOnSave.mock.calls.at(-1)?.[0];
         // Default is false, so clicking should make it true
         expect(savedSettings?.featureFlags?.enableFLF2V).toBe(true);
     });
