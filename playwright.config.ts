@@ -46,13 +46,13 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { browserName: 'chromium' },
+      use: { browserName: 'chromium' as const },
     },
     ...(includeFirefox
       ? [
           {
             name: 'firefox',
-            use: { browserName: 'firefox' },
+            use: { browserName: 'firefox' as const },
           },
         ]
       : []),
