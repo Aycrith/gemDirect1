@@ -198,6 +198,17 @@ CONTEXT FROM ADJACENT SCENES:
     };
   }, [activePipeline]);
 
+  const [exportUpscaleEnabled, setExportUpscaleEnabled] = React.useState(false);
+  const [exportInterpolateEnabled, setExportInterpolateEnabled] = React.useState(false);
+
+  const exportUpscalePrereqsMet = useMemo(() => {
+    return !!localGenSettings?.comfyUIUrl && !!localGenSettings?.workflowProfiles?.['video-upscaler'];
+  }, [localGenSettings]);
+
+  const exportInterpolationPrereqsMet = useMemo(() => {
+    return !!localGenSettings?.comfyUIUrl && !!localGenSettings?.workflowProfiles?.['rife-interpolation'];
+  }, [localGenSettings]);
+
   const handleExportAll = useCallback(() => {
     if (!localGenSettings) {
       addToast('Settings not loaded', 'error');
@@ -207,7 +218,8 @@ CONTEXT FROM ADJACENT SCENES:
     const pipelineId = createExportPipeline(effectiveScenes, localGenSettings, {
       generateKeyframes: true,
       generateVideos: true,
-      upscale: false
+      upscale: exportUpscaleEnabled,
+      interpolate: exportInterpolateEnabled,
     });
 
     if (pipelineId) {
@@ -215,7 +227,7 @@ CONTEXT FROM ADJACENT SCENES:
     } else {
       addToast('No shots to export', 'warning');
     }
-  }, [effectiveScenes, localGenSettings, addToast]);
+  }, [effectiveScenes, localGenSettings, addToast, exportUpscaleEnabled, exportInterpolateEnabled]);
 
 
   return (
@@ -231,6 +243,35 @@ CONTEXT FROM ADJACENT SCENES:
         </p>
         
         <div className="mt-6 flex flex-col items-center gap-3">
+          <div className="flex items-center gap-4 text-xs text-gray-300">
+            <label
+              className={`flex items-center gap-1.5 ${!exportUpscalePrereqsMet ? 'opacity-60 cursor-not-allowed' : ''}`}
+              title={exportUpscalePrereqsMet ? 'Add an upscale step after video generation' : 'Requires ComfyUI and a \"video-upscaler\" workflow profile'}
+            >
+              <input
+                type="checkbox"
+                className="accent-emerald-500"
+                checked={exportUpscaleEnabled}
+                onChange={(e) => setExportUpscaleEnabled(e.target.checked)}
+                disabled={!!activePipelineId || !exportUpscalePrereqsMet}
+              />
+              Upscale 2x
+            </label>
+            <label
+              className={`flex items-center gap-1.5 ${!exportInterpolationPrereqsMet ? 'opacity-60 cursor-not-allowed' : ''}`}
+              title={exportInterpolationPrereqsMet ? 'Add a frame interpolation step after video generation' : 'Requires ComfyUI and a \"rife-interpolation\" workflow profile'}
+            >
+              <input
+                type="checkbox"
+                className="accent-emerald-500"
+                checked={exportInterpolateEnabled}
+                onChange={(e) => setExportInterpolateEnabled(e.target.checked)}
+                disabled={!!activePipelineId || !exportInterpolationPrereqsMet}
+              />
+              Interpolate 2x
+            </label>
+          </div>
+
           <button
             onClick={handleExportAll}
             disabled={!!activePipelineId}
