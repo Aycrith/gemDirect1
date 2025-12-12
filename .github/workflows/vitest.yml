@@ -23,7 +23,7 @@ jobs:
       - name: Run Vitest (unit & script suites)
         env:
           CI: true
-        run: npm test -- --run
+        run: npm test
 
   windows-scripts:
     name: Run scripts suite on Windows

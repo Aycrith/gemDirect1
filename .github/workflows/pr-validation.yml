@@ -11,6 +11,11 @@ on:
         default: 'false'
         type: boolean
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   # P8: Phase 8 CI/CD Enforcement
   validate-environment:
@@ -77,7 +82,7 @@ jobs:
         env:
           CI: true
         run: |
-          npm test -- --run --reporter=json --outputFile=vitest-report.json 2>&1 | tee test-output.txt
+          npm exec vitest -- run --reporter=json --outputFile=vitest-report.json 2>&1 | tee test-output.txt
           
           # Extract summary
           echo ""
@@ -416,9 +421,13 @@ jobs:
             4. Check "Run full E2E tests"
             `;
             
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            } catch (error) {
+              console.log(`[pr-summary] Unable to post comment: ${error?.message ?? String(error)}`);
+            }

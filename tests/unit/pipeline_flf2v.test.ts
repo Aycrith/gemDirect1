@@ -8,6 +8,7 @@ import { useSettingsStore } from '../../services/settingsStore';
 vi.mock('../../services/comfyUIService', () => ({
   queueComfyUIPromptWithQueue: vi.fn(),
   trackPromptExecution: vi.fn(),
+  stripDataUrlPrefix: vi.fn((value: string) => value?.replace(/^data:[^,]+,/, '') ?? value),
 }));
 
 vi.mock('../../utils/videoUtils', () => ({
