@@ -70,10 +70,7 @@ test.describe('Landing Page Visibility', () => {
       expect(directorClasses).toContain('bg-amber');
       console.log('✓ Director Mode is active');
       
-      // Verify Director Mode specific elements.
-      // The Quick Generate landing form should not be shown when the feature is disabled.
-      const quickGenerateTitle = page.locator('h2').filter({ hasText: 'Start with an Idea' });
-      await expect(quickGenerateTitle).not.toBeVisible({ timeout: 1000 });
+      await expect(quickButton).not.toBeVisible({ timeout: 1000 });
 
       // Director Mode should still render the Story Idea stage UI.
       // Allow time for the story form to hydrate/load (can be slower on CI / cold IndexedDB).
