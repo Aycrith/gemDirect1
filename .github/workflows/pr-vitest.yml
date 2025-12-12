@@ -1,7 +1,6 @@
-name: PR Unit Tests (Vitest)
+name: Vitest (Windows Manual)
 
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       runFullE2E:
@@ -66,4 +65,3 @@ jobs:
         with:
           name: comfyui-e2e-logs
           path: artifacts/comfyui-e2e-*.zip
-
