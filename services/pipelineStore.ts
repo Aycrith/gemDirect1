@@ -18,6 +18,7 @@ interface PipelineStoreState {
     output?: PipelineTask['output'],
     error?: string
   ) => void;
+  retryTask: (pipelineId: string, taskId: string, error?: string) => void;
   deletePipeline: (id: string) => void;
   setActivePipeline: (id: string | null) => void;
   resetTask: (pipelineId: string, taskId: string) => void;
@@ -113,6 +114,40 @@ export const usePipelineStore = create<PipelineStoreState>()(
                   updatedAt: Date.now()
                 }
               }
+            };
+          });
+        },
+
+        retryTask: (pipelineId, taskId, error) => {
+          set((state) => {
+            const pipeline = state.pipelines[pipelineId];
+            if (!pipeline) return state;
+
+            const task = pipeline.tasks[taskId];
+            if (!task) return state;
+
+            const updatedTask: PipelineTask = {
+              ...task,
+              status: 'pending',
+              output: undefined,
+              error,
+              retryCount: task.retryCount + 1,
+              startedAt: undefined,
+              completedAt: undefined,
+            };
+
+            return {
+              pipelines: {
+                ...state.pipelines,
+                [pipelineId]: {
+                  ...pipeline,
+                  tasks: {
+                    ...pipeline.tasks,
+                    [taskId]: updatedTask,
+                  },
+                  updatedAt: Date.now(),
+                },
+              },
             };
           });
         },

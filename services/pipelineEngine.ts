@@ -156,6 +156,16 @@ export class PipelineEngine {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[PipelineEngine] Task ${task.id} failed:`, error);
+
+      const maxRetries = task.maxRetries ?? 0;
+      if (maxRetries > 0 && task.retryCount < maxRetries) {
+        console.warn(
+          `[PipelineEngine] Retrying task ${task.id} (${task.retryCount + 1}/${maxRetries}): ${message}`
+        );
+        store.retryTask(pipelineId, task.id, message);
+        return;
+      }
+
       store.updateTaskStatus(pipelineId, task.id, 'failed', undefined, message);
       
       // Optional: Fail pipeline on error

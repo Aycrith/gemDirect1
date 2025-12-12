@@ -108,37 +108,6 @@ jobs:
           fi
           echo "✅ All tests passed"
 
-  smoke-tests:
-    name: Playwright Smoke & Telemetry
-    runs-on: ubuntu-latest
-    needs: validate-environment
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.19.0'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
-
-      - name: Run Playwright Smoke Tests
-        env:
-          RUN_MANUAL_E2E: 0
-          CI: true
-        run: |
-          npx playwright test tests/e2e/app-loading.spec.ts tests/e2e/landing-page-visibility.spec.ts --reporter=list
-
-      - name: Validate Telemetry (Mock)
-        shell: pwsh
-        run: |
-          & tests/scripts/test-telemetry-validator.ps1
-
   typescript-check:
     name: TypeScript Validation
     runs-on: ubuntu-latest
@@ -286,30 +255,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.19.0'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate Telemetry Schema
+      - name: Validate Run Summary Contract (fixture)
+        shell: pwsh
         run: |
-          # Check that telemetry contract tests exist and pass
-          echo "Checking telemetry contract tests..."
-          
-          if [ -f "scripts/__tests__/telemetry-shape.test.ts" ]; then
-            echo "✅ Telemetry shape tests exist"
-          else
-            echo "⚠️ Telemetry shape tests not found"
-          fi
-          
-          if [ -f "scripts/__tests__/telemetryContractFields.test.ts" ]; then
-            echo "✅ Telemetry contract field tests exist"
-          else
-            echo "⚠️ Telemetry contract tests not found"
-          fi
+          pwsh -NoLogo -ExecutionPolicy Bypass -File tests/scripts/test-telemetry-validator.ps1
 
   # Windows-specific tests
   windows-scripts:

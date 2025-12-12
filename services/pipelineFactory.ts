@@ -5,13 +5,21 @@ import { usePipelineStore } from './pipelineStore';
 export const createExportPipeline = (
     scenes: Scene[],
     settings: LocalGenerationSettings,
-    options: {
+    options?: {
         generateKeyframes?: boolean;
         generateVideos?: boolean;
         upscale?: boolean;
         interpolate?: boolean;
-    } = { generateKeyframes: true, generateVideos: true, upscale: false, interpolate: false }
+        maxRetries?: number;
+    }
 ): string => {
+    const {
+        generateKeyframes = true,
+        generateVideos = true,
+        upscale = false,
+        interpolate = false,
+        maxRetries = 1,
+    } = options ?? {};
     const tasks: PipelineTask[] = [];
 
     scenes.forEach(scene => {
@@ -30,7 +38,7 @@ export const createExportPipeline = (
             const negativePrompt = scene.timeline.negativePrompt || '';
 
             // 1. Keyframe Generation
-            if (options.generateKeyframes) {
+            if (generateKeyframes) {
                 tasks.push({
                     id: keyframeTaskId,
                     type: 'generate_keyframe',
@@ -45,14 +53,15 @@ export const createExportPipeline = (
                         workflowProfileId: settings.imageWorkflowProfile || 'wan-t2i'
                     },
                     retryCount: 0,
+                    maxRetries,
                     createdAt: Date.now()
                 });
             }
 
             // 2. Video Generation
-            if (options.generateVideos) {
+            if (generateVideos) {
                 const deps = [];
-                if (options.generateKeyframes) {
+                if (generateKeyframes) {
                     deps.push(keyframeTaskId);
                 }
 
@@ -76,6 +85,7 @@ export const createExportPipeline = (
                         workflowProfileId: settings.videoWorkflowProfile || 'wan-i2v'
                     },
                     retryCount: 0,
+                    maxRetries,
                     createdAt: Date.now()
                 });
 
@@ -83,7 +93,7 @@ export const createExportPipeline = (
             }
 
             // 3. Upscale
-            if (options.upscale) {
+            if (upscale) {
                  tasks.push({
                     id: upscaleTaskId,
                     type: 'upscale_video',
@@ -96,13 +106,14 @@ export const createExportPipeline = (
                         }
                     },
                     retryCount: 0,
+                    maxRetries,
                     createdAt: Date.now()
                 });
             }
 
             // 4. Interpolation
-            if (options.interpolate) {
-                const deps = options.upscale ? [upscaleTaskId] : [videoTaskId];
+            if (interpolate) {
+                const deps = upscale ? [upscaleTaskId] : [videoTaskId];
                 tasks.push({
                     id: interpolateTaskId,
                     type: 'interpolate_video',
@@ -115,6 +126,7 @@ export const createExportPipeline = (
                         }
                     },
                     retryCount: 0,
+                    maxRetries,
                     createdAt: Date.now()
                 });
             }
@@ -129,14 +141,23 @@ export const createSceneGenerationPipeline = (
     scene: Scene,
     settings: LocalGenerationSettings,
     keyframeImages: Record<string, string>,
-    options: {
+    options?: {
         generateVideos?: boolean;
         upscale?: boolean;
         interpolate?: boolean;
         visualBible?: VisualBible;
         characterReferenceImages?: Record<string, string>;
-    } = { generateVideos: true, upscale: false, interpolate: false }
+        maxRetries?: number;
+    }
 ): string => {
+    const {
+        generateVideos = true,
+        upscale = false,
+        interpolate = false,
+        visualBible,
+        characterReferenceImages,
+        maxRetries = 1,
+    } = options ?? {};
     const tasks: PipelineTask[] = [];
     if (!scene.timeline) return '';
 
@@ -152,7 +173,7 @@ export const createSceneGenerationPipeline = (
         const keyframeImage = keyframeImages[shot.id];
 
         // 1. Video Generation
-        if (options.generateVideos) {
+        if (generateVideos) {
             const deps: string[] = [];
             
             // FLF2V: Add dependency on previous shot's video task
@@ -173,11 +194,12 @@ export const createSceneGenerationPipeline = (
                     negativePrompt,
                     workflowProfileId: settings.videoWorkflowProfile || 'wan-i2v',
                     keyframeImage: keyframeImage, // Pass existing keyframe
-                    visualBible: options.visualBible,
+                    visualBible,
                     scene: scene,
-                    characterReferenceImages: options.characterReferenceImages
+                    characterReferenceImages
                 },
                 retryCount: 0,
+                maxRetries,
                 createdAt: Date.now()
             });
 
@@ -185,7 +207,7 @@ export const createSceneGenerationPipeline = (
         }
 
         // 2. Upscale
-        if (options.upscale) {
+        if (upscale) {
              tasks.push({
                 id: upscaleTaskId,
                 type: 'upscale_video',
@@ -198,13 +220,14 @@ export const createSceneGenerationPipeline = (
                     }
                 },
                 retryCount: 0,
+                maxRetries,
                 createdAt: Date.now()
             });
         }
         
         // 3. Interpolation
-        if (options.interpolate) {
-            const deps = options.upscale ? [upscaleTaskId] : [videoTaskId];
+        if (interpolate) {
+            const deps = upscale ? [upscaleTaskId] : [videoTaskId];
             tasks.push({
                 id: interpolateTaskId,
                 type: 'interpolate_video',
@@ -217,6 +240,7 @@ export const createSceneGenerationPipeline = (
                     }
                 },
                 retryCount: 0,
+                maxRetries,
                 createdAt: Date.now()
             });
         }
@@ -225,4 +249,3 @@ export const createSceneGenerationPipeline = (
     const store = usePipelineStore.getState();
     return store.createPipeline(`Generate Scene: ${scene.title}`, tasks);
 };
-

@@ -355,7 +355,11 @@ async function runSingleScan(
 
     const guardrailViolations = unresolved.filter((issue) => {
       if (issue.severity !== 'high' && issue.severity !== 'critical') return false;
-      return issue.id.startsWith('no-direct-comfyui-') || issue.id.startsWith('no-direct-llm-');
+      return (
+        issue.id.startsWith('no-direct-comfyui-') ||
+        issue.id.startsWith('no-direct-llm-') ||
+        issue.id.startsWith('pipeline-orchestration-')
+      );
     });
 
     if (guardrailViolations.length > 0) {

@@ -44,6 +44,7 @@ describe('PipelineEngine', () => {
                 }
             },
             updateTaskStatus: vi.fn(),
+            retryTask: vi.fn(),
             updatePipelineStatus: vi.fn(),
             setActivePipeline: vi.fn()
         };
