@@ -500,7 +500,23 @@ export interface WorkflowInput {
     inputType: string; // e.g., 'STRING', 'IMAGE'
 }
 
-export type MappableData = 'none' | 'human_readable_prompt' | 'full_timeline_json' | 'keyframe_image' | 'negative_prompt' | 'start_image' | 'end_image' | 'ref_image' | 'control_video' | 'input_video' | 'chain_start_frame' | 'chain_end_frame' | 'character_reference_image' | 'ipadapter_weight' | 'feta_weight';
+export type MappableData =
+  | 'none'
+  | 'human_readable_prompt'
+  | 'full_timeline_json'
+  | 'keyframe_image'
+  | 'negative_prompt'
+  | 'start_image'
+  | 'end_image'
+  | 'ref_image'
+  | 'control_video'
+  | 'input_video'
+  | 'inputVideo' // legacy alias (kept for backward compatibility)
+  | 'chain_start_frame'
+  | 'chain_end_frame'
+  | 'character_reference_image'
+  | 'ipadapter_weight'
+  | 'feta_weight';
 
 // Key is `${nodeId}:${inputName}`
 export type WorkflowMapping = Record<string, MappableData>; 

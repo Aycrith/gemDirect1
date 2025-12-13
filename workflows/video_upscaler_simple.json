@@ -12,7 +12,7 @@
   "nodes": {
     "1": {
       "inputs": {
-        "video": "input_video.mp4"
+        "file": "input_video.mp4"
       },
       "class_type": "LoadVideo",
       "_meta": {
@@ -61,12 +61,9 @@
     "6": {
       "inputs": {
         "images": ["5", 0],
-        "fps": 24,
-        "lossless": false,
-        "quality": 90,
-        "method": "default"
+        "fps": 24
       },
-      "class_type": "ImagesToVideo",
+      "class_type": "CreateVideo",
       "_meta": {
         "title": "Convert Frames to Video"
       }

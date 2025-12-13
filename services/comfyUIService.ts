@@ -1804,6 +1804,7 @@ export const queueComfyUIPrompt = async (
                         // Default is preserved from workflow JSON
                         break;
                     case 'input_video':
+                    case 'inputVideo': // legacy alias (kept for backward compatibility)
                         if (options?.inputVideo) {
                             dataToInject = options.inputVideo;
                         }
@@ -1811,6 +1812,14 @@ export const queueComfyUIPrompt = async (
                 }
                 if (dataToInject !== null) {
                     node.inputs[inputName] = dataToInject;
+
+                    // ComfyUI schema drift guard: newer LoadVideo nodes expect `file` instead of `video`.
+                    // If a legacy mapping targets `video`, also populate `file` so the prompt validates.
+                    if (node.class_type === 'LoadVideo' && inputName === 'video' && typeof dataToInject === 'string') {
+                        if (!('file' in node.inputs)) {
+                            (node.inputs as Record<string, unknown>).file = dataToInject;
+                        }
+                    }
                 }
             }
         }
