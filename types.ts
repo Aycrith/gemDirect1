@@ -689,6 +689,7 @@ export interface LocalGenerationSettings {
     
     // Quality Enhancement
     upscalerWorkflowProfile?: string;  // Profile ID for video upscaling (optional)
+    interpolationWorkflowProfile?: string; // Profile ID for frame interpolation (optional)
     characterWorkflowProfile?: string; // Profile ID for character consistency (optional)
     sceneChainedWorkflowProfile?: string; // Profile ID for chain-of-frames scene generation (optional)
     sceneBookendWorkflowProfile?: string; // Profile ID for bookend (first-last-frame) video generation (default: 'wan-flf2v')

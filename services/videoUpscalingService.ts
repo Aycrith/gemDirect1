@@ -238,6 +238,25 @@ export const interpolateVideo = async (
     }
 };
 
+/**
+ * Validates frame interpolation is supported for the current settings.
+ *
+ * This is intentionally conservative: we require the feature flag, a configured
+ * ComfyUI URL, and at least one valid interpolation workflow profile.
+ */
+export function isInterpolationSupported(settings: LocalGenerationSettings): boolean {
+    if (!settings.featureFlags?.frameInterpolationEnabled) {
+        return false;
+    }
+
+    if (!settings.comfyUIUrl) {
+        return false;
+    }
+
+    const resolved = resolveInterpolationWorkflowProfileId(settings);
+    return !!resolved.profileId;
+}
+
 
 /**
  * Validates upscaling is supported for the current settings
