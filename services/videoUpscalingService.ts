@@ -7,16 +7,7 @@
  * @module services/videoUpscalingService
  */
 
-import type { LocalGenerationSettings, WorkflowProfile, LocalGenerationAsset, MappableData } from '../types';
-
-type SettingsWithInterpolationProfile = LocalGenerationSettings & {
-    /** Optional explicit workflow profile id for interpolation (may be introduced in a separate PR). */
-    interpolationWorkflowProfile?: string;
-};
-
-function getInterpolationWorkflowProfileId(settings: LocalGenerationSettings): string | undefined {
-    return (settings as SettingsWithInterpolationProfile).interpolationWorkflowProfile;
-}
+import type { LocalGenerationSettings, WorkflowProfile, LocalGenerationAsset } from '../types';
 
 /**
  * Upscaling configuration
@@ -79,84 +70,72 @@ export interface UpscaleResult {
 
 import { queueComfyUIPromptWithQueue, ComfyUIPromptPayloads } from './comfyUIService';
 
-function hasRequiredWorkflow(profile: WorkflowProfile | undefined, requiredMapping: MappableData): boolean {
-    if (!profile?.workflowJson || profile.workflowJson.trim().length < 10) {
-        return false;
-    }
-    const mapping = profile.mapping || {};
-    return Object.values(mapping).includes(requiredMapping);
-}
+const hasNonEmptyWorkflowJson = (profile: Partial<WorkflowProfile> | undefined | null): boolean => {
+    if (!profile) return false;
+    return typeof profile.workflowJson === 'string' && profile.workflowJson.trim().length > 0;
+};
 
-function findFirstProfileWithPrefix(
-    settings: LocalGenerationSettings,
-    prefix: string,
-    requiredMapping: MappableData
-): string | null {
-    const profiles = settings.workflowProfiles || {};
-    const candidates = Object.keys(profiles).filter(id => id.startsWith(prefix));
-    for (const id of candidates) {
-        if (hasRequiredWorkflow(profiles[id], requiredMapping)) return id;
-    }
-    return null;
-}
+const hasInputVideoMapping = (profile: Partial<WorkflowProfile> | undefined | null): boolean => {
+    if (!profile) return false;
+    const mapping = (profile as WorkflowProfile).mapping as unknown;
+    if (!mapping || typeof mapping !== 'object') return false;
 
-export function resolveUpscalerProfileId(settings: LocalGenerationSettings, config: UpscaleConfig): string | null {
-    const profiles = settings.workflowProfiles || {};
+    const values = Object.values(mapping as Record<string, unknown>);
+    return values.includes('input_video') || values.includes('inputVideo');
+};
 
-    const explicit = settings.upscalerWorkflowProfile;
-    if (explicit && hasRequiredWorkflow(profiles[explicit], 'input_video')) {
-        return explicit;
-    }
+const isValidInterpolationWorkflowProfile = (profile: Partial<WorkflowProfile> | undefined | null): boolean =>
+    hasNonEmptyWorkflowJson(profile) && hasInputVideoMapping(profile);
 
-    const byConfig: string[] = [];
-    if (config.model === '4x-UltraSharp') {
-        if (config.scaleFactor === 4) {
-            byConfig.push('video-upscaler-ultrasharp-4x');
-        } else {
-            byConfig.push('video-upscaler-ultrasharp-2x', 'video-upscaler');
+const resolveInterpolationWorkflowProfileId = (settings: LocalGenerationSettings): {
+    profileId: string | null;
+    reason?: string;
+} => {
+    const profiles = settings.workflowProfiles ?? {};
+    const selectedId = (settings.interpolationWorkflowProfile || '').trim();
+
+    if (selectedId.length > 0) {
+        const selected = profiles[selectedId];
+        if (selected && isValidInterpolationWorkflowProfile(selected)) {
+            return { profileId: selectedId };
         }
-    } else if (config.model === 'RealESRGAN_x4plus') {
-        byConfig.push(
-            config.scaleFactor === 4 ? 'video-upscaler-realesrgan-x4plus-4x' : 'video-upscaler-realesrgan-x4plus-2x'
-        );
-    } else if (config.model === 'RealESRGAN_x4plus_anime_6B') {
-        byConfig.push(config.scaleFactor === 4 ? 'video-upscaler-anime-6b-4x' : 'video-upscaler-anime-6b-2x');
-    }
-    byConfig.push('video-upscaler');
 
-    for (const candidate of byConfig) {
-        if (hasRequiredWorkflow(profiles[candidate], 'input_video')) return candidate;
-    }
+        if (!selected) {
+            return {
+                profileId: null,
+                reason: `Selected interpolation workflow profile '${selectedId}' was not found in settings.workflowProfiles.`,
+            };
+        }
 
-    // Safe fallback: any available `video-upscaler*` profile with input_video mapping.
-    return findFirstProfileWithPrefix(settings, 'video-upscaler', 'input_video');
-}
-
-function resolveInterpolationProfileId(settings: LocalGenerationSettings, config: InterpolationConfig): string | null {
-    const profiles = settings.workflowProfiles || {};
-
-    const explicit = getInterpolationWorkflowProfileId(settings);
-    if (explicit && hasRequiredWorkflow(profiles[explicit], 'input_video')) {
-        return explicit;
+        return {
+            profileId: null,
+            reason: `Selected interpolation workflow profile '${selectedId}' is invalid (requires workflowJson and an 'input_video' mapping).`,
+        };
     }
 
-    const candidates: string[] = [];
-    if (config.model === 'RIFE') {
-        if (config.multiplier === 4) {
-            candidates.push('rife-interpolation-4x-quality', 'rife-interpolation-4x-fast', 'rife-interpolation-4x');
-        } else {
-            candidates.push('rife-interpolation-2x-quality', 'rife-interpolation-2x-fast', 'rife-interpolation-2x', 'rife-interpolation');
+    // Fallback: choose the best available rife-interpolation* profile with a valid input_video mapping.
+    const rifeCandidates = Object.keys(profiles)
+        .filter((id) => id.startsWith('rife-interpolation'))
+        .sort((a, b) => {
+            if (a === 'rife-interpolation' && b !== 'rife-interpolation') return -1;
+            if (b === 'rife-interpolation' && a !== 'rife-interpolation') return 1;
+            return a.localeCompare(b);
+        });
+
+    for (const id of rifeCandidates) {
+        if (isValidInterpolationWorkflowProfile(profiles[id])) {
+            return { profileId: id };
         }
     }
-    candidates.push('rife-interpolation');
 
-    for (const candidate of candidates) {
-        if (hasRequiredWorkflow(profiles[candidate], 'input_video')) return candidate;
-    }
-
-    // Safe fallback: any available `rife-interpolation*` profile with input_video mapping.
-    return findFirstProfileWithPrefix(settings, 'rife-interpolation', 'input_video');
-}
+    return {
+        profileId: null,
+        reason:
+            rifeCandidates.length === 0
+                ? `No 'rife-interpolation*' workflow profiles were found in settings.workflowProfiles.`
+                : `Found rife-interpolation* profiles (${rifeCandidates.join(', ')}), but none had a valid workflowJson + 'input_video' mapping.`,
+    };
+};
 
 export const interpolateVideo = async (
     settings: LocalGenerationSettings,
@@ -166,48 +145,38 @@ export const interpolateVideo = async (
     console.log(`[VideoUpscaling] Interpolating video: ${videoPath} with config`, config);
     const startTime = Date.now();
 
-    // Match upscaling support semantics (feature flag + ComfyUI configured).
-    const flags = settings.featureFlags;
-    if (!flags?.frameInterpolationEnabled || !settings.comfyUIUrl) {
+    // Enforce feature flag: interpolation is experimental and must be explicitly enabled.
+    // (UI should also gate this, but service-side enforcement keeps behavior predictable.)
+    if (!settings.featureFlags?.frameInterpolationEnabled) {
         return {
             success: false,
-            error: 'Video interpolation not supported with current settings',
+            error: 'Frame interpolation is disabled. Enable the Feature Flag "Frame Interpolation" (frameInterpolationEnabled) in Settings → Features.',
         };
     }
 
-    // If the user explicitly selected an interpolation profile, provide a targeted error
-    // when it is missing or misconfigured (helps UI gating + troubleshooting).
-    const explicit = getInterpolationWorkflowProfileId(settings);
-    if (explicit) {
-        const explicitProfile = settings.workflowProfiles?.[explicit];
-        if (!explicitProfile) {
-            return {
-                success: false,
-                error: `Interpolation workflow profile "${explicit}" was selected but was not found in workflowProfiles.`,
-            };
-        }
-        if (!explicitProfile.workflowJson || explicitProfile.workflowJson.trim().length < 10) {
-            return {
-                success: false,
-                error: `Interpolation workflow profile "${explicit}" is missing a valid workflowJson. Please re-import the profile.`,
-            };
-        }
-        const mapping = explicitProfile.mapping || {};
-        const hasInputVideo = Object.values(mapping).includes('input_video');
-        if (!hasInputVideo) {
-            return {
-                success: false,
-                error: `Interpolation workflow profile "${explicit}" is missing the required input_video mapping.`,
-            };
-        }
-    }
-
-    const profileId = resolveInterpolationProfileId(settings, config);
-    
-    if (!profileId) {
+    // Basic config sanity: interpolation is a ComfyUI-driven post-processing step.
+    if (!settings.comfyUIUrl) {
         return {
             success: false,
-            error: 'No interpolation workflow profile found. Please import it in settings.',
+            error: 'ComfyUI is not configured. Set ComfyUI URL in Settings before using frame interpolation.',
+        };
+    }
+
+    // Resolve workflow profile selection (variant-safe):
+    // - Prefer the user-selected settings.interpolationWorkflowProfile if valid
+    // - Otherwise fall back to the best available rife-interpolation* profile
+    const resolved = resolveInterpolationWorkflowProfileId(settings);
+    const profileId = resolved.profileId;
+
+    if (!profileId) {
+        const extra = resolved.reason ? ` ${resolved.reason}` : '';
+        console.error(`[VideoUpscaling] No valid interpolation workflow profile found.${extra}`);
+        return {
+            success: false,
+            error:
+                `No valid interpolation workflow profile found.` +
+                ` Import (or select) a profile that maps 'input_video' and has a valid workflowJson.` +
+                (resolved.reason ? ` Details: ${resolved.reason}` : ''),
         };
     }
 
@@ -255,20 +224,16 @@ export const interpolateVideo = async (
             };
         }
 
-        const elapsed = Date.now() - startTime;
         return {
             success: false,
-            error: 'Video interpolation failed: completed but no output video was returned',
-            processingTimeMs: elapsed,
-            interpolationElapsed: elapsed,
+            error: "Interpolation completed but no output video was returned"
         };
 
     } catch (error) {
         console.error(`[VideoUpscaling] Interpolation failed:`, error);
         return {
             success: false,
-            error: `Video interpolation failed: ${error instanceof Error ? error.message : String(error)}`,
-            processingTimeMs: Date.now() - startTime,
+            error: error instanceof Error ? error.message : String(error)
         };
     }
 };
@@ -289,47 +254,19 @@ export function isUpscalingSupported(settings: LocalGenerationSettings): boolean
         return false;
     }
 
-    // Contract: only supported when the resolved profile is valid (workflowJson + input_video mapping).
-    const resolvedProfileId = resolveUpscalerProfileId(settings, DEFAULT_UPSCALE_CONFIG);
-    if (!resolvedProfileId) return false;
-    const resolvedProfile = settings.workflowProfiles?.[resolvedProfileId];
-    return hasRequiredWorkflow(resolvedProfile, 'input_video');
-}
-
-/**
- * Validates interpolation is supported for the current settings
- */
-export function isInterpolationSupported(settings: LocalGenerationSettings): boolean {
-    const flags = settings.featureFlags;
-    if (!flags?.frameInterpolationEnabled) {
+    // Check if upscaler workflow profile exists
+    const profile = settings.workflowProfiles?.['video-upscaler'];
+    if (!profile) {
         return false;
     }
 
-    if (!settings.comfyUIUrl) {
-        return false;
-    }
-
-    const resolvedProfileId = resolveInterpolationProfileId(settings, DEFAULT_INTERPOLATION_CONFIG);
-    if (!resolvedProfileId) return false;
-    const resolvedProfile = settings.workflowProfiles?.[resolvedProfileId];
-    return hasRequiredWorkflow(resolvedProfile, 'input_video');
+    return true;
 }
 
 /**
  * Gets the upscaler workflow profile from settings
  */
 export function getUpscalerProfile(settings: LocalGenerationSettings): WorkflowProfile | null {
-    const resolved = resolveUpscalerProfileId(settings, DEFAULT_UPSCALE_CONFIG);
-    if (resolved) {
-        return settings.workflowProfiles?.[resolved] || null;
-    }
-
-    const fallbackId = findFirstProfileWithPrefix(settings, 'video-upscaler', 'input_video');
-    if (fallbackId) {
-        return settings.workflowProfiles?.[fallbackId] || null;
-    }
-
-    // Back-compat fallback
     return settings.workflowProfiles?.['video-upscaler'] || null;
 }
 
@@ -460,11 +397,11 @@ export async function upscaleVideo(
     }
     
     // Get upscaler profile
-    const profileId = resolveUpscalerProfileId(settings, config);
-    if (!profileId) {
+    const profile = getUpscalerProfile(settings);
+    if (!profile) {
         return {
             success: false,
-            error: 'No upscaler workflow profile found. Please import it in settings.',
+            error: 'Upscaler workflow profile not configured',
         };
     }
     
@@ -475,55 +412,50 @@ export async function upscaleVideo(
     });
     
     try {
-        // Provide config via payloads.json (some workflows may use it), while still
-        // driving the actual video input through the inputVideo mapping.
+        // Import videoGenerationService for safe queueing (avoid circular dependency)
+        const { queueComfyUIPromptSafe } = await import('./videoGenerationService');
+        
+        // Build payload
         const payload = buildUpscalePayload(videoPath, config);
-        const payloads: ComfyUIPromptPayloads = {
-            json: JSON.stringify(payload),
-            text: `Upscale video ${config.scaleFactor}x using ${config.model}`,
-            structured: [],
-            negativePrompt: ""
-        };
-
-        // Queue the upscale job (do NOT wait for completion; callers track via promptId)
-        const result = await queueComfyUIPromptWithQueue(
+        
+        // Queue the upscale job
+        // Note: This uses a custom workflow profile for upscaling
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await queueComfyUIPromptSafe(
             settings,
-            payloads,
-            '', // No keyframe needed for upscaling
-            profileId,
             {
-                waitForCompletion: false,
-                sceneId: 'upscale',
-                extraData: {
-                    inputVideo: videoPath
-                }
-            }
-        );
-
-        const promptId = (result as { prompt_id?: unknown })?.prompt_id;
-        if (typeof promptId === 'string' && promptId.length > 0) {
-            onProgress?.({
-                status: 'queued',
-                percent: 100,
-                message: `Upscale job queued (promptId=${promptId})`,
-            });
+                json: JSON.stringify(payload),
+                text: `Upscale video ${config.scaleFactor}x using ${config.model}`,
+            },
+            '', // No keyframe needed for upscaling
+            { sceneId: 'upscale' } // Provide dummy sceneId for queue tracking
+        ) as any;
+        
+        if (!response?.prompt_id) {
             return {
-                success: true,
-                promptId,
-                processingTimeMs: Date.now() - startTime,
+                success: false,
+                error: 'Failed to queue upscale job',
             };
         }
-
+        
+        onProgress?.({
+            status: 'queued',
+            percent: 10,
+            message: `Upscale job queued: ${response.prompt_id}`,
+        });
+        
+        // Return immediately with prompt_id for caller to track
+        // The caller should use trackPromptExecution() to monitor progress
         return {
-            success: false,
-            error: 'Failed to queue upscale job: no promptId returned',
+            success: true,
+            promptId: response.prompt_id,
             processingTimeMs: Date.now() - startTime,
         };
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         return {
             success: false,
-            error: `Video upscaling failed: ${errorMessage}`,
+            error: `Upscaling failed: ${errorMessage}`,
             processingTimeMs: Date.now() - startTime,
         };
     }
