@@ -104,7 +104,7 @@ export const UPSCALER_PROFILE_TEMPLATE: Partial<WorkflowProfile> = {
     status: 'incomplete',
     mapping: {},
     metadata: {
-        requiredNodes: ['VHS_LoadVideo', 'ImageUpscaleWithModel'],
+        requiredNodes: ['LoadVideo', 'GetVideoComponents', 'ImageUpscaleWithModel', 'SaveVideo'],
         requiredMappings: ['input_video'] as MappableData[],
         missingMappings: ['input_video'] as MappableData[],
         warnings: [
@@ -187,7 +187,7 @@ export function createUpscalerProfile(
     
     // Map video input
     if (config.videoLoadNodeId) {
-        mapping[`${config.videoLoadNodeId}:video`] = 'keyframe_image' as MappableData; // Reusing for video input
+        mapping[`${config.videoLoadNodeId}:file`] = 'input_video' as MappableData;
     }
     
     // Map optional CLIP prompt
@@ -213,9 +213,9 @@ export function createUpscalerProfile(
                 : UPSCALER_PROFILE_TEMPLATE.metadata?.warnings || [],
             highlightMappings: [
                 ...(config.videoLoadNodeId ? [{
-                    type: 'keyframe_image' as MappableData,
+                    type: 'input_video' as MappableData,
                     nodeId: config.videoLoadNodeId,
-                    inputName: 'video',
+                    inputName: 'file',
                     nodeTitle: 'Input Video',
                 }] : []),
             ],
