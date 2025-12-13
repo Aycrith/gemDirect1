@@ -19,6 +19,7 @@ import { useAllGenStatuses, DEFAULT_GENERATION_STATUS } from '../services/genera
 import { isFeatureEnabled } from '../utils/featureFlags';
 import { usePipelineStore } from '../services/pipelineStore';
 import { createExportPipeline } from '../services/pipelineFactory';
+import { isInterpolationReady, isUpscalingReady } from '../utils/wanProfileReadiness';
 
 interface ContinuityDirectorProps {
   scenes: Scene[];
@@ -201,13 +202,30 @@ CONTEXT FROM ADJACENT SCENES:
   const [exportUpscaleEnabled, setExportUpscaleEnabled] = React.useState(false);
   const [exportInterpolateEnabled, setExportInterpolateEnabled] = React.useState(false);
 
+  const videoUpscalingEnabled = !!localGenSettings?.featureFlags?.videoUpscaling;
+  const frameInterpolationEnabled = !!localGenSettings?.featureFlags?.frameInterpolationEnabled;
+
   const exportUpscalePrereqsMet = useMemo(() => {
-    return !!localGenSettings?.comfyUIUrl && !!localGenSettings?.workflowProfiles?.['video-upscaler'];
-  }, [localGenSettings]);
+    return localGenSettings ? isUpscalingReady(localGenSettings) : false;
+  }, [localGenSettings?.comfyUIUrl, localGenSettings?.workflowProfiles, videoUpscalingEnabled]);
 
   const exportInterpolationPrereqsMet = useMemo(() => {
-    return !!localGenSettings?.comfyUIUrl && !!localGenSettings?.workflowProfiles?.['rife-interpolation'];
-  }, [localGenSettings]);
+    return localGenSettings ? isInterpolationReady(localGenSettings) : false;
+  }, [localGenSettings?.comfyUIUrl, localGenSettings?.workflowProfiles, frameInterpolationEnabled]);
+
+  // Guard against stale enabled state when settings/profile selection changes.
+  // If prereqs become unmet, force-disable the option so we don't enqueue unsupported postproc steps.
+  React.useEffect(() => {
+    if (!exportUpscalePrereqsMet) {
+      setExportUpscaleEnabled(false);
+    }
+  }, [exportUpscalePrereqsMet]);
+
+  React.useEffect(() => {
+    if (!exportInterpolationPrereqsMet) {
+      setExportInterpolateEnabled(false);
+    }
+  }, [exportInterpolationPrereqsMet]);
 
   const handleExportAll = useCallback(() => {
     if (!localGenSettings) {
@@ -246,7 +264,7 @@ CONTEXT FROM ADJACENT SCENES:
           <div className="flex items-center gap-4 text-xs text-gray-300">
             <label
               className={`flex items-center gap-1.5 ${!exportUpscalePrereqsMet ? 'opacity-60 cursor-not-allowed' : ''}`}
-              title={exportUpscalePrereqsMet ? 'Add an upscale step after video generation' : 'Requires ComfyUI and a \"video-upscaler\" workflow profile'}
+              title={exportUpscalePrereqsMet ? 'Add an upscale step after video generation' : 'Requires Video Upscaling enabled, ComfyUI configured, and a "video-upscaler*" workflow profile with input_video mapping'}
             >
               <input
                 type="checkbox"
@@ -259,7 +277,7 @@ CONTEXT FROM ADJACENT SCENES:
             </label>
             <label
               className={`flex items-center gap-1.5 ${!exportInterpolationPrereqsMet ? 'opacity-60 cursor-not-allowed' : ''}`}
-              title={exportInterpolationPrereqsMet ? 'Add a frame interpolation step after video generation' : 'Requires ComfyUI and a \"rife-interpolation\" workflow profile'}
+              title={exportInterpolationPrereqsMet ? 'Add a frame interpolation step after video generation' : 'Requires Frame Interpolation enabled, ComfyUI configured, and a "rife-interpolation*" workflow profile with input_video mapping'}
             >
               <input
                 type="checkbox"

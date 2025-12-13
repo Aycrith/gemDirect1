@@ -35,7 +35,8 @@ function getWorkflowSource(profile: { workflowJson?: string; workflowFile?: stri
  * - wan-i2v (image-to-video): Requires CLIP text + LoadImage for keyframe_image
  * - wan-flf2v, wan-fun-inpaint (bookend): Requires CLIP text + start_image + end_image
  * - wan-fun-control: Requires CLIP text + ref_image + control_video
- * - video-upscaler: Requires input_video mapping
+ * - video-upscaler* (variants): Requires input_video mapping
+ * - rife-interpolation* (variants): Requires input_video mapping
  */
 export function checkProfileReadiness(
   settings: LocalGenerationSettings,
@@ -86,11 +87,16 @@ export function checkProfileReadiness(
   // Profile-specific requirements
   const isImageToVideoProfile = profileId === 'wan-i2v';
   const isBookendProfile = profileId === 'wan-flf2v' || profileId === 'wan-fun-inpaint';
-  const isUpscalerProfile = profileId === 'video-upscaler';
-  const isControlProfile = profileId.includes('-control');
+  const isUpscalerProfile = profileId.startsWith('video-upscaler');
+  const isInterpolationProfile = profileId.startsWith('rife-interpolation');
+  // Only the known WAN control profile requires ref/control mappings.
+  // Avoid broad matching (e.g. "*-control") so postproc variant IDs don't
+  // accidentally get treated as control profiles.
+  const isControlProfile = profileId === 'wan-fun-control';
+  const isInputVideoOnlyProfile = isUpscalerProfile || isInterpolationProfile;
 
   // Always require text mapping for generation profiles (not upscaler)
-  if (!isUpscalerProfile && !hasTextMapping) {
+  if (!isInputVideoOnlyProfile && !hasTextMapping) {
     missingRequirements.push('CLIP text mapping (for prompts)');
   }
 
@@ -120,7 +126,7 @@ export function checkProfileReadiness(
   }
 
   // Upscaler profiles need input_video
-  if (isUpscalerProfile && !hasInputVideo) {
+  if (isInputVideoOnlyProfile && !hasInputVideo) {
     missingRequirements.push('LoadVideo mapping (for input_video)');
   }
 
@@ -142,6 +148,59 @@ export function checkProfileReadiness(
  * Check readiness for all known WAN profiles
  */
 export function checkAllProfilesReadiness(settings: LocalGenerationSettings): ProfileReadiness[] {
-  const profileIds = ['wan-t2i', 'wan-i2v', 'wan-flf2v', 'wan-fun-inpaint', 'wan-fun-control', 'flux-t2i', 'video-upscaler'];
-  return profileIds.map(id => checkProfileReadiness(settings, id));
+  const baseGenerationProfileIds = [
+    'wan-t2i',
+    'wan-i2v',
+    'wan-flf2v',
+    'wan-fun-inpaint',
+    'wan-fun-control',
+    'flux-t2i',
+  ];
+
+  // Post-processing profiles may have multiple variants (e.g. "video-upscaler-v2", "rife-interpolation-fast").
+  // Prefer listing configured variants to avoid showing a misleading "missing" base profile.
+  const configuredProfileIds = Object.keys(settings.workflowProfiles || {});
+  const configuredUpscalerIds = configuredProfileIds.filter((id) => id.startsWith('video-upscaler'));
+  const configuredInterpolationIds = configuredProfileIds.filter((id) => id.startsWith('rife-interpolation'));
+
+  const upscalerProfileIds = configuredUpscalerIds.length > 0 ? configuredUpscalerIds : ['video-upscaler'];
+  const interpolationProfileIds = configuredInterpolationIds.length > 0 ? configuredInterpolationIds : ['rife-interpolation'];
+
+  const profileIds = Array.from(
+    new Set([
+      ...baseGenerationProfileIds,
+      ...upscalerProfileIds,
+      ...interpolationProfileIds,
+    ])
+  );
+
+  return profileIds.map((id) => checkProfileReadiness(settings, id));
+}
+
+/**
+ * Convenience helper: whether the current settings are ready to run any configured upscaler workflow.
+ * Includes variant IDs (e.g. "video-upscaler-v2") and checks mapping readiness.
+ */
+export function isUpscalingReady(settings: LocalGenerationSettings): boolean {
+  const flags = settings.featureFlags;
+  if (!flags?.videoUpscaling) return false;
+  if (!settings.comfyUIUrl) return false;
+
+  return checkAllProfilesReadiness(settings).some(
+    (p) => p.profileId.startsWith('video-upscaler') && p.isReady
+  );
+}
+
+/**
+ * Convenience helper: whether the current settings are ready to run any configured interpolation workflow.
+ * Includes variant IDs (e.g. "rife-interpolation-fast") and checks mapping readiness.
+ */
+export function isInterpolationReady(settings: LocalGenerationSettings): boolean {
+  const flags = settings.featureFlags;
+  if (!flags?.frameInterpolationEnabled) return false;
+  if (!settings.comfyUIUrl) return false;
+
+  return checkAllProfilesReadiness(settings).some(
+    (p) => p.profileId.startsWith('rife-interpolation') && p.isReady
+  );
 }
