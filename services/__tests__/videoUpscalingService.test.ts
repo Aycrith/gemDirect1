@@ -15,6 +15,7 @@ import {
     validateUpscaleConfig,
     estimateVramUsage,
     isUpscalingSupported,
+    isInterpolationSupported,
     getUpscalerProfile,
     buildUpscalePayload,
 } from '../videoUpscalingService';
@@ -31,12 +32,24 @@ function createMockSettings(overrides?: Partial<LocalGenerationSettings>): Local
         videoWorkflowProfile: 'wan-i2v',
         featureFlags: {
             videoUpscaling: true,
+            frameInterpolationEnabled: true,
         },
         workflowProfiles: {
             'video-upscaler': {
                 id: 'video-upscaler',
                 label: 'Video Upscaler',
-                workflowJson: '{}',
+                workflowJson: '{"prompt":{}}',
+                mapping: {
+                    '1:file': 'input_video',
+                },
+            },
+            'rife-interpolation': {
+                id: 'rife-interpolation',
+                label: 'RIFE Interpolation',
+                workflowJson: '{"prompt":{}}',
+                mapping: {
+                    '1:file': 'input_video',
+                },
             },
         },
         ...overrides,
@@ -138,7 +151,7 @@ describe('videoUpscalingService', () => {
 
         it('should return false when feature flag disabled', () => {
             const settings = createMockSettings({
-                featureFlags: { videoUpscaling: false } as LocalGenerationSettings['featureFlags'],
+                featureFlags: { videoUpscaling: false, frameInterpolationEnabled: true } as LocalGenerationSettings['featureFlags'],
             });
             expect(isUpscalingSupported(settings)).toBe(false);
         });
@@ -155,6 +168,37 @@ describe('videoUpscalingService', () => {
                 workflowProfiles: {},
             });
             expect(isUpscalingSupported(settings)).toBe(false);
+        });
+    });
+
+    describe('isInterpolationSupported', () => {
+        it('should return true when all requirements met', () => {
+            const settings = createMockSettings();
+            expect(isInterpolationSupported(settings)).toBe(true);
+        });
+
+        it('should return false when feature flag disabled', () => {
+            const settings = createMockSettings({
+                featureFlags: { videoUpscaling: true, frameInterpolationEnabled: false } as LocalGenerationSettings['featureFlags'],
+            });
+            expect(isInterpolationSupported(settings)).toBe(false);
+        });
+
+        it('should return false when ComfyUI URL missing', () => {
+            const settings = createMockSettings({
+                comfyUIUrl: '',
+            });
+            expect(isInterpolationSupported(settings)).toBe(false);
+        });
+
+        it('should return false when interpolation profile missing', () => {
+            const base = createMockSettings();
+            const settings = createMockSettings({
+                workflowProfiles: {
+                    'video-upscaler': base.workflowProfiles!['video-upscaler']!,
+                },
+            });
+            expect(isInterpolationSupported(settings)).toBe(false);
         });
     });
 
