@@ -18,7 +18,8 @@
   ComfyUI base URL (defaults to settings.comfyUIUrl, falling back to http://127.0.0.1:8188).
 
 .PARAMETER Profiles
-  Profile IDs to repair (default: video-upscaler, rife-interpolation).
+    Profile IDs or wildcard patterns to repair.
+    Default repairs ALL variants: video-upscaler* and rife-interpolation*.
 
 .PARAMETER DryRun
   If set, prints intended changes but does not write SettingsPath.
@@ -27,13 +28,17 @@
   pwsh -NoLogo -ExecutionPolicy Bypass -File scripts/repair-postproc-profiles.ps1 -DryRun
 
 .EXAMPLE
+    # Repair a single explicit profile id (no wildcard expansion)
+    pwsh -NoLogo -ExecutionPolicy Bypass -File scripts/repair-postproc-profiles.ps1 -Profiles video-upscaler-ultrasharp-4x -DryRun
+
+.EXAMPLE
   pwsh -NoLogo -ExecutionPolicy Bypass -File scripts/repair-postproc-profiles.ps1
 #>
 
 param(
     [string] $SettingsPath = (Join-Path (Get-Location) 'localGenSettings.json'),
     [string] $ComfyUIUrl = '',
-    [string[]] $Profiles = @('video-upscaler', 'rife-interpolation'),
+    [string[]] $Profiles = @('video-upscaler*', 'rife-interpolation*'),
     [switch] $DryRun
 )
 
@@ -244,6 +249,24 @@ Ensure-Object (Test-Path $SettingsPath) "SettingsPath '$SettingsPath' not found"
 $settings = Get-Content -Path $SettingsPath -Raw | ConvertFrom-Json
 Ensure-Object $settings "Failed to parse settings"
 
+$availableProfiles = @()
+if ($settings.workflowProfiles) {
+    $availableProfiles = @($settings.workflowProfiles.PSObject.Properties.Name)
+}
+
+# Expand wildcard profile patterns into concrete profile IDs.
+# Explicit profile IDs are preserved as-is.
+$expandedProfiles = New-Object System.Collections.Generic.List[string]
+foreach ($pattern in $Profiles) {
+    if ($pattern -match '[\*\?]') {
+        $matches = $availableProfiles | Where-Object { $_ -like $pattern }
+        foreach ($m in $matches) { $expandedProfiles.Add([string]$m) }
+        continue
+    }
+    $expandedProfiles.Add([string]$pattern)
+}
+$Profiles = @($expandedProfiles | Select-Object -Unique)
+
 $baseUrl = Get-ComfyBase $(if (-not [string]::IsNullOrWhiteSpace($ComfyUIUrl)) { $ComfyUIUrl } else { $settings.comfyUIUrl })
 Write-Info "ComfyUI: $baseUrl"
 Write-Info "Settings: $SettingsPath"
@@ -271,7 +294,7 @@ foreach ($profileId in $Profiles) {
     Patch-ImagesToVideoToCreateVideo $nodes $baseUrl ([ref]$changes)
     Patch-SaveVideoRequiredInputs $nodes $baseUrl ([ref]$changes)
 
-    if ($profileId -eq 'rife-interpolation') {
+    if ($profileId -like 'rife-interpolation*') {
         Patch-RifeProfile $profile $nodes $baseUrl ([ref]$changes)
     }
 
