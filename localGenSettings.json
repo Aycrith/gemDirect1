@@ -1,10 +1,13 @@
 {
   "comfyUIUrl": "http://127.0.0.1:8188",
   "comfyUIClientId": "gemDirect",
+  "videoProvider": "comfyui-local",
   "imageWorkflowProfile": "flux-t2i",
   "videoWorkflowProfile": "wan-fun-inpaint",
   "sceneChainedWorkflowProfile": "wan-fun-inpaint",
   "sceneBookendWorkflowProfile": "wan-flf2v",
+  "upscalerWorkflowProfile": "video-upscaler",
+  "interpolationWorkflowProfile": "rife-interpolation",
   "keyframeMode": "bookend",
   "bookendQAMode": {
     "enabled": true,
