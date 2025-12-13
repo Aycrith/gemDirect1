@@ -125,7 +125,7 @@ describe('advancedWorkflowProfiles', () => {
 
         it('should map video input', () => {
             const profile = createUpscalerProfile(baseConfig, workflowJson);
-            expect(profile.mapping['5:video']).toBe('keyframe_image');
+            expect(profile.mapping['5:file']).toBe('input_video');
         });
 
         it('should map optional CLIP prompt', () => {
