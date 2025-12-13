@@ -4,6 +4,7 @@ import { createSceneGenerationPipeline } from '../services/pipelineFactory';
 import { pipelineEngine } from '../services/pipelineEngine';
 import { usePipelineStore } from '../services/pipelineStore';
 import { getActiveKeyframeImage } from '../types';
+import { isFeatureEnabled } from '../utils/featureFlags';
 
 interface PipelineGenerationButtonProps {
     scene: Scene;
@@ -36,6 +37,28 @@ export const PipelineGenerationButton: React.FC<PipelineGenerationButtonProps> =
         return !!settings.comfyUIUrl && !!settings.workflowProfiles?.['rife-interpolation'];
     }, [settings.comfyUIUrl, settings.workflowProfiles]);
 
+    const upscaleFlagEnabled = isFeatureEnabled(settings.featureFlags, 'videoUpscaling');
+    const interpolationFlagEnabled = isFeatureEnabled(settings.featureFlags, 'frameInterpolationEnabled');
+
+    const canUpscale = upscalePrereqsMet && upscaleFlagEnabled;
+    const canInterpolate = interpolationPrereqsMet && interpolationFlagEnabled;
+
+    const upscaleToggleTitle = canUpscale
+        ? 'Add an upscale step after video generation'
+        : !upscaleFlagEnabled && !upscalePrereqsMet
+            ? 'Requires Feature Flag: Video Upscaling (Settings → Features) and ComfyUI + a "video-upscaler" workflow profile'
+            : !upscaleFlagEnabled
+                ? 'Requires Feature Flag: Video Upscaling (enable in Settings → Features)'
+                : 'Requires ComfyUI and a "video-upscaler" workflow profile';
+
+    const interpolationToggleTitle = canInterpolate
+        ? 'Add a frame interpolation step after video generation'
+        : !interpolationFlagEnabled && !interpolationPrereqsMet
+            ? 'Requires Feature Flag: Frame Interpolation (Settings → Features) and ComfyUI + a "rife-interpolation" workflow profile'
+            : !interpolationFlagEnabled
+                ? 'Requires Feature Flag: Frame Interpolation (enable in Settings → Features)'
+                : 'Requires ComfyUI and a "rife-interpolation" workflow profile';
+
     const handleGenerate = () => {
         // Resolve keyframes
         const keyframeImages: Record<string, string> = {};
@@ -53,8 +76,8 @@ export const PipelineGenerationButton: React.FC<PipelineGenerationButtonProps> =
             keyframeImages,
             {
                 generateVideos: true,
-                upscale: upscaleEnabled,
-                interpolate: interpolateEnabled,
+                upscale: upscaleEnabled && canUpscale,
+                interpolate: interpolateEnabled && canInterpolate,
                 visualBible,
                 characterReferenceImages
             }
@@ -69,28 +92,28 @@ export const PipelineGenerationButton: React.FC<PipelineGenerationButtonProps> =
         <div className="inline-flex flex-col items-start gap-1">
             <div className="flex items-center gap-3 text-[11px] text-slate-300">
                 <label
-                    className={`flex items-center gap-1.5 ${!upscalePrereqsMet ? 'opacity-60 cursor-not-allowed' : ''}`}
-                    title={upscalePrereqsMet ? 'Add an upscale step after video generation' : 'Requires ComfyUI and a \"video-upscaler\" workflow profile'}
+                    className={`flex items-center gap-1.5 ${!canUpscale ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    title={upscaleToggleTitle}
                 >
                     <input
                         type="checkbox"
                         className="accent-indigo-500"
                         checked={upscaleEnabled}
                         onChange={(e) => setUpscaleEnabled(e.target.checked)}
-                        disabled={disabled || isPipelineActive || !upscalePrereqsMet}
+                        disabled={disabled || isPipelineActive || !canUpscale}
                     />
                     Upscale 2x
                 </label>
                 <label
-                    className={`flex items-center gap-1.5 ${!interpolationPrereqsMet ? 'opacity-60 cursor-not-allowed' : ''}`}
-                    title={interpolationPrereqsMet ? 'Add a frame interpolation step after video generation' : 'Requires ComfyUI and a \"rife-interpolation\" workflow profile'}
+                    className={`flex items-center gap-1.5 ${!canInterpolate ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    title={interpolationToggleTitle}
                 >
                     <input
                         type="checkbox"
                         className="accent-indigo-500"
                         checked={interpolateEnabled}
                         onChange={(e) => setInterpolateEnabled(e.target.checked)}
-                        disabled={disabled || isPipelineActive || !interpolationPrereqsMet}
+                        disabled={disabled || isPipelineActive || !canInterpolate}
                     />
                     Interpolate 2x
                 </label>
