@@ -70,6 +70,73 @@ export interface UpscaleResult {
 
 import { queueComfyUIPromptWithQueue, ComfyUIPromptPayloads } from './comfyUIService';
 
+const hasNonEmptyWorkflowJson = (profile: Partial<WorkflowProfile> | undefined | null): boolean => {
+    if (!profile) return false;
+    return typeof profile.workflowJson === 'string' && profile.workflowJson.trim().length > 0;
+};
+
+const hasInputVideoMapping = (profile: Partial<WorkflowProfile> | undefined | null): boolean => {
+    if (!profile) return false;
+    const mapping = (profile as WorkflowProfile).mapping as unknown;
+    if (!mapping || typeof mapping !== 'object') return false;
+
+    const values = Object.values(mapping as Record<string, unknown>);
+    return values.includes('input_video') || values.includes('inputVideo');
+};
+
+const isValidInterpolationWorkflowProfile = (profile: Partial<WorkflowProfile> | undefined | null): boolean =>
+    hasNonEmptyWorkflowJson(profile) && hasInputVideoMapping(profile);
+
+const resolveInterpolationWorkflowProfileId = (settings: LocalGenerationSettings): {
+    profileId: string | null;
+    reason?: string;
+} => {
+    const profiles = settings.workflowProfiles ?? {};
+    const selectedId = (settings.interpolationWorkflowProfile || '').trim();
+
+    if (selectedId.length > 0) {
+        const selected = profiles[selectedId];
+        if (selected && isValidInterpolationWorkflowProfile(selected)) {
+            return { profileId: selectedId };
+        }
+
+        if (!selected) {
+            return {
+                profileId: null,
+                reason: `Selected interpolation workflow profile '${selectedId}' was not found in settings.workflowProfiles.`,
+            };
+        }
+
+        return {
+            profileId: null,
+            reason: `Selected interpolation workflow profile '${selectedId}' is invalid (requires workflowJson and an 'input_video' mapping).`,
+        };
+    }
+
+    // Fallback: choose the best available rife-interpolation* profile with a valid input_video mapping.
+    const rifeCandidates = Object.keys(profiles)
+        .filter((id) => id.startsWith('rife-interpolation'))
+        .sort((a, b) => {
+            if (a === 'rife-interpolation' && b !== 'rife-interpolation') return -1;
+            if (b === 'rife-interpolation' && a !== 'rife-interpolation') return 1;
+            return a.localeCompare(b);
+        });
+
+    for (const id of rifeCandidates) {
+        if (isValidInterpolationWorkflowProfile(profiles[id])) {
+            return { profileId: id };
+        }
+    }
+
+    return {
+        profileId: null,
+        reason:
+            rifeCandidates.length === 0
+                ? `No 'rife-interpolation*' workflow profiles were found in settings.workflowProfiles.`
+                : `Found rife-interpolation* profiles (${rifeCandidates.join(', ')}), but none had a valid workflowJson + 'input_video' mapping.`,
+    };
+};
+
 export const interpolateVideo = async (
     settings: LocalGenerationSettings,
     videoPath: string,
@@ -78,14 +145,38 @@ export const interpolateVideo = async (
     console.log(`[VideoUpscaling] Interpolating video: ${videoPath} with config`, config);
     const startTime = Date.now();
 
-    // Use configured profile or default to 'rife-interpolation'
-    const profileId = settings.workflowProfiles?.['rife-interpolation'] ? 'rife-interpolation' : null;
-    
-    if (!profileId) {
-        console.error(`[VideoUpscaling] Profile 'rife-interpolation' not found`);
+    // Enforce feature flag: interpolation is experimental and must be explicitly enabled.
+    // (UI should also gate this, but service-side enforcement keeps behavior predictable.)
+    if (!settings.featureFlags?.frameInterpolationEnabled) {
         return {
             success: false,
-            error: `Interpolation workflow profile 'rife-interpolation' not found. Please import it in settings.`
+            error: 'Frame interpolation is disabled. Enable the Feature Flag "Frame Interpolation" (frameInterpolationEnabled) in Settings → Features.',
+        };
+    }
+
+    // Basic config sanity: interpolation is a ComfyUI-driven post-processing step.
+    if (!settings.comfyUIUrl) {
+        return {
+            success: false,
+            error: 'ComfyUI is not configured. Set ComfyUI URL in Settings before using frame interpolation.',
+        };
+    }
+
+    // Resolve workflow profile selection (variant-safe):
+    // - Prefer the user-selected settings.interpolationWorkflowProfile if valid
+    // - Otherwise fall back to the best available rife-interpolation* profile
+    const resolved = resolveInterpolationWorkflowProfileId(settings);
+    const profileId = resolved.profileId;
+
+    if (!profileId) {
+        const extra = resolved.reason ? ` ${resolved.reason}` : '';
+        console.error(`[VideoUpscaling] No valid interpolation workflow profile found.${extra}`);
+        return {
+            success: false,
+            error:
+                `No valid interpolation workflow profile found.` +
+                ` Import (or select) a profile that maps 'input_video' and has a valid workflowJson.` +
+                (resolved.reason ? ` Details: ${resolved.reason}` : ''),
         };
     }
 
