@@ -52,6 +52,53 @@ vi.mock('../settingsStore', () => ({
     }
 }));
 
+const defaultWorkflowProfiles = {
+    'wan-t2i': {
+        id: 'wan-t2i',
+        workflowJson: '{"valid": "json", "length": "sufficient"}',
+        mapping: { '1:text': 'human_readable_prompt' }
+    },
+    'wan-i2v': {
+        id: 'wan-i2v',
+        workflowJson: '{"valid": "json", "length": "sufficient"}',
+        mapping: { '1:text': 'human_readable_prompt', '2:image': 'keyframe_image' }
+    },
+    'video-upscaler': {
+        id: 'video-upscaler',
+        workflowJson: '{"valid": "json", "length": "sufficient"}',
+        mapping: { '1:file': 'input_video' }
+    },
+    'rife-interpolation': {
+        id: 'rife-interpolation',
+        workflowJson: '{"valid": "json", "length": "sufficient"}',
+        mapping: { '1:file': 'input_video' }
+    }
+};
+
+const createMockState = (overrides: any = {}) => {
+    const base = {
+        comfyUIUrl: 'http://localhost:8188',
+        workflowProfile: 'wan-t2i',
+        videoWorkflowProfile: 'wan-i2v',
+
+        // Defaults aligned with support helpers (explicitly include both flags)
+        featureFlags: { enableFLF2V: false, videoUpscaling: true, frameInterpolationEnabled: true },
+
+        // Defaults aligned with configurable profile selectors
+        upscalerWorkflowProfile: 'video-upscaler',
+        interpolationWorkflowProfile: 'rife-interpolation',
+
+        workflowProfiles: { ...defaultWorkflowProfiles },
+    };
+
+    return {
+        ...base,
+        ...overrides,
+        featureFlags: { ...(base.featureFlags || {}), ...(overrides.featureFlags || {}) },
+        workflowProfiles: { ...(base.workflowProfiles || {}), ...(overrides.workflowProfiles || {}) },
+    };
+};
+
 describe('Pipeline Integration', () => {
     const engine = PipelineEngine.getInstance();
 
@@ -71,12 +118,7 @@ describe('Pipeline Integration', () => {
         (videoUtils.extractFramesFromVideo as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(['data:image/jpeg;base64,frame1', 'data:image/jpeg;base64,frame2']);
 
         // Default settings mock
-        mockGetState.mockReturnValue({
-            comfyUIUrl: 'http://localhost:8188',
-            workflowProfile: 'wan-t2i',
-            videoWorkflowProfile: 'wan-i2v',
-            featureFlags: { enableFLF2V: false }
-        });
+        mockGetState.mockReturnValue(createMockState());
     });
 
 
@@ -267,12 +309,9 @@ describe('Pipeline Integration', () => {
 
     it('should chain video generation when FLF2V is enabled', async () => {
         // Enable FLF2V
-        mockGetState.mockReturnValue({
-            comfyUIUrl: 'http://localhost:8188',
-            workflowProfile: 'wan-t2i',
-            videoWorkflowProfile: 'wan-i2v',
+        mockGetState.mockReturnValue(createMockState({
             featureFlags: { enableFLF2V: true }
-        });
+        }));
 
         const multiShotScenes = [{
             ...mockScenes[0],
@@ -380,12 +419,9 @@ describe('Pipeline Integration', () => {
 
     it('should NOT chain video generation across scenes even if FLF2V is enabled', async () => {
         // Enable FLF2V
-        mockGetState.mockReturnValue({
-            comfyUIUrl: 'http://localhost:8188',
-            workflowProfile: 'wan-t2i',
-            videoWorkflowProfile: 'wan-i2v',
+        mockGetState.mockReturnValue(createMockState({
             featureFlags: { enableFLF2V: true }
-        });
+        }));
 
         const multiSceneData = [
             {
@@ -449,15 +485,9 @@ describe('Pipeline Integration', () => {
             .mockResolvedValueOnce(mockInterpolationResult); // Interpolation
 
         // Mock profile existence
-        mockGetState.mockReturnValue({
-            comfyUIUrl: 'http://localhost:8188',
-            workflowProfile: 'wan-t2i',
-            videoWorkflowProfile: 'wan-i2v',
-            workflowProfiles: {
-                'rife-interpolation': { id: 'rife-interpolation' }
-            },
+        mockGetState.mockReturnValue(createMockState({
             featureFlags: { enableFLF2V: false }
-        });
+        }));
 
         const pipelineId = createExportPipeline(mockScenes, mockSettings, {
             generateKeyframes: true,
